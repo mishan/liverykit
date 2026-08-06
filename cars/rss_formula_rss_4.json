@@ -11,7 +11,7 @@
       "front": "+Z",
       "confident": true
     },
-    "notes": "Generated from the model. Panel rects are exact UV island bounds, and anisotropy comes from the UV-to-3D Jacobian rather than from eyeballing a render. \"adjacent\" lists islands that physically touch on the car, which is what lets artwork continue across a UV seam. \"visible\" is the fraction of a panel readable from trackside viewpoints, computed by ray casting against the whole car; \"safe\" bounds that readable part. Those two are a heuristic, unlike the rest."
+    "notes": "Panel rects are exact UV island bounds. \"anisotropy\" comes from the UV-to-3D Jacobian. \"adjacent\" lists islands that physically touch on the car, which is what lets artwork continue across a UV seam. \"visible\" is the fraction of a panel readable from trackside viewpoints, computed by ray casting against the whole car, and \"safe\" bounds that readable part \u2014 those two are heuristics, unlike the rest."
   },
   "textures": {
     "metal": {
@@ -11004,7 +11004,7 @@
       }
     }
   },
-  "notes": "The original 2017 Race Sim Studio car, not the 2024 one. Generated from the model. Supersedes an earlier profile measured from calibration screenshots, which had the nose and both wings materially wrong, missed the second body texture, overstated anisotropy by 40%, and carried a safe-area rect based on a misdiagnosis \u2014 see src/engine/visibility.mjs.",
+  "notes": "The original 2017 Race Sim Studio car, not the 2024 one. Generated from the model.",
   "aliases": {
     "body": {
       "flankRight": "right_mid",
