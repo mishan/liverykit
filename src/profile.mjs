@@ -1,0 +1,182 @@
+// ---------------------------------------------------------------------------
+// Car profiles.
+//
+// A car profile answers questions about a *car* — which textures it has, which
+// of them are safe to paint, and where each body panel lives in UV space. It
+// says nothing about any particular livery. That separation is the whole point:
+//
+//   * A profile is expensive to produce (install a calibration skin, photograph
+//     the car, read coordinates off the grid) and is identical for everyone who
+//     owns that car. Exactly the kind of thing worth sharing.
+//   * A livery is cheap to write and is the part you actually want to be
+//     creative in. If it addresses panels by NAME rather than by coordinate, the
+//     same livery renders on any car that has a profile with matching panel
+//     names.
+//
+// So `{ panel: 'flankLeft', at: [0, 0, 0.4, 1] }` means "the front 40% of the
+// left flank, whatever that happens to be on this car", and survives being
+// pointed at a different model. `{ at: [0.6, 0, 0.16, 0.2] }` means a literal
+// rectangle in the texture, and does not.
+// ---------------------------------------------------------------------------
+
+import { readFile } from 'node:fs/promises';
+
+export async function loadProfile(path) {
+  const raw = JSON.parse(await readFile(path, 'utf8'));
+  return validateProfile(raw, path);
+}
+
+export function validateProfile(p, source = '<inline>') {
+  const err = (m) => { throw new Error(`Car profile ${source}: ${m}`); };
+
+  if (!p.id) err('missing "id" (the folder name under content/cars/)');
+  if (!p.textures || !Object.keys(p.textures).length) err('has no textures');
+
+  for (const [role, t] of Object.entries(p.textures)) {
+    if (!t.file) err(`texture role "${role}" has no file`);
+    if (!t.width || !t.height) err(`texture "${t.file}" needs width and height`);
+    if (!isPow2(t.width) || !isPow2(t.height)) {
+      console.warn(`  ! ${t.file} is ${t.width}x${t.height}; DDS mip chains want powers of two.`);
+    }
+  }
+
+  // Two files differing only in case are ONE file on NTFS. On Windows the
+  // second to extract silently wins, so a profile must never list both.
+  const byLower = new Map();
+  for (const t of Object.values(p.textures)) {
+    const k = t.file.toLowerCase();
+    byLower.set(k, [...(byLower.get(k) ?? []), t.file]);
+  }
+  for (const v of byLower.values()) {
+    if (v.length > 1) err(`case-colliding filenames, which are one file on Windows: ${v.join(' == ')}`);
+  }
+
+  // `caseCollisions` records pairs that exist in the CAR and collide on NTFS.
+  // The profile may reference at most one spelling from each pair — shipping
+  // both means the second to extract silently overwrites the first.
+  for (const pair of p.caseCollisions ?? []) {
+    const shipped = pair.filter((f) =>
+      Object.values(p.textures).some((t) => t.file === f));
+    if (shipped.length > 1) {
+      err(`textures include ${shipped.join(' and ')}, which are one file on Windows. Pick one spelling.`);
+    }
+  }
+
+  for (const [role, panels] of Object.entries(p.panels ?? {})) {
+    if (!p.textures[role]) err(`panels are defined for unknown texture role "${role}"`);
+    for (const [name, panel] of Object.entries(panels)) {
+      checkRect(panel.rect, `${role}.${name}.rect`, err);
+      if (panel.safe) checkRect(panel.safe, `${role}.${name}.safe`, err);
+    }
+  }
+
+  return p;
+}
+
+const isPow2 = (n) => Number.isInteger(Math.log2(n));
+
+function checkRect(r, what, err) {
+  if (!Array.isArray(r) || r.length !== 4) err(`${what} must be [x, y, w, h]`);
+  if (r.some((n) => typeof n !== 'number' || n < 0 || n > 1)) {
+    err(`${what} must be fractions in 0..1, got [${r}]`);
+  }
+  if (r[0] + r[2] > 1.0001 || r[1] + r[3] > 1.0001) err(`${what} extends past the texture edge`);
+}
+
+/** The texture definition for a role, e.g. 'body'. */
+export function texture(profile, role) {
+  const t = profile.textures[role];
+  if (!t) {
+    throw new Error(
+      `Car profile "${profile.id}" has no texture role "${role}". ` +
+      `Known roles: ${Object.keys(profile.textures).join(', ')}`
+    );
+  }
+  return t;
+}
+
+/**
+ * The named panel within a texture role, with its metadata.
+ *
+ * `aliases` let a profile carry friendly names alongside generated ones. A
+ * profile built from a model gets systematic geometric names — `left_mid`,
+ * `centre_nose` — which are honest but not memorable, and which would be
+ * clobbered every time the profile is regenerated if you renamed them in place.
+ * An alias block maps `flankLeft -> left_mid` and survives regeneration.
+ */
+export function panel(profile, role, name) {
+  const alias = profile.aliases?.[role]?.[name];
+  const found = profile.panels?.[role]?.[alias ?? name];
+  if (!found) {
+    // This is the same class of failure as a skin filename that matches nothing
+    // in the car: silent, and it looks exactly like "the livery didn't work".
+    // So it throws rather than falling back to the whole texture.
+    const known = Object.keys(profile.panels?.[role] ?? {});
+    const aliases = Object.keys(profile.aliases?.[role] ?? {});
+    throw new Error(
+      `Car profile "${profile.id}" has no panel "${name}" on texture role "${role}".` +
+      (aliases.length ? `\n  Aliases: ${aliases.join(', ')}` : '') +
+      (known.length ? `\n  Panels: ${known.join(', ')}` : '\n  That role has no panels mapped at all.')
+    );
+  }
+  return found;
+}
+
+/**
+ * Turn a livery region spec into an absolute rectangle in texture fractions.
+ *
+ * `at` is always relative to the panel's full `rect` — [0,0,1,1] (the default)
+ * is the whole panel, [0.5,0,0.5,1] its rear half. Without `panel`, `at` is
+ * read as absolute texture coordinates, which is the escape hatch for anything
+ * unmapped.
+ *
+ * A panel's `safe` rect does NOT change that basis. It would be tempting to
+ * make `at` relative to the safe rect when one exists, but then every
+ * coordinate in a livery shifts meaning depending on whether the car profile
+ * happens to declare a safe area — and the numbers stop being readable. So the
+ * safe rect only *checks*: anything that strays outside it gets a warning
+ * naming the region, because a safe-area violation is invisible at build time
+ * and only shows up as half a word missing on the car.
+ *
+ * `safe: false` silences the check for regions that legitimately want the full
+ * panel — a background fill should reach the island edge even though type
+ * shouldn't.
+ */
+export function resolveRect(profile, role, spec) {
+  const at = spec.at ?? [0, 0, 1, 1];
+  checkRect(at, `region "at"`, (m) => { throw new Error(m); });
+
+  if (!spec.panel) return { x: at[0], y: at[1], w: at[2], h: at[3], anisotropy: 1 };
+
+  const pan = panel(profile, role, spec.panel);
+  const [bx, by, bw, bh] = pan.rect;
+  const out = {
+    x: bx + at[0] * bw,
+    y: by + at[1] * bh,
+    w: at[2] * bw,
+    h: at[3] * bh,
+    anisotropy: pan.anisotropy ?? 1,
+    panel: pan,
+  };
+
+  if (pan.safe && spec.safe !== false) {
+    const [sx, sy, sw, sh] = pan.safe;
+    const over =
+      out.x < sx - 1e-9 || out.y < sy - 1e-9 ||
+      out.x + out.w > sx + sw + 1e-9 || out.y + out.h > sy + sh + 1e-9;
+    if (over) {
+      console.warn(
+        `  ! "${spec.treatment ?? 'region'}" on panel ${role}.${spec.panel} extends outside its safe area.\n` +
+        `    Safe areas mark where a UV island curls out of sight — this may render\n` +
+        `    clipped on the car. Pass safe:false if that is intended.`
+      );
+    }
+  }
+
+  return out;
+}
+
+/** Textures the profile explicitly warns against painting, with reasons. */
+export function doNotPaint(profile) {
+  return profile.doNotPaint ?? [];
+}
