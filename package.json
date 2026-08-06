@@ -44,5 +44,13 @@
   },
   "dependencies": {
     "sharp": "^0.35.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mishan/liverykit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mishan/liverykit/issues"
+  },
+  "homepage": "https://github.com/mishan/liverykit#readme"
 }

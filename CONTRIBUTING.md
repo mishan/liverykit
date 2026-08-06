@@ -2,13 +2,11 @@
 
 ## Car profiles are the useful thing
 
-A car profile is expensive to produce — install a calibration skin, photograph
-the car from several angles, read coordinates off the grid — and completely
-identical for everyone who owns that car. Every profile contributed is work
-nobody else has to repeat.
+A car profile is one command to produce, and completely identical for everyone
+who owns that car. Every one contributed is work nobody else has to repeat, which
+makes it the highest-leverage thing you can send.
 
-A livery is the opposite: cheap to write, and personal. Feel free to contribute
-those too, but profiles are what make the project worth publishing.
+Liveries are welcome too, but they're personal — profiles are the shared part.
 
 ### Submitting a profile
 
@@ -35,13 +33,14 @@ should say `"estimated"` and mean it. A profile that admits which panels are
 guesses is far more useful than one that pretends they're all measured, because
 the next person knows where to be careful and where to just use a flat colour.
 
-**Record safe areas where you find them.** Being inside a UV island is not the
-same as being visible; edges curl under the bodywork. If you discover an edge
-the hard way, `"safe"` saves the next person from discovering it the same way.
+**`safe` and `anisotropy` are derived for you** when the profile comes from a
+model, so leave them alone unless you're working from screenshots. If you are,
+`"safe"` bounds the part of a panel that's actually visible, and
+`"anisotropy": 1.4` means a square of texture lands 1.4× wider than tall.
 
-**Note anisotropy if the panel is stretched.** A grid cell is square in the
-texture. If it looks 1.4× wider than tall on the car, put `"anisotropy": 1.4`
-and the `text` treatment compensates automatically.
+Don't infer a safe area from one bad-looking render. Lettering that reads badly
+is usually just too low on the car, not clipped by geometry — check with a
+`--flat` build and a screenshot before you write a `safe` rect.
 
 **Use `notes` freely.** "Columns run rear→front" and "the crest is at x≈0.275,
 so a spine stripe is vertical here" are the kind of thing that takes an hour to
@@ -53,9 +52,14 @@ Liveries address panels by name, so **consistent names across cars are what let
 one design render on more than one model.** Prefer these where they apply:
 
 ```
-flankLeft  flankRight  nose  engineCover  roof  rearWing  frontWingPlanes
-frontWingEndplates  floor  mirrors  airbox
+flankLeft   flankRight   flankLeftFront  flankRightFront
+nose        noseTip      cockpitFront    cockpitLeft   cockpitRight
+engineCover spine        underbody       intakeLeft    intakeRight
+frontWing   frontWingEndplateLeft   frontWingEndplateRight   rearWing
 ```
+
+`cars/rss_formula_rss_4.json` uses these; copy its `aliases` block as a
+starting point.
 
 If a car genuinely has something these don't cover, add it and say so in the PR
 — if it recurs, it belongs on this list.
@@ -75,8 +79,7 @@ never load it.
 ## Code
 
 No build step, no transpiler, ESM throughout, one runtime dependency (`sharp`).
-Please keep it that way; the appeal of this tool is partly that it's readable in
-an afternoon.
+Please keep it that way.
 
 `npm test` before opening a PR. The tests check the things that fail
 *silently* — DDS headers, mip chain lengths, ZIP integrity, case collisions —
