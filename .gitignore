@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.tmp.*
+
+# Private liveries. Anything matching this pattern is yours and stays out of
+# the repo — useful for work in progress, or a design you don't want to publish.
+liveries/*.local.mjs
+
+# Personal working notes.
+HANDOFF.md
+
+# Optional inputs, not redistributable: ambient-occlusion and UV-wireframe
+# layers exported from a car maker's livery template.
+assets/
+
+# Game content. Never commit these: they are the car maker's assets, they are
+# enormous, and redistributing them is not ours to do. Point --from-kn5 at your
+# own installation instead.
+content/
+*.kn5
+*.rar
+*.7z

@@ -1,0 +1,294 @@
+// ---------------------------------------------------------------------------
+// kn5 reader — Assetto Corsa's model format.
+//
+// This is the thing that makes a car profile a measurement rather than an
+// estimate. A kn5 stores, per vertex, both a 3D position and a UV coordinate.
+// That is exactly the mapping the screenshot calibration workflow spends an
+// afternoon approximating, available exactly, for free, in one pass.
+//
+// THE FORMAT IS REVERSE-ENGINEERED, not documented. Every field below was
+// verified against a real 50 MB car by parsing until the reader consumed the
+// file to its final byte — an off-by-one anywhere desynchronises everything
+// after it, so an exact-length parse is a strong check that the layout is
+// right. `parseKn5` asserts it, and you should treat a failure as "the layout
+// is wrong for this file" rather than something to paper over.
+//
+// Layout, all little-endian, strings as int32 length + UTF-8 bytes:
+//
+//   header    "sc6969", int32 version, and for version > 5 an extra int32
+//
+//   textures  int32 count, then per texture:
+//               int32 type   — 0 means an empty slot with NO further fields
+//               string name
+//               int32 byteLength
+//               byte[byteLength]   (a DDS or PNG blob)
+//
+//   materials int32 count, then per material:
+//               string name, string shader
+//               byte alphaBlendMode, byte alphaTested, int32 depthMode
+//               int32 propCount, then per property:
+//                 string name, float valueA, vec2 valueB, vec3 valueC, vec4 valueD
+//                 (40 bytes of values)
+//               int32 slotCount, then per slot:
+//                 string sampleName, int32 slot, string textureName
+//
+//   nodes     a tree from a single root. Per node:
+//               int32 type (1 dummy, 2 mesh, 3 skinned mesh)
+//               string name, int32 childCount, byte active
+//               type 1: 64 bytes of 4x4 transform
+//               type 2: 3 flag bytes (castShadows, visible, transparent)
+//                       int32 vertexCount, vertices at 44 bytes each
+//                         (position vec3, normal vec3, uv vec2, tangent vec3)
+//                       int32 indexCount, uint16 indices
+//                       33-byte trailer: int32 materialId, int32 layer,
+//                         float lodIn, float lodOut, 16 bytes bounding sphere,
+//                         byte isRenderable
+//               type 3: 3 flag bytes FIRST, then int32 boneCount and per bone
+//                       a string plus 64 bytes; vertices are 76 bytes each
+//                       (the extra 32 are bone weights/indices); 16-byte trailer
+//             then childCount children.
+//
+// Two traps worth naming:
+//
+//   * V is negative. UVs come out in [-1, 0], and texture-space y is 1 + v.
+//     Getting this wrong flips every panel vertically, which looks plausible
+//     enough to ship.
+//   * Type 3 puts its flag bytes BEFORE the bone list, unlike what you would
+//     guess from type 2. Suspension parts are skinned, so a car with any
+//     moving geometry desynchronises immediately if this is wrong.
+// ---------------------------------------------------------------------------
+
+import { readFile } from 'node:fs/promises';
+
+const MAGIC = 'sc6969';
+
+class Cursor {
+  constructor(buf) { this.b = buf; this.o = 0; }
+  u8()  { return this.b.readUInt8(this.o++); }
+  u32() { const v = this.b.readUInt32LE(this.o); this.o += 4; return v; }
+  f32() { const v = this.b.readFloatLE(this.o); this.o += 4; return v; }
+  skip(n) { this.o += n; }
+  str() {
+    const n = this.u32();
+    const s = this.b.toString('utf8', this.o, this.o + n);
+    this.o += n;
+    return s;
+  }
+}
+
+export async function parseKn5(path, { keepTextureData = false } = {}) {
+  return parseKn5Buffer(await readFile(path), { keepTextureData, path });
+}
+
+export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>' } = {}) {
+  const c = new Cursor(buf);
+
+  const magic = buf.toString('ascii', 0, 6);
+  if (magic !== MAGIC) {
+    throw new Error(`${path} is not a kn5 (expected magic "${MAGIC}", got "${magic}")`);
+  }
+  c.skip(6);
+  const version = c.u32();
+  if (version > 5) c.u32();
+
+  // --- textures ---
+  const textures = [];
+  const texCount = c.u32();
+  for (let i = 0; i < texCount; i++) {
+    const type = c.u32();
+    if (type === 0) continue;             // empty slot: no name, no blob
+    const name = c.str();
+    const size = c.u32();
+    const start = c.o;
+    c.skip(size);
+    textures.push({ name, size, data: keepTextureData ? buf.subarray(start, start + size) : null });
+  }
+
+  // --- materials ---
+  const materials = [];
+  const matCount = c.u32();
+  for (let i = 0; i < matCount; i++) {
+    const name = c.str();
+    const shader = c.str();
+    c.skip(2);                            // alphaBlendMode, alphaTested
+    c.u32();                              // depthMode
+    const propCount = c.u32();
+    for (let p = 0; p < propCount; p++) { c.str(); c.skip(40); }
+    const slotCount = c.u32();
+    const slots = {};
+    for (let s = 0; s < slotCount; s++) {
+      const sample = c.str();
+      c.u32();                            // slot index
+      slots[sample] = c.str();
+    }
+    materials.push({ name, shader, slots });
+  }
+
+  // --- node tree ---
+  //
+  // Dummy nodes carry a 4x4 transform and meshes inherit it, so vertex data is
+  // in LOCAL space. Skipping the matrices leaves every suspension part sitting
+  // at the origin — which looks fine until you try to reason about where
+  // anything is on the car. Transforms are accumulated down the tree here.
+  const meshes = [];
+  const readNode = (depth, parentPath, parentMatrix) => {
+    const type = c.u32();
+    const name = c.str();
+    const childCount = c.u32();
+    c.skip(1);                            // active
+    const nodePath = parentPath ? `${parentPath}/${name}` : name;
+    let world = parentMatrix;
+
+    if (type === 1) {
+      const m = new Float32Array(16);
+      for (let i = 0; i < 16; i++) m[i] = c.f32();
+      world = multiply(m, parentMatrix);
+    } else if (type === 2 || type === 3) {
+      c.skip(3);                          // castShadows, visible, transparent
+      let stride = 44;
+      if (type === 3) {
+        const boneCount = c.u32();
+        for (let b = 0; b < boneCount; b++) { c.str(); c.skip(64); }
+        stride = 76;                      // + bone weights and indices
+      }
+      const vertexCount = c.u32();
+      const vertexStart = c.o;
+      c.skip(vertexCount * stride);
+      const indexCount = c.u32();
+      const indexStart = c.o;
+      c.skip(indexCount * 2);
+      // The trailer is 33 bytes for a mesh and 16 for a skinned mesh, and the
+      // materialId is the FIRST four of them — not an extra field in front.
+      const materialId = c.u32();
+      c.skip(type === 2 ? 29 : 12);
+      meshes.push({
+        name, path: nodePath, type, depth, materialId, world,
+        vertexCount, vertexStart, stride, indexCount, indexStart,
+      });
+    } else {
+      throw new Error(`${path}: unknown node type ${type} at byte ${c.o - 4}`);
+    }
+
+    for (let i = 0; i < childCount; i++) readNode(depth + 1, nodePath, world);
+  };
+  readNode(0, '', IDENTITY);
+
+  // An exact-length parse is the whole validation strategy: any misread field
+  // shifts every subsequent offset, so finishing precisely at EOF is very
+  // unlikely to happen by accident.
+  if (c.o !== buf.length) {
+    throw new Error(
+      `${path}: parser finished at byte ${c.o} but the file is ${buf.length} bytes ` +
+      `(${buf.length - c.o > 0 ? 'short by' : 'over by'} ${Math.abs(buf.length - c.o)}).\n` +
+      `  The node layout does not match this file — likely a kn5 version this ` +
+      `reader hasn't seen. Nothing downstream should trust a partial parse.`
+    );
+  }
+
+  return { version, textures, materials, meshes, buf };
+}
+
+// Row-major, row-vector convention: p' = p * M, translation in elements 12-14.
+// Verified against a suspension node whose translation matched its name and
+// its position on the car.
+const IDENTITY = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+function multiply(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[i * 4 + k] * b[k * 4 + j];
+      out[i * 4 + j] = s;
+    }
+  }
+  return out;
+}
+
+/**
+ * Vertex accessor, in WORLD space. Kept lazy so a 50 MB model is never copied
+ * into JS objects — a car has a quarter of a million vertices and almost all
+ * analysis is a single pass.
+ */
+export function vertex(model, mesh, i) {
+  const o = mesh.vertexStart + i * mesh.stride;
+  const b = model.buf;
+  const x = b.readFloatLE(o), y = b.readFloatLE(o + 4), z = b.readFloatLE(o + 8);
+  const nx = b.readFloatLE(o + 12), ny = b.readFloatLE(o + 16), nz = b.readFloatLE(o + 20);
+  const m = mesh.world;
+  // Normals get the rotation but not the translation. Non-uniform scale would
+  // want the inverse transpose; car node transforms are rigid in practice, and
+  // the result is renormalised anyway.
+  const rx = nx * m[0] + ny * m[4] + nz * m[8];
+  const ry = nx * m[1] + ny * m[5] + nz * m[9];
+  const rz = nx * m[2] + ny * m[6] + nz * m[10];
+  const rl = Math.hypot(rx, ry, rz) || 1;
+  return {
+    x: x * m[0] + y * m[4] + z * m[8] + m[12],
+    y: x * m[1] + y * m[5] + z * m[9] + m[13],
+    z: x * m[2] + y * m[6] + z * m[10] + m[14],
+    nx: rx / rl, ny: ry / rl, nz: rz / rl,
+    u: b.readFloatLE(o + 24),
+    // AC stores V negative; texture-space y is 1 + v. Get this wrong and every
+    // panel is flipped vertically, which looks plausible enough to ship.
+    v: 1 + b.readFloatLE(o + 28),
+  };
+}
+
+/**
+ * Axis conventions, established from this car's own mesh names rather than
+ * assumed: a node called LEFT_REAR_SHOCK sits at +X and RIGHT_REAR_SHOCK at
+ * -X; a node called SUSP_RR translates to negative Z.
+ *
+ *   +X = car's LEFT      +Y = up      +Z = FORWARD
+ *
+ * `axisHints` re-derives this per model where the names allow it, so a car that
+ * disagrees is detected rather than silently mis-labelled.
+ */
+export function axisHints(model) {
+  const centroid = (mesh) => {
+    let x = 0, z = 0;
+    const n = Math.min(mesh.vertexCount, 500);
+    const step = Math.max(1, Math.floor(mesh.vertexCount / n));
+    let c = 0;
+    for (let i = 0; i < mesh.vertexCount; i += step) {
+      const v = vertex(model, mesh, i); x += v.x; z += v.z; c++;
+    }
+    return c ? { x: x / c, z: z / c } : null;
+  };
+  let leftSign = 0, frontSign = 0;
+  for (const mesh of model.meshes) {
+    const n = mesh.name.toUpperCase();
+    const c = centroid(mesh);
+    if (!c) continue;
+    if (/\bLEFT|^L[FR]_|_LF\b|_LR\b/.test(n)) leftSign += Math.sign(c.x);
+    if (/\bRIGHT|^R[FR]_|_RF\b|_RR\b/.test(n)) leftSign -= Math.sign(c.x);
+    if (/NOSE|FRONT|^FW[-_]/.test(n)) frontSign += Math.sign(c.z);
+    if (/REAR|^RW[-_]|DIFFUSER/.test(n)) frontSign -= Math.sign(c.z);
+  }
+  return {
+    left: leftSign >= 0 ? 1 : -1,     // sign of X that means the car's left
+    front: frontSign >= 0 ? 1 : -1,   // sign of Z that means the car's front
+    confident: Math.abs(leftSign) > 2 && Math.abs(frontSign) > 2,
+  };
+}
+
+export function triangles(model, mesh) {
+  const out = [];
+  const b = model.buf;
+  for (let i = 0; i + 2 < mesh.indexCount; i += 3) {
+    const o = mesh.indexStart + i * 2;
+    const a = b.readUInt16LE(o), c2 = b.readUInt16LE(o + 2), d = b.readUInt16LE(o + 4);
+    if (a < mesh.vertexCount && c2 < mesh.vertexCount && d < mesh.vertexCount) out.push([a, c2, d]);
+  }
+  return out;
+}
+
+/** Meshes whose material's txDiffuse is `textureName`. */
+export function meshesUsingTexture(model, textureName) {
+  const want = textureName.toLowerCase();
+  return model.meshes.filter((m) => {
+    const mat = model.materials[m.materialId];
+    return mat && (mat.slots.txDiffuse ?? '').toLowerCase() === want;
+  });
+}

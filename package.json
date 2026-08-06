@@ -1,0 +1,48 @@
+{
+  "name": "liverykit",
+  "version": "0.1.0",
+  "description": "Generate Assetto Corsa livery textures from code, with a UV calibration workflow that measures a car instead of guessing at it",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./packs/core": "./src/packs/core.mjs",
+    "./packs/synthwave": "./src/packs/synthwave.mjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "liverykit": "bin/liverykit.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "cars",
+    "liveries/neon-grid.mjs",
+    "docs",
+    "CONTRIBUTING.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node bin/liverykit.mjs neon-grid",
+    "uvgrid": "node bin/liverykit.mjs neon-grid --uvgrid",
+    "test": "node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "assetto-corsa",
+    "livery",
+    "skin",
+    "dds",
+    "sim-racing",
+    "generative",
+    "uv-mapping",
+    "content-manager"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "sharp": "^0.35.3"
+  }
+}
