@@ -75,11 +75,18 @@ on a typical open-wheeler there are around 190 such pairs, and the front and rea
 halves of a single sidepod are routinely separate islands. Paint one and half the
 pod stays stock.
 
-**Which panels are visible.** Being inside a UV island doesn't mean anyone can
-see it. Duct interiors, bulkhead backs and floor undersides are all ordinary
-parts of an island. liverykit ray-casts against the whole car — wheels and wings
-included — and reports `visible` per panel. On the example car, 87 panels are
-completely unseeable.
+**Which panels are visible, and from where.** Being inside a UV island doesn't
+mean anyone can see it — duct interiors, bulkhead backs and floor undersides are
+all ordinary parts of an island. liverykit ray-casts against the whole car,
+wheels and wings included, and reports `visible` per panel. On the example car
+87 panels are completely unseeable from trackside.
+
+It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
+disagree sharply: the flanks score 99% outside and 6% from the seat, the tub
+interior the other way about. If you race in cockpit view, that second number is
+the one that matters — and the surfaces you stare at all race are on entirely
+separate textures from the bodywork, so an exterior-only livery leaves them
+stock. `liveries/neon-grid.mjs` paints them.
 
 ---
 
@@ -214,6 +221,8 @@ Per panel:
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
 | `visible` | fraction of the panel readable from trackside |
+| `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
+| `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 

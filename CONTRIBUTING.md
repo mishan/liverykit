@@ -58,8 +58,17 @@ engineCover spine        underbody       intakeLeft    intakeRight
 frontWing   frontWingEndplateLeft   frontWingEndplateRight   rearWing
 ```
 
-`cars/rss_formula_rss_4.json` uses these; copy its `aliases` block as a
-starting point.
+Cockpit surfaces, which live on their own textures and matter to anyone racing
+in cockpit view:
+
+```
+tub  surround  sideLeft  sideRight    (interior)
+face spoke  console                   (steering wheel)
+gripLeft  gripRight                   (grips)
+```
+
+`cars/rss_formula_rss_4.json` uses these; copy its `aliases` block as a starting
+point, and pick panels by `visibleFromCockpit` rather than by eye.
 
 If a car genuinely has something these don't cover, add it and say so in the PR
 — if it recurs, it belongs on this list.
