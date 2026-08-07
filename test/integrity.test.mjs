@@ -283,3 +283,35 @@ test('kn5: islands carry exact rects and a real anisotropy', async () => {
   assert.deepEqual(islands[0].rect, [0.25, 0.25, 0.5, 0.5]);
   assert.ok(Number.isFinite(islands[0].anisotropy) && islands[0].anisotropy > 0);
 });
+
+test('visibility depends on where you stand, not just on the surface', async () => {
+  // The whole point of a second viewpoint: a surface hidden from trackside can
+  // be the one a cockpit driver stares at all race, and vice versa. If these
+  // two ever agree everywhere, the cockpit pass has silently stopped working.
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const pairs = [];
+  for (const panels of Object.values(p.panels)) {
+    for (const def of Object.values(panels)) {
+      if (def.visible !== undefined && def.visibleFromCockpit !== undefined) {
+        pairs.push([def.visible, def.visibleFromCockpit]);
+      }
+    }
+  }
+  assert.ok(pairs.length > 50, 'cockpit visibility should be computed for most panels');
+  assert.ok(pairs.some(([out, seat]) => out - seat > 0.5), 'expected panels visible outside but not from the seat');
+  assert.ok(pairs.some(([out, seat]) => seat - out > 0.1), 'expected panels more visible from the seat than outside');
+});
+
+test('tiled UVs are clamped and flagged, never emitted out of range', async () => {
+  // Tiling textures run past 0..1 on purpose. Writing the raw bounds produces a
+  // rect starting at -0.006, which is not a texture coordinate.
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  for (const [role, panels] of Object.entries(p.panels)) {
+    for (const [name, def] of Object.entries(panels)) {
+      for (const n of def.rect) {
+        assert.ok(n >= 0 && n <= 1, `${role}.${name} rect out of range: ${def.rect}`);
+      }
+      if (def.tiled) assert.ok(Array.isArray(def.uvBounds), `${role}.${name} tiled but has no uvBounds`);
+    }
+  }
+});

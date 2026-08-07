@@ -134,6 +134,17 @@ export function guessRole(file) {
   const n = file.replace(/\.dds$/i, '').toLowerCase();
   if (/chassis|body|carrozzeria/.test(n)) return 'body';
   if (/tyre|tire/.test(n)) return 'tyres';
+
+  // Cockpit parts come BEFORE the rim/wheel rule, which would otherwise swallow
+  // anything with "wheel" in the name — a steering wheel is not a rim, and a
+  // wheel-hub logo is neither.
+  if (/logo/.test(n) && /wheel|steer|hub/.test(n)) return 'wheelLogo';
+  if (/steer/.test(n)) return 'steeringWheel';
+  if (/grip/.test(n)) return 'grips';
+  if (/belt/.test(n)) return 'belts';
+  if (/interior|cockpit|^int[_-]/.test(n)) return 'interior';
+  if (/logo|emblem|badge/.test(n)) return 'logo';
+
   if (/rim|wheel|brake/.test(n)) return 'rims';
   if (/helmet|casco/.test(n)) return 'helmet';
   if (/glove/.test(n)) return 'gloves';
