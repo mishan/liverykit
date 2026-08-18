@@ -222,17 +222,20 @@ Per panel:
 | `adjacent` | panels that physically touch this one on the car |
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
-| `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
-
-Top-level `leaveStock` lists paintable textures a profile recommends *not*
-painting, with reasons — baked shadow overlays, mirror surfaces, motion-blur
-variants and the car maker's own badges. They're bound as diffuse maps and will
-happily accept artwork; it just makes the car worse.
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
+| `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
+| `uvBounds` | present only when `tiled`: the true UV extent, before clamping |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 
-Top level: `textures` (role → file, size, alpha), `doNotPaint` (with reasons),
-`aliases`, and `caseCollisions`.
+Top level: `textures` (role → file, size, alpha), `aliases`, `caseCollisions`,
+and two different "don't paint this" lists:
+
+- **`doNotPaint`** — textures the model binds as something other than colour:
+  normal maps, shader maps, dirt masks. Painting one corrupts the thing it
+  encodes.
+- **`leaveStock`** — textures that genuinely *are* colour maps and will happily
+  accept artwork, but shouldn't get it: baked shadow overlays, mirror surfaces,
+  motion-blur variants, and the car maker's own badges. Each entry says why.
 
 ---
 

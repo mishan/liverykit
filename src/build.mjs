@@ -136,7 +136,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
     const { width, height } = tex;
     const shape = gridShape(width, height, cells);
     const png = await rasterize(uvGridSvg({
-      width, height, label: `${role}  ${tex.file.replace(/\.dds$/i, '')}`, font, cols: cells,
+      width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
     const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));

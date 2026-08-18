@@ -250,6 +250,18 @@ export function computeCockpitVisibility(model, islands, {
   const maxSteps = Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5);
   const lift = cellSize * 1.6;
 
+  // Now that rays run all the way to the eye, an eye sitting inside geometry
+  // would occlude everything and quietly report the whole cockpit as unseen.
+  // Worth checking, because the eye position is an estimate.
+  const ei = Math.floor((point.x - occ.x0) / occ.cellSize);
+  const ej = Math.floor((point.y - occ.y0) / occ.cellSize);
+  const ek = Math.floor((point.z - occ.z0) / occ.cellSize);
+  const inside = ei >= 0 && ej >= 0 && ek >= 0 && ei < occ.nx && ej < occ.ny && ek < occ.nz;
+  if (inside && occ.grid[occ.idx(ei, ej, ek)]) {
+    log(`  ! estimated eye (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) ` +
+        `lands inside geometry — cockpit visibility will read low for everything`);
+  }
+
   for (const isl of islands) {
     let seen = 0;
     for (const i of isl.vertices) {
@@ -258,7 +270,11 @@ export function computeCockpitVisibility(model, islands, {
       const d = Math.hypot(dx, dy, dz) || 1;
       dx /= d; dy /= d; dz /= d;
       if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;   // facing away
-      const steps = Math.min(maxSteps, Math.ceil(d / (occ.cellSize * 0.7)) - 2);
+      // March the WHOLE way to the eye. Stopping short leaves a blind spot at
+      // the near end of the ray, so anything sitting just in front of the
+      // driver — a wheel rim, a roll hoop — fails to occlude and the panel
+      // behind it reports as visible.
+      const steps = Math.min(maxSteps, Math.ceil(d / (occ.cellSize * 0.7)));
       if (steps <= 0) { seen++; continue; }
       if (escapes(occ, p.x + p.nx * lift, p.y + p.ny * lift, p.z + p.nz * lift, dx, dy, dz, steps)) seen++;
     }
