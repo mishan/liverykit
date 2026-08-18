@@ -89,7 +89,8 @@ completely unseeable.
 npm install
 ```
 
-Node 18+. One npm dependency (`sharp`, which ships prebuilt binaries, so there's
+Node 20.9 or newer — that is what sharp's prebuilt binaries require, so it is
+the real floor rather than a preference. One npm dependency (`sharp`, which ships prebuilt binaries, so there's
 no build toolchain), plus **ImageMagick on your PATH** — it's called as a
 subprocess and works with either `magick` (IM7) or `convert` (IM6).
 

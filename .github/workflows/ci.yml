@@ -22,9 +22,9 @@ jobs:
       # Report every version that breaks, not just the first.
       fail-fast: false
       matrix:
-        # package.json claims engines >=18, so 18 is tested to keep that claim
-        # honest rather than aspirational.
-        node: ['18', '20', '22']
+        # Matches package.json engines. sharp's prebuilt binaries require
+        # Node >=20.9, so 18 cannot work however much we might want it to.
+        node: ['20', '22', '24']
     steps:
       - uses: actions/checkout@v4
 
@@ -78,9 +78,17 @@ jobs:
           if not files:
               sys.exit('no DDS files were produced')
 
+          # A truncated file should be reported as truncated, not raise
+          # struct.error and bury the real problem in a traceback.
+          HEADER = 128
+
           problems = []
           for path in files:
-              head = open(path, 'rb').read(148)
+              with open(path, 'rb') as fh:
+                  head = fh.read(HEADER)
+              if len(head) < HEADER:
+                  problems.append(f'{path}: truncated — {len(head)} bytes, need {HEADER}')
+                  continue
               if head[:4] != b'DDS ':
                   problems.append(f'{path}: not a DDS')
                   continue
