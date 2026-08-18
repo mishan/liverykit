@@ -1,7 +1,8 @@
 import sharp from 'sharp';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access, constants } from 'node:fs/promises';
+import { access, constants, copyFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const run = promisify(execFile);
 
@@ -81,6 +82,23 @@ export async function composeLayers({ base, emissive, hasEmissive, glowSigma = 1
  * Note: dds:mipmaps=0 means NO mipmaps here (unlike texconv's -m 0), so the
  * full chain length is passed in.
  */
+/**
+ * True when a texture should be written as PNG rather than encoded to DDS.
+ *
+ * AC binds .png textures directly — the wheel faces on the car this was built
+ * against are a 28x28 PNG covering nearly twenty thousand vertices. Those can't
+ * become DDS: the name wouldn't match, and 28 isn't a power of two. Forcing
+ * every output through the DDS encoder made a visible chunk of the car
+ * unpaintable for no reason.
+ */
+export const isPngTexture = (file) => /\.png$/i.test(file);
+
+/** Copy the rendered PNG through unchanged, since it is already the format. */
+export async function toPNG(srcPath, outPath) {
+  if (resolve(srcPath) === resolve(outPath)) return;
+  await copyFile(srcPath, outPath);
+}
+
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {
   const bin = await magickBin();
   // Not a warning: ImageMagick refuses to build a mip chain for a

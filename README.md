@@ -223,6 +223,11 @@ Per panel:
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
+
+Top-level `leaveStock` lists paintable textures a profile recommends *not*
+painting, with reasons — baked shadow overlays, mirror surfaces, motion-blur
+variants and the car maker's own badges. They're bound as diffuse maps and will
+happily accept artwork; it just makes the car worse.
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 
@@ -319,6 +324,10 @@ All of these fail silently.
   needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
 - **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
   them and exits 0. liverykit refuses these outright.
+- **Not every texture is a DDS.** Models bind `.png` textures too — on the
+  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
+  vertices. Those are written as PNG; forcing a DDS would produce a filename
+  that matches nothing.
 - **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The
   classic cause of "why is my car white" with other tools.
 - **A filename that matches nothing overrides nothing.** No error anywhere; you
