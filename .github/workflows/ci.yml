@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Pushing again to a PR should replace the in-flight run rather than queue
+# behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every version that breaks, not just the first.
+      fail-fast: false
+      matrix:
+        # package.json claims engines >=18, so 18 is tested to keep that claim
+        # honest rather than aspirational.
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # The unit tests deliberately avoid ImageMagick — they cover the things
+      # that fail *silently* (DDS header maths, mip chain lengths, ZIP
+      # integrity, UV rect validation) and none of those need the encoder.
+      - run: npm test
+
+  build:
+    name: build a livery end to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # ImageMagick does the DDS encoding, and it is a subprocess, so no unit
+      # test reaches it. Fonts matter too: librsvg silently substitutes a
+      # missing face, and the text comes out a different width with no warning.
+      - name: install ImageMagick and fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends imagemagick fonts-dejavu-core
+
+      - run: npm ci
+
+      - name: build the example livery
+        run: node bin/liverykit.mjs neon-grid --out dist
+
+      # The encoder's failure modes are quiet: a wrong mip count or a DX10
+      # header produces a file that installs cleanly and renders wrong. Checking
+      # the bytes is the only way to notice in CI.
+      - name: verify the encoded output
+        run: |
+          test -f dist/neon_grid.zip
+          unzip -l dist/neon_grid.zip
+          python3 - <<'PY'
+          import glob, math, struct, sys
+
+          files = sorted(glob.glob('dist/neon_grid/*.dds'))
+          if not files:
+              sys.exit('no DDS files were produced')
+
+          problems = []
+          for path in files:
+              head = open(path, 'rb').read(148)
+              if head[:4] != b'DDS ':
+                  problems.append(f'{path}: not a DDS')
+                  continue
+              _, _, height, width, _, _, mips = struct.unpack_from('<7I', head, 4)
+              fourcc = head[84:88].decode('ascii', 'replace')
+              expected = int(math.log2(max(width, height))) + 1
+              if fourcc == 'DX10':
+                  problems.append(f'{path}: DX10 header — AC is DX9 and ignores these')
+              if fourcc not in ('DXT1', 'DXT5'):
+                  problems.append(f'{path}: unexpected format {fourcc!r}')
+              if mips != expected:
+                  problems.append(f'{path}: {mips} mip levels, expected {expected}')
+              print(f'  ok {path} {width}x{height} {fourcc} mips={mips}')
+
+          print(f'{len(files)} DDS files checked')
+          if problems:
+              sys.exit('\n'.join(problems))
+          PY
