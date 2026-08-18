@@ -315,3 +315,26 @@ test('tiled UVs are clamped and flagged, never emitted out of range', async () =
     }
   }
 });
+
+test('PNG textures are written as PNG, not forced through the DDS encoder', async () => {
+  // AC binds .png textures directly. Forcing them to DDS produces a file whose
+  // name can't match, and non-power-of-two sizes are refused outright — which
+  // silently made the wheel faces unpaintable.
+  const { isPngTexture } = await import('../src/engine/pipeline.mjs');
+  assert.equal(isPngTexture('CSW_PNG.png'), true);
+  assert.equal(isPngTexture('Body_D.dds'), false);
+  assert.equal(isPngTexture('weird.PNG'), true);
+});
+
+test('the shipped profile records what is deliberately left stock', async () => {
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  assert.ok(Array.isArray(p.leaveStock) && p.leaveStock.length,
+    'a profile should say which paintable textures it recommends not painting');
+  for (const e of p.leaveStock) assert.ok(e.file && e.reason, 'every entry needs a reason');
+  // Nothing in leaveStock should also be painted by the example livery.
+  const livery = (await import('../liveries/neon-grid.mjs')).default;
+  const paintedFiles = new Set(Object.keys(livery.paint).map((r) => p.textures[r]?.file));
+  for (const e of p.leaveStock) {
+    assert.ok(!paintedFiles.has(e.file), `${e.file} is both painted and marked leave-stock`);
+  }
+});

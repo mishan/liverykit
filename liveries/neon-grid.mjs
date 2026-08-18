@@ -133,6 +133,91 @@ export default {
     },
 
     // ------------------------------------------------------------------
+    // SEATBELTS
+    //
+    // Four separate textures — webbing, hardware, shoulder pads, and a small
+    // logo strip. Straight across your chest in every cockpit shot, and the
+    // hardware scores 90% visible from the seat AND 86% from trackside, which
+    // is rare: most surfaces are one or the other.
+    //
+    // Only the hardware is big enough to have mapped panels. The other three
+    // are small single-purpose textures where the whole image IS the surface,
+    // so they use absolute coordinates. Belt webbing is a long strip, so bands
+    // running the length of the texture read as stripes along the belt.
+    // ------------------------------------------------------------------
+
+    belts: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',   panel: 'buckles', color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'buckles', at: [0, 0.42, 1, 0.16], color: 'accent', glow: true, safe: false },
+      ],
+    },
+
+    // Webbing.
+    belts_2: {
+      background: 'base',
+      regions: [
+        { treatment: 'stripe', at: [0, 0.00, 1, 0.10], color: 'ink' },
+        { treatment: 'stripe', at: [0, 0.90, 1, 0.10], color: 'ink' },
+        { treatment: 'stripe', at: [0, 0.46, 1, 0.06], color: 'accent', glow: true },
+        { treatment: 'text', at: [0.02, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.52, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.02, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.52, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+      ],
+    },
+
+    // Shoulder pads.
+    belts_3: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', at: [0, 0.3, 1, 0.7], color: 'base', angle: 0, cell: 20 },
+        { treatment: 'stripe',   at: [0, 0.22, 1, 0.05], color: 'accent', glow: true },
+      ],
+    },
+
+    // Belt logo strip — a badge slot, like the wheel hub.
+    belts_4: {
+      background: 'ink',
+      regions: [
+        { treatment: 'text', at: [0.05, 0.28, 0.9, 0.44], text: '{team}', color: 'accent', glow: true, tracking: 0.10 },
+      ],
+    },
+
+    // ------------------------------------------------------------------
+    // WHEELS
+    //
+    // On an open-wheeler the front wheels are permanently in your field of
+    // view from the cockpit. The face is a .png in the model, not a .dds, and
+    // only 28x28 — the pipeline writes PNG for these rather than forcing a DDS
+    // encode that could never match the filename anyway. Rendered at 256 for
+    // free detail, since UVs are fractions.
+    // ------------------------------------------------------------------
+
+    rimFace: {
+      background: 'ink',
+      regions: [
+        { treatment: 'ring', radius: 0.46, width: 0.035, color: 'accent', glow: true },
+        { treatment: 'ring', radius: 0.30, width: 0.02,  color: 'base' },
+        { treatment: 'halftone', at: [0, 0, 1, 1], color: 'base', cell: 26, dot: 0.16, start: 0, end: 200 },
+      ],
+    },
+
+    // Shared metal — suspension, calipers, hubs, roll hoop, rim spokes. 83
+    // meshes on one 256x256 texture, so this is the one change that touches
+    // the most parts at once. Kept restrained for that reason: a dark base
+    // reads as anodised rather than repainted, and nothing here implies a
+    // shape that could land wrong on an unrelated component.
+    metal: {
+      background: '#15151C',
+      regions: [
+        { treatment: 'halftone',  at: [0, 0, 1, 1], color: 'base', cell: 22, dot: 0.10, start: 0, end: 200 },
+        { treatment: 'scanlines', opacity: 0.14 },
+      ],
+    },
+
+    // ------------------------------------------------------------------
     // COCKPIT
     //
     // If you drive in cockpit view, this is the livery you actually look at
