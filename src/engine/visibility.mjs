@@ -189,3 +189,96 @@ export function computeSafeAreas(model, islands, {
 }
 
 const round = (n) => Math.round(n * 10000) / 10000;
+
+// ---------------------------------------------------------------------------
+// The cockpit is a second viewpoint, and it inverts the answer.
+//
+// Everything above asks "can this be seen from trackside", which is the right
+// question for a livery people watch go past. It is the wrong question for the
+// person driving. A cockpit-view driver spends the whole race looking at the
+// tub interior, the steering wheel and the nose ahead — surfaces the trackside
+// pass scores at near zero precisely because they are enclosed.
+//
+// So visibility is not a property of a surface. It is a property of a surface
+// AND a place to stand.
+// ---------------------------------------------------------------------------
+
+/**
+ * Estimate the driver's eye position.
+ *
+ * AC keeps the real value in the car's data files, which are usually packed
+ * inside data.acd and often encrypted, so it is derived from geometry instead:
+ * find the steering wheel, then sit back and up from it by roughly the offset a
+ * seated driver has. Crude, but a viewpoint 10 cm out barely changes which
+ * panels are visible — and it is checkable, since the eye should end up inside
+ * the car's bounding box and above its floor.
+ */
+export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
+  let best = null;
+  for (const mesh of model.meshes) {
+    if (!/steer|wheel_chassis/i.test(mesh.name)) continue;
+    if (mesh.vertexCount < 200) continue;
+    let x = 0, y = 0, z = 0;
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const v = vertex(model, mesh, i); x += v.x; y += v.y; z += v.z;
+    }
+    const c = { x: x / mesh.vertexCount, y: y / mesh.vertexCount, z: z / mesh.vertexCount };
+    // Steering wheels sit near the centreline; anything far off it is a road wheel.
+    if (Math.abs(c.x) > 0.25) continue;
+    if (!best || mesh.vertexCount > best.n) best = { ...c, n: mesh.vertexCount, from: mesh.name };
+  }
+  if (!best) return null;
+  return { x: best.x, y: best.y + up, z: best.z - back * front, from: best.from };
+}
+
+/**
+ * Fraction of each island visible from a single point inside the car.
+ *
+ * Rays go from the surface toward the eye, and the surface has to face it —
+ * the back of a bulkhead one metre away is not "visible" just because nothing
+ * happens to be in between.
+ */
+export function computeCockpitVisibility(model, islands, {
+  eye = null, occluders = model.meshes, cellSize = 0.02, log = () => {},
+} = {}) {
+  const point = eye ?? cockpitEye(model);
+  if (!point) {
+    log('  - no steering wheel found; skipping cockpit visibility');
+    return islands;
+  }
+  const occ = buildOccupancy(model, occluders, cellSize);
+  const maxSteps = Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5);
+  const lift = cellSize * 1.6;
+
+  // Now that rays run all the way to the eye, an eye sitting inside geometry
+  // would occlude everything and quietly report the whole cockpit as unseen.
+  // Worth checking, because the eye position is an estimate.
+  const ei = Math.floor((point.x - occ.x0) / occ.cellSize);
+  const ej = Math.floor((point.y - occ.y0) / occ.cellSize);
+  const ek = Math.floor((point.z - occ.z0) / occ.cellSize);
+  const inside = ei >= 0 && ej >= 0 && ek >= 0 && ei < occ.nx && ej < occ.ny && ek < occ.nz;
+  if (inside && occ.grid[occ.idx(ei, ej, ek)]) {
+    log(`  ! estimated eye (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) ` +
+        `lands inside geometry — cockpit visibility will read low for everything`);
+  }
+
+  for (const isl of islands) {
+    let seen = 0;
+    for (const i of isl.vertices) {
+      const p = vertex(model, isl.meshRef, i);
+      let dx = point.x - p.x, dy = point.y - p.y, dz = point.z - p.z;
+      const d = Math.hypot(dx, dy, dz) || 1;
+      dx /= d; dy /= d; dz /= d;
+      if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;   // facing away
+      // March the WHOLE way to the eye. Stopping short leaves a blind spot at
+      // the near end of the ray, so anything sitting just in front of the
+      // driver — a wheel rim, a roll hoop — fails to occlude and the panel
+      // behind it reports as visible.
+      const steps = Math.min(maxSteps, Math.ceil(d / (occ.cellSize * 0.7)));
+      if (steps <= 0) { seen++; continue; }
+      if (escapes(occ, p.x + p.nx * lift, p.y + p.ny * lift, p.z + p.nz * lift, dx, dy, dz, steps)) seen++;
+    }
+    isl.cockpitFraction = Math.round((seen / isl.vertexCount) * 100) / 100;
+  }
+  return islands;
+}

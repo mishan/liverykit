@@ -109,11 +109,21 @@ function measure(model, mesh, verts, tris) {
     wsum += w;
   }
 
+  // UVs are not confined to 0..1. A tiling texture — rubber, carbon weave,
+  // fabric — deliberately runs past the edge so it repeats, and the raw bounds
+  // then describe a region larger than the image. Panel-relative coordinates
+  // don't mean much on such a panel, so it is clamped and flagged rather than
+  // silently emitting a rectangle that starts at -0.006.
+  const tiled = u0 < -0.001 || v0 < -0.001 || u1 > 1.001 || v1 > 1.001;
+  const cu0 = clamp01(u0), cv0 = clamp01(v0), cu1 = clamp01(u1), cv1 = clamp01(v1);
+
   return {
     mesh: mesh.name,
     vertices: verts,
     vertexCount: n,
-    rect: [round(u0), round(v0), round(u1 - u0), round(v1 - v0)],
+    tiled,
+    uvBounds: tiled ? [round(u0), round(v0), round(u1 - u0), round(v1 - v0)] : undefined,
+    rect: [round(cu0), round(cv0), round(cu1 - cu0), round(cv1 - cv0)],
     uv: { u0, u1, v0, v1 },
     box3d: { x0, x1, y0, y1, z0, z1 },
     centroid: { x: cx / n, y: cy / n, z: cz / n },
@@ -127,6 +137,7 @@ function measure(model, mesh, verts, tris) {
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const len = (a) => Math.hypot(a[0], a[1], a[2]);
 const round = (n) => Math.round(n * 10000) / 10000;
+const clamp01 = (n) => Math.min(1, Math.max(0, n));
 
 /**
  * Systematic geometric names: side_section_level.

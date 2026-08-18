@@ -212,7 +212,7 @@ test('mip chain length is an integer the encoder can actually honour', () => {
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
 
-function buildKn5({ version = 6 } = {}) {
+function buildKn5({ version = 6, extraMeshes = [] } = {}) {
   const parts = [];
   const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
   const f32 = (n) => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
@@ -232,7 +232,7 @@ function buildKn5({ version = 6 } = {}) {
 
   // root dummy -> one mesh child
   const ident = Buffer.concat([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1].map(f32));
-  parts.push(u32(1), str('root'), u32(1), Buffer.from([1]), ident);
+  parts.push(u32(1), str('root'), u32(1 + extraMeshes.length), Buffer.from([1]), ident);
 
   const verts = [
     [0, 0, 0,  0, 1, 0,  0.25, -0.75,  0, 0, 0],
@@ -244,6 +244,19 @@ function buildKn5({ version = 6 } = {}) {
     u32(3), Buffer.from([0, 0, 1, 0, 2, 0]),
     u32(0),                    // materialId — first of the 33-byte trailer
     Buffer.alloc(29));         // layer, lodIn, lodOut, bounding sphere, isRenderable
+
+  // Extra meshes, for tests that need geometry the analysis will look for by
+  // name (a steering wheel) or trip over (an occluder).
+  for (const em of extraMeshes) {
+    // Indices matter: the occupancy grid is built by SAMPLING TRIANGLES, so a
+    // mesh with no index buffer occupies nothing and cannot occlude.
+    const idx = em.indices ?? [];
+    const idxBuf = Buffer.alloc(idx.length * 2);
+    idx.forEach((v, i) => idxBuf.writeUInt16LE(v, i * 2));
+    parts.push(u32(2), str(em.name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
+      u32(em.verts.length), ...em.verts.map((v) => Buffer.concat(v.map(f32))),
+      u32(idx.length), idxBuf, u32(0), Buffer.alloc(29));
+  }
   return Buffer.concat(parts);
 }
 
@@ -282,4 +295,129 @@ test('kn5: islands carry exact rects and a real anisotropy', async () => {
   assert.equal(islands.length, 1);
   assert.deepEqual(islands[0].rect, [0.25, 0.25, 0.5, 0.5]);
   assert.ok(Number.isFinite(islands[0].anisotropy) && islands[0].anisotropy > 0);
+});
+
+test('visibility depends on where you stand, not just on the surface', async () => {
+  // The whole point of a second viewpoint: a surface hidden from trackside can
+  // be the one a cockpit driver stares at all race, and vice versa. If these
+  // two ever agree everywhere, the cockpit pass has silently stopped working.
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const pairs = [];
+  for (const panels of Object.values(p.panels)) {
+    for (const def of Object.values(panels)) {
+      if (def.visible !== undefined && def.visibleFromCockpit !== undefined) {
+        pairs.push([def.visible, def.visibleFromCockpit]);
+      }
+    }
+  }
+  assert.ok(pairs.length > 50, 'cockpit visibility should be computed for most panels');
+  assert.ok(pairs.some(([out, seat]) => out - seat > 0.5), 'expected panels visible outside but not from the seat');
+  assert.ok(pairs.some(([out, seat]) => seat - out > 0.1), 'expected panels more visible from the seat than outside');
+});
+
+test('tiled UVs are clamped and flagged, never emitted out of range', async () => {
+  // Tiling textures run past 0..1 on purpose. Writing the raw bounds produces a
+  // rect starting at -0.006, which is not a texture coordinate.
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  for (const [role, panels] of Object.entries(p.panels)) {
+    for (const [name, def] of Object.entries(panels)) {
+      for (const n of def.rect) {
+        assert.ok(n >= 0 && n <= 1, `${role}.${name} rect out of range: ${def.rect}`);
+      }
+      if (def.tiled) assert.ok(Array.isArray(def.uvBounds), `${role}.${name} tiled but has no uvBounds`);
+    }
+  }
+});
+
+test('PNG textures are written as PNG, not forced through the DDS encoder', async () => {
+  // AC binds .png textures directly. Forcing them to DDS produces a file whose
+  // name can't match, and non-power-of-two sizes are refused outright — which
+  // silently made the wheel faces unpaintable.
+  const { isPngTexture } = await import('../src/engine/pipeline.mjs');
+  assert.equal(isPngTexture('CSW_PNG.png'), true);
+  assert.equal(isPngTexture('Body_D.dds'), false);
+  assert.equal(isPngTexture('weird.PNG'), true);
+});
+
+test('the shipped profile records what is deliberately left stock', async () => {
+  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  assert.ok(Array.isArray(p.leaveStock) && p.leaveStock.length,
+    'a profile should say which paintable textures it recommends not painting');
+  for (const e of p.leaveStock) assert.ok(e.file && e.reason, 'every entry needs a reason');
+  // Nothing in leaveStock should also be painted by the example livery.
+  const livery = (await import('../liveries/neon-grid.mjs')).default;
+  const paintedFiles = new Set(Object.keys(livery.paint).map((r) => p.textures[r]?.file));
+  for (const e of p.leaveStock) {
+    assert.ok(!paintedFiles.has(e.file), `${e.file} is both painted and marked leave-stock`);
+  }
+});
+
+/**
+ * A solid triangulated panel at `z`, dense enough to voxelise without gaps.
+ * `cols`/`rows` grid, two triangles per cell.
+ */
+function panelMesh(name, z, normalZ, cols = 20, rows = 20, half = 0.35) {
+  const verts = [];
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c <= cols; c++) {
+      const x = (c / cols - 0.5) * half * 2;
+      const y = (r / rows) * half * 2;
+      verts.push([x, y, z, 0, 0, normalZ, c / cols, -(r / rows), 0, 0, 0]);
+    }
+  }
+  const indices = [];
+  const at = (c, r) => r * (cols + 1) + c;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      indices.push(at(c, r), at(c + 1, r), at(c, r + 1));
+      indices.push(at(c + 1, r), at(c + 1, r + 1), at(c, r + 1));
+    }
+  }
+  return { name, verts, indices };
+}
+
+test('cockpitEye respects which way the model calls forward', async () => {
+  // The eye sits BACK from the steering wheel. On a model where +Z is rearward
+  // that offset has to flip, or the eye lands out in front of the car and every
+  // cockpit visibility number is meaningless.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { cockpitEye } = await import('../src/engine/visibility.mjs');
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('RSS4_Steer_M', 0.4, 1)] }));
+
+  const fwd = cockpitEye(m, { front: 1 });
+  const rev = cockpitEye(m, { front: -1 });
+  assert.equal(fwd.from, 'RSS4_Steer_M');
+  assert.ok(fwd.z < 0.4, `+Z forward: eye should sit behind the wheel, got ${fwd.z}`);
+  assert.ok(rev.z > 0.4, `-Z forward: eye should sit the other side, got ${rev.z}`);
+  assert.ok(Math.abs((fwd.z - 0.4) + (rev.z - 0.4)) < 1e-6, 'offsets should mirror exactly');
+});
+
+test('cockpit visibility respects occluders between panel and eye', async () => {
+  // Locks in the mechanism. It does NOT pin the exact step budget: the march
+  // used to stop ~3 cm short of the eye, and no scene I could build made that
+  // change the answer — an occluder has to be within 3 cm of the eyeball to
+  // notice. The budget was fixed anyway, because marching the whole way is
+  // correct and costs nothing, but this test would not have caught it.
+  const { parseKn5Buffer, meshesUsingTexture } = await import('../src/engine/kn5.mjs');
+  const { findIslands } = await import('../src/engine/islands.mjs');
+  const { computeCockpitVisibility } = await import('../src/engine/visibility.mjs');
+
+  // Body vertices sit at z <= 1, the wall at 1.2, the eye at 1.5, so every
+  // line of sight has to cross the wall.
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('WALL', 1.2, 1)] }));
+  // Select the body mesh by name. The synthetic wall shares its material, so
+  // asking by texture would return both islands and the wall — being the
+  // frontmost thing — is trivially visible.
+  const islands = findIslands(m, m.meshes.filter((x) => x.name === 'body_mesh'), { minVertices: 1 });
+  assert.equal(islands.length, 1, 'expected exactly the body island');
+
+  computeCockpitVisibility(m, islands, { eye: { x: 0, y: 0.1, z: 1.5 }, cellSize: 0.02 });
+  assert.equal(islands[0].cockpitFraction, 0, 'a wall between panel and eye must occlude');
+
+  // Same scene without the wall: the panel is plainly visible, which proves the
+  // assertion above is measuring occlusion and not something incidental.
+  const clear = parseKn5Buffer(buildKn5());
+  const open = findIslands(clear, clear.meshes.filter((x) => x.name === 'body_mesh'), { minVertices: 1 });
+  computeCockpitVisibility(clear, open, { eye: { x: 0, y: 0.1, z: 1.5 }, cellSize: 0.02 });
+  assert.ok(open[0].cockpitFraction > 0, 'with nothing in the way it should be visible');
 });

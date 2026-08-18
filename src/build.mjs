@@ -7,7 +7,7 @@ import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import { join, isAbsolute, resolve } from 'node:path';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
+import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
 import { packageZip, makePreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -76,17 +76,19 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       aoPath: flat ? null : resolveAo(livery.ao?.[role], liveryDir),
     });
 
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.dds$/i, '.png'));
-    const ddsPath = join(outDir, tex.file);
+    const asPng = isPngTexture(tex.file);
+    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
+    const outPath = join(outDir, tex.file);
     await writeFile(pngPath, png);
-    await toDDS(pngPath, ddsPath, { width, height, alpha: tex.alpha ?? false });
-    if (!pngDir) await rm(pngPath);
+    if (asPng) await toPNG(pngPath, outPath);
+    else await toDDS(pngPath, outPath, { width, height, alpha: tex.alpha ?? false });
+    if (!pngDir && pngPath !== outPath) await rm(pngPath);
 
     firstPng ??= png;
     written.push(tex.file);
-    const kb = (await stat(ddsPath)).size / 1024;
+    const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
-      `${tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
+      `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
   }
 
   await writeMetadata({ outDir, livery, firstPng });
@@ -119,7 +121,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
   // scraps that cannot be DDS-encoded at all and would be unreadable as a grid
   // even if they could.
   const worth = Object.entries(profile.textures).filter(([role, tex]) => {
-    if (!isPow2(tex.width) || !isPow2(tex.height)) {
+    if (!isPngTexture(tex.file) && (!isPow2(tex.width) || !isPow2(tex.height))) {
       log(`  - ${tex.file} skipped: ${tex.width}x${tex.height} is not a power of two`);
       return false;
     }
@@ -134,13 +136,15 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
     const { width, height } = tex;
     const shape = gridShape(width, height, cells);
     const png = await rasterize(uvGridSvg({
-      width, height, label: `${role}  ${tex.file.replace(/\.dds$/i, '')}`, font, cols: cells,
+      width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.dds$/i, '.png'));
+    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
+    const outPath = join(outDir, tex.file);
     await writeFile(pngPath, png);
-    await toDDS(pngPath, join(outDir, tex.file), { width, height, alpha: tex.alpha ?? false });
-    if (!pngDir) await rm(pngPath);
+    if (isPngTexture(tex.file)) await toPNG(pngPath, outPath);
+    else await toDDS(pngPath, outPath, { width, height, alpha: tex.alpha ?? false });
+    if (!pngDir && pngPath !== outPath) await rm(pngPath);
 
     firstPng ??= png;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +

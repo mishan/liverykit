@@ -18,7 +18,7 @@
 
 import { parseKn5, meshesUsingTexture, axisHints } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './islands.mjs';
-import { computeSafeAreas } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins } from './scan.mjs';
 
 /** DDS/PNG header straight from the blob embedded in the model. */
@@ -77,7 +77,7 @@ const SLOT_MEANING = {
  * listing three hundred of them is unreadable.
  */
 export async function profileFromKn5(path, {
-  id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.02,
+  id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008,
   visibility = true,
   skinsDir = null, log = () => {},
 } = {}) {
@@ -86,6 +86,12 @@ export async function profileFromKn5(path, {
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
   log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
       `${axes.confident ? '' : '  (LOW CONFIDENCE — few directional mesh names to check against)'}`);
+
+  // `front` matters: cockpitEye sits BACK from the steering wheel, and on a
+  // model where +Z is rearward that offset has to flip or the eye ends up out
+  // in front of the car.
+  const eye = visibility ? cockpitEye(model, { front: axes.front }) : null;
+  if (eye) log(`  driver's eye estimated at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)}) from ${eye.from}`);
 
   const headers = new Map(model.textures.map((t) => [t.name, imageHeader(t.name, t.data)]));
 
@@ -226,7 +232,13 @@ export async function profileFromKn5(path, {
     const adj = findAdjacency(model, keep);
     // Every mesh occludes, not just the painted ones — a wheel hides bodywork
     // as effectively as bodywork does.
-    if (visibility) computeSafeAreas(model, keep, { occluders: model.meshes, log });
+    if (visibility) {
+      computeSafeAreas(model, keep, { occluders: model.meshes, log });
+      // Visibility isn't a property of a surface, it's a property of a surface
+      // and a place to stand. A cockpit-view driver stares at the tub and the
+      // steering wheel all race — surfaces the trackside pass scores near zero.
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders: model.meshes, log });
+    }
 
     log(`  ${role.padEnd(8)} ${texName.padEnd(26)} ${islands.length} islands, ${keep.length} above threshold`);
 
@@ -241,7 +253,9 @@ export async function profileFromKn5(path, {
       };
       if (i.safe) p.safe = i.safe;
       if (i.visibleFraction !== undefined) p.visible = i.visibleFraction;
+      if (i.cockpitFraction !== undefined) p.visibleFromCockpit = i.cockpitFraction;
       if (i.hidden) p.hidden = true;
+      if (i.tiled) { p.tiled = true; p.uvBounds = i.uvBounds; }
       if (i.mirrorOf) p.mirrorOf = i.mirrorOf;
       const touching = [...(adj.get(i.name) ?? [])].sort();
       if (touching.length) p.adjacent = touching;
