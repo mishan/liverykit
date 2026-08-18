@@ -1,5 +1,7 @@
 # liverykit
 
+[![CI](https://github.com/mishan/liverykit/actions/workflows/ci.yml/badge.svg)](https://github.com/mishan/liverykit/actions/workflows/ci.yml)
+
 Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 
 ```sh
