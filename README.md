@@ -75,11 +75,18 @@ on a typical open-wheeler there are around 190 such pairs, and the front and rea
 halves of a single sidepod are routinely separate islands. Paint one and half the
 pod stays stock.
 
-**Which panels are visible.** Being inside a UV island doesn't mean anyone can
-see it. Duct interiors, bulkhead backs and floor undersides are all ordinary
-parts of an island. liverykit ray-casts against the whole car — wheels and wings
-included — and reports `visible` per panel. On the example car, 87 panels are
-completely unseeable.
+**Which panels are visible, and from where.** Being inside a UV island doesn't
+mean anyone can see it — duct interiors, bulkhead backs and floor undersides are
+all ordinary parts of an island. liverykit ray-casts against the whole car,
+wheels and wings included, and reports `visible` per panel. On the example car
+87 panels are completely unseeable from trackside.
+
+It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
+disagree sharply: the flanks score 99% outside and 6% from the seat, the tub
+interior the other way about. If you race in cockpit view, that second number is
+the one that matters — and the surfaces you stare at all race are on entirely
+separate textures from the bodywork, so an exterior-only livery leaves them
+stock. `liveries/neon-grid.mjs` paints them.
 
 ---
 
@@ -214,11 +221,21 @@ Per panel:
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
 | `visible` | fraction of the panel readable from trackside |
+| `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
+| `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
+| `uvBounds` | present only when `tiled`: the true UV extent, before clamping |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 
-Top level: `textures` (role → file, size, alpha), `doNotPaint` (with reasons),
-`aliases`, and `caseCollisions`.
+Top level: `textures` (role → file, size, alpha), `aliases`, `caseCollisions`,
+and two different "don't paint this" lists:
+
+- **`doNotPaint`** — textures the model binds as something other than colour:
+  normal maps, shader maps, dirt masks. Painting one corrupts the thing it
+  encodes.
+- **`leaveStock`** — textures that genuinely *are* colour maps and will happily
+  accept artwork, but shouldn't get it: baked shadow overlays, mirror surfaces,
+  motion-blur variants, and the car maker's own badges. Each entry says why.
 
 ---
 
@@ -310,6 +327,10 @@ All of these fail silently.
   needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
 - **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
   them and exits 0. liverykit refuses these outright.
+- **Not every texture is a DDS.** Models bind `.png` textures too — on the
+  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
+  vertices. Those are written as PNG; forcing a DDS would produce a filename
+  that matches nothing.
 - **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The
   classic cause of "why is my car white" with other tools.
 - **A filename that matches nothing overrides nothing.** No error anywhere; you

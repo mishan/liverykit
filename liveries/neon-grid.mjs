@@ -132,6 +132,175 @@ export default {
       ],
     },
 
+    // ------------------------------------------------------------------
+    // SEATBELTS
+    //
+    // Four separate textures — webbing, hardware, shoulder pads, and a small
+    // logo strip. Straight across your chest in every cockpit shot, and the
+    // hardware scores 90% visible from the seat AND 86% from trackside, which
+    // is rare: most surfaces are one or the other.
+    //
+    // Only the hardware is big enough to have mapped panels. The other three
+    // are small single-purpose textures where the whole image IS the surface,
+    // so they use absolute coordinates. Belt webbing is a long strip, so bands
+    // running the length of the texture read as stripes along the belt.
+    // ------------------------------------------------------------------
+
+    belts: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',   panel: 'buckles', color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'buckles', at: [0, 0.42, 1, 0.16], color: 'accent', glow: true, safe: false },
+      ],
+    },
+
+    // Webbing.
+    belts_2: {
+      background: 'base',
+      regions: [
+        { treatment: 'stripe', at: [0, 0.00, 1, 0.10], color: 'ink' },
+        { treatment: 'stripe', at: [0, 0.90, 1, 0.10], color: 'ink' },
+        { treatment: 'stripe', at: [0, 0.46, 1, 0.06], color: 'accent', glow: true },
+        { treatment: 'text', at: [0.02, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.52, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.02, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'text', at: [0.52, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+      ],
+    },
+
+    // Shoulder pads.
+    belts_3: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', at: [0, 0.3, 1, 0.7], color: 'base', angle: 0, cell: 20 },
+        { treatment: 'stripe',   at: [0, 0.22, 1, 0.05], color: 'accent', glow: true },
+      ],
+    },
+
+    // Belt logo strip — a badge slot, like the wheel hub.
+    belts_4: {
+      background: 'ink',
+      regions: [
+        { treatment: 'text', at: [0.05, 0.28, 0.9, 0.44], text: '{team}', color: 'accent', glow: true, tracking: 0.10 },
+      ],
+    },
+
+    // ------------------------------------------------------------------
+    // WHEELS
+    //
+    // On an open-wheeler the front wheels are permanently in your field of
+    // view from the cockpit. The face is a .png in the model, not a .dds, and
+    // only 28x28 — the pipeline writes PNG for these rather than forcing a DDS
+    // encode that could never match the filename anyway. Rendered at 256 for
+    // free detail, since UVs are fractions.
+    // ------------------------------------------------------------------
+
+    rimFace: {
+      background: 'ink',
+      regions: [
+        { treatment: 'ring', radius: 0.46, width: 0.035, color: 'accent', glow: true },
+        { treatment: 'ring', radius: 0.30, width: 0.02,  color: 'base' },
+        { treatment: 'halftone', at: [0, 0, 1, 1], color: 'base', cell: 26, dot: 0.16, start: 0, end: 200 },
+      ],
+    },
+
+    // Shared metal — suspension, calipers, hubs, roll hoop, rim spokes. 83
+    // meshes on one 256x256 texture, so this is the one change that touches
+    // the most parts at once. Kept restrained for that reason: a dark base
+    // reads as anodised rather than repainted, and nothing here implies a
+    // shape that could land wrong on an unrelated component.
+    metal: {
+      background: '#15151C',
+      regions: [
+        { treatment: 'halftone',  at: [0, 0, 1, 1], color: 'base', cell: 22, dot: 0.10, start: 0, end: 200 },
+        { treatment: 'scanlines', opacity: 0.14 },
+      ],
+    },
+
+    // ------------------------------------------------------------------
+    // COCKPIT
+    //
+    // If you drive in cockpit view, this is the livery you actually look at
+    // for a whole race — and it's on entirely separate textures from the
+    // bodywork, so an exterior-only livery leaves it stock.
+    //
+    // These panels were chosen by `visibleFromCockpit` in the car profile,
+    // which ray-casts from the driver's eye rather than from trackside.
+    // The two measures disagree sharply: the flanks score 99% outside and 6%
+    // from the seat, the tub interior the other way about. Visibility isn't a
+    // property of a surface, it's a property of a surface and a viewpoint.
+    // ------------------------------------------------------------------
+
+    // Tub interior — the sides in your peripheral vision.
+    interior: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',      panel: 'tub', color: 'ink', safe: false },
+        { treatment: 'halftone',  panel: 'tub', at: [0, 0.55, 1, 0.45], color: 'base', angle: 90, cell: 22, safe: false },
+        { treatment: 'stripe',    panel: 'tub', at: [0, 0.46, 1, 0.03], color: 'accent', glow: true, safe: false },
+        { treatment: 'scanlines', opacity: 0.10 },
+      ],
+    },
+
+    // The surround you see over the nose, plus the tub sides. `surround` is
+    // 100% visible from the seat — the most valuable panel on the car for a
+    // cockpit driver, and worth nothing at all from trackside.
+    interior_2: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',   panel: 'surround', color: 'base', safe: false },
+        { treatment: 'traces', panel: 'surround', at: [0.05, 0.05, 0.9, 0.9], lanes: 5, width: 3, safe: false },
+        { treatment: 'fill',   panel: 'sideLeft',  color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'sideRight', color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'sideLeft',  at: [0, 0.4, 1, 0.06], color: 'accent', glow: true, safe: false },
+        { treatment: 'stripe', panel: 'sideRight', at: [0, 0.4, 1, 0.06], color: 'accent', glow: true, safe: false },
+        { treatment: 'scanlines', opacity: 0.08 },
+      ],
+    },
+
+    // Steering wheel face — dead ahead, and never occluded by your hands.
+    steeringWheel: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',   panel: 'face', color: 'ink', safe: false },
+        { treatment: 'traces', panel: 'face', at: [0.05, 0.05, 0.9, 0.9], lanes: 6, width: 3, safe: false },
+        { treatment: 'stripe', panel: 'face', at: [0.46, 0, 0.08, 1], color: 'accent', glow: true, safe: false },
+        { treatment: 'fill',   panel: 'spoke', color: 'base', safe: false },
+      ],
+    },
+
+    // Wheel plastics and button console.
+    steeringWheel_2: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',   panel: 'console', color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'console', at: [0, 0.06, 1, 0.04], color: 'accent', glow: true, safe: false },
+      ],
+    },
+
+    // Hand grips. Partly hidden by your hands, so colour blocks only.
+    grips: {
+      background: 'ink',
+      regions: [
+        { treatment: 'fill',     panel: 'gripLeft',  color: 'ink', safe: false },
+        { treatment: 'fill',     panel: 'gripRight', color: 'ink', safe: false },
+        { treatment: 'halftone', panel: 'gripLeft',  at: [0, 0.6, 1, 0.4], color: 'base', angle: 90, cell: 18, safe: false },
+        { treatment: 'halftone', panel: 'gripRight', at: [0, 0.6, 1, 0.4], color: 'base', angle: 90, cell: 18, safe: false },
+      ],
+    },
+
+    // Wheel hub logo. This texture exists solely to carry a badge, so the
+    // whole image IS the sticker — no panel, absolute coordinates.
+    wheelLogo: {
+      background: 'ink',
+      regions: [
+        { treatment: 'ring', radius: 0.44, width: 0.05, color: 'accent', glow: true },
+        { treatment: 'ring', radius: 0.34, width: 0.02, color: 'base' },
+        { treatment: 'text', at: [0.1, 0.38, 0.8, 0.24], text: '{team}', color: 'white', tracking: 0.08 },
+        { treatment: 'text', at: [0.3, 0.6, 0.4, 0.18], text: '{number}', color: 'accent', glow: true, tracking: 0.06 },
+      ],
+    },
+
     // The car's SECOND body texture. Only visible by reading the model: no
     // stock skin folder makes it obvious, and the first version of this livery
     // left this whole area of the car unpainted.
