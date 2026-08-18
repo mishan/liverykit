@@ -87,7 +87,10 @@ export async function profileFromKn5(path, {
   log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
       `${axes.confident ? '' : '  (LOW CONFIDENCE — few directional mesh names to check against)'}`);
 
-  const eye = visibility ? cockpitEye(model) : null;
+  // `front` matters: cockpitEye sits BACK from the steering wheel, and on a
+  // model where +Z is rearward that offset has to flip or the eye ends up out
+  // in front of the car.
+  const eye = visibility ? cockpitEye(model, { front: axes.front }) : null;
   if (eye) log(`  driver's eye estimated at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)}) from ${eye.from}`);
 
   const headers = new Map(model.textures.map((t) => [t.name, imageHeader(t.name, t.data)]));
