@@ -258,10 +258,38 @@ Change the entry to `"source": "human"` once you agree. Regenerating the profile
 preserves everything marked `human` and replaces everything marked `auto`, the
 same way `aliases` are preserved.
 
-Two honest limits. A portable design cannot use panel **names**, only tags. And
-it cannot treat the roles behind one term differently — if `body` binds to two
-textures, both get the same artwork. Portable means coarser; a design written for
-one car will always look better on it.
+### Fitting a portable design to one car
+
+A portable design places its artwork on the largest visible panel of the right
+side. That is the best a measurement can do — nothing in the tool knows which
+PART of a panel is flat, or whether the middle of it wraps over a wheel arch.
+
+A **fit** records the adjustment, and belongs to neither the design nor the car
+but to the pair of them:
+
+```jsonc
+// fits/neon-grid-any@abarth500.json
+{
+  "livery": "neon-grid-any",
+  "car": "abarth500",
+  "regions": {
+    "number-left": { "panel": "left_mid", "at": [0.24, 0.18, 0.52, 0.52] },
+    "driver-left": { "drop": true }
+  }
+}
+```
+
+Picked up automatically as `fits/<livery>@<car>.json`, or passed with `--fit`.
+Regions need an `id` to be addressable; overrides are limited to placement
+(`panel`, `at`, `rotate`, `scale`, `safe`, `drop`) because anything more and a
+fit becomes a second livery language. A fit naming something that no longer
+exists is reported and ignored rather than fatal.
+
+Two honest limits remain. A portable design cannot use panel **names** in the
+design itself, only tags. And it cannot treat the roles behind one term
+differently — if `body` binds to two textures, both get the same artwork, though
+`once: true` will keep a car number on the primary one. Portable means coarser; a
+design written for one car will always look better on it.
 
 ---
 

@@ -8,6 +8,7 @@ import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
 import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { loadFit } from '../src/fit.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
 import '../src/index.mjs'; // registers the built-in packs
@@ -47,6 +48,8 @@ Options
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
   --profile <path>    override the car profile (default: cars/<livery.car>.json)
+  --fit <path>        per-car placement overrides for this design
+                      (default: fits/<livery>@<car>.json, if it exists)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
 
@@ -72,6 +75,7 @@ const { values, positionals } = parseArgs({
     'car-name': { type: 'string' },
     skins: { type: 'string' },
     profile: { type: 'string' },
+    fit: { type: 'string' },
     pack: { type: 'string', multiple: true, default: [] },
     help: { type: 'boolean', default: false },
   },
@@ -235,6 +239,22 @@ const profilePath = values.profile
   : join(ROOT, 'cars', `${livery.car}.json`);
 const profile = await loadProfile(profilePath);
 
+// A fit adjusts where THIS design's artwork sits on THIS car — see
+// docs/fitting.md. It is looked up by convention so the common case needs no
+// flag, and its absence is completely normal: a car without one renders exactly
+// as the design placed things.
+const liveryName = liveryPath.split(/[\\/]/).pop().replace(/\.mjs$/, '');
+const fitPath = values.fit
+  ? resolve(values.fit)
+  : join(ROOT, 'fits', `${liveryName}@${profile.id}.json`);
+const fit = await loadFit(fitPath).catch((e) => {
+  // An explicitly requested fit that will not load is an error; a missing
+  // conventional one is just a car nobody has tuned yet.
+  if (values.fit) fail(new Error(`Could not read --fit ${fitPath}: ${e.message}`));
+  return null;
+});
+if (fit) console.log(`  fit: ${fitPath.replace(ROOT + '/', '')}`);
+
 const folder = values.uvgrid ? `${livery.folder}_uvgrid` : livery.folder;
 const outDir = join(values.out, folder);
 
@@ -262,6 +282,7 @@ if (values.uvgrid) {
     scale: size ? size / largestTexture(profile) : 1,
     seed: values.seed,
     flat: values.flat,
+    fit,
     // Never inside outDir: packaging zips whatever it finds there.
     pngDir: values['keep-png'] ? join(values.out, `${folder}_png`) : null,
     liveryDir: dirname(liveryPath),

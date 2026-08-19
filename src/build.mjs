@@ -13,13 +13,14 @@ import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs'
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
+import { applyFit, regionIds, unusedFitIds } from './fit.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
 // Note statuses that mean "this surface was NOT painted", as opposed to the ones
 // that mean "it was painted and here is a caveat". Only the first group belongs
 // under a heading that says nothing was painted.
-const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
+const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match', 'fit-stale']);
 
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {
@@ -33,7 +34,7 @@ export function isMissingNote(note) {
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, pngDir = null, liveryDir = null, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, log = console.log }) {
   await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -46,6 +47,12 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   const seedStr = seed ?? render.seed;
   const treatments = resolveTreatments(livery.packs ?? ['core']);
   const tokens = { ...(livery.identity ?? {}) };
+
+  // Region ids are validated even without a fit: a duplicate id is a latent
+  // ambiguity, and it should surface when the livery is written rather than the
+  // first time somebody tries to adjust it.
+  regionIds(livery);
+  const fitUsed = new Set();
 
   // `paint` names this car's roles; `surfaces` names vocabulary terms and gets
   // translated through the profile's bind table.
@@ -92,11 +99,15 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // --flat proves the plumbing before any art exists: if the car doesn't
       // turn a solid colour, the DDS format or a filename is wrong and no
       // amount of artwork will fix it.
-      // `once` regions are drawn only on a term's PRIMARY texture. A term can
-      // resolve to several — `body` on the RSS4 is two chassis textures — and a
-      // pattern belongs on all of them while a car number belongs on the car
-      // once, not once per texture.
-      regions: flat ? [] : spec.regions.filter((r) => !(r.once && !primary)),
+      // Fit first, so an override that names a panel replaces the tag selection
+      // before anything is expanded. Then `once`, which keeps a region on a
+      // term's PRIMARY texture: a term can resolve to several — `body` on the
+      // RSS4 is two chassis textures — and a pattern belongs on all of them
+      // while a car number belongs on the car once, not once per texture.
+      regions: flat ? [] : applyFit(
+        spec.regions.filter((r) => !(r.once && !primary)),
+        fit, { profile, role, used: fitUsed, notes },
+      ).regions,
       background: spec.background,
       treatments,
       palette: livery.palette ?? {},
@@ -132,6 +143,15 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
+  }
+
+  // A fit naming a region the livery no longer declares is the other half of
+  // the drift problem, and just as silent if unreported.
+  for (const id of unusedFitIds(fit, fitUsed)) {
+    notes.push({
+      term: id, status: 'fit-stale',
+      text: `fit: "${id}" matches no region in this livery — the design may have been edited`,
+    });
   }
 
   // Say what the design asked for and did not get. This is the failure mode the

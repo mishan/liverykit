@@ -1,0 +1,24 @@
+{
+  "livery": "neon-grid-any",
+  "car": "abarth500",
+  "notes": [
+    "The portable design puts the number on the largest visible panel per side,",
+    "which on a 500 is the rear quarter. That is a defensible guess and the wrong",
+    "one: the shape has a big flat door and a rear quarter that curves away over",
+    "the arch, so the number goes on the door where a touring car would wear it.",
+    "The driver strip is dropped. It targets the panel above the door, which on",
+    "this car is 2.3% of the texture at 1.28 anisotropy — a sliver, stretched.",
+    "A 500 has nowhere good to put it, and saying so is better than shrinking it",
+    "until it is unreadable."
+  ],
+  "regions": {
+    "number-left": { "panel": "left_mid", "at": [0.24, 0.18, 0.52, 0.52] },
+    "number-right": { "panel": "right_mid", "at": [0.24, 0.18, 0.52, 0.52] },
+
+    "team-left": { "at": [0.06, 0.80, 0.88, 0.11] },
+    "team-right": { "at": [0.06, 0.80, 0.88, 0.11] },
+
+    "driver-left": { "drop": true },
+    "driver-right": { "drop": true }
+  }
+}
