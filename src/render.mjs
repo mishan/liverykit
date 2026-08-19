@@ -68,6 +68,16 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // The rect the author writes is the FINAL one. For a quarter turn the
     // treatment is handed that rect with its width and height swapped about the
     // same centre, so rotating the result lands exactly where they asked.
+    if (region.rotate !== undefined && !Number.isFinite(region.rotate)) {
+      // A non-finite angle poisons every coordinate downstream, and an SVG
+      // carrying rotate(NaN,...) draws nothing at all — silently, which is the
+      // exact failure this library exists to prevent. `rotate: '90deg'` is the
+      // obvious way to arrive here.
+      throw new Error(
+        `"${region.treatment ?? 'region'}" on ${tex.file} has rotate: ` +
+        `${JSON.stringify(region.rotate)}. It must be a finite number of degrees, e.g. rotate: 90.`
+      );
+    }
     const rot = (((region.rotate ?? 0) % 360) + 360) % 360;
     const quarter = rot === 90 || rot === 270;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2;

@@ -422,6 +422,24 @@ test('cockpit visibility respects occluders between panel and eye', async () => 
   assert.ok(open[0].cockpitFraction > 0, 'with nothing in the way it should be visible');
 });
 
+test('a rotation that is not a number fails loudly', () => {
+  // NaN degrees poisons every coordinate downstream and the SVG renders as
+  // nothing — silently. rotate: '90deg' is the obvious way to get here.
+  const p = { id: 't', textures: { body: { file: 'b.dds', width: 256, height: 256 } },
+    panels: { body: { all: { rect: [0, 0, 1, 1] } } } };
+  const draw = (rotate) => renderTexture({
+    profile: p, role: 'body', regions: [{ treatment: 'fill', panel: 'all', color: 'white', rotate }],
+    treatments: resolveTreatments(['core']), palette: {}, rng: Math.random,
+    font: 'sans-serif', tokens: {},
+  });
+  for (const bad of ['90deg', Infinity, NaN, null]) {
+    assert.throws(() => draw(bad), /finite number of degrees/, `rotate: ${JSON.stringify(bad)}`);
+  }
+  assert.doesNotThrow(() => draw(90));
+  assert.doesNotThrow(() => draw(undefined));
+  assert.ok(!String(draw(45).base).includes('NaN'), 'no NaN reaches the SVG');
+});
+
 test('rotate turns a treatment without moving the rect it was asked for', async () => {
   // Motifs have a grain — traces run in horizontal lanes — and a panel's grain
   // is whatever the unwrapper chose. Seatbelt straps run DOWN their texture, so
