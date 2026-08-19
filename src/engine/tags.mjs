@@ -161,6 +161,16 @@ export function tagProfile(profile) {
       profile.panels[role][name].tags = list;
       tagged++;
     }
+    // Clear before writing. Tagging runs again whenever a profile is regenerated
+    // or edited, and a panel that used to share its rectangle may not any more —
+    // a rect corrected by hand, an island that split. Leaving the old
+    // `instances: 4` behind would describe a grouping that no longer exists, and
+    // a stale claim is worse than none because it still reads as measured.
+    for (const p of Object.values(profile.panels[role])) {
+      delete p.instances;
+      delete p.sharesRectWith;
+    }
+
     for (const [, names] of rectGroups(profile.panels[role])) {
       if (names.length === 1) continue;
       shared += names.length;

@@ -1134,6 +1134,36 @@ test('the shipped profiles record where parts share texels', async () => {
   assert.ok(!wheel.tags.includes('left') && !wheel.tags.includes('right'));
 });
 
+test('re-tagging clears shared-rect metadata that no longer applies', async () => {
+  // Tagging runs again on every regeneration. A panel that used to share its
+  // rectangle may not any more, and a stale `instances: 4` is worse than no
+  // field at all because it still reads as something that was measured.
+  const { tagProfile } = await import('../src/engine/tags.mjs');
+  const profile = {
+    calibration: { axes: { left: '+X', front: '+Z' } },
+    panels: {
+      rims: {
+        lf: { rect: [0.1, 0.1, 0.2, 0.2], centroid3d: [1, 0, 2] },
+        rf: { rect: [0.1, 0.1, 0.2, 0.2], centroid3d: [-1, 0, 2] },
+      },
+    },
+  };
+  const first = tagProfile(profile);
+  assert.equal(first.shared, 2);
+  assert.equal(profile.panels.rims.lf.instances, 2);
+  assert.deepEqual(profile.panels.rims.lf.sharesRectWith, ['rf']);
+
+  // Now they no longer overlap — as if a rect had been corrected by hand.
+  profile.panels.rims.rf.rect = [0.5, 0.5, 0.2, 0.2];
+  const second = tagProfile(profile);
+  assert.equal(second.shared, 0);
+  for (const name of ['lf', 'rf']) {
+    assert.equal(profile.panels.rims[name].instances, undefined, name);
+    assert.equal(profile.panels.rims[name].sharesRectWith, undefined, name);
+  }
+  assert.ok(profile.panels.rims.lf.tags.includes('left'), 'and the side tag comes back');
+});
+
 test('an empty or malformed tag selector is refused, not silently everything', async () => {
   // `every` on an empty list is vacuously true, so tags: [] would have matched
   // every panel and painted the whole texture — the loudest possible version of
