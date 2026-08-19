@@ -340,9 +340,22 @@ export function panel(profile, role, name) {
  */
 export function panelsWithTags(profile, role, tags) {
   const panels = profile.panels?.[role] ?? {};
-  return Object.entries(panels)
+  const matching = Object.entries(panels)
     .filter(([, p]) => tags.every((t) => (p.tags ?? []).includes(t)))
     .map(([name]) => name);
+
+  // One name per DISTINCT RECTANGLE. Four wheels sharing a rim texture are four
+  // panels over the same texels, and painting them one at a time would stack the
+  // artwork — four passes of a 0.3 halftone is a 0.76 halftone, not a 0.3 one.
+  // Selecting by name still reaches an individual panel; only tag selection,
+  // which cannot know it matched instances of one thing, dedupes.
+  const seen = new Set();
+  return matching.filter((name) => {
+    const key = (panels[name].rect ?? []).join(',');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
