@@ -421,3 +421,46 @@ test('cockpit visibility respects occluders between panel and eye', async () => 
   computeCockpitVisibility(clear, open, { eye: { x: 0, y: 0.1, z: 1.5 }, cellSize: 0.02 });
   assert.ok(open[0].cockpitFraction > 0, 'with nothing in the way it should be visible');
 });
+
+test('rotate turns a treatment without moving the rect it was asked for', async () => {
+  // Motifs have a grain — traces run in horizontal lanes — and a panel's grain
+  // is whatever the unwrapper chose. Seatbelt straps run DOWN their texture, so
+  // unrotated lanes cross them like rungs. The author writes the FINAL rect;
+  // rotation must not shift it.
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const p = { id: 't', textures: { body: { file: 'b.dds', width: 100, height: 100 } },
+    panels: { body: { strip: { rect: [0.2, 0.1, 0.2, 0.8] } } } };
+  const common = { profile: p, role: 'body', treatments: resolveTreatments(['core']),
+    palette: { c: '#0ff' }, rng: Math.random, font: 'sans-serif', tokens: {} };
+
+  const plain = renderTexture({ ...common, regions: [{ treatment: 'fill', panel: 'strip', color: 'c' }] });
+  const spun = renderTexture({ ...common, regions: [{ treatment: 'fill', panel: 'strip', color: 'c', rotate: 90 }] });
+
+  // Unrotated: the rect as written — 20x80 at (20,10).
+  assert.match(plain.base, /x="20" y="10" width="20" height="80"/);
+  // Rotated: drawn 80x20 about the same centre, then spun a quarter turn, which
+  // lands it back on 20x80 at (20,10).
+  assert.match(spun.base, /rotate\(90,30,50\)/);
+  assert.match(spun.base, /x="-10" y="40" width="80" height="20"/);
+});
+
+test('an island collapsed to a line in UV space is dropped, not emitted as a panel', async () => {
+  // Street cars are full of these: trim strips and badges whose unwrap pins them
+  // to a single row of texels. The rect comes out [0, 0.4, 1, 0] — no area, so
+  // nothing can be drawn on it. Emitting them buried a quarter of one profile's
+  // panels in placeholders that no livery could ever address.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { findIslands } = await import('../src/engine/islands.mjs');
+
+  const flat = panelMesh('Trim_Strip', 0.4, 1);
+  for (const v of flat.verts) v[7] = -0.4;                    // every vertex on one V line
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [flat, panelMesh('Real_Panel', 0.6, 1)] }));
+
+  const named = (n) => m.meshes.filter((x) => x.name === n);
+  assert.equal(findIslands(m, named('Trim_Strip')).length, 0, 'zero-height island should be dropped');
+
+  const good = findIslands(m, named('Real_Panel'));
+  assert.equal(good.length, 1, 'a panel with real area still comes through');
+  assert.ok(good[0].rect[3] > 0.5, `and keeps its height, got ${good[0].rect[3]}`);
+});

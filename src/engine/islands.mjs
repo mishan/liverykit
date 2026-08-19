@@ -57,7 +57,13 @@ export function findIslands(model, meshes, { minVertices = 24 } = {}) {
 
     for (const [root, verts] of members) {
       if (verts.length < minVertices) continue;
-      islands.push(measure(model, mesh, verts, trisByRoot.get(root) ?? []));
+      const isl = measure(model, mesh, verts, trisByRoot.get(root) ?? []);
+      // An island collapsed to a line or a point in UV space has no area to
+      // paint. Street cars produce a lot of these — trim strips and badges
+      // pinned to a single texel — and they otherwise flood the profile with
+      // panels whose rect is [0, 0, 0, 1].
+      if (isl.rect[2] < 1e-5 || isl.rect[3] < 1e-5) continue;
+      islands.push(isl);
     }
   }
 

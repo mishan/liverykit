@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { resolveRect, texture } from './profile.mjs';
+import { r2 } from './engine/rng.mjs';
 
 /**
  * Resolve a colour reference. Palette keys win over raw values, so a livery can
@@ -57,9 +58,28 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       opts.text = opts.text.replace(/\{(\w+)\}/g, (_, k) => tokens[k] ?? '');
     }
 
-    const out = entry.fn(r, { palette, color, rng, font, opts, width, height, tokens });
-    if (out.base) base.push(out.base);
-    if (out.emissive) emissive.push(out.emissive);
+    // `rotate` turns a treatment through a quarter turn (or any angle) about the
+    // region's centre. Needed because motifs have a built-in grain — traces run
+    // in horizontal lanes, piping in horizontal lines — and a panel's grain is
+    // whatever the unwrapper chose. Seatbelt straps, for instance, run DOWN the
+    // texture, so horizontal lanes cross them like rungs instead of following
+    // them.
+    //
+    // The rect the author writes is the FINAL one. For a quarter turn the
+    // treatment is handed that rect with its width and height swapped about the
+    // same centre, so rotating the result lands exactly where they asked.
+    const rot = (((region.rotate ?? 0) % 360) + 360) % 360;
+    const quarter = rot === 90 || rot === 270;
+    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    const drawn = quarter
+      ? { ...r, x: cx - r.h / 2, y: cy - r.w / 2, w: r.h, h: r.w }
+      : r;
+
+    const out = entry.fn(drawn, { palette, color, rng, font, opts, width, height, tokens });
+    const spin = (svg) => (rot === 0 || !svg ? svg
+      : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
+    if (out.base) base.push(spin(out.base));
+    if (out.emissive) emissive.push(spin(out.emissive));
   }
 
   const doc = (body) =>
