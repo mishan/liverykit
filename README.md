@@ -212,6 +212,14 @@ surfaces: {
 }
 ```
 
+Panels also carry a measured **`textRotation`**: how far the unwrapper laid the
+panel from upright. A road car routinely turns a door sideways to pack its
+texture sheet — the Abarth's doors measure 270° and 90°, the Formula 4's flanks
+0° — so text placed without compensating reads vertically down the door. Write
+`rotate: 'auto'` and artwork follows the panel. Near-horizontal panels like a
+roof have no meaningful "up" and are left alone rather than turned by a number
+derived from rounding error.
+
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
 trackside), `cockpit` (readable from the driver's seat), `mirrored`, and

@@ -351,6 +351,11 @@ export async function profileFromKn5(path, {
         source: { mesh: i.mesh, vertices: i.vertexCount },
         centroid3d: [r3(i.centroid.x), r3(i.centroid.y), r3(i.centroid.z)],
       };
+      // How far this island is rotated from upright, so artwork can read level
+      // on a panel the unwrapper laid sideways. Omitted for near-horizontal
+      // panels, where "up" has no meaning on the surface and any answer would be
+      // rounding error.
+      if (i.textRotation !== null && i.textRotation !== undefined) p.textRotation = i.textRotation;
       if (i.safe) p.safe = i.safe;
       if (i.visibleFraction !== undefined) p.visible = i.visibleFraction;
       if (i.cockpitFraction !== undefined) p.visibleFromCockpit = i.cockpitFraction;

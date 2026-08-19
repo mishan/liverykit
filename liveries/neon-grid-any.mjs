@@ -118,20 +118,27 @@ export default {
         // The `id`s are how a FIT adjusts these for one particular car without
         // touching the design — see docs/fitting.md and fits/. Only regions
         // somebody might want to move need one.
+        //
+        // `rotate: 'auto'` follows the panel's own orientation. An unwrapper is
+        // free to lay a door sideways to pack the sheet, and a road car
+        // routinely does: the Abarth's doors measure 270 and 90 degrees against
+        // the formula car's 0. Without this the team name reads vertically down
+        // the door, which looks like a bug and is really the texture being
+        // honest about its layout.
         { id: 'driver-left', treatment: 'text', tags: ['left', 'mid', 'upper', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.05, 0.84, 0.10], text: '{driver}', color: 'white', tracking: 0.10 },
+          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
         { id: 'driver-right', treatment: 'text', tags: ['right', 'mid', 'upper', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.05, 0.84, 0.10], text: '{driver}', color: 'white', tracking: 0.10 },
+          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
 
         { id: 'number-left', treatment: 'text', tags: ['left', 'visible'], limit: 1, once: true,
-          at: [0.25, 0.22, 0.50, 0.48], text: '{number}', color: 'white', tracking: 0.04 },
+          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
         { id: 'number-right', treatment: 'text', tags: ['right', 'visible'], limit: 1, once: true,
-          at: [0.25, 0.22, 0.50, 0.48], text: '{number}', color: 'white', tracking: 0.04 },
+          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
 
         { id: 'team-left', treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.78, 0.84, 0.13], text: '{team}', color: 'accent', tracking: 0.14 },
+          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
         { id: 'team-right', treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.78, 0.84, 0.13], text: '{team}', color: 'accent', tracking: 0.14 },
+          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
       ],
     },
 
