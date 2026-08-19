@@ -705,3 +705,148 @@ test('binding() really never throws, including on a profile nobody validated', a
   }
   assert.equal(binding({ bind: {} }, 'toString').status, 'unbound', 'inherited names too');
 });
+
+// --- the resolver -----------------------------------------------------------
+
+const carWith = (bind) => ({
+  id: 'car',
+  textures: {
+    chassis: { file: 'c.dds', width: 64, height: 64 },
+    rear: { file: 'r.dds', width: 64, height: 64 },
+    wheel: { file: 'w.dds', width: 64, height: 64 },
+  },
+  bind,
+});
+const spec = { background: 'black', regions: [] };
+
+test('a surface resolves through bind to whatever this car calls it', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets } = resolveTargets(
+    carWith({ body: { roles: ['chassis', 'rear'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis', 'rear'],
+    'one term, both of the roles it names');
+});
+
+test('asking for a surface the car lacks is a reported no-op, not a failure', async () => {
+  // A design asking for a wing on a van should still build. The report is the
+  // safety mechanism: painting nothing looks exactly like painting something.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' }, wing: { roles: [], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, wing: spec, floor: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis']);
+  assert.deepEqual(notes.map((n) => n.status).sort(), ['absent', 'unbound']);
+  assert.match(notes.find((n) => n.term === 'floor').text, /not bound on this car/);
+});
+
+test('an unconfirmed binding is used, and said out loud', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], confidence: 0.4, source: 'auto' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.equal(targets.length, 1, 'a proposal is still usable');
+  assert.equal(notes[0].status, 'unconfirmed');
+  assert.match(notes[0].text, /confidence 0\.4/);
+});
+
+test('painting the same texture twice is refused, not silently resolved', async () => {
+  // Both writes go to the same file and the second wins. Before bindings this
+  // was impossible; a term that expands to several roles makes it reachable.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(
+      carWith({ body: { roles: ['chassis'], source: 'human' } }),
+      { name: 'L', paint: { chassis: spec }, surfaces: { body: spec } },
+    ),
+    /paints texture role "chassis" twice.*paint\.chassis.*surfaces\.body/s,
+  );
+});
+
+test('a livery may not invent a surface name either', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(carWith({}), { name: 'L', surfaces: { spoiler: spec } }),
+    /not in the vocabulary/,
+  );
+});
+
+test('the example livery resolves against the shipped car', async () => {
+  const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid.mjs')).default;
+  const { targets, notes } = resolveTargets(profile, livery);
+  assert.equal(notes.length, 0, `everything it asks for exists: ${notes.map((n) => n.text)}`);
+  // Driver kit lives in another kn5 and must NOT be flagged as suspicious.
+  assert.equal(new Set(targets.map((t) => t.role)).size, targets.length, 'no role painted twice');
+  assert.ok(targets.some((t) => t.from === 'surfaces.rims'), 'rims goes through the vocabulary');
+});
+
+test('a texture too odd a size to encode is skipped and reported, not fatal', async () => {
+  // The Abarth's steering wheel is 68x64. Hitting that mid-build used to abort
+  // after writing five perfectly good files. A surface this tool cannot encode
+  // is effectively one the car does not have.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'car',
+    textures: {
+      good: { file: 'g.dds', width: 512, height: 512 },
+      odd: { file: 'o.dds', width: 68, height: 64 },
+    },
+    bind: {
+      body: { roles: ['good'], source: 'human' },
+      steeringWheel: { roles: ['odd'], source: 'human' },
+    },
+  };
+  // resolveTargets itself does not know about DDS; the pre-flight in buildSkin
+  // does. What matters here is that both resolve, so the build can choose.
+  const { targets } = resolveTargets(p, { name: 'L', surfaces: { body: spec, steeringWheel: spec } });
+  assert.deepEqual(targets.map((t) => t.role), ['good', 'odd']);
+});
+
+test('binding to a texture the model never references is flagged', async () => {
+  // The driver and pit crew are separate kn5 files that a car skin overrides, so
+  // this is expected for them — and it is also exactly how metal_detail.dds
+  // looks, which on several cars is bound to no mesh anywhere and paints
+  // nothing. The two are indistinguishable from one model, so say so.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'car',
+    textures: {
+      crew: { file: 'ac_crew.dds', width: 512, height: 512, sizeFrom: 'skin' },
+      trim: { file: 'metal_detail.dds', width: 32, height: 32, sizeFrom: 'skin' },
+    },
+    bind: {
+      crew: { roles: ['crew'], source: 'human' },
+      metalTrim: { roles: ['trim'], source: 'human' },
+    },
+  };
+  const { targets, notes } = resolveTargets(p, { name: 'L', surfaces: { crew: spec, metalTrim: spec } });
+  assert.equal(targets.length, 2, 'both still painted — they probably are real');
+  assert.equal(notes.length, 1, 'the driver kit is expected to live elsewhere; trim is not');
+  assert.equal(notes[0].term, 'metalTrim');
+  assert.match(notes[0].text, /may paint nothing/);
+});
+
+test('the portable livery renders on two cars that share no texture names', async () => {
+  // The point of the whole layer. One design file, a Formula car and a road car,
+  // no name in common between them.
+  const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  assert.equal(livery.car, undefined, 'a portable livery has no business naming a car');
+
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const a = resolveTargets(rss, livery);
+  const b = resolveTargets(ab, livery);
+
+  assert.ok(a.targets.length >= 10, `RSS4 painted ${a.targets.length}`);
+  assert.ok(b.targets.length >= 5, `Abarth painted ${b.targets.length}`);
+  const filesA = new Set(a.targets.map((t) => rss.textures[t.role].file));
+  const filesB = new Set(b.targets.map((t) => ab.textures[t.role].file));
+  assert.equal([...filesA].filter((f) => filesB.has(f)).length, 1,
+    'only ac_crew.dds is common to both cars — everything else is named differently');
+});
