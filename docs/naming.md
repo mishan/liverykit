@@ -159,13 +159,48 @@ is that painting nothing looks exactly like painting something, silently.
 
 ### The part-versus-panel problem
 
-Unresolved and worth stating. `Rim500.DDS` on the Abarth is shared by all four
-wheels: 64 panels at identical rectangles, four different 3D positions. You cannot
-paint the left front differently from the right rear, because to the texture they
-are one surface. Any vocabulary that assumes one panel is one part is wrong on
-every car with symmetric wheels. The binding layer should carry an explicit
-`shared: 4` marker so a livery can at least be told, rather than discovering it
-in-game.
+A *part* is a thing on the car. A *panel* is a region of a texture. They are not
+one to one, and the gap is much wider than it first looked: across eight cars
+sampled from the fleet, **42.8% of all panels shared their rectangle with another
+panel** — 1,472 of 3,437. Every one of those cars had groups spanning both sides
+of the centreline.
+
+`Rim500.DDS` on the Abarth is the clearest case: 64 panels over 16 distinct
+rectangles, because all four wheels are drawn from one rim texture. But mirrored
+bodywork is just as common on road cars — the Abarth's `left_tail` and
+`right_tail` sit at ±0.457 on X and occupy exactly the same texels.
+
+This was doing real damage, quietly, in two ways.
+
+**The tags contradicted each other.** The wheel face was tagged `left` on one
+instance and `right` on another, for the same pixels. A livery asking for the
+left side would have painted all four wheels and looked like it worked — this
+project's signature failure, in a new costume.
+
+**And a shared region got painted once per part.** Four passes of a halftone at
+0.3 opacity is not a 0.3 halftone, it is a 0.76 one.
+
+Both are fixed. Panels sharing a rectangle now receive the **intersection** of
+what their members claim, so the Abarth's wheels keep `lower` and `visible` and
+lose the side and section they disagree about, gaining `shared`. Tag selection
+returns one name per distinct rectangle, so the artwork is drawn once. Selecting
+a panel by NAME still reaches an individual panel — only tag selection dedupes,
+because only it can match several instances of one thing without meaning to.
+
+The profile records `instances` and `sharesRectWith` on each member, and
+generation says how many panels are affected, because "242 panels" and "242
+panels over 162 regions, 80 of which cannot be painted independently" are very
+different statements about a car.
+
+What falls into `shared` is a fact about the car's unwrap and a genuinely useful
+one: the RSS Formula 4 has **no** shared bodywork panels, because an open-wheeler
+unwraps each flank separately for asymmetric aero and sponsor space. The Abarth
+has five, because a mass-produced road car mirrors its sides to halve the
+texture. A portable design can target `shared` explicitly, which is what
+`neon-grid-any` does.
+
+Still true, and now stated by the tool rather than discovered in-game: on such a
+car you cannot paint the left front wheel differently from the right rear.
 
 ## Proof, on two cars
 

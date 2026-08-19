@@ -903,9 +903,9 @@ const tagCar = (axes, panels) => ({
 test('tags describe where a panel is in terms true of any car', async () => {
   const { computeTags } = await import('../src/engine/tags.mjs');
   const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
-    nl: { rect: [0, 0, 1, 1], centroid3d: [1, 1, 4] },      // left, nose, upper
-    tr: { rect: [0, 0, 1, 1], centroid3d: [-1, 0, 0] },     // right, tail, lower
-    mc: { rect: [0, 0, 1, 1], centroid3d: [0, 0.5, 2] },    // centre, mid
+    nl: { rect: [0.0, 0, 0.3, 0.3], centroid3d: [1, 1, 4] },    // left, nose, upper
+    tr: { rect: [0.3, 0, 0.3, 0.3], centroid3d: [-1, 0, 0] },   // right, tail, lower
+    mc: { rect: [0.6, 0, 0.3, 0.3], centroid3d: [0, 0.5, 2] },  // centre, mid
   })).body;
   assert.deepEqual(t.nl, ['left', 'nose', 'upper']);
   assert.deepEqual(t.tr, ['right', 'tail', 'lower']);
@@ -918,7 +918,10 @@ test('tags follow the model\'s idea of forward, not ours', async () => {
   // end is the front. On a model where +Z is rearward, ignoring that would tag
   // the tail as the nose on every panel.
   const { computeTags } = await import('../src/engine/tags.mjs');
-  const panels = { a: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 4] }, b: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 0] } };
+  const panels = {
+    a: { rect: [0, 0, 0.4, 0.4], centroid3d: [0, 0, 4] },
+    b: { rect: [0.5, 0, 0.4, 0.4], centroid3d: [0, 0, 0] },
+  };
   const fwd = computeTags(tagCar({ left: '+X', front: '+Z' }, panels)).body;
   const rev = computeTags(tagCar({ left: '+X', front: '-Z' }, panels)).body;
   assert.equal(fwd.a[1], 'nose');
@@ -943,9 +946,9 @@ test('a panel with no measured centroid gets the tags that need no geometry', as
 test('selecting by tags is AND, and matching nothing is reported', async () => {
   const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
   const p = tagCar({ left: '+X', front: '+Z' }, {
-    a: { rect: [0, 0, 1, 1], tags: ['left', 'mid', 'visible'] },
-    b: { rect: [0, 0, 1, 1], tags: ['left', 'nose'] },
-    c: { rect: [0, 0, 1, 1], tags: ['right', 'mid', 'visible'] },
+    a: { rect: [0.0, 0, 0.3, 0.3], tags: ['left', 'mid', 'visible'] },
+    b: { rect: [0.3, 0, 0.3, 0.3], tags: ['left', 'nose'] },
+    c: { rect: [0.6, 0, 0.3, 0.3], tags: ['right', 'mid', 'visible'] },
   });
   assert.deepEqual(panelsWithTags(p, 'body', ['left']), ['a', 'b']);
   assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible']), ['a'],
@@ -980,11 +983,29 @@ test('the portable livery expands onto two cars it was not written for', async (
   for (const [file, role] of cases) {
     const p = await loadProfile(new URL(file, import.meta.url));
     const { regions, notes } = expandRegions(p, role, livery.surfaces.body.regions);
-    assert.equal(notes.length, 0, `${file}: ${notes.map((n) => n.text)}`);
+
     assert.ok(regions.length > livery.surfaces.body.regions.length,
       `${file}: ${regions.length} regions from ${livery.surfaces.body.regions.length} authored`);
     assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
+
+    // A skipped region is allowed, but only for a reason the CAR supplies. Any
+    // selector other than `shared` going unmatched would mean the design is
+    // asking for something no car provides, which is a bug in the design.
+    for (const n of notes) {
+      assert.match(n.text, /\[shared, visible\]/,
+        `${file}: unexpected unmatched selector — ${n.text}`);
+    }
   }
+
+  // The two cars genuinely differ here, which is the whole reason the design has
+  // to name `shared` separately rather than relying on left and right.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  assert.equal(panelsWithTags(rss, 'body', ['shared', 'visible']).length, 0,
+    'an open-wheeler unwraps each flank separately, for asymmetric aero');
+  assert.ok(panelsWithTags(ab, 'skinbase_default', ['shared', 'visible']).length > 0,
+    'a road car mirrors its sides to halve the texture');
 });
 
 // --- encrypted models -------------------------------------------------------
@@ -1045,6 +1066,72 @@ test('placeholder texture sizes are refused rather than believed', async () => {
     () => profileFromKn5(file, { id: 'c', visibility: false, assumeSize: 1000 }),
     /power of two/,
   );
+});
+
+// --- parts versus panels ----------------------------------------------------
+
+test('panels drawn from the same texels do not claim contradictory sides', async () => {
+  // A PART is a thing on the car; a PANEL is a region of a texture, and they are
+  // not one to one. Across eight cars, 42.8% of panels shared a rectangle with
+  // another. The Abarth's wheel face was tagged `left` on one instance and
+  // `right` on another for the same pixels, so a livery asking for the left side
+  // would paint all four wheels and look like it had worked.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const rect = [0.1, 0.1, 0.2, 0.2];
+  const t = computeTags({
+    calibration: { axes: { left: '+X', front: '+Z' } },
+    panels: {
+      rims: {
+        lf: { rect, centroid3d: [1, 0, 2], visible: 0.9 },
+        rf: { rect, centroid3d: [-1, 0, 2], visible: 0.9 },
+        lr: { rect, centroid3d: [1, 0, -2], visible: 0.9 },
+        rr: { rect, centroid3d: [-1, 0, -2], visible: 0.9 },
+        solo: { rect: [0.5, 0.5, 0.1, 0.1], centroid3d: [1, 0, 2], visible: 0.9 },
+      },
+    },
+  }).rims;
+
+  for (const w of ['lf', 'rf', 'lr', 'rr']) {
+    assert.ok(!t[w].includes('left') && !t[w].includes('right'),
+      `${w} must not claim a side its twin contradicts: ${t[w]}`);
+    assert.ok(t[w].includes('shared'), `${w} should be marked shared`);
+    assert.ok(t[w].includes('visible'), 'tags all four agree on survive');
+  }
+  assert.ok(t.solo.includes('left'), 'a panel with its own rectangle keeps its side');
+  assert.ok(!t.solo.includes('shared'));
+});
+
+test('a shared region is painted once, not once per part', async () => {
+  // Four passes of a 0.3 halftone is a 0.76 halftone. Selecting by name still
+  // reaches an individual panel; only tag selection dedupes, because only it can
+  // have matched several instances of one thing without meaning to.
+  const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
+  const rect = [0.1, 0.1, 0.2, 0.2];
+  const p = {
+    id: 'c',
+    textures: { rims: { file: 'r.dds', width: 64, height: 64 } },
+    panels: {
+      rims: {
+        lf: { rect, tags: ['shared', 'visible'] },
+        rf: { rect, tags: ['shared', 'visible'] },
+        hub: { rect: [0.5, 0.5, 0.1, 0.1], tags: ['visible'] },
+      },
+    },
+  };
+  assert.deepEqual(panelsWithTags(p, 'rims', ['visible']), ['lf', 'hub'],
+    'one name per distinct rectangle, keeping the first as the profile lists it');
+
+  const { regions } = expandRegions(p, 'rims', [{ treatment: 'fill', tags: ['visible'] }]);
+  assert.equal(regions.length, 2, 'two rectangles, two draws');
+});
+
+test('the shipped profiles record where parts share texels', async () => {
+  const { loadProfile } = await import('../src/profile.mjs');
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const wheel = Object.values(ab.panels.rims).find((p) => p.instances === 4);
+  assert.ok(wheel, 'the Abarth draws all four wheels from one rim texture');
+  assert.equal(wheel.sharesRectWith.length, 3);
+  assert.ok(!wheel.tags.includes('left') && !wheel.tags.includes('right'));
 });
 
 test('an empty or malformed tag selector is refused, not silently everything', async () => {
