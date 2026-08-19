@@ -13,6 +13,13 @@ textures, 18,460 UV islands, 30 seconds of compute.
 
 Reproduce with `node tools/survey.mjs <carsDir>`.
 
+> **Superseded in part.** This was the first 42-car pass. The survey has since
+> been extended to the whole 235-car fleet and the conclusion changed: a
+> name-free classifier does work, at 174/175 on a held-out labelled set, once
+> ray-cast visibility is one of its inputs. See `docs/naming.md` for the numbers
+> and the resulting design. What follows is still the correct account of why the
+> obvious signals fail individually.
+
 ## Names do not travel
 
 Across 42 cars the generated role names produced **566 distinct names, 445 of
