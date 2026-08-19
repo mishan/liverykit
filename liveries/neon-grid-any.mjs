@@ -78,6 +78,19 @@ export default {
         // there costs render time and buys nothing.
         { treatment: 'piping', tags: ['left', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
         { treatment: 'piping', tags: ['right', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
+
+        // `shared` means the panel is drawn from the same texels as another —
+        // mirrored bodywork, or four wheels on one rim texture. Such a panel
+        // deliberately claims no side, because it is on both, so the two rules
+        // above skip it and this one catches it.
+        //
+        // How much falls here is a fact about the car's unwrap, not about the
+        // design: the RSS Formula 4 has none on its bodywork, since an
+        // open-wheeler unwraps each flank separately for asymmetric aero and
+        // sponsor space. The Abarth has five, because a mass-produced road car
+        // mirrors its sides to halve the texture.
+        { treatment: 'piping', tags: ['shared', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
+
         { treatment: 'halftone', tags: ['upper', 'visible'], color: 'hot', cell: 30, dot: 0.10, opacity: 0.30, safe: false },
 
         { treatment: 'stripe', at: [0, 0.47, 1, 0.022], color: 'hot', glow: true },

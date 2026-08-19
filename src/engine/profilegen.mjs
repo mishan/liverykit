@@ -408,8 +408,18 @@ export async function profileFromKn5(path, {
   // than from the model. One implementation then serves both generation and
   // retagging an existing hand-tuned profile, which is the only way to add them
   // without discarding its aliases, renames and notes.
-  const { tagged } = tagProfile(profile);
+  const { tagged, shared } = tagProfile(profile);
   log(`  tagged ${tagged} panel(s) with portable descriptors (side, section, level, visibility)`);
+  if (shared) {
+    // Worth saying out loud. It is the difference between "this car has 242
+    // paintable regions" and "this car has 242 panels over 162 regions, and 80
+    // of them cannot be painted independently however much you would like to".
+    const pct = Math.round((100 * shared) / (tagged || 1));
+    log(`  ${shared} of them (${pct}%) share their rectangle with another panel — instanced`);
+    log('    geometry such as four wheels on one rim texture, or mirrored bodywork.');
+    log('    They are drawn from the same texels, so they cannot carry different artwork,');
+    log('    and they no longer claim a side or section their twin contradicts.');
+  }
 
   return profile;
 }

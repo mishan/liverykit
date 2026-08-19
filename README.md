@@ -214,7 +214,17 @@ surfaces: {
 
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
-trackside), `cockpit` (readable from the driver's seat), `mirrored`.
+trackside), `cockpit` (readable from the driver's seat), `mirrored`, and
+`shared`.
+
+`shared` is the one that surprises people. A *part* is a thing on the car; a
+*panel* is a region of a texture, and across a sample of eight cars 42.8% of
+panels shared their rectangle with another — all four wheels drawn from one rim
+texture, or mirrored bodywork where the left and right flank occupy the same
+texels. Those panels claim no side, because they are on both, and tag selection
+paints each rectangle once rather than once per part. So you cannot give the left
+front wheel different artwork from the right rear, and the profile now says so
+instead of letting you find out in-game.
 
 `liveries/neon-grid-any.mjs` is the worked example. It has no `car` field at all,
 so you choose one at build time:
