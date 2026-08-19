@@ -21,7 +21,10 @@
 //              ships in nearly every road-car skin and on several of those cars
 //              is bound to no mesh at all.
 //   shader     the material shader. ksPerPixelMultiMap_damage_dirt is a body
-//              panel in all but name; ksTyres and ksBrakeDisc are disqualifying.
+//              panel in all but name; ksTyres and ksBrakeDisc weigh heavily
+//              against, though they do not exclude outright — a car whose only
+//              paintable surface shared a material with its tyres should still
+//              produce a ranking rather than an empty one.
 //   visible    ray-cast trackside visibility. The decisive one, and the
 //              expensive one.
 //
@@ -214,7 +217,10 @@ function scoreBody(f) {
  * separated the candidates are, NOT a probability of being right.
  */
 export function rank(features, term = 'body') {
-  const spec = VOCABULARY[term];
+  // Object.hasOwn, not a truthiness test: VOCABULARY['toString'] inherits a
+  // function from Object.prototype and would otherwise sail through as a valid
+  // term, which is the opposite of a closed vocabulary.
+  const spec = Object.hasOwn(VOCABULARY, term) ? VOCABULARY[term] : undefined;
   if (!spec) {
     throw new Error(
       `Unknown vocabulary term "${term}". Known terms: ${Object.keys(VOCABULARY).join(', ')}.`

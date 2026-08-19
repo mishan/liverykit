@@ -80,18 +80,33 @@ export async function countSkinOverrides(dir) {
   } catch {
     return { skinCount: 0, counts: new Map() };
   }
+
+  const TEXTURE = /\.(dds|png)$/i;
   const counts = new Map();
+  const tally = (files) => {
+    for (const f of files) {
+      if (!TEXTURE.test(f)) continue;
+      const k = f.toLowerCase();
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  };
+
+  // Accept a skins/ directory OR a single skin folder, the same as scanSkins.
+  // Without this, pointing --skins straight at one skin returned a count of
+  // zero, which does not read as "no data" downstream — it reads as "no stock
+  // skin overrides anything", and quietly costs the classifier a whole signal.
+  if (entries.some((e) => e.isFile() && TEXTURE.test(e.name))) {
+    tally(entries.filter((e) => e.isFile()).map((e) => e.name));
+    return { skinCount: 1, counts };
+  }
+
   let skinCount = 0;
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     let files;
     try { files = await readdir(join(dir, e.name)); } catch { continue; }
     skinCount++;
-    for (const f of files) {
-      if (!/\.(dds|png)$/i.test(f)) continue;
-      const k = f.toLowerCase();
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
+    tally(files);
   }
   return { skinCount, counts };
 }

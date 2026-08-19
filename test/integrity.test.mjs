@@ -539,6 +539,13 @@ test('the classifier ranks and explains, but never decides silently', async () =
 test('an unknown vocabulary term fails loudly and lists the real ones', async () => {
   const { rank } = await import('../src/engine/classify.mjs');
   assert.throws(() => rank([feat({})], 'bonnet'), /Unknown vocabulary term "bonnet".*body/s);
+
+  // Inherited properties are not vocabulary terms. VOCABULARY['toString'] is a
+  // function from Object.prototype and a truthiness test would let it through,
+  // which would quietly reopen the closed vocabulary.
+  for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
+    assert.throws(() => rank([feat({})], inherited), /Unknown vocabulary term/, inherited);
+  }
 });
 
 test('a texture bound to no mesh scores zero, however promising its name', async () => {
@@ -555,4 +562,36 @@ test('a texture bound to no mesh scores zero, however promising its name', async
   assert.equal(fs[0].straddles, false);
   assert.equal(fs[0].box, null);
   assert.equal(rank(fs).length, 0, 'an unbound texture must not be proposed at all');
+});
+
+test('override counting works on one skin folder as well as a skins/ directory', async () => {
+  // scanSkins accepts either, and --skins is documented as accepting either.
+  // Returning zero for a single folder does not read downstream as "no data" —
+  // it reads as "no stock skin overrides anything", which costs the classifier a
+  // whole signal without saying so.
+  const { countSkinOverrides } = await import('../src/engine/scan.mjs');
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const root = await mkdtemp(join(tmpdir(), 'lk-skins-'));
+  for (const skin of ['red', 'blue']) {
+    await mkdir(join(root, skin), { recursive: true });
+    await writeFile(join(root, skin, 'body.dds'), '');
+    await writeFile(join(root, skin, 'ui_skin.json'), '{}');
+  }
+  await writeFile(join(root, 'blue', 'extra.dds'), '');
+
+  const all = await countSkinOverrides(root);
+  assert.equal(all.skinCount, 2);
+  assert.equal(all.counts.get('body.dds'), 2);
+  assert.equal(all.counts.get('extra.dds'), 1);
+  assert.equal(all.counts.has('ui_skin.json'), false, 'only textures are counted');
+
+  const one = await countSkinOverrides(join(root, 'blue'));
+  assert.equal(one.skinCount, 1, 'a single skin folder counts as one skin, not zero');
+  assert.equal(one.counts.get('body.dds'), 1);
+
+  assert.deepEqual(await countSkinOverrides(join(root, 'nope')),
+    { skinCount: 0, counts: new Map() }, 'a missing directory is not an error');
 });
