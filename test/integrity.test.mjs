@@ -464,3 +464,77 @@ test('an island collapsed to a line in UV space is dropped, not emitted as a pan
   assert.equal(good.length, 1, 'a panel with real area still comes through');
   assert.ok(good[0].rect[3] > 0.5, `and keeps its height, got ${good[0].rect[3]}`);
 });
+
+// --- the classifier ---------------------------------------------------------
+
+const feat = (o) => ({
+  role: o.role ?? 'r', file: o.file ?? 'f.dds', area: 0, straddles: true,
+  skinFraction: 0, shaders: [], box: null, ...o,
+});
+
+test('a big invisible surface loses to a smaller visible one', async () => {
+  // This is the failure mode that took the classifier from 90% to 98%. Engine
+  // bays, undertrays and interior occlusion maps are large, symmetric and
+  // completely unseen; without visibility they outrank the paint on 17 of 175
+  // fleet cars. Measured: engine bays came in at 0.14-0.19 visible, interior
+  // occlusion at 0.02, real bodywork at 0.55-0.89.
+  const { rank } = await import('../src/engine/classify.mjs');
+  const ranked = rank([
+    feat({ role: 'engineBay', area: 0.30, visible: 0.15 }),
+    feat({ role: 'paint', area: 0.12, visible: 0.80 }),
+  ]);
+  assert.equal(ranked[0].role, 'paint', 'visibility must outweigh raw size');
+});
+
+test('a one-sided part is demoted but not excluded', async () => {
+  // Bodywork crosses the centreline and a corner part does not, but some real
+  // bodywork IS one-sided — an asymmetric endurance panel — so this has to be a
+  // penalty rather than a filter.
+  const { rank } = await import('../src/engine/classify.mjs');
+  const both = rank([feat({ role: 'sided', area: 0.5, straddles: false })]);
+  assert.equal(both.length, 1, 'a one-sided candidate still ranks');
+  const pair = rank([
+    feat({ role: 'sided', area: 0.30, straddles: false }),
+    feat({ role: 'central', area: 0.20, straddles: true }),
+  ]);
+  assert.equal(pair[0].role, 'central');
+});
+
+test('confidence reports the margin, and a flat field says so', async () => {
+  const { rank } = await import('../src/engine/classify.mjs');
+  const clear = rank([feat({ role: 'a', area: 0.9 }), feat({ role: 'b', area: 0.1 })]);
+  const tied = rank([feat({ role: 'a', area: 0.5 }), feat({ role: 'b', area: 0.49 })]);
+  assert.ok(clear[0].confidence > 0.8, `clear winner, got ${clear[0].confidence}`);
+  assert.ok(tied[0].confidence < 0.1, `near tie, got ${tied[0].confidence}`);
+  assert.equal(rank([feat({ role: 'only', area: 0.4 })])[0].confidence, 1);
+});
+
+test('the classifier ranks and explains, but never decides silently', async () => {
+  const { explain, propose } = await import('../src/engine/classify.mjs');
+  const fs = [feat({ role: 'a', area: 0.5 }), feat({ role: 'b', area: 0.49 })];
+  const text = explain(fs);
+  assert.match(text, /Look at the car/, 'a near-tie has to say so out loud');
+  assert.match(text, /Visibility was not computed/, 'missing visibility has to be reported');
+  assert.equal(propose(fs).source, 'auto', 'proposals are marked as unconfirmed');
+});
+
+test('an unknown vocabulary term fails loudly and lists the real ones', async () => {
+  const { rank } = await import('../src/engine/classify.mjs');
+  assert.throws(() => rank([feat({})], 'bonnet'), /Unknown vocabulary term "bonnet".*body/s);
+});
+
+test('a texture bound to no mesh scores zero, however promising its name', async () => {
+  // 1133 of the fleet's 8569 paintable-looking textures are bound to nothing.
+  // metal_detail.dds ships in nearly every road-car skin and on several of those
+  // cars paints not one pixel. A classifier that ranked it would be repeating
+  // the exact mistake this project started with.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { textureFeatures, rank } = await import('../src/engine/classify.mjs');
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('Flank', 0.4, 1)] }));
+
+  const fs = textureFeatures(m, { roles: { ghost: { file: 'not_in_this_model.dds' } } });
+  assert.equal(fs[0].area, 0);
+  assert.equal(fs[0].straddles, false);
+  assert.equal(fs[0].box, null);
+  assert.equal(rank(fs).length, 0, 'an unbound texture must not be proposed at all');
+});
