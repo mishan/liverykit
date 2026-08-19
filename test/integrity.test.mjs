@@ -670,3 +670,38 @@ test('the shipped profile binds the vocabulary to real roles', async () => {
   assert.equal(binding(p, 'numberPlate').status, 'absent');
   assert.equal(binding(p, 'rims').roles[0], 'rimFace', 'not the motion-blur variant');
 });
+
+test('an inherited property name is not a vocabulary term', async () => {
+  // VOCABULARY['toString'] inherits a function from Object.prototype, so a
+  // truthiness test would let bind."toString" through validation and reopen the
+  // closed vocabulary through the back door.
+  const { validateProfile } = await import('../src/profile.mjs');
+  for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
+    assert.throws(
+      () => validateProfile(withBind({ [inherited]: { roles: ['body'], source: 'human' } })),
+      /unknown term/,
+      inherited,
+    );
+  }
+});
+
+test('binding() really never throws, including on a profile nobody validated', async () => {
+  // It is exported, and a caller may hand over a hand-written fixture or a file
+  // read straight from disk. "Never throws" has to be true of the function, not
+  // only of the happy path.
+  const { binding } = await import('../src/profile.mjs');
+  const malformed = [
+    {},
+    { bind: {} },
+    { bind: { body: null } },
+    { bind: { body: {} } },
+    { bind: { body: { roles: null, source: 'human' } } },
+    { bind: { body: { roles: 'chassis', source: 'human' } } },
+  ];
+  for (const p of malformed) {
+    const b = binding(p, 'body');
+    assert.equal(b.status, 'unbound', JSON.stringify(p));
+    assert.deepEqual(b.roles, [], 'callers iterate roles, so it must always be an array');
+  }
+  assert.equal(binding({ bind: {} }, 'toString').status, 'unbound', 'inherited names too');
+});
