@@ -860,11 +860,29 @@ test('the portable livery expands onto two cars it was not written for', async (
   for (const [file, role] of cases) {
     const p = await loadProfile(new URL(file, import.meta.url));
     const { regions, notes } = expandRegions(p, role, livery.surfaces.body.regions);
-    assert.equal(notes.length, 0, `${file}: ${notes.map((n) => n.text)}`);
+
     assert.ok(regions.length > livery.surfaces.body.regions.length,
       `${file}: ${regions.length} regions from ${livery.surfaces.body.regions.length} authored`);
     assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
+
+    // A skipped region is allowed, but only for a reason the CAR supplies. Any
+    // selector other than `shared` going unmatched would mean the design is
+    // asking for something no car provides, which is a bug in the design.
+    for (const n of notes) {
+      assert.match(n.text, /\[shared, visible\]/,
+        `${file}: unexpected unmatched selector — ${n.text}`);
+    }
   }
+
+  // The two cars genuinely differ here, which is the whole reason the design has
+  // to name `shared` separately rather than relying on left and right.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  assert.equal(panelsWithTags(rss, 'body', ['shared', 'visible']).length, 0,
+    'an open-wheeler unwraps each flank separately, for asymmetric aero');
+  assert.ok(panelsWithTags(ab, 'skinbase_default', ['shared', 'visible']).length > 0,
+    'a road car mirrors its sides to halve the texture');
 });
 
 // --- encrypted models -------------------------------------------------------
