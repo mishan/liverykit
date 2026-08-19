@@ -78,7 +78,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   let firstPng = null;
   const written = [];
 
-  for (const { role, spec } of targets) {
+  for (const { role, spec, primary } of targets) {
     const tex = texture(profile, role);
     // Regions that matched no panel are collected here and reported with
     // everything else at the end, rather than one line at a time mid-build.
@@ -92,7 +92,11 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // --flat proves the plumbing before any art exists: if the car doesn't
       // turn a solid colour, the DDS format or a filename is wrong and no
       // amount of artwork will fix it.
-      regions: flat ? [] : spec.regions,
+      // `once` regions are drawn only on a term's PRIMARY texture. A term can
+      // resolve to several — `body` on the RSS4 is two chassis textures — and a
+      // pattern belongs on all of them while a car number belongs on the car
+      // once, not once per texture.
+      regions: flat ? [] : spec.regions.filter((r) => !(r.once && !primary)),
       background: spec.background,
       treatments,
       palette: livery.palette ?? {},
