@@ -1,0 +1,7407 @@
+{
+  "bind": {
+    "belts": {
+      "roles": [
+        "belts"
+      ],
+      "source": "human"
+    },
+    "body": {
+      "roles": [
+        "skinbase_default"
+      ],
+      "source": "human"
+    },
+    "crew": {
+      "roles": [
+        "crew"
+      ],
+      "source": "human"
+    },
+    "floor": {
+      "roles": [],
+      "source": "human"
+    },
+    "glass": {
+      "roles": [
+        "glass_2"
+      ],
+      "source": "human"
+    },
+    "heatShield": {
+      "roles": [],
+      "source": "human"
+    },
+    "interior": {
+      "roles": [
+        "interior"
+      ],
+      "source": "human"
+    },
+    "mirror": {
+      "roles": [
+        "mirror"
+      ],
+      "source": "human"
+    },
+    "numberPlate": {
+      "roles": [
+        "plate_d"
+      ],
+      "source": "human"
+    },
+    "rims": {
+      "roles": [
+        "rims"
+      ],
+      "source": "human"
+    },
+    "steeringWheel": {
+      "roles": [],
+      "source": "human"
+    },
+    "tyres": {
+      "roles": [
+        "gomma_unica_base"
+      ],
+      "source": "human"
+    },
+    "wing": {
+      "roles": [],
+      "source": "human"
+    }
+  },
+  "id": "abarth500",
+  "name": "Abarth 500",
+  "game": "assettocorsa",
+  "calibration": {
+    "method": "kn5",
+    "source": "abarth500.kn5",
+    "date": "2026-08-19",
+    "axes": {
+      "left": "+X",
+      "front": "+Z",
+      "confident": false
+    },
+    "notes": "Generated from the model. Panel rects are exact UV island bounds, and anisotropy comes from the UV-to-3D Jacobian rather than from eyeballing a render. \"adjacent\" lists islands that physically touch on the car, which is what lets artwork continue across a UV seam. \"visible\" is the fraction of a panel readable from trackside viewpoints, computed by ray casting against the whole car; \"safe\" bounds that readable part. Those two are a heuristic, unlike the rest."
+  },
+  "textures": {
+    "skinbase_default": {
+      "file": "SkinBase_DEFAULT.dds",
+      "width": 2048,
+      "height": 2048,
+      "alpha": true
+    },
+    "display_simboli": {
+      "file": "Display_Simboli.DDS",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "skin": {
+      "file": "Skin.DDS",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "rims": {
+      "file": "Rim500.DDS",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "tessuto": {
+      "file": "TEssuto.dds",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "rims_2": {
+      "file": "Rim500_BLUR.dds",
+      "width": 512,
+      "height": 512,
+      "alpha": false,
+      "sizeFrom": "model"
+    },
+    "mat_plastica_grigia": {
+      "file": "MAT_Plastica_Grigia.DDS",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "interior": {
+      "file": "Cockpit_LR.DDS",
+      "width": 1024,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "gomma_unica_base": {
+      "file": "Gomma_unica_BASE.dds",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "cuciture": {
+      "file": "cuciture.DDS",
+      "width": 256,
+      "height": 128,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "mat_gomma": {
+      "file": "MAT_gomma.DDS",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "frontlight_off": {
+      "file": "FrontLight_OFF.DDS",
+      "width": 512,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "glass": {
+      "file": "DAMAGE_GLASS_color.dds",
+      "width": 16,
+      "height": 16,
+      "alpha": false,
+      "sizeFrom": "model"
+    },
+    "mat_plancia": {
+      "file": "MAT_plancia.DDS",
+      "width": 16,
+      "height": 16,
+      "alpha": true
+    },
+    "glass_2": {
+      "file": "Glass.dds",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "loghi": {
+      "file": "Loghi.DDS",
+      "width": 512,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "rearlight_lr": {
+      "file": "RearLight_lr.dds",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "mat_ross": {
+      "file": "MAT_ross.dds",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "controlli": {
+      "file": "Controlli.DDS",
+      "width": 1024,
+      "height": 512,
+      "alpha": false,
+      "sizeFrom": "model"
+    },
+    "belts": {
+      "file": "Cockpit_Belt.DDS",
+      "width": 128,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "skin_volante": {
+      "file": "Skin_Volante.dds",
+      "width": 68,
+      "height": 64,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "mat_nero": {
+      "file": "MAT_Nero.DDS",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "rims_3": {
+      "file": "brake_speed_0.DDS",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "mat_metallo_bianco": {
+      "file": "MAT_Metallo_Bianco.dds",
+      "width": 16,
+      "height": 16,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "glass_3": {
+      "file": "INTERNAL_Glass.dds",
+      "width": 2048,
+      "height": 2048,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "grid": {
+      "file": "Grid.DDS",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "rims_4": {
+      "file": "BrakeClaw.dds",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "meccanica_sotto": {
+      "file": "Meccanica_Sotto.DDS",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "shift_ambocc": {
+      "file": "Shift_ambocc.DDS",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "pedali": {
+      "file": "Pedali.DDS",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "carpet": {
+      "file": "Carpet.DDS",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "logo": {
+      "file": "Logo_Volante.DDS",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "audio_tilel": {
+      "file": "Audio_TILEl.DDS",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "mirror": {
+      "file": "Mirror.DDS",
+      "width": 128,
+      "height": 64,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "tappetino_ambocc": {
+      "file": "Tappetino_ambocc.dds",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "plate_d": {
+      "file": "Plate_D.dds",
+      "width": 1024,
+      "height": 256,
+      "alpha": false,
+      "modelSize": [
+        512,
+        128
+      ]
+    },
+    "logo_2": {
+      "file": "LOGO_Cambio.DDS",
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "lcd": {
+      "file": "LCD.dds",
+      "width": 256,
+      "height": 64,
+      "alpha": false,
+      "sizeFrom": "model"
+    },
+    "mat_vetro_interno": {
+      "file": "MAT_Vetro_INTERNO.dds",
+      "width": 64,
+      "height": 64,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "logo_3": {
+      "file": "LOGO_500.dds",
+      "width": 256,
+      "height": 128,
+      "alpha": true,
+      "sizeFrom": "model"
+    },
+    "crew": {
+      "file": "ac_crew.dds",
+      "width": 512,
+      "height": 512,
+      "alpha": true,
+      "sizeFrom": "skin",
+      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+    },
+    "mat_detail1": {
+      "file": "MAT_detail1.dds",
+      "width": 256,
+      "height": 256,
+      "alpha": true,
+      "sizeFrom": "skin",
+      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+    },
+    "metal_detail": {
+      "file": "metal_detail.dds",
+      "width": 32,
+      "height": 32,
+      "alpha": true,
+      "sizeFrom": "skin",
+      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+    }
+  },
+  "doNotPaint": [
+    {
+      "file": "RearLight_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Gomma_Base_NM.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "dirt.dds",
+      "reason": "dirt buildup mask",
+      "slots": [
+        "txDirty"
+      ]
+    },
+    {
+      "file": "Gomma_unica_BASE_blur.dds",
+      "reason": "motion-blurred variant, swapped in at speed",
+      "slots": [
+        "txBlur"
+      ]
+    },
+    {
+      "file": "Gomma_Base_Blur_NM.dds",
+      "reason": "normal map for the motion-blurred variant",
+      "slots": [
+        "txNormalBlur"
+      ]
+    },
+    {
+      "file": "Rim500_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Rim500_BLUR_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "BrakeClaw_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "flat_nm.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal",
+        "txNormalBlur"
+      ]
+    },
+    {
+      "file": "Brake_Disk_warm.dds",
+      "reason": "emissive mask",
+      "slots": [
+        "txGlow"
+      ]
+    },
+    {
+      "file": "brake_speed_1.DDS",
+      "reason": "motion-blurred variant, swapped in at speed",
+      "slots": [
+        "txBlur"
+      ]
+    },
+    {
+      "file": "NORMAL MAP DAMAGE_TEMP.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "500_fiat_Color_Skin_map.dds",
+      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "slots": [
+        "txMaps"
+      ]
+    },
+    {
+      "file": "metal_detail.dds",
+      "reason": "tiled detail overlay, shared across parts; not a per-car surface",
+      "slots": [
+        "txDetail"
+      ]
+    },
+    {
+      "file": "damage.dds",
+      "reason": "damage deformation map",
+      "slots": [
+        "txDamage"
+      ]
+    },
+    {
+      "file": "dust.dds",
+      "reason": "dust buildup mask",
+      "slots": [
+        "txDust"
+      ]
+    },
+    {
+      "file": "damage_mask.dds",
+      "reason": "damage mask",
+      "slots": [
+        "txDamageMask"
+      ]
+    },
+    {
+      "file": "Grid_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "FrontLight_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "FrontLight_map.dds",
+      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "slots": [
+        "txMaps"
+      ]
+    },
+    {
+      "file": "Loghi_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Loghi-map.dds",
+      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "slots": [
+        "txMaps"
+      ]
+    },
+    {
+      "file": "DAMAGE_GLASS.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Pedali_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "LOGO_Airbag_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Skin_NM.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Skin_Volante_NM.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Logo_Volante_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Logo_Volante_SPEC.DDS",
+      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "slots": [
+        "txMaps"
+      ]
+    },
+    {
+      "file": "white.dds",
+      "reason": "tiled detail overlay, shared across parts; not a per-car surface",
+      "slots": [
+        "txDetail",
+        "txMaps"
+      ]
+    },
+    {
+      "file": "NM_Audio_normal.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "LOGO_Cambio_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Shift_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "cuciture_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Pedana_normal.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Leva_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Seat_Strip_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Tappetino_normal.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "LOGO_500_NM.DDS",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    },
+    {
+      "file": "Plate_NM.dds",
+      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "slots": [
+        "txNormal"
+      ]
+    }
+  ],
+  "panels": {
+    "skinbase_default": {
+      "centre_nose": {
+        "rect": [
+          0.0366,
+          0.6004,
+          0.4276,
+          0.225
+        ],
+        "anisotropy": 1.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_Cofano",
+          "vertices": 443
+        },
+        "centroid3d": [
+          0,
+          0.856,
+          1.037
+        ],
+        "visible": 0.86,
+        "adjacent": [
+          "centre_front_upper",
+          "centre_nose_lower_3",
+          "centre_nose_upper",
+          "left_front",
+          "left_nose",
+          "right_front",
+          "right_nose"
+        ]
+      },
+      "centre_tail": {
+        "rect": [
+          0.0247,
+          0.0123,
+          0.1662,
+          0.5591
+        ],
+        "anisotropy": 0.94,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_RearBumper_SUB1",
+          "vertices": 922
+        },
+        "centroid3d": [
+          0,
+          0.477,
+          -1.939
+        ],
+        "visible": 0.89,
+        "adjacent": [
+          "centre_tail_lower",
+          "centre_tail_upper",
+          "centre_tail_upper_2",
+          "centre_tail_upper_3",
+          "left_rear",
+          "right_rear"
+        ]
+      },
+      "centre_mid": {
+        "rect": [
+          0.7277,
+          0.763,
+          0.2645,
+          0.223
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 145
+        },
+        "centroid3d": [
+          0,
+          1.424,
+          -0.635
+        ],
+        "visible": 0.97,
+        "adjacent": [
+          "centre_rear",
+          "left_mid_upper_2",
+          "right_mid_upper_2"
+        ]
+      },
+      "left_mid": {
+        "rect": [
+          0.4652,
+          0.2502,
+          0.1785,
+          0.299
+        ],
+        "anisotropy": 1.03,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB4",
+          "vertices": 220
+        },
+        "centroid3d": [
+          0.77,
+          0.704,
+          -0.347
+        ],
+        "visible": 0.9,
+        "mirrorOf": "right_mid",
+        "adjacent": [
+          "left_front",
+          "left_mid_lower",
+          "left_mid_upper",
+          "left_rear",
+          "left_rear_lower"
+        ]
+      },
+      "right_mid": {
+        "rect": [
+          0.704,
+          0.2502,
+          0.1785,
+          0.299
+        ],
+        "anisotropy": 1.03,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB2",
+          "vertices": 220
+        },
+        "centroid3d": [
+          -0.77,
+          0.704,
+          -0.347
+        ],
+        "visible": 0.96,
+        "mirrorOf": "left_mid",
+        "adjacent": [
+          "right_front",
+          "right_mid_lower",
+          "right_mid_upper",
+          "right_rear",
+          "right_rear_lower"
+        ]
+      },
+      "centre_nose_upper": {
+        "rect": [
+          0.0023,
+          0.8277,
+          0.4953,
+          0.1674
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB3",
+          "vertices": 1555
+        },
+        "centroid3d": [
+          0.002,
+          0.479,
+          1.349
+        ],
+        "visible": 0.92,
+        "adjacent": [
+          "centre_nose",
+          "centre_nose_lower_2",
+          "centre_nose_lower_3",
+          "centre_nose_upper_2",
+          "left_front",
+          "left_nose",
+          "right_front",
+          "right_nose"
+        ]
+      },
+      "centre_tail_lower": {
+        "rect": [
+          0.2003,
+          0.0075,
+          0.1532,
+          0.3158
+        ],
+        "anisotropy": 1.04,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 430
+        },
+        "centroid3d": [
+          0,
+          0.823,
+          -1.883
+        ],
+        "safe": [
+          0.2038,
+          0.0075,
+          0.1497,
+          0.3158
+        ],
+        "visible": 0.87,
+        "adjacent": [
+          "centre_tail",
+          "centre_tail_upper",
+          "left_rear",
+          "right_rear"
+        ]
+      },
+      "left_rear": {
+        "rect": [
+          0.3584,
+          0.0101,
+          0.2504,
+          0.592
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 548
+        },
+        "centroid3d": [
+          0.667,
+          0.962,
+          -1.018
+        ],
+        "visible": 0.94,
+        "mirrorOf": "right_rear",
+        "adjacent": [
+          "centre_front_upper",
+          "centre_rear",
+          "centre_tail",
+          "centre_tail_lower",
+          "centre_tail_upper",
+          "left_front",
+          "left_mid",
+          "left_mid_lower",
+          "left_mid_upper",
+          "left_mid_upper_2",
+          "left_rear_lower"
+        ]
+      },
+      "right_rear": {
+        "rect": [
+          0.7394,
+          0.0112,
+          0.2495,
+          0.591
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 596
+        },
+        "centroid3d": [
+          -0.672,
+          0.948,
+          -1.066
+        ],
+        "visible": 0.94,
+        "mirrorOf": "left_rear",
+        "adjacent": [
+          "centre_front_upper",
+          "centre_rear",
+          "centre_tail",
+          "centre_tail_lower",
+          "centre_tail_upper",
+          "right_front",
+          "right_mid",
+          "right_mid_lower",
+          "right_mid_upper",
+          "right_mid_upper_2",
+          "right_rear_lower",
+          "right_tail_lower_2"
+        ]
+      },
+      "centre_front": {
+        "rect": [
+          0.902,
+          0.0018,
+          0.0955,
+          0.0946
+        ],
+        "anisotropy": 1.38,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry62",
+          "vertices": 68
+        },
+        "centroid3d": [
+          0,
+          0.196,
+          0.685
+        ],
+        "visible": 0,
+        "hidden": true
+      },
+      "left_front": {
+        "rect": [
+          0.474,
+          0.5394,
+          0.1664,
+          0.2179
+        ],
+        "anisotropy": 1.04,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 365
+        },
+        "centroid3d": [
+          0.751,
+          0.697,
+          0.69
+        ],
+        "visible": 0.92,
+        "mirrorOf": "right_front",
+        "adjacent": [
+          "centre_front_upper",
+          "centre_nose",
+          "centre_nose_lower_3",
+          "centre_nose_upper",
+          "left_mid",
+          "left_mid_lower",
+          "left_mid_upper",
+          "left_nose",
+          "left_rear"
+        ]
+      },
+      "right_front": {
+        "rect": [
+          0.708,
+          0.5398,
+          0.1646,
+          0.2176
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 365
+        },
+        "centroid3d": [
+          -0.751,
+          0.697,
+          0.69
+        ],
+        "visible": 0.9,
+        "mirrorOf": "left_front",
+        "adjacent": [
+          "centre_front_upper",
+          "centre_nose",
+          "centre_nose_lower_3",
+          "centre_nose_upper",
+          "right_mid",
+          "right_mid_lower",
+          "right_mid_upper",
+          "right_nose",
+          "right_rear"
+        ]
+      },
+      "centre_tail_upper": {
+        "rect": [
+          0.5959,
+          0.0778,
+          0.127,
+          0.0814
+        ],
+        "anisotropy": 1.08,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_RearBumper_SUB3",
+          "vertices": 145
+        },
+        "centroid3d": [
+          0,
+          0.467,
+          -1.899
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_tail",
+          "centre_tail_lower",
+          "centre_tail_upper_2",
+          "left_rear",
+          "left_tail",
+          "right_rear",
+          "right_tail"
+        ]
+      },
+      "centre_tail_upper_2": {
+        "rect": [
+          0.0065,
+          0.1332,
+          0.0609,
+          0.316
+        ],
+        "anisotropy": 1.26,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_RearBumper_SUB0",
+          "vertices": 612
+        },
+        "centroid3d": [
+          0,
+          0.296,
+          -2.013
+        ],
+        "safe": [
+          0.0065,
+          0.1342,
+          0.0596,
+          0.3138
+        ],
+        "visible": 0.73,
+        "adjacent": [
+          "centre_tail",
+          "centre_tail_upper",
+          "centre_tail_upper_3",
+          "left_tail",
+          "right_tail"
+        ]
+      },
+      "left_mid_lower": {
+        "rect": [
+          0.6082,
+          0.1688,
+          0.0597,
+          0.3976
+        ],
+        "anisotropy": 1.09,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 219
+        },
+        "centroid3d": [
+          0.762,
+          0.291,
+          -0.408
+        ],
+        "visible": 0.88,
+        "mirrorOf": "right_mid_lower",
+        "adjacent": [
+          "left_front",
+          "left_mid",
+          "left_rear"
+        ]
+      },
+      "right_mid_lower": {
+        "rect": [
+          0.6801,
+          0.1687,
+          0.0596,
+          0.3976
+        ],
+        "anisotropy": 1.09,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 219
+        },
+        "centroid3d": [
+          -0.762,
+          0.291,
+          -0.408
+        ],
+        "visible": 0.86,
+        "mirrorOf": "left_mid_lower",
+        "adjacent": [
+          "right_front",
+          "right_mid",
+          "right_rear"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.4698,
+          0.6391,
+          0.0421,
+          0.1002
+        ],
+        "anisotropy": 2.6,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry73",
+          "vertices": 80
+        },
+        "centroid3d": [
+          0.457,
+          0.28,
+          -1.967
+        ],
+        "safe": [
+          0.4721,
+          0.7207,
+          0.0398,
+          0.0186
+        ],
+        "visible": 0.6,
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "centre_tail_upper",
+          "centre_tail_upper_2",
+          "left_tail_lower"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.4698,
+          0.6391,
+          0.0421,
+          0.1002
+        ],
+        "anisotropy": 2.6,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry73",
+          "vertices": 80
+        },
+        "centroid3d": [
+          -0.457,
+          0.28,
+          -1.967
+        ],
+        "safe": [
+          0.4721,
+          0.7207,
+          0.0398,
+          0.0186
+        ],
+        "visible": 0.6,
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "centre_tail_upper",
+          "centre_tail_upper_2",
+          "right_tail_lower"
+        ]
+      },
+      "centre_nose_lower": {
+        "rect": [
+          0.5875,
+          0.5893,
+          0.1719,
+          0.1008
+        ],
+        "anisotropy": 1.35,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB0",
+          "vertices": 45
+        },
+        "centroid3d": [
+          -0.028,
+          0.816,
+          1.041
+        ],
+        "safe": [
+          0.6042,
+          0.6093,
+          0.1539,
+          0.0213
+        ],
+        "visible": 0.11
+      },
+      "centre_rear": {
+        "rect": [
+          0.6651,
+          0.7666,
+          0.0648,
+          0.2163
+        ],
+        "anisotropy": 0.97,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 236
+        },
+        "centroid3d": [
+          0,
+          1.393,
+          -1.365
+        ],
+        "visible": 0.98,
+        "adjacent": [
+          "centre_mid",
+          "left_mid_upper_2",
+          "left_rear",
+          "right_mid_upper_2",
+          "right_rear"
+        ]
+      },
+      "centre_nose_lower_2": {
+        "rect": [
+          0.1975,
+          0.3104,
+          0.0722,
+          0.2777
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB1",
+          "vertices": 233
+        },
+        "centroid3d": [
+          0,
+          0.321,
+          1.488
+        ],
+        "visible": 0.9,
+        "adjacent": [
+          "centre_nose_upper",
+          "left_nose",
+          "right_nose"
+        ]
+      },
+      "centre_front_upper": {
+        "rect": [
+          0.0802,
+          0.5911,
+          0.3394,
+          0.0644
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 269
+        },
+        "centroid3d": [
+          0.07,
+          0.974,
+          0.727
+        ],
+        "visible": 0.91,
+        "adjacent": [
+          "centre_nose",
+          "centre_nose_lower_3",
+          "left_front",
+          "left_rear",
+          "right_front",
+          "right_rear"
+        ]
+      },
+      "centre_nose_lower_3": {
+        "rect": [
+          0.0021,
+          0.79,
+          0.0719,
+          0.0707
+        ],
+        "anisotropy": 0.97,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_Cofano",
+          "vertices": 97
+        },
+        "centroid3d": [
+          0,
+          0.845,
+          0.996
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_front_upper",
+          "centre_nose",
+          "centre_nose_upper",
+          "left_front",
+          "left_nose",
+          "right_front",
+          "right_nose"
+        ]
+      },
+      "left_nose": {
+        "rect": [
+          0.2759,
+          0.3276,
+          0.081,
+          0.1038
+        ],
+        "anisotropy": 0.94,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB5",
+          "vertices": 148
+        },
+        "centroid3d": [
+          0.522,
+          0.449,
+          1.324
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_nose",
+        "adjacent": [
+          "centre_nose",
+          "centre_nose_lower_2",
+          "centre_nose_lower_3",
+          "centre_nose_upper",
+          "centre_nose_upper_2",
+          "left_front",
+          "right_nose"
+        ]
+      },
+      "right_nose": {
+        "rect": [
+          0.2759,
+          0.3276,
+          0.081,
+          0.1038
+        ],
+        "anisotropy": 0.94,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB5",
+          "vertices": 134
+        },
+        "centroid3d": [
+          -0.514,
+          0.429,
+          1.33
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_nose",
+        "adjacent": [
+          "centre_nose",
+          "centre_nose_lower_2",
+          "centre_nose_lower_3",
+          "centre_nose_upper",
+          "centre_nose_upper_2",
+          "left_nose",
+          "right_front"
+        ]
+      },
+      "left_mid_upper": {
+        "rect": [
+          0.3842,
+          0.257,
+          0.0875,
+          0.2616
+        ],
+        "anisotropy": 1.28,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB2",
+          "vertices": 180
+        },
+        "centroid3d": [
+          0.634,
+          1.188,
+          -0.102
+        ],
+        "visible": 0.81,
+        "mirrorOf": "right_mid_upper",
+        "adjacent": [
+          "left_front",
+          "left_mid",
+          "left_rear",
+          "left_rear_lower"
+        ]
+      },
+      "right_mid_upper": {
+        "rect": [
+          0.876,
+          0.257,
+          0.0875,
+          0.2616
+        ],
+        "anisotropy": 1.28,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB1",
+          "vertices": 180
+        },
+        "centroid3d": [
+          -0.634,
+          1.188,
+          -0.102
+        ],
+        "visible": 0.82,
+        "mirrorOf": "left_mid_upper",
+        "adjacent": [
+          "right_front",
+          "right_mid",
+          "right_rear",
+          "right_rear_lower"
+        ]
+      },
+      "left_tail_lower": {
+        "rect": [
+          0.4693,
+          0.658,
+          0.0387,
+          0.0797
+        ],
+        "anisotropy": 2.55,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry73",
+          "vertices": 64
+        },
+        "centroid3d": [
+          0.46,
+          0.277,
+          -2.008
+        ],
+        "safe": [
+          0.4815,
+          0.7066,
+          0.0265,
+          0.0311
+        ],
+        "visible": 0.75,
+        "mirrorOf": "right_tail_lower",
+        "adjacent": [
+          "left_tail"
+        ]
+      },
+      "right_tail_lower": {
+        "rect": [
+          0.4693,
+          0.658,
+          0.0387,
+          0.0797
+        ],
+        "anisotropy": 2.55,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry73",
+          "vertices": 64
+        },
+        "centroid3d": [
+          -0.46,
+          0.277,
+          -2.008
+        ],
+        "safe": [
+          0.4815,
+          0.7066,
+          0.0265,
+          0.0311
+        ],
+        "visible": 0.75,
+        "mirrorOf": "left_tail_lower",
+        "adjacent": [
+          "right_tail"
+        ]
+      },
+      "left_mid_lower_2": {
+        "rect": [
+          0.533,
+          0.9342,
+          0.0979,
+          0.055
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB4",
+          "vertices": 121
+        },
+        "centroid3d": [
+          0.834,
+          1.054,
+          0.179
+        ],
+        "safe": [
+          0.5435,
+          0.9342,
+          0.0874,
+          0.055
+        ],
+        "visible": 0.87,
+        "mirrorOf": "right_mid_lower_2",
+        "adjacent": [
+          "left_mid_lower_3"
+        ]
+      },
+      "right_mid_lower_2": {
+        "rect": [
+          0.533,
+          0.9342,
+          0.0979,
+          0.055
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB2",
+          "vertices": 121
+        },
+        "centroid3d": [
+          -0.834,
+          1.054,
+          0.179
+        ],
+        "safe": [
+          0.5435,
+          0.9342,
+          0.0874,
+          0.055
+        ],
+        "visible": 0.88,
+        "mirrorOf": "left_mid_lower_2",
+        "adjacent": [
+          "right_mid_lower_3"
+        ]
+      },
+      "left_mid_lower_3": {
+        "rect": [
+          0.5145,
+          0.8926,
+          0.1222,
+          0.1025
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB2",
+          "vertices": 289
+        },
+        "centroid3d": [
+          0.827,
+          1.037,
+          0.147
+        ],
+        "visible": 0.84,
+        "mirrorOf": "right_mid_lower_3",
+        "adjacent": [
+          "left_front_upper",
+          "left_mid_lower_2"
+        ]
+      },
+      "right_mid_lower_3": {
+        "rect": [
+          0.5145,
+          0.8926,
+          0.1222,
+          0.1025
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB1",
+          "vertices": 253
+        },
+        "centroid3d": [
+          -0.819,
+          1.03,
+          0.152
+        ],
+        "visible": 0.83,
+        "mirrorOf": "left_mid_lower_3",
+        "adjacent": [
+          "right_front_upper",
+          "right_mid_lower_2"
+        ]
+      },
+      "centre_tail_lower_2": {
+        "rect": [
+          0.638,
+          0.7701,
+          0.0216,
+          0.2092
+        ],
+        "anisotropy": 1.18,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 69
+        },
+        "centroid3d": [
+          0,
+          1.368,
+          -1.401
+        ],
+        "visible": 0.67
+      },
+      "left_front_upper": {
+        "rect": [
+          0.5295,
+          0.8341,
+          0.102,
+          0.0792
+        ],
+        "anisotropy": 0.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB2",
+          "vertices": 45
+        },
+        "centroid3d": [
+          0.767,
+          0.939,
+          0.219
+        ],
+        "visible": 0.87,
+        "mirrorOf": "right_front_upper",
+        "adjacent": [
+          "left_mid_lower_3"
+        ]
+      },
+      "right_front_upper": {
+        "rect": [
+          0.5295,
+          0.8341,
+          0.102,
+          0.0792
+        ],
+        "anisotropy": 0.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB1",
+          "vertices": 45
+        },
+        "centroid3d": [
+          -0.767,
+          0.939,
+          0.219
+        ],
+        "visible": 0.8,
+        "mirrorOf": "left_front_upper",
+        "adjacent": [
+          "right_mid_lower_3"
+        ]
+      },
+      "centre_nose_upper_2": {
+        "rect": [
+          0.0016,
+          0.5115,
+          0.0216,
+          0.1084
+        ],
+        "anisotropy": 0.6,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB1",
+          "vertices": 55
+        },
+        "centroid3d": [
+          0,
+          0.193,
+          1.534
+        ],
+        "visible": 1,
+        "adjacent": [
+          "centre_nose_upper",
+          "left_nose",
+          "right_nose"
+        ]
+      },
+      "centre_tail_upper_3": {
+        "rect": [
+          0.0053,
+          0.1278,
+          0.0648,
+          0.3267
+        ],
+        "anisotropy": 1.42,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_RearBumper_SUB0",
+          "vertices": 67
+        },
+        "centroid3d": [
+          0,
+          0.324,
+          -1.987
+        ],
+        "visible": 0.79,
+        "adjacent": [
+          "centre_tail",
+          "centre_tail_upper_2"
+        ]
+      },
+      "right_mid_upper_2": {
+        "rect": [
+          0.7348,
+          0.9784,
+          0.2541,
+          0.0178
+        ],
+        "anisotropy": 0.88,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 88
+        },
+        "centroid3d": [
+          -0.501,
+          1.417,
+          -0.653
+        ],
+        "visible": 0.99,
+        "mirrorOf": "left_mid_upper_2",
+        "adjacent": [
+          "centre_mid",
+          "centre_rear",
+          "right_rear"
+        ]
+      },
+      "left_mid_upper_2": {
+        "rect": [
+          0.7355,
+          0.7524,
+          0.2541,
+          0.0178
+        ],
+        "anisotropy": 0.88,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 88
+        },
+        "centroid3d": [
+          0.501,
+          1.417,
+          -0.653
+        ],
+        "visible": 0.99,
+        "mirrorOf": "right_mid_upper_2",
+        "adjacent": [
+          "centre_mid",
+          "centre_rear",
+          "left_rear"
+        ]
+      },
+      "right_rear_lower": {
+        "rect": [
+          0.8882,
+          0.1355,
+          0.0777,
+          0.1211
+        ],
+        "anisotropy": 1.13,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 81
+        },
+        "centroid3d": [
+          -0.614,
+          1.179,
+          -1.07
+        ],
+        "visible": 0.94,
+        "mirrorOf": "left_rear_lower",
+        "adjacent": [
+          "right_mid",
+          "right_mid_upper",
+          "right_rear"
+        ]
+      },
+      "left_rear_lower": {
+        "rect": [
+          0.3819,
+          0.1368,
+          0.0778,
+          0.1218
+        ],
+        "anisotropy": 1.15,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB1",
+          "vertices": 81
+        },
+        "centroid3d": [
+          0.614,
+          1.179,
+          -1.07
+        ],
+        "safe": [
+          0.382,
+          0.1368,
+          0.0776,
+          0.1193
+        ],
+        "visible": 0.94,
+        "mirrorOf": "right_rear_lower",
+        "adjacent": [
+          "left_mid",
+          "left_mid_upper",
+          "left_rear"
+        ]
+      },
+      "centre_tail_upper_4": {
+        "rect": [
+          0.1413,
+          0.954,
+          0.082,
+          0.01
+        ],
+        "anisotropy": 0.9,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry91",
+          "vertices": 81
+        },
+        "centroid3d": [
+          0.096,
+          1.111,
+          -1.743
+        ],
+        "visible": 1
+      },
+      "right_tail_lower_2": {
+        "rect": [
+          0.8063,
+          0.0484,
+          0.035,
+          0.0393
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB2",
+          "vertices": 63
+        },
+        "centroid3d": [
+          -0.731,
+          0.783,
+          -1.62
+        ],
+        "visible": 1,
+        "adjacent": [
+          "right_rear"
+        ]
+      }
+    },
+    "display_simboli": {
+      "left_nose": {
+        "rect": [
+          0.0262,
+          0.0039,
+          0.0189,
+          0.0281
+        ],
+        "anisotropy": 0.03,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB4",
+          "vertices": 49
+        },
+        "centroid3d": [
+          0.331,
+          0.992,
+          0.256
+        ],
+        "visible": 0,
+        "hidden": true
+      },
+      "left_tail": {
+        "rect": [
+          0.2477,
+          0.0165,
+          0.085,
+          0.0847
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB4",
+          "vertices": 65
+        },
+        "centroid3d": [
+          0.102,
+          0.77,
+          0.073
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_tail"
+      },
+      "right_tail": {
+        "rect": [
+          0.2474,
+          0.0165,
+          0.085,
+          0.0847
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB4",
+          "vertices": 65
+        },
+        "centroid3d": [
+          -0.102,
+          0.77,
+          0.073
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_tail"
+      }
+    },
+    "skin": {
+      "left_front": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry59_SUB7",
+          "vertices": 945
+        },
+        "centroid3d": [
+          0.622,
+          0.697,
+          -0.196
+        ],
+        "visible": 0.01,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -9.1459,
+          -8.4838,
+          21.0647,
+          16.3234
+        ],
+        "mirrorOf": "right_front",
+        "adjacent": [
+          "left_tail"
+        ]
+      },
+      "right_front": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry109_SUB7",
+          "vertices": 945
+        },
+        "centroid3d": [
+          -0.622,
+          0.697,
+          -0.196
+        ],
+        "visible": 0.01,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -9.1459,
+          -8.4838,
+          21.0647,
+          16.3234
+        ],
+        "mirrorOf": "left_front",
+        "adjacent": [
+          "right_tail"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 155
+        },
+        "centroid3d": [
+          0.582,
+          0.898,
+          -0.952
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -17.3513,
+          -8.1312,
+          22.7928,
+          23.0016
+        ],
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_front"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 155
+        },
+        "centroid3d": [
+          -0.582,
+          0.898,
+          -0.952
+        ],
+        "visible": 0.03,
+        "tiled": true,
+        "uvBounds": [
+          -17.3513,
+          -8.1312,
+          22.7928,
+          23.0016
+        ],
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_front"
+        ]
+      },
+      "centre_nose": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 504
+        },
+        "centroid3d": [
+          0.042,
+          0.76,
+          0.125
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -9.5877,
+          -9.3441,
+          21.734,
+          13.1404
+        ]
+      },
+      "left_mid": {
+        "rect": [
+          0,
+          0,
+          1,
+          0.8605
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 222
+        },
+        "centroid3d": [
+          0.338,
+          0.521,
+          -0.298
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -5.6735,
+          -2.531,
+          11.4037,
+          3.3916
+        ],
+        "mirrorOf": "right_mid"
+      },
+      "right_mid": {
+        "rect": [
+          0,
+          0,
+          1,
+          0.8605
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 222
+        },
+        "centroid3d": [
+          -0.338,
+          0.521,
+          -0.298
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -5.6735,
+          -2.531,
+          11.4037,
+          3.3916
+        ],
+        "mirrorOf": "left_mid"
+      },
+      "centre_front": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "manopolo_cambio_SUB1",
+          "vertices": 221
+        },
+        "centroid3d": [
+          -0.002,
+          0.832,
+          -0.07
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -1.8851,
+          -0.8885,
+          4.7702,
+          3.4907
+        ],
+        "mirrorOf": "left_nose"
+      },
+      "left_nose": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry81_SUB1",
+          "vertices": 628
+        },
+        "centroid3d": [
+          0.209,
+          0.943,
+          -0.027
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -4.5444,
+          -1.2869,
+          6.2885,
+          3.8852
+        ],
+        "mirrorOf": "centre_front"
+      },
+      "centre_mid": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB2",
+          "vertices": 80
+        },
+        "centroid3d": [
+          -0.001,
+          0.515,
+          -0.361
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -0.9398,
+          -0.1966,
+          2.3056,
+          2.1373
+        ]
+      }
+    },
+    "rims": {
+      "right_nose": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 308
+        },
+        "centroid3d": [
+          -0.8,
+          0.296,
+          0.788
+        ],
+        "visible": 0.94,
+        "mirrorOf": "left_nose",
+        "adjacent": [
+          "right_nose_lower_2",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_2",
+          "right_nose_upper_3",
+          "right_nose_upper_4",
+          "right_nose_upper_5",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 308
+        },
+        "centroid3d": [
+          -0.8,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.94,
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_tail_lower_2",
+          "right_tail_lower_3",
+          "right_tail_lower_4",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 308
+        },
+        "centroid3d": [
+          0.8,
+          0.296,
+          0.788
+        ],
+        "visible": 0.97,
+        "mirrorOf": "right_nose",
+        "adjacent": [
+          "left_nose_lower_2",
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_2",
+          "left_nose_upper_3",
+          "left_nose_upper_4",
+          "left_nose_upper_5",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.07,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 308
+        },
+        "centroid3d": [
+          0.8,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.97,
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_tail_lower_2",
+          "left_tail_lower_3",
+          "left_tail_lower_4",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper": {
+        "rect": [
+          0.2909,
+          0.3208,
+          0.4181,
+          0.3976
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 123
+        },
+        "centroid3d": [
+          -0.779,
+          0.296,
+          0.788
+        ],
+        "visible": 0.91,
+        "mirrorOf": "left_nose_upper",
+        "adjacent": [
+          "right_nose_lower",
+          "right_nose_lower_2",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_upper_2",
+          "right_nose_upper_3",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_upper": {
+        "rect": [
+          0.2909,
+          0.3208,
+          0.4181,
+          0.3976
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 123
+        },
+        "centroid3d": [
+          -0.779,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.91,
+        "mirrorOf": "left_tail_upper",
+        "adjacent": [
+          "right_tail_lower",
+          "right_tail_lower_2",
+          "right_tail_lower_3",
+          "right_tail_lower_4",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_upper": {
+        "rect": [
+          0.2909,
+          0.3208,
+          0.4181,
+          0.3976
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 123
+        },
+        "centroid3d": [
+          0.779,
+          0.296,
+          0.788
+        ],
+        "visible": 0.92,
+        "mirrorOf": "right_nose_upper",
+        "adjacent": [
+          "left_nose_lower",
+          "left_nose_lower_2",
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_upper_2",
+          "left_nose_upper_3",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_upper": {
+        "rect": [
+          0.2909,
+          0.3208,
+          0.4181,
+          0.3976
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 123
+        },
+        "centroid3d": [
+          0.779,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.92,
+        "mirrorOf": "right_tail_upper",
+        "adjacent": [
+          "left_tail_lower",
+          "left_tail_lower_2",
+          "left_tail_lower_3",
+          "left_tail_lower_4",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.785,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_lower",
+        "adjacent": [
+          "right_nose_upper"
+        ]
+      },
+      "right_tail_lower": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.785,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_lower",
+        "adjacent": [
+          "right_tail_upper"
+        ]
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.785,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_lower",
+        "adjacent": [
+          "left_nose_upper"
+        ]
+      },
+      "left_tail_lower": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.785,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_lower",
+        "adjacent": [
+          "left_tail_upper"
+        ]
+      },
+      "right_nose_lower_2": {
+        "rect": [
+          0.2862,
+          0.0548,
+          0.4277,
+          0.2657
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.447,
+          0.788
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_nose_lower_2",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_7",
+          "right_nose_upper",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_2": {
+        "rect": [
+          0.2862,
+          0.0548,
+          0.4277,
+          0.2657
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.447,
+          -1.513
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_tail_lower_2",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_3",
+          "right_tail_lower_4",
+          "right_tail_lower_7",
+          "right_tail_upper",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_2": {
+        "rect": [
+          0.2862,
+          0.0548,
+          0.4277,
+          0.2657
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.447,
+          0.788
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_nose_lower_2",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_7",
+          "left_nose_upper",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_2": {
+        "rect": [
+          0.2862,
+          0.0548,
+          0.4277,
+          0.2657
+        ],
+        "anisotropy": 1.06,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.447,
+          -1.513
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_tail_lower_2",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_3",
+          "left_tail_lower_4",
+          "left_tail_lower_7",
+          "left_tail_upper",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper_2": {
+        "rect": [
+          0.1034,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.173,
+          0.877
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_nose_upper_2",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_3",
+          "right_nose_upper",
+          "right_nose_upper_3",
+          "right_nose_upper_5",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_upper_2": {
+        "rect": [
+          0.1034,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.173,
+          -1.424
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_tail_upper_2",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_3",
+          "right_tail_upper",
+          "right_tail_upper_3",
+          "right_tail_upper_5",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_upper_2": {
+        "rect": [
+          0.1034,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.173,
+          0.877
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_nose_upper_2",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_3",
+          "left_nose_upper",
+          "left_nose_upper_3",
+          "left_nose_upper_5",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_upper_2": {
+        "rect": [
+          0.1034,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.173,
+          -1.424
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_tail_upper_2",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_3",
+          "left_tail_upper",
+          "left_tail_upper_3",
+          "left_tail_upper_5",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower_3": {
+        "rect": [
+          0.0532,
+          0.1818,
+          0.3091,
+          0.415
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.342,
+          0.932
+        ],
+        "visible": 0.88,
+        "mirrorOf": "left_nose_lower_3",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_2",
+          "right_nose_lower_6",
+          "right_nose_upper",
+          "right_nose_upper_2",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_3": {
+        "rect": [
+          0.0532,
+          0.1818,
+          0.3091,
+          0.415
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.342,
+          -1.369
+        ],
+        "visible": 0.88,
+        "mirrorOf": "left_tail_lower_3",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_2",
+          "right_tail_lower_6",
+          "right_tail_upper",
+          "right_tail_upper_2",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_3": {
+        "rect": [
+          0.0532,
+          0.1818,
+          0.3091,
+          0.415
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.342,
+          0.932
+        ],
+        "visible": 0.9,
+        "mirrorOf": "right_nose_lower_3",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_2",
+          "left_nose_lower_6",
+          "left_nose_upper",
+          "left_nose_upper_2",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_3": {
+        "rect": [
+          0.0532,
+          0.1818,
+          0.3091,
+          0.415
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.342,
+          -1.369
+        ],
+        "visible": 0.9,
+        "mirrorOf": "right_tail_lower_3",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_2",
+          "left_tail_lower_6",
+          "left_tail_upper",
+          "left_tail_upper_2",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper_3": {
+        "rect": [
+          0.5046,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.173,
+          0.699
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_nose_upper_3",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_4",
+          "right_nose_upper",
+          "right_nose_upper_2",
+          "right_nose_upper_4",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_upper_3": {
+        "rect": [
+          0.5046,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.173,
+          -1.602
+        ],
+        "visible": 0.87,
+        "mirrorOf": "left_tail_upper_3",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_4",
+          "right_tail_upper",
+          "right_tail_upper_2",
+          "right_tail_upper_4",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_upper_3": {
+        "rect": [
+          0.5046,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.173,
+          0.699
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_nose_upper_3",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_4",
+          "left_nose_upper",
+          "left_nose_upper_2",
+          "left_nose_upper_4",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_upper_3": {
+        "rect": [
+          0.5046,
+          0.577,
+          0.392,
+          0.3623
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.173,
+          -1.602
+        ],
+        "visible": 0.91,
+        "mirrorOf": "right_tail_upper_3",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_4",
+          "left_tail_upper",
+          "left_tail_upper_2",
+          "left_tail_upper_4",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower_4": {
+        "rect": [
+          0.6376,
+          0.1818,
+          0.3091,
+          0.4149
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.342,
+          0.644
+        ],
+        "visible": 0.88,
+        "mirrorOf": "left_nose_lower_4",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_2",
+          "right_nose_lower_5",
+          "right_nose_upper",
+          "right_nose_upper_3",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_4": {
+        "rect": [
+          0.6376,
+          0.1818,
+          0.3091,
+          0.4149
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 89
+        },
+        "centroid3d": [
+          -0.792,
+          0.342,
+          -1.657
+        ],
+        "visible": 0.88,
+        "mirrorOf": "left_tail_lower_4",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_2",
+          "right_tail_lower_5",
+          "right_tail_upper",
+          "right_tail_upper_3",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_4": {
+        "rect": [
+          0.6376,
+          0.1818,
+          0.3091,
+          0.4149
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.342,
+          0.644
+        ],
+        "visible": 0.9,
+        "mirrorOf": "right_nose_lower_4",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_2",
+          "left_nose_lower_5",
+          "left_nose_upper",
+          "left_nose_upper_3",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_4": {
+        "rect": [
+          0.6376,
+          0.1818,
+          0.3091,
+          0.4149
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 89
+        },
+        "centroid3d": [
+          0.792,
+          0.342,
+          -1.657
+        ],
+        "visible": 0.9,
+        "mirrorOf": "right_tail_lower_4",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_2",
+          "left_tail_lower_5",
+          "left_tail_upper",
+          "left_tail_upper_3",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper_4": {
+        "rect": [
+          0.5473,
+          0.6356,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.164,
+          0.693
+        ],
+        "safe": [
+          0.5587,
+          0.6907,
+          0.293,
+          0.214
+        ],
+        "visible": 0.29,
+        "mirrorOf": "left_nose_upper_4",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_8",
+          "right_nose_upper_3",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_upper_4": {
+        "rect": [
+          0.5473,
+          0.6356,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.164,
+          -1.609
+        ],
+        "safe": [
+          0.5587,
+          0.6907,
+          0.293,
+          0.214
+        ],
+        "visible": 0.29,
+        "mirrorOf": "left_tail_upper_4",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_8",
+          "right_tail_upper_3",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_upper_4": {
+        "rect": [
+          0.5473,
+          0.6356,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.164,
+          0.693
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_upper_4",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_8",
+          "left_nose_upper_3",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_upper_4": {
+        "rect": [
+          0.5473,
+          0.6356,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.164,
+          -1.609
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_upper_4",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_8",
+          "left_tail_upper_3",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower_5": {
+        "rect": [
+          0.6995,
+          0.2256,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.346,
+          0.633
+        ],
+        "safe": [
+          0.7872,
+          0.2256,
+          0.1294,
+          0.3258
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_nose_lower_5",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_4",
+          "right_nose_lower_8",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_5": {
+        "rect": [
+          0.6995,
+          0.2256,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.346,
+          -1.668
+        ],
+        "safe": [
+          0.7872,
+          0.2256,
+          0.1294,
+          0.3258
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_tail_lower_5",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_4",
+          "right_tail_lower_8",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_5": {
+        "rect": [
+          0.6995,
+          0.2256,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.346,
+          0.633
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_lower_5",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_4",
+          "left_nose_lower_8",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_5": {
+        "rect": [
+          0.6995,
+          0.2256,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.346,
+          -1.668
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_lower_5",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_4",
+          "left_tail_lower_8",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower_6": {
+        "rect": [
+          0.0835,
+          0.2241,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.346,
+          0.943
+        ],
+        "safe": [
+          0.0835,
+          0.2241,
+          0.1294,
+          0.3258
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_nose_lower_6",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_3",
+          "right_nose_lower_8",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_6": {
+        "rect": [
+          0.0835,
+          0.2241,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.346,
+          -1.358
+        ],
+        "safe": [
+          0.0835,
+          0.2241,
+          0.1294,
+          0.3258
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_tail_lower_6",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_3",
+          "right_tail_lower_8",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_6": {
+        "rect": [
+          0.0835,
+          0.2241,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.346,
+          0.943
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_lower_6",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_3",
+          "left_nose_lower_8",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_6": {
+        "rect": [
+          0.0835,
+          0.2241,
+          0.217,
+          0.3258
+        ],
+        "anisotropy": 1.72,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.346,
+          -1.358
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_lower_6",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_3",
+          "left_tail_lower_8",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper_5": {
+        "rect": [
+          0.1453,
+          0.6341,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.164,
+          0.884
+        ],
+        "safe": [
+          0.1453,
+          0.6892,
+          0.293,
+          0.214
+        ],
+        "visible": 0.29,
+        "mirrorOf": "left_nose_upper_5",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_8",
+          "right_nose_upper_2",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_upper_5": {
+        "rect": [
+          0.1453,
+          0.6341,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.164,
+          -1.417
+        ],
+        "safe": [
+          0.1453,
+          0.6892,
+          0.293,
+          0.214
+        ],
+        "visible": 0.29,
+        "mirrorOf": "left_tail_upper_5",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_8",
+          "right_tail_upper_2",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_upper_5": {
+        "rect": [
+          0.1453,
+          0.6341,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.164,
+          0.884
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_upper_5",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_8",
+          "left_nose_upper_2",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_upper_5": {
+        "rect": [
+          0.1453,
+          0.6341,
+          0.3044,
+          0.2691
+        ],
+        "anisotropy": 1.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.164,
+          -1.417
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_upper_5",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_8",
+          "left_tail_upper_2",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_lower_7": {
+        "rect": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1742
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.458,
+          0.788
+        ],
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.0903
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_nose_lower_7",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_2",
+          "right_nose_lower_8",
+          "right_nose_upper_6"
+        ]
+      },
+      "right_tail_lower_7": {
+        "rect": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1742
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.774,
+          0.458,
+          -1.513
+        ],
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.0903
+        ],
+        "visible": 0.31,
+        "mirrorOf": "left_tail_lower_7",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_2",
+          "right_tail_lower_8",
+          "right_tail_upper_6"
+        ]
+      },
+      "left_nose_lower_7": {
+        "rect": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1742
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.458,
+          0.788
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_lower_7",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_2",
+          "left_nose_lower_8",
+          "left_nose_upper_6"
+        ]
+      },
+      "left_tail_lower_7": {
+        "rect": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1742
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.774,
+          0.458,
+          -1.513
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_lower_7",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_2",
+          "left_tail_lower_8",
+          "left_tail_upper_6"
+        ]
+      },
+      "right_nose_upper_6": {
+        "rect": [
+          0.8401,
+          0.8414,
+          0.1558,
+          0.1502
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 131
+        },
+        "centroid3d": [
+          -0.751,
+          0.296,
+          0.788
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_nose_upper_6",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_2",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper",
+          "right_nose_upper_2",
+          "right_nose_upper_3",
+          "right_nose_upper_4",
+          "right_nose_upper_5"
+        ]
+      },
+      "right_tail_upper_6": {
+        "rect": [
+          0.8401,
+          0.8414,
+          0.1558,
+          0.1502
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 131
+        },
+        "centroid3d": [
+          -0.751,
+          0.296,
+          -1.513
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_tail_upper_6",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_2",
+          "right_tail_lower_3",
+          "right_tail_lower_4",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_upper",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
+        ]
+      },
+      "left_nose_upper_6": {
+        "rect": [
+          0.8401,
+          0.8414,
+          0.1558,
+          0.1502
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 131
+        },
+        "centroid3d": [
+          0.751,
+          0.296,
+          0.788
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_nose_upper_6",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_2",
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper",
+          "left_nose_upper_2",
+          "left_nose_upper_3",
+          "left_nose_upper_4",
+          "left_nose_upper_5"
+        ]
+      },
+      "left_tail_upper_6": {
+        "rect": [
+          0.8401,
+          0.8414,
+          0.1558,
+          0.1502
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 131
+        },
+        "centroid3d": [
+          0.751,
+          0.296,
+          -1.513
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_tail_upper_6",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_2",
+          "left_tail_lower_3",
+          "left_tail_lower_4",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_upper",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5"
+        ]
+      },
+      "right_nose_lower_8": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 72
+        },
+        "centroid3d": [
+          -0.695,
+          0.296,
+          0.783
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_nose_lower_8",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_upper_4",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7"
+        ]
+      },
+      "right_tail_lower_8": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 72
+        },
+        "centroid3d": [
+          -0.695,
+          0.296,
+          -1.519
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_tail_lower_8",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_upper_4",
+          "right_tail_upper_5",
+          "right_tail_upper_6",
+          "right_tail_upper_7"
+        ]
+      },
+      "left_nose_lower_8": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 72
+        },
+        "centroid3d": [
+          0.695,
+          0.296,
+          0.783
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_nose_lower_8",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_upper_4",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7"
+        ]
+      },
+      "left_tail_lower_8": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 72
+        },
+        "centroid3d": [
+          0.695,
+          0.296,
+          -1.519
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_tail_lower_8",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "left_tail_upper_6",
+          "left_tail_upper_7"
+        ]
+      },
+      "right_nose_upper_7": {
+        "rect": [
+          0.0162,
+          0.9466,
+          0.1048,
+          0.0437
+        ],
+        "anisotropy": 19.34,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry107",
+          "vertices": 53
+        },
+        "centroid3d": [
+          -0.594,
+          0.297,
+          0.78
+        ],
+        "safe": [
+          0.0851,
+          0.9466,
+          0.0121,
+          0.0437
+        ],
+        "visible": 0.11,
+        "mirrorOf": "left_nose_upper_7",
+        "adjacent": [
+          "right_nose_lower_8"
+        ]
+      },
+      "right_tail_upper_7": {
+        "rect": [
+          0.0162,
+          0.9466,
+          0.1048,
+          0.0437
+        ],
+        "anisotropy": 19.34,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry58",
+          "vertices": 53
+        },
+        "centroid3d": [
+          -0.594,
+          0.297,
+          -1.522
+        ],
+        "safe": [
+          0.0851,
+          0.9466,
+          0.016,
+          0.0437
+        ],
+        "visible": 0.17,
+        "mirrorOf": "left_tail_upper_7",
+        "adjacent": [
+          "right_tail_lower_8"
+        ]
+      },
+      "left_nose_upper_7": {
+        "rect": [
+          0.0162,
+          0.9466,
+          0.1048,
+          0.0437
+        ],
+        "anisotropy": 19.34,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry66",
+          "vertices": 53
+        },
+        "centroid3d": [
+          0.594,
+          0.297,
+          0.78
+        ],
+        "safe": [
+          0.0851,
+          0.9466,
+          0.016,
+          0.0437
+        ],
+        "visible": 0.13,
+        "mirrorOf": "right_nose_upper_7",
+        "adjacent": [
+          "left_nose_lower_8"
+        ]
+      },
+      "left_tail_upper_7": {
+        "rect": [
+          0.0162,
+          0.9466,
+          0.1048,
+          0.0437
+        ],
+        "anisotropy": 19.34,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry71",
+          "vertices": 53
+        },
+        "centroid3d": [
+          0.594,
+          0.297,
+          -1.522
+        ],
+        "safe": [
+          0.0851,
+          0.9466,
+          0.016,
+          0.0437
+        ],
+        "visible": 0.17,
+        "mirrorOf": "right_tail_upper_7",
+        "adjacent": [
+          "left_tail_lower_8"
+        ]
+      }
+    },
+    "tessuto": {
+      "right_nose": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry109_SUB6",
+          "vertices": 185
+        },
+        "centroid3d": [
+          -0.615,
+          0.703,
+          -0.255
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -0.2684,
+          -1.2252,
+          1.6042,
+          4.3568
+        ],
+        "mirrorOf": "left_nose"
+      },
+      "left_nose": {
+        "rect": [
+          0,
+          0,
+          1,
+          1
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry59_SUB6",
+          "vertices": 185
+        },
+        "centroid3d": [
+          0.615,
+          0.703,
+          -0.255
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -0.2684,
+          -1.2252,
+          1.6042,
+          4.3568
+        ],
+        "mirrorOf": "right_nose"
+      },
+      "right_rear": {
+        "rect": [
+          0,
+          0,
+          0.4209,
+          1
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 48
+        },
+        "centroid3d": [
+          -0.493,
+          0.828,
+          -0.634
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -1.1706,
+          -1.9838,
+          1.5915,
+          3.0161
+        ],
+        "mirrorOf": "left_rear",
+        "adjacent": [
+          "right_rear_upper",
+          "right_tail"
+        ]
+      },
+      "left_rear": {
+        "rect": [
+          0,
+          0,
+          0.4209,
+          1
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0.493,
+          0.828,
+          -0.634
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -1.1706,
+          -1.9838,
+          1.5915,
+          3.0161
+        ],
+        "mirrorOf": "right_rear",
+        "adjacent": [
+          "left_rear_upper",
+          "left_tail"
+        ]
+      },
+      "right_rear_upper": {
+        "rect": [
+          0,
+          0,
+          0.2491,
+          1
+        ],
+        "anisotropy": 0.98,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 74
+        },
+        "centroid3d": [
+          -0.525,
+          0.815,
+          -0.631
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -1.4276,
+          -1.7933,
+          1.6767,
+          3.0207
+        ],
+        "mirrorOf": "left_rear_upper",
+        "adjacent": [
+          "right_rear",
+          "right_tail"
+        ]
+      },
+      "left_rear_upper": {
+        "rect": [
+          0,
+          0,
+          0.2491,
+          1
+        ],
+        "anisotropy": 0.98,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 74
+        },
+        "centroid3d": [
+          0.525,
+          0.815,
+          -0.631
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          -1.4276,
+          -1.7933,
+          1.6767,
+          3.0207
+        ],
+        "mirrorOf": "right_rear_upper",
+        "adjacent": [
+          "left_rear",
+          "left_tail"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.2491,
+          0.7213,
+          0.7509,
+          0.2787
+        ],
+        "anisotropy": 0.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 67
+        },
+        "centroid3d": [
+          -0.331,
+          1.035,
+          -0.722
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.2491,
+          0.7213,
+          1.466,
+          0.5697
+        ],
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_rear",
+          "right_rear_upper"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.2491,
+          0.7213,
+          0.7509,
+          0.2787
+        ],
+        "anisotropy": 0.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB22",
+          "vertices": 67
+        },
+        "centroid3d": [
+          0.331,
+          1.035,
+          -0.722
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.2491,
+          0.7213,
+          1.466,
+          0.5697
+        ],
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_rear",
+          "left_rear_upper"
+        ]
+      }
+    },
+    "rims_2": {
+      "right_nose": {
+        "rect": [
+          0.0533,
+          0.0511,
+          0.8934,
+          0.8978
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB0",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.796,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose",
+        "adjacent": [
+          "right_nose_lower",
+          "right_nose_upper",
+          "right_nose_upper_2",
+          "right_nose_upper_3"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.0533,
+          0.0511,
+          0.8934,
+          0.8978
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB0",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.796,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_tail_lower",
+          "right_tail_upper",
+          "right_tail_upper_2",
+          "right_tail_upper_3"
+        ]
+      },
+      "left_nose": {
+        "rect": [
+          0.0533,
+          0.0511,
+          0.8934,
+          0.8978
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB0",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.796,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose",
+        "adjacent": [
+          "left_nose_lower",
+          "left_nose_upper",
+          "left_nose_upper_2",
+          "left_nose_upper_3"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.0533,
+          0.0511,
+          0.8934,
+          0.8978
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB0",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.796,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_tail_lower",
+          "left_tail_upper",
+          "left_tail_upper_2",
+          "left_tail_upper_3"
+        ]
+      },
+      "right_nose_upper": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 260
+        },
+        "centroid3d": [
+          -0.803,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_upper",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower",
+          "right_nose_upper_3"
+        ]
+      },
+      "right_tail_upper": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 260
+        },
+        "centroid3d": [
+          -0.803,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_upper",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower",
+          "right_tail_upper_3"
+        ]
+      },
+      "left_nose_upper": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 260
+        },
+        "centroid3d": [
+          0.803,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_upper",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower",
+          "left_nose_upper_3"
+        ]
+      },
+      "left_tail_upper": {
+        "rect": [
+          0.0051,
+          0.0051,
+          0.9898,
+          0.9898
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 260
+        },
+        "centroid3d": [
+          0.804,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_upper",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower",
+          "left_tail_upper_3"
+        ]
+      },
+      "right_nose_lower": {
+        "rect": [
+          0.079,
+          0.079,
+          0.8419,
+          0.8419
+        ],
+        "anisotropy": 1.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          -0.778,
+          0.296,
+          0.788
+        ],
+        "visible": 0.5,
+        "mirrorOf": "left_nose_lower",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_4",
+          "right_nose_upper",
+          "right_nose_upper_3"
+        ]
+      },
+      "right_tail_lower": {
+        "rect": [
+          0.079,
+          0.079,
+          0.8419,
+          0.8419
+        ],
+        "anisotropy": 1.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          -0.778,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.5,
+        "mirrorOf": "left_tail_lower",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_4",
+          "right_tail_upper",
+          "right_tail_upper_3"
+        ]
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.079,
+          0.079,
+          0.8419,
+          0.8419
+        ],
+        "anisotropy": 1.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          0.778,
+          0.296,
+          0.788
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_nose_lower",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_4",
+          "left_nose_upper",
+          "left_nose_upper_3"
+        ]
+      },
+      "left_tail_lower": {
+        "rect": [
+          0.079,
+          0.079,
+          0.8419,
+          0.8419
+        ],
+        "anisotropy": 1.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          0.778,
+          0.296,
+          -1.513
+        ],
+        "visible": 0.5,
+        "mirrorOf": "right_tail_lower",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_4",
+          "left_tail_upper",
+          "left_tail_upper_3"
+        ]
+      },
+      "right_nose_lower_2": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.785,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_lower_2",
+        "adjacent": [
+          "right_nose_lower_3"
+        ]
+      },
+      "right_tail_lower_2": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.785,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_lower_2",
+        "adjacent": [
+          "right_tail_lower_3"
+        ]
+      },
+      "left_nose_lower_2": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.785,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_lower_2",
+        "adjacent": [
+          "left_nose_lower_3"
+        ]
+      },
+      "left_tail_lower_2": {
+        "rect": [
+          0.377,
+          0.3765,
+          0.2459,
+          0.2471
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.785,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_lower_2",
+        "adjacent": [
+          "left_tail_lower_3"
+        ]
+      },
+      "right_nose_upper_2": {
+        "rect": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.793,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_upper_2",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower_3",
+          "right_nose_upper_4"
+        ]
+      },
+      "right_tail_upper_2": {
+        "rect": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.793,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_upper_2",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower_3",
+          "right_tail_upper_4"
+        ]
+      },
+      "left_nose_upper_2": {
+        "rect": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.793,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_upper_2",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower_3",
+          "left_nose_upper_4"
+        ]
+      },
+      "left_tail_upper_2": {
+        "rect": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.793,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_upper_2",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower_3",
+          "left_tail_upper_4"
+        ]
+      },
+      "right_nose_upper_3": {
+        "rect": [
+          0.0628,
+          0.0628,
+          0.8744,
+          0.8744
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          -0.802,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_upper_3",
+        "adjacent": [
+          "right_nose",
+          "right_nose_lower",
+          "right_nose_upper"
+        ]
+      },
+      "right_tail_upper_3": {
+        "rect": [
+          0.0628,
+          0.0628,
+          0.8744,
+          0.8744
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          -0.802,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_upper_3",
+        "adjacent": [
+          "right_tail",
+          "right_tail_lower",
+          "right_tail_upper"
+        ]
+      },
+      "left_nose_upper_3": {
+        "rect": [
+          0.0628,
+          0.0628,
+          0.8744,
+          0.8744
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          0.802,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_upper_3",
+        "adjacent": [
+          "left_nose",
+          "left_nose_lower",
+          "left_nose_upper"
+        ]
+      },
+      "left_tail_upper_3": {
+        "rect": [
+          0.0628,
+          0.0628,
+          0.8744,
+          0.8744
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 104
+        },
+        "centroid3d": [
+          0.802,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_upper_3",
+        "adjacent": [
+          "left_tail",
+          "left_tail_lower",
+          "left_tail_upper"
+        ]
+      },
+      "right_nose_lower_3": {
+        "rect": [
+          0.3403,
+          0.3396,
+          0.3193,
+          0.3209
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 78
+        },
+        "centroid3d": [
+          -0.782,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_lower_3",
+        "adjacent": [
+          "right_nose_lower_2",
+          "right_nose_upper_2",
+          "right_nose_upper_4"
+        ]
+      },
+      "right_tail_lower_3": {
+        "rect": [
+          0.3403,
+          0.3396,
+          0.3193,
+          0.3209
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 78
+        },
+        "centroid3d": [
+          -0.782,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_lower_3",
+        "adjacent": [
+          "right_tail_lower_2",
+          "right_tail_upper_2",
+          "right_tail_upper_4"
+        ]
+      },
+      "left_nose_lower_3": {
+        "rect": [
+          0.3403,
+          0.3396,
+          0.3193,
+          0.3209
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 78
+        },
+        "centroid3d": [
+          0.782,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_lower_3",
+        "adjacent": [
+          "left_nose_lower_2",
+          "left_nose_upper_2",
+          "left_nose_upper_4"
+        ]
+      },
+      "left_tail_lower_3": {
+        "rect": [
+          0.3403,
+          0.3396,
+          0.3193,
+          0.3209
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 78
+        },
+        "centroid3d": [
+          0.782,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_lower_3",
+        "adjacent": [
+          "left_tail_lower_2",
+          "left_tail_upper_2",
+          "left_tail_upper_4"
+        ]
+      },
+      "right_nose_upper_4": {
+        "rect": [
+          0.3242,
+          0.3234,
+          0.3516,
+          0.3533
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.788,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose_upper_4",
+        "adjacent": [
+          "right_nose_lower_3",
+          "right_nose_upper_2"
+        ]
+      },
+      "right_tail_upper_4": {
+        "rect": [
+          0.3242,
+          0.3234,
+          0.3516,
+          0.3533
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          -0.788,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail_upper_4",
+        "adjacent": [
+          "right_tail_lower_3",
+          "right_tail_upper_2"
+        ]
+      },
+      "left_nose_upper_4": {
+        "rect": [
+          0.3242,
+          0.3234,
+          0.3516,
+          0.3533
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.788,
+          0.296,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose_upper_4",
+        "adjacent": [
+          "left_nose_lower_3",
+          "left_nose_upper_2"
+        ]
+      },
+      "left_tail_upper_4": {
+        "rect": [
+          0.3242,
+          0.3234,
+          0.3516,
+          0.3533
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 52
+        },
+        "centroid3d": [
+          0.788,
+          0.296,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail_upper_4",
+        "adjacent": [
+          "left_tail_lower_3",
+          "left_tail_upper_2"
+        ]
+      },
+      "right_nose_lower_4": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur1_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.701,
+          0.296,
+          0.793
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_nose_lower_4",
+        "adjacent": [
+          "right_nose_lower"
+        ]
+      },
+      "right_tail_lower_4": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur2_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          -0.701,
+          0.296,
+          -1.508
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_tail_lower_4",
+        "adjacent": [
+          "right_tail_lower"
+        ]
+      },
+      "left_nose_lower_4": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.701,
+          0.296,
+          0.783
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_nose_lower_4",
+        "adjacent": [
+          "left_nose_lower"
+        ]
+      },
+      "left_tail_lower_4": {
+        "rect": [
+          0.0134,
+          0.8741,
+          0.1068,
+          0.0726
+        ],
+        "anisotropy": 5.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_rimblur3_SUB1",
+          "vertices": 79
+        },
+        "centroid3d": [
+          0.701,
+          0.296,
+          -1.518
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_tail_lower_4",
+        "adjacent": [
+          "left_tail_lower"
+        ]
+      }
+    },
+    "mat_plastica_grigia": {},
+    "interior": {
+      "centre_nose": {
+        "rect": [
+          0.5579,
+          0.0077,
+          0.4392,
+          0.457
+        ],
+        "anisotropy": 1.49,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 134
+        },
+        "centroid3d": [
+          0.034,
+          0.952,
+          0.277
+        ],
+        "safe": [
+          0.5663,
+          0.0077,
+          0.4173,
+          0.056
+        ],
+        "visible": 0.15,
+        "adjacent": [
+          "centre_front",
+          "centre_nose_lower",
+          "left_mid",
+          "left_mid_upper_2",
+          "left_nose_upper",
+          "left_nose_upper_2",
+          "left_nose_upper_3",
+          "right_mid",
+          "right_mid_upper_2"
+        ]
+      },
+      "left_mid": {
+        "rect": [
+          0.1954,
+          0.2296,
+          0.3539,
+          0.3188
+        ],
+        "anisotropy": 2.21,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.624,
+          0.861,
+          -0.413
+        ],
+        "safe": [
+          0.3328,
+          0.2296,
+          0.131,
+          0
+        ],
+        "visible": 0.12,
+        "mirrorOf": "right_mid",
+        "adjacent": [
+          "centre_nose",
+          "left_mid_upper_2"
+        ]
+      },
+      "right_mid": {
+        "rect": [
+          0.1954,
+          0.2296,
+          0.3539,
+          0.3188
+        ],
+        "anisotropy": 2.21,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.624,
+          0.861,
+          -0.413
+        ],
+        "safe": [
+          0.2715,
+          0.2296,
+          0.2285,
+          0.0156
+        ],
+        "visible": 0.17,
+        "mirrorOf": "left_mid",
+        "adjacent": [
+          "centre_nose",
+          "right_mid_upper_2"
+        ]
+      },
+      "centre_rear": {
+        "rect": [
+          0.245,
+          0.0077,
+          0.1502,
+          0.2044
+        ],
+        "anisotropy": 5.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 61
+        },
+        "centroid3d": [
+          0,
+          1.356,
+          -0.902
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_tail",
+          "left_mid_upper_2",
+          "right_mid_upper_2"
+        ]
+      },
+      "left_mid_upper": {
+        "rect": [
+          0.7661,
+          0.6484,
+          0.2287,
+          0.3161
+        ],
+        "anisotropy": 1.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 55
+        },
+        "centroid3d": [
+          0.33,
+          0.915,
+          -0.676
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_mid_upper",
+        "adjacent": [
+          "left_front"
+        ]
+      },
+      "right_mid_upper": {
+        "rect": [
+          0.7661,
+          0.6484,
+          0.2287,
+          0.3161
+        ],
+        "anisotropy": 1.5,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 55
+        },
+        "centroid3d": [
+          -0.33,
+          0.915,
+          -0.676
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_mid_upper",
+        "adjacent": [
+          "right_front"
+        ]
+      },
+      "left_front": {
+        "rect": [
+          0.6355,
+          0.4642,
+          0.2098,
+          0.266
+        ],
+        "anisotropy": 2.16,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 43
+        },
+        "centroid3d": [
+          0.338,
+          0.534,
+          -0.325
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "right_front",
+        "adjacent": [
+          "left_mid_upper"
+        ]
+      },
+      "right_front": {
+        "rect": [
+          0.6355,
+          0.4642,
+          0.2098,
+          0.266
+        ],
+        "anisotropy": 2.16,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 43
+        },
+        "centroid3d": [
+          -0.338,
+          0.534,
+          -0.325
+        ],
+        "visible": 0,
+        "hidden": true,
+        "mirrorOf": "left_front",
+        "adjacent": [
+          "right_mid_upper"
+        ]
+      },
+      "left_nose": {
+        "rect": [
+          0.4957,
+          0.6628,
+          0.1816,
+          0.3243
+        ],
+        "anisotropy": 1.63,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry85",
+          "vertices": 183
+        },
+        "centroid3d": [
+          0.332,
+          0.95,
+          -0.034
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_nose_lower"
+        ]
+      },
+      "centre_front": {
+        "rect": [
+          0.3837,
+          0.5549,
+          0.1379,
+          0.4302
+        ],
+        "anisotropy": 2.15,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 69
+        },
+        "centroid3d": [
+          -0.009,
+          0.543,
+          -0.186
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_nose",
+          "centre_nose_lower"
+        ]
+      },
+      "left_mid_upper_2": {
+        "rect": [
+          0.0058,
+          0.2479,
+          0.1228,
+          0.7315
+        ],
+        "anisotropy": 1.68,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 148
+        },
+        "centroid3d": [
+          0.566,
+          1.21,
+          -0.389
+        ],
+        "safe": [
+          0.0058,
+          0.2479,
+          0.1065,
+          0.4262
+        ],
+        "visible": 0.32,
+        "mirrorOf": "right_mid_upper_2",
+        "adjacent": [
+          "centre_nose",
+          "centre_rear",
+          "centre_tail",
+          "left_mid"
+        ]
+      },
+      "right_mid_upper_2": {
+        "rect": [
+          0.0058,
+          0.2479,
+          0.1228,
+          0.7315
+        ],
+        "anisotropy": 1.68,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 148
+        },
+        "centroid3d": [
+          -0.566,
+          1.21,
+          -0.389
+        ],
+        "safe": [
+          0.0058,
+          0.2479,
+          0.1065,
+          0.5264
+        ],
+        "visible": 0.32,
+        "mirrorOf": "left_mid_upper_2",
+        "adjacent": [
+          "centre_nose",
+          "centre_rear",
+          "centre_tail",
+          "right_mid"
+        ]
+      },
+      "centre_nose_lower": {
+        "rect": [
+          0.2448,
+          0.564,
+          0.1334,
+          0.2516
+        ],
+        "anisotropy": 1.96,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0,
+          0.774,
+          0.024
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_front",
+          "centre_nose"
+        ]
+      },
+      "left_nose_upper": {
+        "rect": [
+          0.1128,
+          0.7184,
+          0.1492,
+          0.2758
+        ],
+        "anisotropy": 2.18,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 63
+        },
+        "centroid3d": [
+          0.339,
+          1.003,
+          0.191
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_nose",
+          "left_nose_upper_2",
+          "left_nose_upper_3"
+        ]
+      },
+      "left_nose_upper_2": {
+        "rect": [
+          0.1392,
+          0.5027,
+          0.1142,
+          0.1846
+        ],
+        "anisotropy": 2.12,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 55
+        },
+        "centroid3d": [
+          0.34,
+          1.078,
+          0.236
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_nose",
+          "left_nose_upper"
+        ]
+      },
+      "left_nose_upper_3": {
+        "rect": [
+          0.3988,
+          0.0051,
+          0.0804,
+          0.1663
+        ],
+        "anisotropy": 2.36,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0.458,
+          0.959,
+          0.177
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "centre_nose",
+          "left_nose_upper"
+        ]
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.6486,
+          0.8661,
+          0.2193,
+          0.1281
+        ],
+        "anisotropy": 1.77,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry85",
+          "vertices": 115
+        },
+        "centroid3d": [
+          0.332,
+          0.927,
+          -0.011
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_nose"
+        ]
+      },
+      "centre_tail": {
+        "rect": [
+          0.0068,
+          0.6127,
+          0.0336,
+          0.1779
+        ],
+        "anisotropy": 1.76,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry84",
+          "vertices": 49
+        },
+        "centroid3d": [
+          0,
+          1.325,
+          -1.468
+        ],
+        "visible": 0.88,
+        "adjacent": [
+          "centre_rear",
+          "left_mid_upper_2",
+          "right_mid_upper_2"
+        ]
+      }
+    },
+    "gomma_unica_base": {
+      "right_nose": {
+        "rect": [
+          0,
+          0.002,
+          0.9943,
+          0.9967
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry108",
+          "vertices": 84
+        },
+        "centroid3d": [
+          -0.799,
+          0.295,
+          0.788
+        ],
+        "visible": 1,
+        "tiled": true,
+        "uvBounds": [
+          -0.0024,
+          0.002,
+          0.9967,
+          0.9967
+        ],
+        "mirrorOf": "left_nose"
+      },
+      "right_tail": {
+        "rect": [
+          0,
+          0.002,
+          0.9943,
+          0.9967
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry80",
+          "vertices": 84
+        },
+        "centroid3d": [
+          -0.799,
+          0.295,
+          -1.513
+        ],
+        "visible": 1,
+        "tiled": true,
+        "uvBounds": [
+          -0.0024,
+          0.002,
+          0.9967,
+          0.9967
+        ],
+        "mirrorOf": "left_tail"
+      },
+      "left_nose": {
+        "rect": [
+          0.0017,
+          0.002,
+          0.9967,
+          0.9967
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached1",
+          "vertices": 84
+        },
+        "centroid3d": [
+          0.799,
+          0.295,
+          0.788
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose"
+      },
+      "left_tail": {
+        "rect": [
+          0.0017,
+          0.002,
+          0.9967,
+          0.9967
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached2",
+          "vertices": 84
+        },
+        "centroid3d": [
+          0.799,
+          0.295,
+          -1.513
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail"
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.0914,
+          0.0916,
+          0.816,
+          0.816
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached1",
+          "vertices": 58
+        },
+        "centroid3d": [
+          0.596,
+          0.296,
+          0.788
+        ],
+        "safe": [
+          0.2109,
+          0.7881,
+          0.5152,
+          0.1195
+        ],
+        "visible": 0.22,
+        "mirrorOf": "right_nose_lower"
+      },
+      "left_tail_upper": {
+        "rect": [
+          0.0914,
+          0.0916,
+          0.816,
+          0.816
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached2",
+          "vertices": 58
+        },
+        "centroid3d": [
+          0.596,
+          0.296,
+          -1.513
+        ],
+        "safe": [
+          0.2109,
+          0.6918,
+          0.6277,
+          0.2159
+        ],
+        "visible": 0.29,
+        "mirrorOf": "right_tail_upper"
+      },
+      "right_nose_lower": {
+        "rect": [
+          0.0885,
+          0.0916,
+          0.816,
+          0.816
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry108",
+          "vertices": 58
+        },
+        "centroid3d": [
+          -0.596,
+          0.296,
+          0.788
+        ],
+        "safe": [
+          0.2699,
+          0.7881,
+          0.5152,
+          0.1195
+        ],
+        "visible": 0.22,
+        "mirrorOf": "left_nose_lower"
+      },
+      "right_tail_upper": {
+        "rect": [
+          0.0885,
+          0.0916,
+          0.816,
+          0.816
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry80",
+          "vertices": 58
+        },
+        "centroid3d": [
+          -0.596,
+          0.296,
+          -1.513
+        ],
+        "safe": [
+          0.1573,
+          0.6918,
+          0.6277,
+          0.2159
+        ],
+        "visible": 0.29,
+        "mirrorOf": "left_tail_upper"
+      }
+    },
+    "cuciture": {
+      "left_nose": {
+        "rect": [
+          0.3483,
+          0,
+          0.3297,
+          1
+        ],
+        "anisotropy": 2.04,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB1",
+          "vertices": 171
+        },
+        "centroid3d": [
+          0.338,
+          1.072,
+          0.167
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.3483,
+          -12.9002,
+          0.3297,
+          27.0636
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.04,
+          0,
+          0.0714,
+          1
+        ],
+        "anisotropy": 1.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB1",
+          "vertices": 74
+        },
+        "centroid3d": [
+          0.337,
+          0.568,
+          -0.293
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.04,
+          -8.9341,
+          0.0714,
+          17.8377
+        ],
+        "mirrorOf": "right_tail"
+      },
+      "right_tail": {
+        "rect": [
+          0.04,
+          0,
+          0.0714,
+          1
+        ],
+        "anisotropy": 1.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB1",
+          "vertices": 74
+        },
+        "centroid3d": [
+          -0.337,
+          0.568,
+          -0.293
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.04,
+          -8.9341,
+          0.0714,
+          17.8377
+        ],
+        "mirrorOf": "left_tail"
+      },
+      "right_tail_upper": {
+        "rect": [
+          0.04,
+          0,
+          0.0714,
+          1
+        ],
+        "anisotropy": 1.59,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB1",
+          "vertices": 74
+        },
+        "centroid3d": [
+          -0.337,
+          0.583,
+          -0.288
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.04,
+          -8.9341,
+          0.0714,
+          14.1058
+        ],
+        "mirrorOf": "left_tail_upper"
+      },
+      "left_tail_upper": {
+        "rect": [
+          0.04,
+          0,
+          0.0714,
+          1
+        ],
+        "anisotropy": 1.59,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB1",
+          "vertices": 74
+        },
+        "centroid3d": [
+          0.337,
+          0.583,
+          -0.288
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.04,
+          -8.9341,
+          0.0714,
+          14.1058
+        ],
+        "mirrorOf": "right_tail_upper"
+      },
+      "left_front": {
+        "rect": [
+          0.1688,
+          0,
+          0.1356,
+          1
+        ],
+        "anisotropy": 3.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry81_SUB0",
+          "vertices": 47
+        },
+        "centroid3d": [
+          0.447,
+          1.012,
+          0.008
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.1688,
+          -3.2207,
+          0.1356,
+          12.2528
+        ]
+      },
+      "left_front_lower": {
+        "rect": [
+          0.1688,
+          0,
+          0.1356,
+          1
+        ],
+        "anisotropy": 3.14,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry81_SUB0",
+          "vertices": 47
+        },
+        "centroid3d": [
+          0.215,
+          1.012,
+          0.008
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.1688,
+          -3.2207,
+          0.1356,
+          12.2528
+        ]
+      }
+    },
+    "mat_gomma": {},
+    "frontlight_off": {
+      "right_rear": {
+        "rect": [
+          0.0049,
+          0.0081,
+          0.3799,
+          0.6784
+        ],
+        "anisotropy": 2.29,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_ANTERIORE",
+          "vertices": 149
+        },
+        "centroid3d": [
+          -0.541,
+          0.715,
+          1.256
+        ],
+        "safe": [
+          0.0049,
+          0.0081,
+          0.3799,
+          0.6481
+        ],
+        "visible": 0.62,
+        "mirrorOf": "left_rear",
+        "adjacent": [
+          "right_tail"
+        ]
+      },
+      "left_rear": {
+        "rect": [
+          0.0049,
+          0.0081,
+          0.3799,
+          0.6784
+        ],
+        "anisotropy": 2.29,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_ANTERIORE",
+          "vertices": 149
+        },
+        "centroid3d": [
+          0.541,
+          0.715,
+          1.256
+        ],
+        "safe": [
+          0.0049,
+          0.0081,
+          0.3799,
+          0.6481
+        ],
+        "visible": 0.61,
+        "mirrorOf": "right_rear",
+        "adjacent": [
+          "left_tail"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.5572,
+          0.3357,
+          0.4307,
+          0.6337
+        ],
+        "anisotropy": 3.35,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_ANTERIORE",
+          "vertices": 103
+        },
+        "centroid3d": [
+          -0.546,
+          0.691,
+          1.244
+        ],
+        "safe": [
+          0.5826,
+          0.3357,
+          0.4054,
+          0.6298
+        ],
+        "visible": 0.45,
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_rear"
+        ]
+      },
+      "left_tail": {
+        "rect": [
+          0.5572,
+          0.3357,
+          0.4307,
+          0.6337
+        ],
+        "anisotropy": 3.35,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_ANTERIORE",
+          "vertices": 103
+        },
+        "centroid3d": [
+          0.546,
+          0.691,
+          1.244
+        ],
+        "safe": [
+          0.58,
+          0.3357,
+          0.4079,
+          0.6166
+        ],
+        "visible": 0.42,
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_rear"
+        ]
+      },
+      "right_nose": {
+        "rect": [
+          0.0074,
+          0.7761,
+          0.518,
+          0.2175
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB6",
+          "vertices": 41
+        },
+        "centroid3d": [
+          -0.622,
+          0.554,
+          1.284
+        ],
+        "safe": [
+          0.1123,
+          0.7761,
+          0.1384,
+          0.0384
+        ],
+        "visible": 0.22,
+        "mirrorOf": "left_nose"
+      },
+      "left_nose": {
+        "rect": [
+          0.0074,
+          0.7761,
+          0.518,
+          0.2175
+        ],
+        "anisotropy": 0.86,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB6",
+          "vertices": 41
+        },
+        "centroid3d": [
+          0.622,
+          0.554,
+          1.284
+        ],
+        "safe": [
+          0.0925,
+          0.7761,
+          0.1582,
+          0.0384
+        ],
+        "visible": 0.24,
+        "mirrorOf": "right_nose"
+      }
+    },
+    "glass": {
+      "centre_front": {
+        "rect": [
+          0,
+          0.012,
+          1,
+          0.6353
+        ],
+        "anisotropy": 1.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_1",
+          "vertices": 65
+        },
+        "centroid3d": [
+          0,
+          1.171,
+          0.367
+        ],
+        "visible": 1
+      },
+      "centre_tail": {
+        "rect": [
+          0,
+          0.2226,
+          1,
+          0.4268
+        ],
+        "anisotropy": 1.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_4",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0,
+          1.217,
+          -1.544
+        ],
+        "visible": 0.83
+      },
+      "left_tail": {
+        "rect": [
+          0.382,
+          0.6718,
+          0.3757,
+          0.3137
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached",
+          "vertices": 88
+        },
+        "centroid3d": [
+          0.583,
+          0.795,
+          -1.852
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail"
+      },
+      "right_tail": {
+        "rect": [
+          0.382,
+          0.6718,
+          0.3757,
+          0.3137
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_detached",
+          "vertices": 88
+        },
+        "centroid3d": [
+          -0.583,
+          0.795,
+          -1.852
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail"
+      },
+      "left_nose": {
+        "rect": [
+          0.016,
+          0.6637,
+          0.3361,
+          0.3255
+        ],
+        "anisotropy": 0.99,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_10",
+          "vertices": 100
+        },
+        "centroid3d": [
+          0.555,
+          0.718,
+          1.258
+        ],
+        "visible": 0.95,
+        "mirrorOf": "right_nose"
+      },
+      "right_nose": {
+        "rect": [
+          0.5906,
+          0.7155,
+          0.3439,
+          0.2692
+        ],
+        "anisotropy": 1.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_10",
+          "vertices": 100
+        },
+        "centroid3d": [
+          -0.555,
+          0.718,
+          1.258
+        ],
+        "visible": 0.96,
+        "mirrorOf": "left_nose"
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.4152,
+          0.6838,
+          0.1997,
+          0.174
+        ],
+        "anisotropy": 1.23,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_11",
+          "vertices": 85
+        },
+        "centroid3d": [
+          0.626,
+          0.553,
+          1.329
+        ],
+        "safe": [
+          0.4152,
+          0.6838,
+          0.1997,
+          0.168
+        ],
+        "visible": 0.88,
+        "mirrorOf": "right_nose_lower"
+      },
+      "right_nose_lower": {
+        "rect": [
+          0.1285,
+          0.7366,
+          0.1997,
+          0.174
+        ],
+        "anisotropy": 1.23,
+        "confidence": "measured",
+        "source": {
+          "mesh": "GEO_damage_glass_11",
+          "vertices": 85
+        },
+        "centroid3d": [
+          -0.626,
+          0.553,
+          1.329
+        ],
+        "visible": 0.91,
+        "mirrorOf": "left_nose_lower"
+      }
+    },
+    "mat_plancia": {},
+    "glass_2": {
+      "centre_front": {
+        "rect": [
+          0.0107,
+          0.4518,
+          0.6081,
+          0.5384
+        ],
+        "anisotropy": 0.81,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB4",
+          "vertices": 65
+        },
+        "centroid3d": [
+          0,
+          1.17,
+          0.366
+        ],
+        "visible": 1
+      },
+      "centre_tail": {
+        "rect": [
+          0.0108,
+          0.007,
+          0.5328,
+          0.3823
+        ],
+        "anisotropy": 0.89,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB4",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0,
+          1.216,
+          -1.542
+        ],
+        "visible": 0.83
+      },
+      "left_nose": {
+        "rect": [
+          0.5528,
+          0.0131,
+          0.3786,
+          0.3628
+        ],
+        "anisotropy": 1.03,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB5",
+          "vertices": 100
+        },
+        "centroid3d": [
+          0.554,
+          0.717,
+          1.257
+        ],
+        "visible": 0.94,
+        "mirrorOf": "right_nose"
+      },
+      "right_nose": {
+        "rect": [
+          0.5528,
+          0.0131,
+          0.3786,
+          0.3628
+        ],
+        "anisotropy": 1.03,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB5",
+          "vertices": 100
+        },
+        "centroid3d": [
+          -0.554,
+          0.717,
+          1.257
+        ],
+        "visible": 0.95,
+        "mirrorOf": "left_nose"
+      },
+      "left_tail": {
+        "rect": [
+          0.6363,
+          0.6998,
+          0.3479,
+          0.2861
+        ],
+        "anisotropy": 0.98,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB6",
+          "vertices": 87
+        },
+        "centroid3d": [
+          0.581,
+          0.796,
+          -1.852
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail"
+      },
+      "right_tail": {
+        "rect": [
+          0.6363,
+          0.6998,
+          0.3479,
+          0.2861
+        ],
+        "anisotropy": 0.98,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB6",
+          "vertices": 87
+        },
+        "centroid3d": [
+          -0.581,
+          0.796,
+          -1.852
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail"
+      },
+      "left_nose_lower": {
+        "rect": [
+          0.8462,
+          0.3401,
+          0.138,
+          0.1203
+        ],
+        "anisotropy": 1.23,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB0",
+          "vertices": 85
+        },
+        "centroid3d": [
+          0.625,
+          0.552,
+          1.328
+        ],
+        "safe": [
+          0.8462,
+          0.3401,
+          0.138,
+          0.1161
+        ],
+        "visible": 0.88,
+        "mirrorOf": "right_nose_lower"
+      },
+      "right_nose_lower": {
+        "rect": [
+          0.8462,
+          0.3401,
+          0.138,
+          0.1203
+        ],
+        "anisotropy": 1.23,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB0",
+          "vertices": 85
+        },
+        "centroid3d": [
+          -0.625,
+          0.552,
+          1.328
+        ],
+        "visible": 0.89,
+        "mirrorOf": "left_nose_lower"
+      }
+    },
+    "loghi": {
+      "centre_nose": {
+        "rect": [
+          0.0006,
+          0.0193,
+          0.4857,
+          0.9674
+        ],
+        "anisotropy": 1.98,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geo_FontBumper_SUB4",
+          "vertices": 86
+        },
+        "centroid3d": [
+          0,
+          0.651,
+          1.47
+        ],
+        "visible": 1
+      },
+      "centre_tail": {
+        "rect": [
+          0.0021,
+          0.0289,
+          0.4918,
+          0.9497
+        ],
+        "anisotropy": 2.05,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB3",
+          "vertices": 85
+        },
+        "centroid3d": [
+          0,
+          1,
+          -1.798
+        ],
+        "visible": 1
+      },
+      "centre_tail_lower": {
+        "rect": [
+          0.4985,
+          0.0066,
+          0.4988,
+          0.3143
+        ],
+        "anisotropy": 4.36,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB3",
+          "vertices": 129
+        },
+        "centroid3d": [
+          0,
+          0.856,
+          -1.933
+        ],
+        "safe": [
+          0.4985,
+          0.0066,
+          0.4988,
+          0.2805
+        ],
+        "visible": 0.9
+      },
+      "left_rear": {
+        "rect": [
+          0.4952,
+          0.5137,
+          0.4252,
+          0.4666
+        ],
+        "anisotropy": 1.91,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB3",
+          "vertices": 63
+        },
+        "centroid3d": [
+          0.765,
+          0.829,
+          -1.002
+        ],
+        "safe": [
+          0.5071,
+          0.5137,
+          0.4133,
+          0.4455
+        ],
+        "visible": 0.68,
+        "mirrorOf": "right_rear"
+      },
+      "right_rear": {
+        "rect": [
+          0.4952,
+          0.5137,
+          0.4252,
+          0.4666
+        ],
+        "anisotropy": 1.91,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry61_SUB3",
+          "vertices": 63
+        },
+        "centroid3d": [
+          -0.765,
+          0.829,
+          -1.003
+        ],
+        "safe": [
+          0.5071,
+          0.5137,
+          0.4133,
+          0.4455
+        ],
+        "visible": 0.7,
+        "mirrorOf": "left_rear"
+      },
+      "left_rear_upper": {
+        "rect": [
+          0.5193,
+          0.3336,
+          0.3644,
+          0.1555
+        ],
+        "anisotropy": 1.37,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh_SUB3",
+          "vertices": 60
+        },
+        "centroid3d": [
+          0.798,
+          0.824,
+          -0.669
+        ],
+        "visible": 1,
+        "mirrorOf": "right_rear_upper"
+      },
+      "right_rear_upper": {
+        "rect": [
+          0.5193,
+          0.3336,
+          0.3644,
+          0.1555
+        ],
+        "anisotropy": 1.37,
+        "confidence": "measured",
+        "source": {
+          "mesh": "polymsh1_SUB3",
+          "vertices": 60
+        },
+        "centroid3d": [
+          -0.798,
+          0.824,
+          -0.669
+        ],
+        "visible": 0.97,
+        "mirrorOf": "left_rear_upper"
+      }
+    },
+    "rearlight_lr": {
+      "left_tail": {
+        "rect": [
+          0.0095,
+          0.0126,
+          0.9645,
+          0.9796
+        ],
+        "anisotropy": 0.89,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_POSTERIORE",
+          "vertices": 81
+        },
+        "centroid3d": [
+          0.555,
+          0.754,
+          -1.892
+        ],
+        "visible": 1,
+        "mirrorOf": "right_tail",
+        "adjacent": [
+          "left_mid",
+          "left_nose"
+        ]
+      },
+      "right_tail": {
+        "rect": [
+          0.0095,
+          0.0126,
+          0.9645,
+          0.9796
+        ],
+        "anisotropy": 0.89,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_POSTERIORE",
+          "vertices": 81
+        },
+        "centroid3d": [
+          -0.555,
+          0.754,
+          -1.892
+        ],
+        "visible": 1,
+        "mirrorOf": "left_tail",
+        "adjacent": [
+          "right_mid",
+          "right_nose"
+        ]
+      },
+      "right_mid": {
+        "rect": [
+          0.0537,
+          0.2334,
+          0.5227,
+          0.7142
+        ],
+        "anisotropy": 1.44,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_POSITION",
+          "vertices": 42
+        },
+        "centroid3d": [
+          -0.595,
+          0.767,
+          -1.867
+        ],
+        "safe": [
+          0.0759,
+          0.2334,
+          0.5005,
+          0.7142
+        ],
+        "visible": 0.64,
+        "mirrorOf": "left_mid",
+        "adjacent": [
+          "right_nose",
+          "right_tail"
+        ]
+      },
+      "left_mid": {
+        "rect": [
+          0.0537,
+          0.2334,
+          0.5227,
+          0.7142
+        ],
+        "anisotropy": 1.44,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_POSITION",
+          "vertices": 42
+        },
+        "centroid3d": [
+          0.595,
+          0.767,
+          -1.867
+        ],
+        "visible": 0.76,
+        "mirrorOf": "right_mid",
+        "adjacent": [
+          "left_nose",
+          "left_tail"
+        ]
+      },
+      "right_nose": {
+        "rect": [
+          0.877,
+          0.0109,
+          0.1201,
+          0.0788
+        ],
+        "anisotropy": 0.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_POSTERIORE",
+          "vertices": 56
+        },
+        "centroid3d": [
+          -0.577,
+          0.794,
+          -1.839
+        ],
+        "visible": 1,
+        "mirrorOf": "left_nose",
+        "adjacent": [
+          "right_mid",
+          "right_tail"
+        ]
+      },
+      "left_nose": {
+        "rect": [
+          0.877,
+          0.0109,
+          0.1201,
+          0.0788
+        ],
+        "anisotropy": 0.02,
+        "confidence": "measured",
+        "source": {
+          "mesh": "FANALE_POSTERIORE",
+          "vertices": 56
+        },
+        "centroid3d": [
+          0.577,
+          0.794,
+          -1.839
+        ],
+        "visible": 1,
+        "mirrorOf": "right_nose",
+        "adjacent": [
+          "left_mid",
+          "left_tail"
+        ]
+      }
+    },
+    "mat_ross": {
+      "left_tail": {
+        "rect": [
+          0.0096,
+          0,
+          0.983,
+          1
+        ],
+        "anisotropy": 0.37,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB28",
+          "vertices": 70
+        },
+        "centroid3d": [
+          0.331,
+          0.833,
+          -0.66
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.0096,
+          -1.8369,
+          0.983,
+          3.3017
+        ],
+        "mirrorOf": "right_tail"
+      },
+      "right_tail": {
+        "rect": [
+          0.0096,
+          0,
+          0.983,
+          1
+        ],
+        "anisotropy": 0.37,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB28",
+          "vertices": 70
+        },
+        "centroid3d": [
+          -0.331,
+          0.833,
+          -0.66
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.0096,
+          -1.8369,
+          0.983,
+          3.3017
+        ],
+        "mirrorOf": "left_tail"
+      },
+      "left_nose": {
+        "rect": [
+          0.1135,
+          0,
+          0.7893,
+          1
+        ],
+        "anisotropy": 0.42,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB28",
+          "vertices": 49
+        },
+        "centroid3d": [
+          0.338,
+          0.583,
+          -0.371
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.1135,
+          -1.283,
+          0.7893,
+          2.7015
+        ],
+        "mirrorOf": "right_nose"
+      },
+      "right_nose": {
+        "rect": [
+          0.1135,
+          0,
+          0.7893,
+          1
+        ],
+        "anisotropy": 0.42,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB28",
+          "vertices": 49
+        },
+        "centroid3d": [
+          -0.338,
+          0.583,
+          -0.371
+        ],
+        "visible": 0,
+        "hidden": true,
+        "tiled": true,
+        "uvBounds": [
+          0.1135,
+          -1.283,
+          0.7893,
+          2.7015
+        ],
+        "mirrorOf": "left_nose"
+      }
+    },
+    "controlli": {
+      "left_nose": {
+        "rect": [
+          0.5091,
+          0.0812,
+          0.4587,
+          0.9175
+        ],
+        "anisotropy": 2,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_DASH",
+          "vertices": 96
+        },
+        "centroid3d": [
+          0.331,
+          0.99,
+          0.263
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_nose_upper"
+        ]
+      },
+      "left_nose_upper": {
+        "rect": [
+          0.4788,
+          0.0186,
+          0.5186,
+          0.8853
+        ],
+        "anisotropy": 2,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_DASH",
+          "vertices": 76
+        },
+        "centroid3d": [
+          0.331,
+          1.008,
+          0.268
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_nose"
+        ]
+      },
+      "left_rear": {
+        "rect": [
+          0.0609,
+          0.1192,
+          0.1217,
+          0.2432
+        ],
+        "anisotropy": 2.01,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_DASH",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0.456,
+          0.959,
+          0.173
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_rear_lower"
+        ]
+      },
+      "centre_tail": {
+        "rect": [
+          0.4114,
+          0.0117,
+          0.0498,
+          0.0997
+        ],
+        "anisotropy": 2.15,
+        "confidence": "measured",
+        "source": {
+          "mesh": "Geometry82_SUB20",
+          "vertices": 73
+        },
+        "centroid3d": [
+          0,
+          0.934,
+          0.127
+        ],
+        "visible": 0,
+        "hidden": true
+      },
+      "left_rear_lower": {
+        "rect": [
+          0.0524,
+          0.103,
+          0.137,
+          0.2804
+        ],
+        "anisotropy": 2.69,
+        "confidence": "measured",
+        "source": {
+          "mesh": "LIGHT_DASH",
+          "vertices": 48
+        },
+        "centroid3d": [
+          0.456,
+          0.959,
+          0.174
+        ],
+        "visible": 0,
+        "hidden": true,
+        "adjacent": [
+          "left_rear"
+        ]
+      }
+    },
+    "belts": {},
+    "skin_volante": {},
+    "mat_nero": {},
+    "rims_3": {},
+    "mat_metallo_bianco": {},
+    "glass_3": {},
+    "grid": {},
+    "rims_4": {},
+    "meccanica_sotto": {},
+    "shift_ambocc": {},
+    "pedali": {},
+    "carpet": {},
+    "logo": {},
+    "audio_tilel": {},
+    "mirror": {},
+    "tappetino_ambocc": {},
+    "plate_d": {},
+    "logo_2": {},
+    "lcd": {},
+    "mat_vetro_interno": {},
+    "logo_3": {}
+  }
+}

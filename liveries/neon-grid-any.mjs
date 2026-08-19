@@ -1,0 +1,184 @@
+// ---------------------------------------------------------------------------
+// neon-grid-any — the same design, written to travel.
+//
+// neon-grid.mjs is authored against one car: it names that car's texture roles
+// and that car's panels, and it looks better for it. This is the same palette
+// and the same treatments written entirely in the shared VOCABULARY, so it
+// renders on any car whose profile carries a `bind` table.
+//
+//   node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json
+//   node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
+//
+// Two rules follow from being portable, and both are real constraints rather
+// than stylistic choices:
+//
+//   NO PANEL NAMES. Panels are named per car — `left_mid_upper` exists on one
+//   model and not on another — so a portable design can only address whole
+//   textures. Fixing that is what panel TAGS are for; until then, artwork here
+//   has to be the kind that cannot land wrong. An even field, concentric rings
+//   and edge-anchored bands look deliberate wherever the unwrap puts them.
+//   Position-dependent artwork is what breaks.
+//
+//   NO PER-ROLE DIFFERENCES. A term can bind to several textures — `body` on
+//   the RSS4 covers both chassis textures — and a design that has never seen the
+//   car cannot say "and something different on the rear one". Portable means
+//   coarser. That is the trade, and it is worth being explicit about it rather
+//   than pretending the layer is free.
+//
+// Anything a given car lacks is reported at the end of the build and skipped.
+// ---------------------------------------------------------------------------
+
+export default {
+  name: 'Neon Grid (portable)',
+  folder: 'neon_grid_any',
+  // Deliberately no `car`. This livery does not know which car it is for, which
+  // is the entire point; pass --profile to say.
+  packs: ['core', 'synthwave'],
+
+  identity: {
+    driver: 'A. Driver',
+    team: 'Neon Grid',
+    number: '7',
+    country: '',
+  },
+
+  palette: {
+    base: '#12203A',
+    accent: '#00F0FF',
+    hot: '#FF2D95',
+    violet: '#8A2BE2',
+    ink: '#080B14',
+    white: '#F2F2F7',
+    rubber: '#121216',
+  },
+
+  render: {
+    seed: 'neon-grid-01',
+    glowSigma: 14,
+    font: 'DejaVu Sans',
+  },
+
+  surfaces: {
+    // The bodywork. Circuit traces over a dark field, with the horizon band
+    // anchored to the texture edge so it reads as deliberate on any unwrap.
+    body: {
+      background: 'base',
+      regions: [
+        { treatment: 'grid', pitch: 0.045, color: 'accent', opacity: 0.18, width: 1.5 },
+        { treatment: 'traces', lanes: 22, width: 4, color: 'accent', opacity: 0.75, glow: true },
+        { treatment: 'halftone', color: 'violet', cell: 38, dot: 0.12, opacity: 0.35 },
+        { treatment: 'stripe', at: [0, 0.47, 1, 0.022], color: 'hot', glow: true },
+        { treatment: 'scanlines', opacity: 0.12 },
+      ],
+    },
+
+    wing: {
+      background: 'ink',
+      regions: [
+        { treatment: 'traces', lanes: 10, width: 3, color: 'accent', glow: true },
+        { treatment: 'scanlines', opacity: 0.18 },
+      ],
+    },
+
+    // Radially unwrapped on every car that has one, so rings work and nothing
+    // else reliably does.
+    rims: {
+      background: 'ink',
+      regions: [
+        { treatment: 'ring', radius: 0.44, width: 0.020, color: 'accent', opacity: 0.9, glow: true },
+        { treatment: 'ring', radius: 0.36, width: 0.010, color: 'hot', opacity: 0.7 },
+        { treatment: 'halftone', color: 'violet', cell: 30, dot: 0.14, opacity: 0.4 },
+      ],
+    },
+
+    tyres: {
+      background: 'rubber',
+      regions: [
+        { treatment: 'halftone', color: 'accent', cell: 44, dot: 0.17, start: 0, end: 200 },
+        { treatment: 'ring', radius: 0.455, width: 0.020, color: 'accent', opacity: 0.85, glow: true },
+        { treatment: 'ring', radius: 0.410, width: 0.008, color: 'hot', opacity: 0.70 },
+        { treatment: 'scanlines', opacity: 0.16 },
+      ],
+    },
+
+    interior: {
+      background: 'ink',
+      regions: [
+        { treatment: 'traces', lanes: 14, width: 3, color: 'accent', opacity: 0.5 },
+        { treatment: 'scanlines', opacity: 0.2 },
+      ],
+    },
+
+    // The belt texture is an atlas of narrow strips running DOWN it, so traces
+    // are rotated a quarter turn to run along each strap rather than across
+    // every one of them like rungs on a ladder.
+    belts: {
+      background: 'ink',
+      regions: [
+        { treatment: 'traces', rotate: 90, lanes: 14, width: 3, color: 'accent' },
+      ],
+    },
+
+    steeringWheel: {
+      background: 'ink',
+      regions: [
+        { treatment: 'traces', lanes: 8, width: 3, color: 'accent', glow: true },
+      ],
+    },
+
+    metalTrim: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', color: 'accent', cell: 26, dot: 0.16, opacity: 0.5 },
+      ],
+    },
+
+    heatShield: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.15, opacity: 0.6 },
+        { treatment: 'scanlines', opacity: 0.18 },
+      ],
+    },
+
+    // Driver kit. A 4:1 horizontal wrap on most cars, so horizontal bands only —
+    // a vertical split lands somewhere unpredictable on the head.
+    helmet: {
+      background: 'base',
+      regions: [
+        { treatment: 'fill', at: [0, 0, 1, 0.38], color: 'ink' },
+        { treatment: 'traces', at: [0, 0.02, 1, 0.28], lanes: 4, width: 5 },
+        { treatment: 'stripe', at: [0, 0.46, 1, 0.028], color: 'accent', glow: true },
+      ],
+    },
+
+    suit: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', color: 'accent', cell: 34, dot: 0.14, opacity: 0.45 },
+        { treatment: 'stripe', at: [0, 0.12, 1, 0.02], color: 'accent', glow: true },
+      ],
+    },
+
+    gloves: {
+      background: 'ink',
+      regions: [
+        { treatment: 'stripe', at: [0, 0.06, 1, 0.03], color: 'accent', glow: true },
+      ],
+    },
+
+    crew: {
+      background: 'ink',
+      regions: [
+        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.12, opacity: 0.4 },
+      ],
+    },
+
+    numberPlate: {
+      background: 'ink',
+      regions: [
+        { treatment: 'text', at: [0.06, 0.22, 0.88, 0.56], text: '{number}', color: 'accent', tracking: 0.14 },
+      ],
+    },
+  },
+};

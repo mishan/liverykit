@@ -103,6 +103,12 @@ export function validateProfile(p, source = '<inline>') {
 
 const BIND_SOURCES = new Set(['auto', 'human']);
 
+// Terms that live in a DIFFERENT kn5 by design. The driver and the pit crew are
+// separate models which a car skin overrides, so "this car's model never
+// references it" is the expected state for them and warning about it every build
+// would be pure noise. For anything else it is the signal that matters.
+const ELSEWHERE = new Set(['helmet', 'suit', 'gloves', 'crew']);
+
 function validateBind(p, err) {
   for (const [term, entry] of Object.entries(p.bind ?? {})) {
     // The vocabulary is fixed on purpose. If any profile can invent a term then
@@ -241,7 +247,22 @@ export function resolveTargets(profile, livery) {
       });
       continue;
     }
-    for (const role of b.roles) claim(role, spec, `surfaces.${term}`);
+    for (const role of b.roles) {
+      claim(role, spec, `surfaces.${term}`);
+      // A texture the car's own model never references may still be real — the
+      // driver and pit crew live in separate kn5 files that a car skin overrides
+      // — or it may be a leftover that paints nothing at all. metal_detail.dds
+      // ships in nearly every road-car skin and on several of those cars is
+      // bound to no mesh anywhere. This cannot be settled without the other
+      // model, so it is flagged rather than guessed at.
+      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {
+        notes.push({
+          term, status: 'unverified',
+          text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
+                `Expected for driver and crew kit; for anything else it may paint nothing`,
+        });
+      }
+    }
     if (b.source === 'auto') {
       notes.push({
         term, status: 'unconfirmed',

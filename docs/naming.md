@@ -152,6 +152,25 @@ every car with symmetric wheels. The binding layer should carry an explicit
 `shared: 4` marker so a livery can at least be told, rather than discovering it
 in-game.
 
+## Proof, on two cars
+
+`liveries/neon-grid-any.mjs` is the same design written entirely in the
+vocabulary. It carries no `car` field, because a portable livery has no business
+naming one; `--profile` chooses at build time.
+
+On the RSS Formula 4 it paints 13 surfaces and reports two it asked for and did
+not get. On the Abarth 500 it paints 7 and reports 8, each by name. The two cars
+share exactly one texture filename between everything painted — `ac_crew.dds`,
+the pit crew, which is a shared AC asset rather than part of either car.
+
+Two constraints follow from being portable, and both are real rather than
+stylistic. A portable design cannot use PANEL names, because panels are named per
+car, so it is limited to whole-texture treatments until panel tags exist. And it
+cannot differentiate between the roles a single term binds to — `body` on the
+RSS4 covers two chassis textures and a design that has never seen the car cannot
+say "and something different on the rear one". Portable means coarser. Worth
+being explicit about rather than pretending the layer is free.
+
 ## Phases
 
 **One — measure and propose.** *(done — `src/engine/classify.mjs`, `--explain`,
