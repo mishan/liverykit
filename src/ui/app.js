@@ -44,8 +44,12 @@ state.fit.regions ??= {};
 $('#livery').textContent = data.livery.name;
 $('#car').textContent = data.car.name;
 
+// Everything interpolated below comes from a livery or a car profile — files
+// this tool did not write. Escaping is not about a hostile car pack; it is that
+// a filename containing a quote silently breaks the attribute it sits in, and
+// the result looks like the editor is broken rather than the name unusual.
 $('#surface').innerHTML = data.surfaces
-  .map((s, i) => `<option value="${i}">${s.from} — ${s.file}</option>`).join('');
+  .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
 $('#surface').onchange = () => selectSurface(+$('#surface').value);
 
 $('#save').onclick = async () => {
@@ -76,7 +80,7 @@ async function refresh() {
   drawInspector();
   $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
   $('#notes').innerHTML = out.notes
-    .map((n) => `<div class="note">! ${escapeHtml(n.text)}</div>`).join('');
+    .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   status(`rendered in ${Math.round(performance.now() - t0)} ms`);
 }
 
@@ -84,9 +88,9 @@ function drawPanels() {
   const s = state.surface;
   $('#panelcount').textContent = `${s.panels.length}`;
   $('#panels').innerHTML = s.panels.map((p) => `
-    <li data-panel="${p.name}">
-      <span class="id">${p.name}</span>
-      <span class="meta">${p.instances ? `×${p.instances} ` : ''}${p.tags.join(' ')}</span>
+    <li data-panel="${esc(p.name)}">
+      <span class="id">${esc(p.name)}</span>
+      <span class="meta">${p.instances ? `×${esc(p.instances)} ` : ''}${esc(p.tags.join(' '))}</span>
     </li>`).join('');
   for (const li of $('#panels').children) {
     li.onclick = () => movePanel(li.dataset.panel);
@@ -102,9 +106,9 @@ function drawRegions() {
       : o?.drop ? 'dropped'
       : o ? 'adjusted'
       : (r.tags ? r.tags.join(' ') : r.panel ?? '');
-    return `<li class="${cls.join(' ')}" data-id="${r.id ?? ''}">
-      <span class="id">${r.id ?? r.treatment}</span>
-      <span class="meta">${escapeHtml(meta)}</span></li>`;
+    return `<li class="${cls.join(' ')}" data-id="${esc(r.id ?? '')}">
+      <span class="id">${esc(r.id ?? r.treatment)}</span>
+      <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
   for (const li of $('#regions').children) {
     if (!li.dataset.id) continue;
@@ -119,7 +123,7 @@ function drawOverlay() {
   const host = sel?.panel;
 
   const parts = s.panels.map((p) => rect(p.rect, `panelrect${p.name === host ? ' host' : ''}`,
-    `data-panel="${p.name}"`));
+    `data-panel="${esc(p.name)}"`));
 
   // Every other placed region, faint, so you can see what you are about to
   // overlap before you overlap it.
@@ -163,10 +167,14 @@ async function movePanel(name) {
 
   const o = override(state.selected);
   o.panel = name;
-  // Keep the region's proportions within the new panel rather than its absolute
-  // size: a door and a rear quarter are different sizes, and a number that kept
-  // its pixel dimensions would look wrong on one of them.
-  o.at = state.regionAt ?? o.at ?? [0.25, 0.25, 0.5, 0.5];
+  // `at` is panel-RELATIVE, so moving to a different panel keeps the region's
+  // proportions rather than its size — which is what you want, since a door and
+  // a rear quarter are nothing like the same size and a number that kept its
+  // pixel dimensions would look wrong on one of them.
+  //
+  // Whatever the region already had is kept; only a region that never had an `at`
+  // needs a starting rectangle, and a centred half-panel is a reasonable one.
+  o.at ??= [0.25, 0.25, 0.5, 0.5];
   delete o.drop;
   setDirty(true);
   await refresh();
@@ -235,8 +243,8 @@ function drawInspector() {
   const o = state.fit.regions[sel.id] ?? {};
   el.className = '';
   el.innerHTML = `
-    <div><code>${sel.id}</code></div>
-    <label>panel</label><div>${sel.panel ?? '<span class="muted">absolute</span>'}</div>
+    <div><code>${esc(sel.id)}</code></div>
+    <label>panel</label><div>${sel.panel ? esc(sel.panel) : '<span class="muted">absolute</span>'}</div>
     <label>anisotropy</label><div>${sel.anisotropy.toFixed(2)}
       ${sel.anisotropy > 1.15 || sel.anisotropy < 0.87
         ? '<span class="note">stretched — text is pre-compensated, art is not</span>' : ''}</div>
@@ -266,6 +274,8 @@ function setDirty(v) {
   $('#status').className = v ? 'status dirty' : 'status';
 }
 function status(msg) { $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg; }
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** Escape for both text nodes and quoted attributes. */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }

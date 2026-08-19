@@ -146,7 +146,18 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
 }
 
 export async function startUi({ livery, profile, fitPath, port = 7391, log = console.log }) {
-  let fit = await readFile(fitPath, 'utf8').then(JSON.parse).catch(() => null);
+  // A missing fit is the normal case — most cars have never been tuned. A fit
+  // that exists and is wrong is not, and starting anyway would give an editor
+  // that looks fine and fails only when you press Save, by which point you have
+  // done the work twice. Validated on the way in, same as the save path.
+  let fit = null;
+  try {
+    fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      throw new Error(`Could not load ${fitPath}: ${e.message}`);
+    }
+  }
 
   const server = createServer(async (req, res) => {
     const send = (code, type, body) => {
@@ -154,9 +165,19 @@ export async function startUi({ livery, profile, fitPath, port = 7391, log = con
       res.end(body);
     };
     const json = (code, obj) => send(code, 'application/json', JSON.stringify(obj));
+    // Even on loopback, an unbounded read is an unbounded read: a stray upload
+    // or a runaway client would grow the process until it died. A fit is a few
+    // kilobytes of JSON and the largest thing posted here is a working copy of
+    // one, so the ceiling can be low enough to be obviously safe.
+    const MAX_BODY = 2 * 1024 * 1024;
     const body = async () => {
       const chunks = [];
-      for await (const c of req) chunks.push(c);
+      let size = 0;
+      for await (const c of req) {
+        size += c.length;
+        if (size > MAX_BODY) throw new Error(`Request body over ${MAX_BODY} bytes; a fit is nothing like that big.`);
+        chunks.push(c);
+      }
       return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
     };
 
