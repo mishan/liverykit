@@ -35,7 +35,7 @@
 // ---------------------------------------------------------------------------
 
 import { readdir, stat, writeFile, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { parseKn5, meshesUsingTexture, triangles, vertex } from '../src/engine/kn5.mjs';
 
@@ -223,10 +223,18 @@ for (const { id, klass } of todo) {
     const wantVis = argv.includes('--visibility');
     const prof = await profileFromKn5(kn5, { id, skinsDir: join(carsDir, id, 'skins'), visibility: wantVis });
 
-    // Area-weighted mean trackside visibility per texture. This is the signal
-    // that separates bodywork from the two things that otherwise outrank it —
-    // interior occlusion maps and engine bays — both of which are large and both
-    // of which nobody can see.
+    // Mean trackside visibility per texture, taken UNWEIGHTED across its panels.
+    // This is the signal that separates bodywork from the two things that
+    // otherwise outrank it — interior occlusion maps and engine bays — both of
+    // which are large and both of which nobody can see.
+    //
+    // Unweighted is a deliberate simplification, not an oversight. Weighting by
+    // panel area would be more principled, but islands below minPanelArea are
+    // already dropped before this point, and the gap the number has to resolve is
+    // enormous: interior occlusion measures about 0.02 and real bodywork 0.55 to
+    // 0.89. Nothing here is close enough for the weighting to decide it. Change
+    // it and the classifier's measured accuracy has to be re-established from
+    // scratch, so do not change it casually.
     const visOf = new Map();
     if (wantVis) {
       for (const [role, ps] of Object.entries(prof.panels)) {
@@ -253,7 +261,7 @@ for (const { id, klass } of todo) {
     const panels = Object.fromEntries(Object.entries(prof.panels).map(([r, p]) => [r, Object.keys(p).length]));
     results.push({
       id, klass, ms: Date.now() - t0,
-      model: kn5.split('/').pop(),
+      model: basename(kn5),
       skinCount,
       roles: Object.fromEntries(Object.entries(prof.textures).map(([role, t]) => {
         const g = describe(t.file);
@@ -274,8 +282,12 @@ for (const { id, klass } of todo) {
     process.stdout.write(`  ${id.padEnd(40)} ${Object.keys(prof.textures).length} roles, ` +
       `${Object.values(panels).reduce((a, b) => a + b, 0)} panels, ${skinCount} skins\n`);
   } catch (e) {
-    results.push({ id, klass, error: e.message });
-    process.stdout.write(`  ${id.padEnd(40)} FAILED: ${e.message}\n`);
+    // Not everything thrown is an Error. A string or a plain object would make
+    // e.message undefined and hide the actual failure behind the word
+    // "undefined", which is worse than the original problem.
+    const why = e instanceof Error ? e.message : String(e);
+    results.push({ id, klass, error: why });
+    process.stdout.write(`  ${id.padEnd(40)} FAILED: ${why}\n`);
   }
   await writeFile(outPath, JSON.stringify(results, null, 2));   // checkpoint every car
 }
