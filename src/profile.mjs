@@ -176,6 +176,90 @@ export function mergeBindings(existing = {}, proposed = {}) {
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
+/**
+ * Work out which textures a livery actually paints on this car.
+ *
+ * A livery has two ways to name a surface, and they are kept separate on purpose
+ * rather than resolved by precedence:
+ *
+ *   paint    — keyed by this car's own texture ROLES. Exact, not portable, and
+ *              the only thing that existed before bindings. Untouched.
+ *   surfaces — keyed by VOCABULARY TERMS, resolved through the profile's bind
+ *              table. Portable, and the point of the whole exercise.
+ *
+ * Precedence would have been the tempting design — try the bind table, fall back
+ * to a literal role — but it silently changes what existing liveries do. On the
+ * RSS4 `body` is both a vocabulary term bound to two chassis textures AND a
+ * literal role naming one of them, so a livery that paints `body` and `bodyRear`
+ * differently would suddenly render the same artwork on both. Two blocks, one
+ * meaning each.
+ *
+ * Returns `{ targets, notes }`. Nothing throws for a surface the car lacks: a
+ * design asking for a wing on a van should degrade to a reported no-op. The
+ * report is the whole safety mechanism, because painting nothing looks exactly
+ * like painting something.
+ */
+export function resolveTargets(profile, livery) {
+  const targets = [];
+  const notes = [];
+  const claimedBy = new Map();
+
+  const claim = (role, spec, from) => {
+    const prior = claimedBy.get(role);
+    if (prior) {
+      // Both would write the same file, and the second would win silently.
+      throw new Error(
+        `Livery "${livery.name}" paints texture role "${role}" twice — once via ${prior}, ` +
+        `once via ${from}. They write the same file, so one would overwrite the other.`
+      );
+    }
+    claimedBy.set(role, from);
+    targets.push({ role, spec, from });
+  };
+
+  for (const [role, spec] of Object.entries(livery.paint ?? {})) {
+    texture(profile, role);            // throws with the known-roles list
+    claim(role, spec, `paint.${role}`);
+  }
+
+  for (const [term, spec] of Object.entries(livery.surfaces ?? {})) {
+    if (!VOCABULARY[term]) {
+      throw new Error(
+        `Livery "${livery.name}" paints surface "${term}", which is not in the vocabulary. ` +
+        `Known surfaces: ${Object.keys(VOCABULARY).join(', ')}`
+      );
+    }
+    const b = binding(profile, term);
+    if (b.status === 'absent') {
+      notes.push({ term, status: 'absent', text: `${term}: this car has no such surface (confirmed)` });
+      continue;
+    }
+    if (b.status === 'unbound') {
+      notes.push({
+        term, status: 'unbound',
+        text: `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
+      });
+      continue;
+    }
+    for (const role of b.roles) claim(role, spec, `surfaces.${term}`);
+    if (b.source === 'auto') {
+      notes.push({
+        term, status: 'unconfirmed',
+        text: `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
+              (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
+      });
+    }
+  }
+
+  if (!targets.length) {
+    throw new Error(
+      `Livery "${livery.name}" paints nothing on car "${profile.id}". ` +
+      (notes.length ? `\n  ${notes.map((n) => n.text).join('\n  ')}` : '')
+    );
+  }
+  return { targets, notes };
+}
+
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
 
 function checkRect(r, what, err) {

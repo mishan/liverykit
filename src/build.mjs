@@ -12,7 +12,7 @@ import { packageZip, makePreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
-import { texture } from './profile.mjs';
+import { texture, resolveTargets } from './profile.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
@@ -37,15 +37,15 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   const treatments = resolveTreatments(livery.packs ?? ['core']);
   const tokens = { ...(livery.identity ?? {}) };
 
-  const roles = Object.keys(livery.paint ?? {});
-  if (!roles.length) throw new Error(`Livery "${livery.name}" paints no textures.`);
+  // `paint` names this car's roles; `surfaces` names vocabulary terms and gets
+  // translated through the profile's bind table.
+  const { targets, notes } = resolveTargets(profile, livery);
 
   let firstPng = null;
   const written = [];
 
-  for (const role of roles) {
+  for (const { role, spec } of targets) {
     const tex = texture(profile, role);
-    const spec = livery.paint[role];
     const width = Math.round(tex.width * scale);
     const height = Math.round(tex.height * scale);
 
@@ -91,8 +91,18 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
   }
 
+  // Say what the design asked for and did not get. This is the failure mode the
+  // project keeps rediscovering in a new costume: a texture name that matches
+  // nothing overrides nothing, silently, and looks identical to a livery that
+  // simply didn't work.
+  if (notes.length) {
+    log('');
+    log(`  ${targets.length} surface(s) painted; ${notes.length} asked for and not painted:`);
+    for (const n of notes) log(`    ! ${n.text}`);
+  }
+
   await writeMetadata({ outDir, livery, firstPng });
-  return { outDir, files: written, firstPng };
+  return { outDir, files: written, firstPng, notes };
 }
 
 /**

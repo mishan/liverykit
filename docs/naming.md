@@ -128,9 +128,16 @@ actually has there, or nothing, reported.
 
 ### Resolution and reporting
 
-One resolver, one rule: a livery's paint block resolves through `bind`, then
-through `aliases`, then falls back to a literal role name for the cars people
-have already hand-tuned. Every term that resolves to nothing is collected and
+Two blocks, one meaning each, rather than one block with precedence rules.
+`paint` stays keyed by this car's own texture roles — exact, not portable, and
+untouched. A new `surfaces` block is keyed by vocabulary terms and resolves
+through `bind`.
+
+Precedence was the tempting design and it is wrong. On the RSS4 `body` is both a
+vocabulary term bound to two chassis textures AND a literal role naming one of
+them, so a livery painting `body` and `bodyRear` differently would suddenly
+render the same artwork on both. Splitting the blocks means no existing livery
+can shift underfoot. Every term that resolves to nothing is collected and
 printed at the end of a build as a summary — *this design asked for six surfaces,
 this car provided four* — because the failure mode this project keeps rediscovering
 is that painting nothing looks exactly like painting something, silently.
@@ -161,7 +168,10 @@ populate it from the classifier at `source: "auto"`, and make regeneration
 preserve anything marked `"human"`. Add a schema test the way the existing
 integrity tests work.
 
-**Three — the resolver.** Vocabulary constants, resolution order, graceful
+**Three — the resolver.** *(done — `resolveTargets` in `src/profile.mjs`, a
+`surfaces` block in liveries, unresolved terms reported at the end of a build.
+Six of neon-grid's surfaces now go through the vocabulary and all 23 output
+files are byte-identical.)* Vocabulary constants, resolution order, graceful
 degradation, and the end-of-build report of unresolved terms. Port `neon-grid` to
 the vocabulary and confirm the output is byte-identical to today's, which is the
 only honest proof that the layer changed nothing it shouldn't have.

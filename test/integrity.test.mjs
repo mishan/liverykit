@@ -613,3 +613,81 @@ test('the shipped profile binds the vocabulary to real roles', async () => {
   assert.equal(binding(p, 'numberPlate').status, 'absent');
   assert.equal(binding(p, 'rims').roles[0], 'rimFace', 'not the motion-blur variant');
 });
+
+// --- the resolver -----------------------------------------------------------
+
+const carWith = (bind) => ({
+  id: 'car',
+  textures: {
+    chassis: { file: 'c.dds', width: 64, height: 64 },
+    rear: { file: 'r.dds', width: 64, height: 64 },
+    wheel: { file: 'w.dds', width: 64, height: 64 },
+  },
+  bind,
+});
+const spec = { background: 'black', regions: [] };
+
+test('a surface resolves through bind to whatever this car calls it', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets } = resolveTargets(
+    carWith({ body: { roles: ['chassis', 'rear'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis', 'rear'],
+    'one term, both of the roles it names');
+});
+
+test('asking for a surface the car lacks is a reported no-op, not a failure', async () => {
+  // A design asking for a wing on a van should still build. The report is the
+  // safety mechanism: painting nothing looks exactly like painting something.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' }, wing: { roles: [], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, wing: spec, floor: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis']);
+  assert.deepEqual(notes.map((n) => n.status).sort(), ['absent', 'unbound']);
+  assert.match(notes.find((n) => n.term === 'floor').text, /not bound on this car/);
+});
+
+test('an unconfirmed binding is used, and said out loud', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], confidence: 0.4, source: 'auto' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.equal(targets.length, 1, 'a proposal is still usable');
+  assert.equal(notes[0].status, 'unconfirmed');
+  assert.match(notes[0].text, /confidence 0\.4/);
+});
+
+test('painting the same texture twice is refused, not silently resolved', async () => {
+  // Both writes go to the same file and the second wins. Before bindings this
+  // was impossible; a term that expands to several roles makes it reachable.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(
+      carWith({ body: { roles: ['chassis'], source: 'human' } }),
+      { name: 'L', paint: { chassis: spec }, surfaces: { body: spec } },
+    ),
+    /paints texture role "chassis" twice.*paint\.chassis.*surfaces\.body/s,
+  );
+});
+
+test('a livery may not invent a surface name either', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(carWith({}), { name: 'L', surfaces: { spoiler: spec } }),
+    /not in the vocabulary/,
+  );
+});
+
+test('the example livery resolves against the shipped car', async () => {
+  const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid.mjs')).default;
+  const { targets, notes } = resolveTargets(profile, livery);
+  assert.equal(notes.length, 0, `everything it asks for exists: ${notes.map((n) => n.text)}`);
+  assert.equal(new Set(targets.map((t) => t.role)).size, targets.length, 'no role painted twice');
+  assert.ok(targets.some((t) => t.from === 'surfaces.rims'), 'rims goes through the vocabulary');
+});
