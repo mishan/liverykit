@@ -19,7 +19,8 @@
 import { parseKn5, meshesUsingTexture, axisHints } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
-import { guessRole, scanSkins } from './scan.mjs';
+import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
+import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 
 /** DDS/PNG header straight from the blob embedded in the model. */
 function imageHeader(name, data) {
@@ -268,7 +269,39 @@ export async function profileFromKn5(path, {
     adjacencyOut[role] = Object.fromEntries([...adj].map(([k, v]) => [k, [...v].sort()]));
   }
 
+  // --- proposed bindings ----------------------------------------------------
+  //
+  // Which of this car's roles each vocabulary term refers to, proposed by
+  // measurement. Everything here is marked `auto`: a proposal is not a
+  // confirmation, and 98% accurate is not the same as trustworthy without
+  // looking. `mergeBindings` protects anything a human has confirmed, so
+  // regenerating a profile never costs hand-checked work.
+  const { skinCount, counts: skinCounts } = skinsDir
+    ? await countSkinOverrides(skinsDir).catch(() => ({ skinCount: 0, counts: new Map() }))
+    : { skinCount: 0, counts: new Map() };
+
+  const visibleByFile = new Map();
+  for (const [role, ps] of Object.entries(panels)) {
+    const vals = Object.values(ps).map((p) => p.visible).filter((v) => typeof v === 'number');
+    if (vals.length) visibleByFile.set(textures[role].file, vals.reduce((a, b) => a + b, 0) / vals.length);
+  }
+
+  const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile });
+  const bind = {};
+  for (const term of SCORABLE) {
+    const p = propose(features, term);
+    // A term with no candidate is left OUT rather than bound to an empty array.
+    // An empty array means "this car has no such surface", which is a claim, and
+    // the classifier is not entitled to make it — only a person is.
+    if (p) bind[term] = { roles: [p.role], confidence: p.confidence, source: 'auto' };
+  }
+  if (!visibility) {
+    log('  ! bindings were proposed without visibility, which is the signal that separates');
+    log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
+  }
+
   return {
+    bind,
     id: id ?? basenameNoExt(path),
     name,
     game: 'assettocorsa',

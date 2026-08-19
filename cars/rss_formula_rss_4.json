@@ -341,6 +341,123 @@
       "notes": "Exhaust heat-shield foil, gold as shipped. Right-hand side only, because that is the side the exhaust exits."
     }
   },
+  "bind": {
+    "belts": {
+      "roles": [
+        "belts_2"
+      ],
+      "source": "human"
+    },
+    "body": {
+      "roles": [
+        "body",
+        "bodyRear"
+      ],
+      "source": "human"
+    },
+    "brakes": {
+      "roles": [
+        "rss4_disc"
+      ],
+      "source": "human"
+    },
+    "crew": {
+      "roles": [
+        "crew"
+      ],
+      "source": "human"
+    },
+    "floor": {
+      "roles": [],
+      "source": "human"
+    },
+    "glass": {
+      "roles": [
+        "glass"
+      ],
+      "source": "human"
+    },
+    "gloves": {
+      "roles": [
+        "gloves"
+      ],
+      "source": "human"
+    },
+    "heatShield": {
+      "roles": [
+        "heatShield"
+      ],
+      "source": "human"
+    },
+    "helmet": {
+      "roles": [
+        "helmet"
+      ],
+      "source": "human"
+    },
+    "interior": {
+      "roles": [
+        "interior"
+      ],
+      "source": "human"
+    },
+    "metalTrim": {
+      "roles": [
+        "metal_detail"
+      ],
+      "source": "human"
+    },
+    "mirror": {
+      "roles": [
+        "mirror"
+      ],
+      "source": "human"
+    },
+    "numberPlate": {
+      "roles": [],
+      "source": "human"
+    },
+    "rims": {
+      "roles": [
+        "rimFace"
+      ],
+      "source": "human"
+    },
+    "seat": {
+      "roles": [],
+      "source": "human"
+    },
+    "steeringWheel": {
+      "roles": [
+        "steeringWheel"
+      ],
+      "source": "human"
+    },
+    "suit": {
+      "roles": [
+        "suit"
+      ],
+      "source": "human"
+    },
+    "tyres": {
+      "roles": [
+        "tyres"
+      ],
+      "source": "human"
+    },
+    "wheelLogo": {
+      "roles": [
+        "wheelLogo"
+      ],
+      "source": "human"
+    },
+    "wing": {
+      "roles": [
+        "body"
+      ],
+      "source": "human"
+    }
+  },
   "doNotPaint": [
     {
       "file": "NM.dds",

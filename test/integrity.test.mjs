@@ -538,3 +538,78 @@ test('a texture bound to no mesh scores zero, however promising its name', async
   assert.equal(fs[0].box, null);
   assert.equal(rank(fs).length, 0, 'an unbound texture must not be proposed at all');
 });
+
+// --- bindings ---------------------------------------------------------------
+
+const withBind = (bind) => ({
+  id: 'x', textures: { body: { file: 'b.dds', width: 64, height: 64 } }, bind,
+});
+
+test('a human-confirmed binding survives regeneration; an auto one does not', async () => {
+  // The whole reason to confirm a binding is that the confirmation sticks. A
+  // profile is regenerated every time the model or the classifier changes, and
+  // losing hand-checked work each time would make confirming it pointless.
+  const { mergeBindings } = await import('../src/profile.mjs');
+  const merged = mergeBindings(
+    { body: { roles: ['chassis'], source: 'human' }, tyres: { roles: ['old'], source: 'auto' } },
+    { body: { roles: ['guess'], source: 'auto' }, tyres: { roles: ['new'], source: 'auto' } },
+  );
+  assert.deepEqual(merged.body, { roles: ['chassis'], source: 'human' });
+  assert.deepEqual(merged.tyres, { roles: ['new'], source: 'auto' });
+});
+
+test('absent and unbound are different answers', async () => {
+  // "This car has no wing" is a claim someone made. "Nobody has said" is not.
+  // Collapsing the two would let a silent omission pass for a decision.
+  const { binding } = await import('../src/profile.mjs');
+  const p = withBind({ wing: { roles: [], source: 'human' } });
+  assert.equal(binding(p, 'wing').status, 'absent');
+  assert.equal(binding(p, 'floor').status, 'unbound');
+  assert.equal(binding(withBind({ body: { roles: ['body'], source: 'auto' } }), 'body').status, 'bound');
+});
+
+test('a binding may map one term to several roles', async () => {
+  // The RSS4 carries its bodywork across two chassis textures, 25% and 17% of
+  // the car's surface. A one-role binding would silently paint half the car.
+  const { validateProfile, binding } = await import('../src/profile.mjs');
+  const p = validateProfile({
+    id: 'x',
+    textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+  });
+  assert.deepEqual(binding(p, 'body').roles, ['body', 'bodyRear']);
+});
+
+test('a binding to a role the profile does not define is rejected', async () => {
+  const { validateProfile } = await import('../src/profile.mjs');
+  assert.throws(
+    () => validateProfile(withBind({ body: { roles: ['nope'], source: 'auto' } })),
+    /points at texture role "nope"/,
+  );
+});
+
+test('the vocabulary is fixed, so a livery can rely on it', async () => {
+  const { validateProfile } = await import('../src/profile.mjs');
+  assert.throws(
+    () => validateProfile(withBind({ bonnet: { roles: ['body'], source: 'human' } })),
+    /unknown term "bonnet"/,
+  );
+  assert.throws(
+    () => validateProfile(withBind({ body: { roles: ['body'], source: 'probably' } })),
+    /must be "auto".*"human"/s,
+  );
+  assert.throws(
+    () => validateProfile(withBind({ body: null })),
+    /must be an object.*empty roles array/s,
+  );
+});
+
+test('the shipped profile binds the vocabulary to real roles', async () => {
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const p = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  assert.deepEqual(binding(p, 'body').roles, ['body', 'bodyRear'], 'both chassis textures');
+  assert.equal(binding(p, 'body').source, 'human');
+  // A formula car has no numberplate. Recorded as a decision, not an omission.
+  assert.equal(binding(p, 'numberPlate').status, 'absent');
+  assert.equal(binding(p, 'rims').roles[0], 'rimFace', 'not the motion-blur variant');
+});
