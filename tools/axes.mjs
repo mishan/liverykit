@@ -21,7 +21,15 @@ import { parseKn5, axisHints, axesFromWheels } from '../src/engine/kn5.mjs';
 
 const argv = process.argv.slice(2);
 const carsDir = argv.find((a) => !a.startsWith('--')) ?? 'cars';
-const outPath = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : 'axes.json';
+
+// `--out` with nothing after it used to yield undefined and fail much later,
+// inside readFile, with a message about the wrong thing entirely.
+const outFlag = argv.indexOf('--out');
+if (outFlag >= 0 && (!argv[outFlag + 1] || argv[outFlag + 1].startsWith('--'))) {
+  console.error('--out needs a filename, e.g. --out axes.json');
+  process.exit(1);
+}
+const outPath = outFlag >= 0 ? argv[outFlag + 1] : 'axes.json';
 
 async function bestKn5(dir) {
   const files = (await readdir(dir)).filter((f) =>
@@ -50,7 +58,10 @@ for (const d of dirs) {
       (wheels ? `${wheels.left > 0 ? '+X' : '-X'}/${wheels.front > 0 ? '+Z' : '-Z'} ` +
         `track ${wheels.trackWidth.toFixed(2)}m wb ${wheels.wheelbase.toFixed(2)}m` : 'NONE') + '\n');
   } catch (e) {
-    results.push({ id: d.name, error: e.message.split('\n')[0] });
+    // Not everything thrown is an Error; coerce before slicing, or the catch
+    // throws again and loses the failure it was supposed to record.
+    const why = e instanceof Error ? e.message : String(e);
+    results.push({ id: d.name, error: why.split('\n')[0] });
   }
   await writeFile(outPath, JSON.stringify(results, null, 2));
 }
