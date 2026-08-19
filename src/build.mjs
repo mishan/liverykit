@@ -105,7 +105,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // RSS4 is two chassis textures — and a pattern belongs on all of them
       // while a car number belongs on the car once, not once per texture.
       regions: flat ? [] : applyFit(
-        spec.regions.filter((r) => !(r.once && !primary)),
+        (spec.regions ?? []).filter((r) => !(r.once && !primary)),
         fit, { profile, role, used: fitUsed, notes },
       ).regions,
       background: spec.background,
