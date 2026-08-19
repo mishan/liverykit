@@ -114,19 +114,23 @@ export default {
         // `once` keeps identity on the term's PRIMARY texture. `body` on the
         // RSS4 covers two chassis textures, and without this the car wears its
         // number twice.
-        { treatment: 'text', tags: ['left', 'mid', 'upper', 'visible'], limit: 1, once: true,
+        //
+        // The `id`s are how a FIT adjusts these for one particular car without
+        // touching the design — see docs/fitting.md and fits/. Only regions
+        // somebody might want to move need one.
+        { id: 'driver-left', treatment: 'text', tags: ['left', 'mid', 'upper', 'visible'], limit: 1, once: true,
           at: [0.08, 0.05, 0.84, 0.10], text: '{driver}', color: 'white', tracking: 0.10 },
-        { treatment: 'text', tags: ['right', 'mid', 'upper', 'visible'], limit: 1, once: true,
+        { id: 'driver-right', treatment: 'text', tags: ['right', 'mid', 'upper', 'visible'], limit: 1, once: true,
           at: [0.08, 0.05, 0.84, 0.10], text: '{driver}', color: 'white', tracking: 0.10 },
 
-        { treatment: 'text', tags: ['left', 'visible'], limit: 1, once: true,
+        { id: 'number-left', treatment: 'text', tags: ['left', 'visible'], limit: 1, once: true,
           at: [0.25, 0.22, 0.50, 0.48], text: '{number}', color: 'white', tracking: 0.04 },
-        { treatment: 'text', tags: ['right', 'visible'], limit: 1, once: true,
+        { id: 'number-right', treatment: 'text', tags: ['right', 'visible'], limit: 1, once: true,
           at: [0.25, 0.22, 0.50, 0.48], text: '{number}', color: 'white', tracking: 0.04 },
 
-        { treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
+        { id: 'team-left', treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
           at: [0.08, 0.78, 0.84, 0.13], text: '{team}', color: 'accent', tracking: 0.14 },
-        { treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
+        { id: 'team-right', treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
           at: [0.08, 0.78, 0.84, 0.13], text: '{team}', color: 'accent', tracking: 0.14 },
       ],
     },
