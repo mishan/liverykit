@@ -12,9 +12,19 @@ import { packageZip, makePreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
-import { texture } from './profile.mjs';
+import { texture, resolveTargets } from './profile.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
+
+// Note statuses that mean "this surface was NOT painted", as opposed to the ones
+// that mean "it was painted and here is a caveat". Only the first group belongs
+// under a heading that says nothing was painted.
+const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
+
+/** Was this surface actually left unpainted, or merely painted with a caveat? */
+export function isMissingNote(note) {
+  return MISSING.has(note.status);
+}
 
 /**
  * Render every painted texture in a livery.
@@ -37,15 +47,42 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   const treatments = resolveTreatments(livery.packs ?? ['core']);
   const tokens = { ...(livery.identity ?? {}) };
 
-  const roles = Object.keys(livery.paint ?? {});
-  if (!roles.length) throw new Error(`Livery "${livery.name}" paints no textures.`);
+  // `paint` names this car's roles; `surfaces` names vocabulary terms and gets
+  // translated through the profile's bind table.
+  const { targets: requested, notes } = resolveTargets(profile, livery);
+
+  // Pre-flight, before anything is encoded. Some cars ship textures at sizes DDS
+  // cannot carry a mip chain for — the Abarth's steering wheel is 68x64 — and
+  // hitting one of those halfway through used to abort the build after writing
+  // five perfectly good files. A surface this tool cannot encode is effectively
+  // one the car does not have, so it is reported and skipped like any other.
+  const targets = [];
+  for (const t of requested) {
+    const tex = texture(profile, t.role);
+    if (!isPngTexture(tex.file) && (!isPow2(tex.width) || !isPow2(tex.height))) {
+      notes.push({
+        term: t.from, status: 'unencodable',
+        text: `${t.from} -> ${tex.file} is ${tex.width}x${tex.height}; DDS needs powers of two, so it cannot be painted`,
+      });
+      continue;
+    }
+    targets.push(t);
+  }
+  if (!targets.length) {
+    throw new Error(
+      `Livery "${livery.name}" has nothing it can paint on car "${profile.id}":\n  ` +
+      notes.map((n) => n.text).join('\n  ')
+    );
+  }
 
   let firstPng = null;
   const written = [];
 
-  for (const role of roles) {
+  for (const { role, spec } of targets) {
     const tex = texture(profile, role);
-    const spec = livery.paint[role];
+    // Regions that matched no panel are collected here and reported with
+    // everything else at the end, rather than one line at a time mid-build.
+    const regionNotes = [];
     const width = Math.round(tex.width * scale);
     const height = Math.round(tex.height * scale);
 
@@ -62,7 +99,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       rng: mulberry32(seedFrom(seedStr + tex.file)),
       font: render.font,
       tokens,
+      regionNotes,
     });
+    notes.push(...regionNotes);
 
     const png = await composeLayers({
       base: scaleSvg(layers.base, scale),
@@ -91,8 +130,30 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
   }
 
+  // Say what the design asked for and did not get. This is the failure mode the
+  // project keeps rediscovering in a new costume: a texture name that matches
+  // nothing overrides nothing, silently, and looks identical to a livery that
+  // simply didn't work.
+  //
+  // Two kinds of note, and lumping them together makes the report a liar. A
+  // surface the car does not have was NOT painted; an unconfirmed binding was
+  // painted and merely deserves a second look. Counting the second as the first
+  // inflates the number and buries the signal that actually matters.
+  if (notes.length) {
+    const missing = notes.filter(isMissingNote);
+    const warnings = notes.filter((n) => !isMissingNote(n));
+    log('');
+    log(`  ${targets.length} surface(s) painted` +
+        (missing.length ? `; ${missing.length} asked for and not painted:` : '.'));
+    for (const n of missing) log(`    ! ${n.text}`);
+    if (warnings.length) {
+      log(`  ${warnings.length} painted, but worth a look:`);
+      for (const n of warnings) log(`    ? ${n.text}`);
+    }
+  }
+
   await writeMetadata({ outDir, livery, firstPng });
-  return { outDir, files: written, firstPng };
+  return { outDir, files: written, firstPng, notes };
 }
 
 /**

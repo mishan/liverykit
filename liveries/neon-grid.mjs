@@ -193,14 +193,6 @@ export default {
     // free detail, since UVs are fractions.
     // ------------------------------------------------------------------
 
-    rimFace: {
-      background: 'ink',
-      regions: [
-        { treatment: 'ring', radius: 0.46, width: 0.035, color: 'accent', glow: true },
-        { treatment: 'ring', radius: 0.30, width: 0.02,  color: 'base' },
-        { treatment: 'halftone', at: [0, 0, 1, 1], color: 'base', cell: 26, dot: 0.16, start: 0, end: 200 },
-      ],
-    },
 
     // Shared metal — suspension, calipers, hubs, roll hoop, rim spokes. 83
     // meshes on one 256x256 texture, so this is the one change that touches
@@ -331,6 +323,29 @@ export default {
       ],
     },
 
+
+
+
+
+  },
+
+  // --- surfaces -------------------------------------------------------------
+  //
+  // Keyed by VOCABULARY TERM rather than by this car's texture names, and
+  // translated through the profile's "bind" table. `paint` above still names
+  // roles literally, which is what the rest of this design needs: `body` and
+  // `bodyRear` carry different artwork here, and the term `body` covers both.
+  //
+  // A term this car does not have is a reported no-op, not an error.
+  surfaces: {
+    rims: {
+      background: 'ink',
+      regions: [
+        { treatment: 'ring', radius: 0.46, width: 0.035, color: 'accent', glow: true },
+        { treatment: 'ring', radius: 0.30, width: 0.02,  color: 'base' },
+        { treatment: 'halftone', at: [0, 0, 1, 1], color: 'base', cell: 26, dot: 0.16, start: 0, end: 200 },
+      ],
+    },
     // One texture covers tread and sidewall, and its layout is only half
     // mapped — rings come back as clean sidewall bands, so it is radially
     // unwrapped, but the tread's share is not isolated. When you don't know a
@@ -347,7 +362,6 @@ export default {
         { treatment: 'scanlines', opacity: 0.16 },
       ],
     },
-
     // The helmet's panels are barely mapped, so this uses absolute texture
     // coordinates — the escape hatch. It is a 4:1 horizontal wrap, which means
     // horizontal bands only: a vertical split lands somewhere unpredictable on
@@ -364,7 +378,6 @@ export default {
         { treatment: 'text',   at: [0.52, 0.62, 0.20, 0.24], text: '{number}', color: 'white', tracking: 0.12 },
       ],
     },
-
     // Suits are read at distance and in shadow. Bold blocks and piping survive;
     // small type does not.
     suit: {
@@ -376,7 +389,6 @@ export default {
         { treatment: 'piping', panel: 'legs',  count: 3, color: 'violet', width: 5, angle: 6, safe: false },
       ],
     },
-
     gloves: {
       background: 'ink',
       regions: [
@@ -384,7 +396,6 @@ export default {
         { treatment: 'piping', panel: 'back', at: [0, 0, 1, 0.12], count: 1, color: 'accent', width: 6, glow: true, safe: false },
       ],
     },
-
     // The pit crew show up during stops and in replays. Free win, usually
     // forgotten.
     crew: {

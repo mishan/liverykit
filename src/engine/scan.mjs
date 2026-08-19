@@ -63,6 +63,55 @@ export async function scanSkins(dir) {
 }
 
 /**
+ * Count how many stock skins override each texture file.
+ *
+ * Distinct from `scanSkins`, which dedupes across skins to describe the textures
+ * themselves. Here the COUNT is the point: a file that every skin replaces is
+ * the author saying outright that this surface varies per livery, and that is
+ * one of the signals that identifies bodywork without reference to a filename.
+ *
+ * Keys are lowercased, since NTFS does not distinguish case and neither should
+ * this.
+ */
+export async function countSkinOverrides(dir) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return { skinCount: 0, counts: new Map() };
+  }
+
+  const TEXTURE = /\.(dds|png)$/i;
+  const counts = new Map();
+  const tally = (files) => {
+    for (const f of files) {
+      if (!TEXTURE.test(f)) continue;
+      const k = f.toLowerCase();
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  };
+
+  // Accept a skins/ directory OR a single skin folder, the same as scanSkins.
+  // Without this, pointing --skins straight at one skin returned a count of
+  // zero, which does not read as "no data" downstream — it reads as "no stock
+  // skin overrides anything", and quietly costs the classifier a whole signal.
+  if (entries.some((e) => e.isFile() && TEXTURE.test(e.name))) {
+    tally(entries.filter((e) => e.isFile()).map((e) => e.name));
+    return { skinCount: 1, counts };
+  }
+
+  let skinCount = 0;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    let files;
+    try { files = await readdir(join(dir, e.name)); } catch { continue; }
+    skinCount++;
+    tally(files);
+  }
+  return { skinCount, counts };
+}
+
+/**
  * Classify a texture by filename and encoding. Painting over a normal map or a
  * shader map does not give you a recoloured car — it corrupts surface lighting.
  */

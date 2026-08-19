@@ -212,7 +212,7 @@ test('mip chain length is an integer the encoder can actually honour', () => {
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
 
-function buildKn5({ version = 6, extraMeshes = [] } = {}) {
+function buildKn5({ version = 6, extraMeshes = [], placeholderTexture = false, encrypted = false } = {}) {
   const parts = [];
   const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
   const f32 = (n) => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
@@ -223,7 +223,10 @@ function buildKn5({ version = 6, extraMeshes = [] } = {}) {
 
   // textures: one null slot (type 0, no further fields) then one real DDS
   const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
-  dds.writeUInt32LE(64, 12); dds.writeUInt32LE(32, 16);       // height, width
+  // An encrypted model substitutes a 1x1 image for every texture; the real one
+  // lives in the protected blob appended after the node tree.
+  dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
+  dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
   parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
 
   // one material binding that texture as a diffuse
@@ -256,6 +259,14 @@ function buildKn5({ version = 6, extraMeshes = [] } = {}) {
     parts.push(u32(2), str(em.name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
       u32(em.verts.length), ...em.verts.map((v) => Buffer.concat(v.map(f32))),
       u32(idx.length), idxBuf, u32(0), Buffer.alloc(29));
+  }
+
+  // Custom Shaders Patch appends the protected payload after the node tree and
+  // ends the file with a length-prefixed marker.
+  if (encrypted) {
+    const marker = '__AC_SHADERS_PATCH_KN5ENC_v1__';
+    parts.push(Buffer.alloc(4096, 0xab), u32(marker.length), Buffer.from(marker, 'ascii'),
+      Buffer.from([0x44, 0x0a, 0x01]), u32(1));
   }
   return Buffer.concat(parts);
 }
@@ -481,4 +492,760 @@ test('an island collapsed to a line in UV space is dropped, not emitted as a pan
   const good = findIslands(m, named('Real_Panel'));
   assert.equal(good.length, 1, 'a panel with real area still comes through');
   assert.ok(good[0].rect[3] > 0.5, `and keeps its height, got ${good[0].rect[3]}`);
+});
+
+// --- the classifier ---------------------------------------------------------
+
+const feat = (o) => ({
+  role: o.role ?? 'r', file: o.file ?? 'f.dds', area: 0, straddles: true,
+  skinFraction: 0, shaders: [], box: null, ...o,
+});
+
+test('a big invisible surface loses to a smaller visible one', async () => {
+  // This is the failure mode that took the classifier from 90% to 98%. Engine
+  // bays, undertrays and interior occlusion maps are large, symmetric and
+  // completely unseen; without visibility they outrank the paint on 17 of 175
+  // fleet cars. Measured: engine bays came in at 0.14-0.19 visible, interior
+  // occlusion at 0.02, real bodywork at 0.55-0.89.
+  const { rank } = await import('../src/engine/classify.mjs');
+  const ranked = rank([
+    feat({ role: 'engineBay', area: 0.30, visible: 0.15 }),
+    feat({ role: 'paint', area: 0.12, visible: 0.80 }),
+  ]);
+  assert.equal(ranked[0].role, 'paint', 'visibility must outweigh raw size');
+});
+
+test('a one-sided part is demoted but not excluded', async () => {
+  // Bodywork crosses the centreline and a corner part does not, but some real
+  // bodywork IS one-sided — an asymmetric endurance panel — so this has to be a
+  // penalty rather than a filter.
+  const { rank } = await import('../src/engine/classify.mjs');
+  const both = rank([feat({ role: 'sided', area: 0.5, straddles: false })]);
+  assert.equal(both.length, 1, 'a one-sided candidate still ranks');
+  const pair = rank([
+    feat({ role: 'sided', area: 0.30, straddles: false }),
+    feat({ role: 'central', area: 0.20, straddles: true }),
+  ]);
+  assert.equal(pair[0].role, 'central');
+});
+
+test('confidence reports the margin, and a flat field says so', async () => {
+  const { rank } = await import('../src/engine/classify.mjs');
+  const clear = rank([feat({ role: 'a', area: 0.9 }), feat({ role: 'b', area: 0.1 })]);
+  const tied = rank([feat({ role: 'a', area: 0.5 }), feat({ role: 'b', area: 0.49 })]);
+  assert.ok(clear[0].confidence > 0.8, `clear winner, got ${clear[0].confidence}`);
+  assert.ok(tied[0].confidence < 0.1, `near tie, got ${tied[0].confidence}`);
+  assert.equal(rank([feat({ role: 'only', area: 0.4 })])[0].confidence, 1);
+});
+
+test('the classifier ranks and explains, but never decides silently', async () => {
+  const { explain, propose } = await import('../src/engine/classify.mjs');
+  const fs = [feat({ role: 'a', area: 0.5 }), feat({ role: 'b', area: 0.49 })];
+  const text = explain(fs);
+  assert.match(text, /Look at the car/, 'a near-tie has to say so out loud');
+  assert.match(text, /Visibility was not computed/, 'missing visibility has to be reported');
+  assert.equal(propose(fs).source, 'auto', 'proposals are marked as unconfirmed');
+});
+
+test('an unknown vocabulary term fails loudly and lists the real ones', async () => {
+  const { rank } = await import('../src/engine/classify.mjs');
+  assert.throws(() => rank([feat({})], 'bonnet'), /Unknown vocabulary term "bonnet".*body/s);
+
+  // Inherited properties are not vocabulary terms. VOCABULARY['toString'] is a
+  // function from Object.prototype and a truthiness test would let it through,
+  // which would quietly reopen the closed vocabulary.
+  for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
+    assert.throws(() => rank([feat({})], inherited), /Unknown vocabulary term/, inherited);
+  }
+});
+
+test('a texture bound to no mesh scores zero, however promising its name', async () => {
+  // 1133 of the fleet's 8569 paintable-looking textures are bound to nothing.
+  // metal_detail.dds ships in nearly every road-car skin and on several of those
+  // cars paints not one pixel. A classifier that ranked it would be repeating
+  // the exact mistake this project started with.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { textureFeatures, rank } = await import('../src/engine/classify.mjs');
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('Flank', 0.4, 1)] }));
+
+  const fs = textureFeatures(m, { roles: { ghost: { file: 'not_in_this_model.dds' } } });
+  assert.equal(fs[0].area, 0);
+  assert.equal(fs[0].straddles, false);
+  assert.equal(fs[0].box, null);
+  assert.equal(rank(fs).length, 0, 'an unbound texture must not be proposed at all');
+});
+
+test('override counting works on one skin folder as well as a skins/ directory', async () => {
+  // scanSkins accepts either, and --skins is documented as accepting either.
+  // Returning zero for a single folder does not read downstream as "no data" —
+  // it reads as "no stock skin overrides anything", which costs the classifier a
+  // whole signal without saying so.
+  const { countSkinOverrides } = await import('../src/engine/scan.mjs');
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const root = await mkdtemp(join(tmpdir(), 'lk-skins-'));
+  for (const skin of ['red', 'blue']) {
+    await mkdir(join(root, skin), { recursive: true });
+    await writeFile(join(root, skin, 'body.dds'), '');
+    await writeFile(join(root, skin, 'ui_skin.json'), '{}');
+  }
+  await writeFile(join(root, 'blue', 'extra.dds'), '');
+
+  const all = await countSkinOverrides(root);
+  assert.equal(all.skinCount, 2);
+  assert.equal(all.counts.get('body.dds'), 2);
+  assert.equal(all.counts.get('extra.dds'), 1);
+  assert.equal(all.counts.has('ui_skin.json'), false, 'only textures are counted');
+
+  const one = await countSkinOverrides(join(root, 'blue'));
+  assert.equal(one.skinCount, 1, 'a single skin folder counts as one skin, not zero');
+  assert.equal(one.counts.get('body.dds'), 1);
+
+  assert.deepEqual(await countSkinOverrides(join(root, 'nope')),
+    { skinCount: 0, counts: new Map() }, 'a missing directory is not an error');
+});
+
+// --- bindings ---------------------------------------------------------------
+
+const withBind = (bind) => ({
+  id: 'x', textures: { body: { file: 'b.dds', width: 64, height: 64 } }, bind,
+});
+
+test('a human-confirmed binding survives regeneration; an auto one does not', async () => {
+  // The whole reason to confirm a binding is that the confirmation sticks. A
+  // profile is regenerated every time the model or the classifier changes, and
+  // losing hand-checked work each time would make confirming it pointless.
+  const { mergeBindings } = await import('../src/profile.mjs');
+  const merged = mergeBindings(
+    { body: { roles: ['chassis'], source: 'human' }, tyres: { roles: ['old'], source: 'auto' } },
+    { body: { roles: ['guess'], source: 'auto' }, tyres: { roles: ['new'], source: 'auto' } },
+  );
+  assert.deepEqual(merged.body, { roles: ['chassis'], source: 'human' });
+  assert.deepEqual(merged.tyres, { roles: ['new'], source: 'auto' });
+});
+
+test('absent and unbound are different answers', async () => {
+  // "This car has no wing" is a claim someone made. "Nobody has said" is not.
+  // Collapsing the two would let a silent omission pass for a decision.
+  const { binding } = await import('../src/profile.mjs');
+  const p = withBind({ wing: { roles: [], source: 'human' } });
+  assert.equal(binding(p, 'wing').status, 'absent');
+  assert.equal(binding(p, 'floor').status, 'unbound');
+  assert.equal(binding(withBind({ body: { roles: ['body'], source: 'auto' } }), 'body').status, 'bound');
+});
+
+test('a binding may map one term to several roles', async () => {
+  // The RSS4 carries its bodywork across two chassis textures, 25% and 17% of
+  // the car's surface. A one-role binding would silently paint half the car.
+  const { validateProfile, binding } = await import('../src/profile.mjs');
+  const p = validateProfile({
+    id: 'x',
+    textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+  });
+  assert.deepEqual(binding(p, 'body').roles, ['body', 'bodyRear']);
+});
+
+test('a binding to a role the profile does not define is rejected', async () => {
+  const { validateProfile } = await import('../src/profile.mjs');
+  assert.throws(
+    () => validateProfile(withBind({ body: { roles: ['nope'], source: 'auto' } })),
+    /points at texture role "nope"/,
+  );
+});
+
+test('the vocabulary is fixed, so a livery can rely on it', async () => {
+  const { validateProfile } = await import('../src/profile.mjs');
+  assert.throws(
+    () => validateProfile(withBind({ bonnet: { roles: ['body'], source: 'human' } })),
+    /unknown term "bonnet"/,
+  );
+  assert.throws(
+    () => validateProfile(withBind({ body: { roles: ['body'], source: 'probably' } })),
+    /must be "auto".*"human"/s,
+  );
+  assert.throws(
+    () => validateProfile(withBind({ body: null })),
+    /must be an object.*empty roles array/s,
+  );
+});
+
+test('the shipped profile binds the vocabulary to real roles', async () => {
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const p = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  assert.deepEqual(binding(p, 'body').roles, ['body', 'bodyRear'], 'both chassis textures');
+  assert.equal(binding(p, 'body').source, 'human');
+  // A formula car has no numberplate. Recorded as a decision, not an omission.
+  assert.equal(binding(p, 'numberPlate').status, 'absent');
+  assert.equal(binding(p, 'rims').roles[0], 'rimFace', 'not the motion-blur variant');
+});
+
+test('an inherited property name is not a vocabulary term', async () => {
+  // VOCABULARY['toString'] inherits a function from Object.prototype, so a
+  // truthiness test would let bind."toString" through validation and reopen the
+  // closed vocabulary through the back door.
+  const { validateProfile } = await import('../src/profile.mjs');
+  for (const inherited of ['toString', 'constructor', 'hasOwnProperty']) {
+    assert.throws(
+      () => validateProfile(withBind({ [inherited]: { roles: ['body'], source: 'human' } })),
+      /unknown term/,
+      inherited,
+    );
+  }
+});
+
+test('binding() really never throws, including on a profile nobody validated', async () => {
+  // It is exported, and a caller may hand over a hand-written fixture or a file
+  // read straight from disk. "Never throws" has to be true of the function, not
+  // only of the happy path.
+  const { binding } = await import('../src/profile.mjs');
+  const malformed = [
+    {},
+    { bind: {} },
+    { bind: { body: null } },
+    { bind: { body: {} } },
+    { bind: { body: { roles: null, source: 'human' } } },
+    { bind: { body: { roles: 'chassis', source: 'human' } } },
+  ];
+  for (const p of malformed) {
+    const b = binding(p, 'body');
+    assert.equal(b.status, 'unbound', JSON.stringify(p));
+    assert.deepEqual(b.roles, [], 'callers iterate roles, so it must always be an array');
+  }
+  assert.equal(binding({ bind: {} }, 'toString').status, 'unbound', 'inherited names too');
+});
+
+// --- the resolver -----------------------------------------------------------
+
+const carWith = (bind) => ({
+  id: 'car',
+  textures: {
+    chassis: { file: 'c.dds', width: 64, height: 64 },
+    rear: { file: 'r.dds', width: 64, height: 64 },
+    wheel: { file: 'w.dds', width: 64, height: 64 },
+  },
+  bind,
+});
+const spec = { background: 'black', regions: [] };
+
+test('a surface resolves through bind to whatever this car calls it', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets } = resolveTargets(
+    carWith({ body: { roles: ['chassis', 'rear'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis', 'rear'],
+    'one term, both of the roles it names');
+});
+
+test('asking for a surface the car lacks is a reported no-op, not a failure', async () => {
+  // A design asking for a wing on a van should still build. The report is the
+  // safety mechanism: painting nothing looks exactly like painting something.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' }, wing: { roles: [], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, wing: spec, floor: spec } },
+  );
+  assert.deepEqual(targets.map((t) => t.role), ['chassis']);
+  assert.deepEqual(notes.map((n) => n.status).sort(), ['absent', 'unbound']);
+  assert.match(notes.find((n) => n.term === 'floor').text, /not bound on this car/);
+});
+
+test('an unconfirmed binding is used, and said out loud', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { targets, notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], confidence: 0.4, source: 'auto' } }),
+    { name: 'L', surfaces: { body: spec } },
+  );
+  assert.equal(targets.length, 1, 'a proposal is still usable');
+  assert.equal(notes[0].status, 'unconfirmed');
+  assert.match(notes[0].text, /confidence 0\.4/);
+});
+
+test('painting the same texture twice is refused, not silently resolved', async () => {
+  // Both writes go to the same file and the second wins. Before bindings this
+  // was impossible; a term that expands to several roles makes it reachable.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(
+      carWith({ body: { roles: ['chassis'], source: 'human' } }),
+      { name: 'L', paint: { chassis: spec }, surfaces: { body: spec } },
+    ),
+    /paints texture role "chassis" twice.*paint\.chassis.*surfaces\.body/s,
+  );
+});
+
+test('a livery may not invent a surface name either', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.throws(
+    () => resolveTargets(carWith({}), { name: 'L', surfaces: { spoiler: spec } }),
+    /not in the vocabulary/,
+  );
+});
+
+test('the example livery resolves against the shipped car', async () => {
+  const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid.mjs')).default;
+  const { targets, notes } = resolveTargets(profile, livery);
+  assert.equal(notes.length, 0, `everything it asks for exists: ${notes.map((n) => n.text)}`);
+  // Driver kit lives in another kn5 and must NOT be flagged as suspicious.
+  assert.equal(new Set(targets.map((t) => t.role)).size, targets.length, 'no role painted twice');
+  assert.ok(targets.some((t) => t.from === 'surfaces.rims'), 'rims goes through the vocabulary');
+});
+
+test('a texture too odd a size to encode is skipped and reported, not fatal', async () => {
+  // The Abarth's steering wheel is 68x64. Hitting that mid-build used to abort
+  // after writing five perfectly good files. A surface this tool cannot encode
+  // is effectively one the car does not have.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'car',
+    textures: {
+      good: { file: 'g.dds', width: 512, height: 512 },
+      odd: { file: 'o.dds', width: 68, height: 64 },
+    },
+    bind: {
+      body: { roles: ['good'], source: 'human' },
+      steeringWheel: { roles: ['odd'], source: 'human' },
+    },
+  };
+  // resolveTargets itself does not know about DDS; the pre-flight in buildSkin
+  // does. What matters here is that both resolve, so the build can choose.
+  const { targets } = resolveTargets(p, { name: 'L', surfaces: { body: spec, steeringWheel: spec } });
+  assert.deepEqual(targets.map((t) => t.role), ['good', 'odd']);
+});
+
+test('binding to a texture the model never references is flagged', async () => {
+  // The driver and pit crew are separate kn5 files that a car skin overrides, so
+  // this is expected for them — and it is also exactly how metal_detail.dds
+  // looks, which on several cars is bound to no mesh anywhere and paints
+  // nothing. The two are indistinguishable from one model, so say so.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'car',
+    textures: {
+      crew: { file: 'ac_crew.dds', width: 512, height: 512, sizeFrom: 'skin' },
+      trim: { file: 'metal_detail.dds', width: 32, height: 32, sizeFrom: 'skin' },
+    },
+    bind: {
+      crew: { roles: ['crew'], source: 'human' },
+      metalTrim: { roles: ['trim'], source: 'human' },
+    },
+  };
+  const { targets, notes } = resolveTargets(p, { name: 'L', surfaces: { crew: spec, metalTrim: spec } });
+  assert.equal(targets.length, 2, 'both still painted — they probably are real');
+  assert.equal(notes.length, 1, 'the driver kit is expected to live elsewhere; trim is not');
+  assert.equal(notes[0].term, 'metalTrim');
+  assert.match(notes[0].text, /may paint nothing/);
+});
+
+test('the portable livery renders on two cars that share no texture names', async () => {
+  // The point of the whole layer. One design file, a Formula car and a road car,
+  // no name in common between them.
+  const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  assert.equal(livery.car, undefined, 'a portable livery has no business naming a car');
+
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const a = resolveTargets(rss, livery);
+  const b = resolveTargets(ab, livery);
+
+  assert.ok(a.targets.length >= 10, `RSS4 painted ${a.targets.length}`);
+  assert.ok(b.targets.length >= 5, `Abarth painted ${b.targets.length}`);
+  const filesA = new Set(a.targets.map((t) => rss.textures[t.role].file));
+  const filesB = new Set(b.targets.map((t) => ab.textures[t.role].file));
+  assert.equal([...filesA].filter((f) => filesB.has(f)).length, 1,
+    'only ac_crew.dds is common to both cars — everything else is named differently');
+});
+
+test('the build report separates what was not painted from what merely warrants a look', async () => {
+  // Lumping them together makes the report a liar: an unconfirmed binding WAS
+  // painted, and counting it as missing both inflates the number and buries the
+  // signal that actually matters.
+  const { isMissingNote } = await import('../src/build.mjs');
+  const { resolveTargets } = await import('../src/profile.mjs');
+
+  for (const status of ['absent', 'unbound', 'unencodable', 'no-match']) {
+    assert.equal(isMissingNote({ status }), true, status);
+  }
+  for (const status of ['unconfirmed', 'unverified']) {
+    assert.equal(isMissingNote({ status }), false, status);
+  }
+
+  // And the statuses resolveTargets actually emits land on the right side.
+  const p = {
+    id: 'c',
+    textures: { chassis: { file: 'c.dds', width: 64, height: 64 } },
+    bind: {
+      body: { roles: ['chassis'], confidence: 0.4, source: 'auto' },
+      wing: { roles: [], source: 'human' },
+    },
+  };
+  const { targets, notes } = resolveTargets(p, {
+    name: 'L', surfaces: { body: spec, wing: spec, floor: spec },
+  });
+  assert.equal(targets.length, 1, 'the auto-bound surface is painted');
+  assert.deepEqual(notes.filter(isMissingNote).map((n) => n.term).sort(), ['floor', 'wing']);
+  assert.deepEqual(notes.filter((n) => !isMissingNote(n)).map((n) => n.term), ['body']);
+});
+
+// --- panel tags -------------------------------------------------------------
+
+const tagCar = (axes, panels) => ({
+  id: 'c', calibration: { axes }, textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+  panels: { body: panels },
+});
+
+test('tags describe where a panel is in terms true of any car', async () => {
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    nl: { rect: [0.0, 0, 0.3, 0.3], centroid3d: [1, 1, 4] },    // left, nose, upper
+    tr: { rect: [0.3, 0, 0.3, 0.3], centroid3d: [-1, 0, 0] },   // right, tail, lower
+    mc: { rect: [0.6, 0, 0.3, 0.3], centroid3d: [0, 0.5, 2] },  // centre, mid
+  })).body;
+  assert.deepEqual(t.nl, ['left', 'nose', 'upper']);
+  assert.deepEqual(t.tr, ['right', 'tail', 'lower']);
+  assert.equal(t.mc[0], 'centre');
+  assert.equal(t.mc[1], 'mid');
+});
+
+test('tags follow the model\'s idea of forward, not ours', async () => {
+  // Ninety of the 235 fleet cars have no mesh named in a way that reveals which
+  // end is the front. On a model where +Z is rearward, ignoring that would tag
+  // the tail as the nose on every panel.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const panels = {
+    a: { rect: [0, 0, 0.4, 0.4], centroid3d: [0, 0, 4] },
+    b: { rect: [0.5, 0, 0.4, 0.4], centroid3d: [0, 0, 0] },
+  };
+  const fwd = computeTags(tagCar({ left: '+X', front: '+Z' }, panels)).body;
+  const rev = computeTags(tagCar({ left: '+X', front: '-Z' }, panels)).body;
+  assert.equal(fwd.a[1], 'nose');
+  assert.equal(rev.a[1], 'tail', 'the same panel is at the other end of a reversed car');
+  // Left and right swap with the axis too.
+  const flipped = computeTags(tagCar({ left: '-X', front: '+Z' }, {
+    p: { rect: [0, 0, 1, 1], centroid3d: [1, 0, 0] },
+  })).body;
+  assert.equal(flipped.p[0], 'right');
+});
+
+test('a panel with no measured centroid gets the tags that need no geometry', async () => {
+  // Hand-written profiles and the old screenshot workflow have no centroid3d.
+  // Better to give them what can be known than to skip them or invent a side.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    p: { rect: [0, 0, 1, 1], visible: 0.8, mirrorOf: 'q' },
+  })).body;
+  assert.deepEqual(t.p, ['visible', 'mirrored']);
+});
+
+test('selecting by tags is AND, and matching nothing is reported', async () => {
+  const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
+  const p = tagCar({ left: '+X', front: '+Z' }, {
+    a: { rect: [0.0, 0, 0.3, 0.3], tags: ['left', 'mid', 'visible'] },
+    b: { rect: [0.3, 0, 0.3, 0.3], tags: ['left', 'nose'] },
+    c: { rect: [0.6, 0, 0.3, 0.3], tags: ['right', 'mid', 'visible'] },
+  });
+  assert.deepEqual(panelsWithTags(p, 'body', ['left']), ['a', 'b']);
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible']), ['a'],
+    'both tags must be present, not either');
+
+  const { regions, notes } = expandRegions(p, 'body', [
+    { treatment: 'fill', tags: ['left'] },
+    { treatment: 'fill', tags: ['left', 'tail'] },
+  ]);
+  assert.deepEqual(regions.map((r) => r.panel), ['a', 'b'], 'one region per matching panel');
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].text, /no panel tagged \[left, tail\]/);
+});
+
+test('a region may select by name or by tag, not both', async () => {
+  const { expandRegions } = await import('../src/profile.mjs');
+  assert.throws(
+    () => expandRegions(tagCar({}, { a: { rect: [0, 0, 1, 1], tags: ['left'] } }), 'body',
+      [{ treatment: 'fill', panel: 'a', tags: ['left'] }]),
+    /both "panel" and "tags"/,
+  );
+});
+
+test('the portable livery expands onto two cars it was not written for', async () => {
+  // Five authored regions become as many as the car has panels to put them on.
+  const { loadProfile, expandRegions } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const cases = [
+    ['../cars/rss_formula_rss_4.json', 'body'],
+    ['../cars/abarth500.json', 'skinbase_default'],
+  ];
+  for (const [file, role] of cases) {
+    const p = await loadProfile(new URL(file, import.meta.url));
+    const { regions, notes } = expandRegions(p, role, livery.surfaces.body.regions);
+
+    assert.ok(regions.length > livery.surfaces.body.regions.length,
+      `${file}: ${regions.length} regions from ${livery.surfaces.body.regions.length} authored`);
+    assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
+
+    // A skipped region is allowed, but only for a reason the CAR supplies. Any
+    // selector other than `shared` going unmatched would mean the design is
+    // asking for something no car provides, which is a bug in the design.
+    for (const n of notes) {
+      assert.match(n.text, /\[shared, visible\]/,
+        `${file}: unexpected unmatched selector — ${n.text}`);
+    }
+  }
+
+  // The two cars genuinely differ here, which is the whole reason the design has
+  // to name `shared` separately rather than relying on left and right.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  assert.equal(panelsWithTags(rss, 'body', ['shared', 'visible']).length, 0,
+    'an open-wheeler unwraps each flank separately, for asymmetric aero');
+  assert.ok(panelsWithTags(ab, 'skinbase_default', ['shared', 'visible']).length > 0,
+    'a road car mirrors its sides to halve the texture');
+});
+
+// --- encrypted models -------------------------------------------------------
+
+test('an encrypted model is read, not rejected — and never decrypted', async () => {
+  // Some mod authors ship a kn5 whose geometry is intact but whose textures are
+  // 1x1 placeholders, with the real ones in a Custom Shaders Patch blob appended
+  // to the file. Three cars in a 235-car fleet were built this way, and the
+  // exact-length check refused all three as corrupt.
+  //
+  // The geometry is what this tool actually needs, and it is all there. The
+  // encryption is the author protecting their artwork; nothing here tries to
+  // undo that, and nothing should.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+
+  const plain = parseKn5Buffer(buildKn5());
+  assert.equal(plain.encrypted, null, 'an ordinary model is not flagged');
+
+  const enc = parseKn5Buffer(buildKn5({ encrypted: true }));
+  assert.equal(enc.encrypted.scheme, 'csp-kn5enc-v1');
+  assert.ok(enc.encrypted.bytes > 4000, `protected region measured ${enc.encrypted.bytes} bytes`);
+  assert.equal(enc.meshes.length, plain.meshes.length, 'the geometry reads identically');
+  assert.deepEqual(enc.materials, plain.materials);
+});
+
+test('a genuinely truncated file is still refused', async () => {
+  // The encryption check must not become a way for any short parse to pass. It
+  // only excuses trailing bytes that carry the marker.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const buf = Buffer.concat([buildKn5(), Buffer.alloc(4096, 0xab)]);
+  assert.throws(() => parseKn5Buffer(buf), /parser finished at byte/);
+});
+
+test('placeholder texture sizes are refused rather than believed', async () => {
+  // A 1x1 embedded texture is not a small texture, it is an absent one. Writing
+  // its size into a profile would produce a livery rendered at one pixel.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-enc-'));
+  const file = join(dir, 'car.kn5');
+  await writeFile(file, buildKn5({ placeholderTexture: true, encrypted: true }));
+
+  const bare = await profileFromKn5(file, { id: 'c', visibility: false });
+  assert.equal(Object.keys(bare.textures).length, 0, 'nothing is paintable without a real size');
+  assert.match(bare.doNotPaint[0].reason, /encrypted.*1x1 placeholder/);
+
+  // --assume-size turns it into a choice the user has made, labelled as one.
+  const assumed = await profileFromKn5(file, { id: 'c', visibility: false, assumeSize: 1024 });
+  const tex = Object.values(assumed.textures)[0];
+  assert.equal(tex.width, 1024);
+  assert.equal(tex.sizeFrom, 'assumed');
+  assert.match(tex.notes, /assumed, not measured/);
+
+  await assert.rejects(
+    () => profileFromKn5(file, { id: 'c', visibility: false, assumeSize: 1000 }),
+    /power of two/,
+  );
+});
+
+// --- parts versus panels ----------------------------------------------------
+
+test('panels drawn from the same texels do not claim contradictory sides', async () => {
+  // A PART is a thing on the car; a PANEL is a region of a texture, and they are
+  // not one to one. Across eight cars, 42.8% of panels shared a rectangle with
+  // another. The Abarth's wheel face was tagged `left` on one instance and
+  // `right` on another for the same pixels, so a livery asking for the left side
+  // would paint all four wheels and look like it had worked.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const rect = [0.1, 0.1, 0.2, 0.2];
+  const t = computeTags({
+    calibration: { axes: { left: '+X', front: '+Z' } },
+    panels: {
+      rims: {
+        lf: { rect, centroid3d: [1, 0, 2], visible: 0.9 },
+        rf: { rect, centroid3d: [-1, 0, 2], visible: 0.9 },
+        lr: { rect, centroid3d: [1, 0, -2], visible: 0.9 },
+        rr: { rect, centroid3d: [-1, 0, -2], visible: 0.9 },
+        solo: { rect: [0.5, 0.5, 0.1, 0.1], centroid3d: [1, 0, 2], visible: 0.9 },
+      },
+    },
+  }).rims;
+
+  for (const w of ['lf', 'rf', 'lr', 'rr']) {
+    assert.ok(!t[w].includes('left') && !t[w].includes('right'),
+      `${w} must not claim a side its twin contradicts: ${t[w]}`);
+    assert.ok(t[w].includes('shared'), `${w} should be marked shared`);
+    assert.ok(t[w].includes('visible'), 'tags all four agree on survive');
+  }
+  assert.ok(t.solo.includes('left'), 'a panel with its own rectangle keeps its side');
+  assert.ok(!t.solo.includes('shared'));
+});
+
+test('a shared region is painted once, not once per part', async () => {
+  // Four passes of a 0.3 halftone is a 0.76 halftone. Selecting by name still
+  // reaches an individual panel; only tag selection dedupes, because only it can
+  // have matched several instances of one thing without meaning to.
+  const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
+  const rect = [0.1, 0.1, 0.2, 0.2];
+  const p = {
+    id: 'c',
+    textures: { rims: { file: 'r.dds', width: 64, height: 64 } },
+    panels: {
+      rims: {
+        lf: { rect, tags: ['shared', 'visible'] },
+        rf: { rect, tags: ['shared', 'visible'] },
+        hub: { rect: [0.5, 0.5, 0.1, 0.1], tags: ['visible'] },
+      },
+    },
+  };
+  assert.deepEqual(panelsWithTags(p, 'rims', ['visible']), ['lf', 'hub'],
+    'one name per distinct rectangle, keeping the first as the profile lists it');
+
+  const { regions } = expandRegions(p, 'rims', [{ treatment: 'fill', tags: ['visible'] }]);
+  assert.equal(regions.length, 2, 'two rectangles, two draws');
+});
+
+test('the shipped profiles record where parts share texels', async () => {
+  const { loadProfile } = await import('../src/profile.mjs');
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const wheel = Object.values(ab.panels.rims).find((p) => p.instances === 4);
+  assert.ok(wheel, 'the Abarth draws all four wheels from one rim texture');
+  assert.equal(wheel.sharesRectWith.length, 3);
+  assert.ok(!wheel.tags.includes('left') && !wheel.tags.includes('right'));
+});
+
+// --- which way is the car facing --------------------------------------------
+
+function wheelCar({ lf = [0.8, 0.3, 1.3], rf = [-0.8, 0.3, 1.3], lr = [0.8, 0.3, -1.0], rr = [-0.8, 0.3, -1.0] } = {}) {
+  // Only the dummies matter here; axesFromWheels reads the node translations.
+  const d = (name, [x, y, z]) => {
+    const w = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+    return { name, path: name, depth: 1, world: w };
+  };
+  return {
+    meshes: [],
+    dummies: [d('WHEEL_LF', lf), d('WHEEL_RF', rf), d('WHEEL_LR', lr), d('WHEEL_RR', rr)],
+  };
+}
+
+test('the wheels say which way is left and which is forward', async () => {
+  // Assetto Corsa's physics requires WHEEL_LF/RF/LR/RR on every car — a car
+  // without them does not run — so this is a measurement rather than a guess.
+  // Across 238 fleet cars it resolved every one, agreed with the old name
+  // heuristic on all 145 the heuristic was sure about, and corrected two.
+  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
+
+  const normal = axesFromWheels(wheelCar());
+  assert.equal(normal.left, 1, '+X is the left of a car whose LF sits at positive X');
+  assert.equal(normal.front, 1);
+  assert.ok(normal.confident);
+  assert.ok(Math.abs(normal.wheelbase - 2.3) < 1e-6, `wheelbase ${normal.wheelbase}`);
+  assert.ok(Math.abs(normal.trackWidth - 1.6) < 1e-6, `track ${normal.trackWidth}`);
+
+  // A mirrored or reversed model has to come out mirrored or reversed, not
+  // defaulted to the common case.
+  const mirrored = axesFromWheels(wheelCar({ lf: [-0.8, 0.3, 1.3], rf: [0.8, 0.3, 1.3], lr: [-0.8, 0.3, -1], rr: [0.8, 0.3, -1] }));
+  assert.equal(mirrored.left, -1);
+  const reversed = axesFromWheels(wheelCar({ lf: [0.8, 0.3, -1.3], rf: [-0.8, 0.3, -1.3], lr: [0.8, 0.3, 1], rr: [-0.8, 0.3, 1] }));
+  assert.equal(reversed.front, -1);
+});
+
+test('wheels stacked at the origin give no answer rather than a wrong one', async () => {
+  // A confident wrong answer is worse than none: everything downstream that
+  // asks which way is forward would be silently mirrored.
+  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
+  const flat = wheelCar({ lf: [0, 0, 0], rf: [0, 0, 0], lr: [0, 0, 0], rr: [0, 0, 0] });
+  assert.equal(axesFromWheels(flat), null);
+  assert.equal(axesFromWheels({ meshes: [], dummies: [] }), null, 'no wheels, no answer');
+
+  // A model missing a collection entirely should mean "no wheels found", which
+  // this function already has an answer for, rather than a TypeError from deep
+  // inside it. It is exported and gets called with hand-built models.
+  assert.equal(axesFromWheels({}), null, 'no dummies and no meshes');
+  assert.equal(axesFromWheels({ meshes: [] }), null, 'meshes but no dummies');
+  assert.equal(axesFromWheels({ dummies: [] }), null, 'dummies but no meshes');
+});
+
+test('the shipped profiles record axes measured from the wheels', async () => {
+  const { loadProfile } = await import('../src/profile.mjs');
+  for (const [file, wb] of [['../cars/rss_formula_rss_4.json', 2.74], ['../cars/abarth500.json', 2.30]]) {
+    const p = await loadProfile(new URL(file, import.meta.url));
+    const a = p.calibration.axes;
+    assert.equal(a.from, 'wheels');
+    assert.equal(a.left, '+X');
+    assert.equal(a.front, '+Z');
+    // A figure a person can check against a spec sheet is the point of storing it.
+    assert.ok(Math.abs(a.wheelbase - wb) < 0.02, `${file}: wheelbase ${a.wheelbase}, expected ~${wb}`);
+  }
+});
+
+test('re-tagging clears shared-rect metadata that no longer applies', async () => {
+  // Tagging runs again on every regeneration. A panel that used to share its
+  // rectangle may not any more, and a stale `instances: 4` is worse than no
+  // field at all because it still reads as something that was measured.
+  const { tagProfile } = await import('../src/engine/tags.mjs');
+  const profile = {
+    calibration: { axes: { left: '+X', front: '+Z' } },
+    panels: {
+      rims: {
+        lf: { rect: [0.1, 0.1, 0.2, 0.2], centroid3d: [1, 0, 2] },
+        rf: { rect: [0.1, 0.1, 0.2, 0.2], centroid3d: [-1, 0, 2] },
+      },
+    },
+  };
+  const first = tagProfile(profile);
+  assert.equal(first.shared, 2);
+  assert.equal(profile.panels.rims.lf.instances, 2);
+  assert.deepEqual(profile.panels.rims.lf.sharesRectWith, ['rf']);
+
+  // Now they no longer overlap — as if a rect had been corrected by hand.
+  profile.panels.rims.rf.rect = [0.5, 0.5, 0.2, 0.2];
+  const second = tagProfile(profile);
+  assert.equal(second.shared, 0);
+  for (const name of ['lf', 'rf']) {
+    assert.equal(profile.panels.rims[name].instances, undefined, name);
+    assert.equal(profile.panels.rims[name].sharesRectWith, undefined, name);
+  }
+  assert.ok(profile.panels.rims.lf.tags.includes('left'), 'and the side tag comes back');
+});
+
+test('an empty or malformed tag selector is refused, not silently everything', async () => {
+  // `every` on an empty list is vacuously true, so tags: [] would have matched
+  // every panel and painted the whole texture — the loudest possible version of
+  // this project's quietest bug.
+  const { expandRegions } = await import('../src/profile.mjs');
+  const p = tagCar({}, {
+    a: { rect: [0, 0, 0.3, 0.3], tags: ['left'] },
+    b: { rect: [0.5, 0, 0.3, 0.3], tags: ['right'] },
+  });
+  for (const bad of [[], 'left', {}, null]) {
+    assert.throws(
+      () => expandRegions(p, 'body', [{ treatment: 'fill', tags: bad }]),
+      /non-empty array of tag names/,
+      JSON.stringify(bad),
+    );
+  }
+  // A region with no tags at all is untouched — that is the ordinary case.
+  const { regions } = expandRegions(p, 'body', [{ treatment: 'fill', panel: 'a' }]);
+  assert.equal(regions.length, 1);
 });
