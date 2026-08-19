@@ -16,6 +16,16 @@ import { texture, resolveTargets } from './profile.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
+// Note statuses that mean "this surface was NOT painted", as opposed to the ones
+// that mean "it was painted and here is a caveat". Only the first group belongs
+// under a heading that says nothing was painted.
+const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
+
+/** Was this surface actually left unpainted, or merely painted with a caveat? */
+export function isMissingNote(note) {
+  return MISSING.has(note.status);
+}
+
 /**
  * Render every painted texture in a livery.
  *
@@ -119,10 +129,22 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // project keeps rediscovering in a new costume: a texture name that matches
   // nothing overrides nothing, silently, and looks identical to a livery that
   // simply didn't work.
+  //
+  // Two kinds of note, and lumping them together makes the report a liar. A
+  // surface the car does not have was NOT painted; an unconfirmed binding was
+  // painted and merely deserves a second look. Counting the second as the first
+  // inflates the number and buries the signal that actually matters.
   if (notes.length) {
+    const missing = notes.filter(isMissingNote);
+    const warnings = notes.filter((n) => !isMissingNote(n));
     log('');
-    log(`  ${targets.length} surface(s) painted; ${notes.length} asked for and not painted:`);
-    for (const n of notes) log(`    ! ${n.text}`);
+    log(`  ${targets.length} surface(s) painted` +
+        (missing.length ? `; ${missing.length} asked for and not painted:` : '.'));
+    for (const n of missing) log(`    ! ${n.text}`);
+    if (warnings.length) {
+      log(`  ${warnings.length} painted, but worth a look:`);
+      for (const n of warnings) log(`    ? ${n.text}`);
+    }
   }
 
   await writeMetadata({ outDir, livery, firstPng });
