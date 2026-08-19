@@ -416,6 +416,12 @@ All of these fail silently.
   author's artwork, protected on purpose. For textures no stock skin overrides,
   `--assume-size 2048` paints them at a size you choose, recorded in the profile
   as `"sizeFrom": "assumed"` so it is never mistaken for a measurement.
+- **Which way a car faces is read from its wheels, not its mesh names.** AC
+  requires `WHEEL_LF`/`RF`/`LR`/`RR` on every car for the physics, so the axes
+  are exact. Mesh names were inconclusive on 91 of 235 cars and wrong on two. The
+  profile records the resulting track width and wheelbase, which are worth a
+  glance against a spec sheet — they are the only numbers in there you can check
+  independently.
 - **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
   nothing, so glow is done at the raster stage instead. Don't put filters in
   generated SVG.

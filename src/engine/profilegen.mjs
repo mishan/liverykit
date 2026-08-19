@@ -16,7 +16,7 @@
 // as a sanity check that the profile matches what the game actually draws.
 // ---------------------------------------------------------------------------
 
-import { parseKn5, meshesUsingTexture, axisHints } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
@@ -98,10 +98,30 @@ export async function profileFromKn5(path, {
     throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
   }
   const model = await parseKn5(path, { keepTextureData: true });
-  const axes = axisHints(model);
+
+  // Orientation comes from the wheels, which AC's physics requires every car to
+  // name WHEEL_LF/RF/LR/RR — so it is a measurement, not a guess. Across 238
+  // fleet cars it resolved all of them, agreed with the old name heuristic on
+  // all 145 the heuristic was confident about, and corrected 2 it had wrong.
+  // The heuristic stays as a fallback for a model somehow missing its wheels.
+  const wheels = axesFromWheels(model);
+  const hint = axisHints(model);
+  const axes = wheels ?? hint;
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
-  log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
-      `${axes.confident ? '' : '  (LOW CONFIDENCE — few directional mesh names to check against)'}`);
+  if (wheels) {
+    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
+        `  (from the wheels: track ${wheels.trackWidth.toFixed(2)}m, wheelbase ${wheels.wheelbase.toFixed(2)}m)`);
+    // A disagreement is worth surfacing even though the wheels win: it usually
+    // means a mesh is named for the side it is NOT on.
+    if (hint.confident && (hint.left !== wheels.left || hint.front !== wheels.front)) {
+      log('  ! mesh names disagree with the wheels about which way the car faces.');
+      log('    The wheels are used. Check for parts named for the wrong side.');
+    }
+  } else {
+    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
+        `  ! NO WHEEL NODES — falling back to mesh names` +
+        `${axes.confident ? '' : ', which are inconclusive here'}`);
+  }
 
   // `front` matters: cockpitEye sits BACK from the steering wheel, and on a
   // model where +Z is rearward that offset has to flip or the eye ends up out
@@ -388,6 +408,12 @@ export async function profileFromKn5(path, {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',
         confident: axes.confident,
+        from: wheels ? 'wheels' : 'mesh names',
+        // Checkable against a spec sheet, which is the point of recording it.
+        ...(wheels ? {
+          trackWidth: Math.round(wheels.trackWidth * 100) / 100,
+          wheelbase: Math.round(wheels.wheelbase * 100) / 100,
+        } : {}),
       },
       notes:
         'Generated from the model. Panel rects are exact UV island bounds, and ' +

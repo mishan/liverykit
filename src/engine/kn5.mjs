@@ -131,6 +131,11 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   // at the origin — which looks fine until you try to reason about where
   // anything is on the car. Transforms are accumulated down the tree here.
   const meshes = [];
+  // Dummy nodes are kept as well as meshes. A dummy carries a transform and
+  // nothing else, which sounds skippable until you need the position of
+  // something that is defined by its node rather than by its geometry — a wheel
+  // centre, for instance, which AC places by the WHEEL_xx node's translation.
+  const dummies = [];
   const readNode = (depth, parentPath, parentMatrix) => {
     const type = c.u32();
     const name = c.str();
@@ -143,6 +148,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
       const m = new Float32Array(16);
       for (let i = 0; i < 16; i++) m[i] = c.f32();
       world = multiply(m, parentMatrix);
+      dummies.push({ name, path: nodePath, depth, world });
     } else if (type === 2 || type === 3) {
       c.skip(3);                          // castShadows, visible, transparent
       let stride = 44;
@@ -191,7 +197,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     );
   }
 
-  return { version, textures, materials, meshes, buf, encrypted };
+  return { version, textures, materials, meshes, dummies, buf, encrypted };
 }
 
 /**
@@ -287,6 +293,89 @@ export function vertex(model, mesh, i) {
  * `axisHints` re-derives this per model where the names allow it, so a car that
  * disagrees is detected rather than silently mis-labelled.
  */
+/**
+ * Which way is left, and which way is forward, from the wheels.
+ *
+ * Assetto Corsa's physics REQUIRES a car to carry nodes named WHEEL_LF, WHEEL_RF,
+ * WHEEL_LR and WHEEL_RR — suspension, tyre and drivetrain all attach to them. It
+ * is not a naming convention an author may or may not follow; a car without them
+ * does not run. All 235 cars in the fleet have all four, including all 91 whose
+ * axes the name heuristic could not determine.
+ *
+ * So the axes are readable exactly rather than inferred. LF and RF differ only in
+ * which side they sit on, and LF and LR only in which end, which makes each axis
+ * a subtraction.
+ *
+ * The heuristic in `axisHints` remains as a cross-check for models that somehow
+ * lack the wheels, but this is the measurement.
+ */
+/**
+ * Is this mesh parented under the named node?
+ *
+ * Matching the node NAME rather than a substring of the whole path, because mesh
+ * names are not disciplined: one car has a mesh called `A_Wheel_LF3` sitting
+ * under `WHEEL_RF`, and a substring test counted it as part of the left front
+ * wheel. That dragged the wheel centre toward the middle of the car and shortened
+ * the measured wheelbase by 0.7 m. The SIGN survived it, which is exactly why it
+ * would have gone unnoticed without checking the magnitudes against real cars.
+ */
+function under(mesh, nodeName) {
+  const parts = mesh.path.toUpperCase().split('/');
+  // Ancestors only — the last segment is the mesh's own name, and it is the one
+  // that lies. A mesh that IS the node is still accepted, but only on an exact
+  // match rather than on containing the string.
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i].startsWith(nodeName)) return true;
+  }
+  return parts[parts.length - 1] === nodeName;
+}
+
+export function axesFromWheels(model) {
+  const at = (which) => {
+    const key = `WHEEL_${which}`;
+    // The node's own translation IS the wheel centre — that is how AC positions
+    // it. Averaging the geometry underneath instead gets close but not exact,
+    // because a wheel node also holds motion-blur discs and brake parts that are
+    // not centred on the axle. On one car that error was 0.46 m of wheelbase.
+    const node = model.dummies.find((d) => d.name.toUpperCase() === key)
+      ?? model.dummies.find((d) => d.name.toUpperCase().startsWith(key));
+    if (node) return { x: node.world[12], y: node.world[13], z: node.world[14] };
+
+    // No such node: fall back to the geometry parented under it.
+    let x = 0, y = 0, z = 0, n = 0;
+    for (const mesh of model.meshes) {
+      if (!under(mesh, key)) continue;
+      const step = Math.max(1, Math.floor(mesh.vertexCount / 200));
+      for (let i = 0; i < mesh.vertexCount; i += step) {
+        const v = vertex(model, mesh, i);
+        x += v.x; y += v.y; z += v.z; n++;
+      }
+    }
+    return n ? { x: x / n, y: y / n, z: z / n } : null;
+  };
+
+  const lf = at('LF'), rf = at('RF'), lr = at('LR'), rr = at('RR');
+  if (!lf || !rf || !lr || !rr) return null;
+
+  const track = (lf.x + lr.x) / 2 - (rf.x + rr.x) / 2;   // left minus right
+  const wheelbase = (lf.z + rf.z) / 2 - (lr.z + rr.z) / 2; // front minus rear
+
+  // Degenerate geometry — every wheel at the origin, or a model where the two
+  // axes are indistinguishable — is worse than no answer, because it looks like
+  // one. A real car's track and wheelbase are both comfortably over 10 cm.
+  if (Math.abs(track) < 0.1 || Math.abs(wheelbase) < 0.1) return null;
+
+  return {
+    left: Math.sign(track),
+    front: Math.sign(wheelbase),
+    confident: true,
+    from: 'wheels',
+    // Reported so a person can sanity-check the result against a spec sheet.
+    trackWidth: Math.abs(track),
+    wheelbase: Math.abs(wheelbase),
+  };
+}
+
 export function axisHints(model) {
   const centroid = (mesh) => {
     let x = 0, z = 0;

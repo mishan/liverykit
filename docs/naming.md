@@ -282,7 +282,32 @@ because UVs are fractions.
 With that, 238 of 240 cars profile. The remaining two ship no kn5 at all in this
 install, which is a missing file rather than a parsing problem.
 
-Ninety of 235 cars have low-confidence axes. The classifier doesn't currently
-depend on front/rear, but panel section tags do, so phase four needs a better
-axis estimate than mesh names — probably from the wheel positions, which are
-findable geometrically.
+~~Ninety of 235 cars have low-confidence axes.~~ **Resolved, and the wheels were
+the answer.**
+
+Assetto Corsa's physics REQUIRES every car to carry nodes named `WHEEL_LF`,
+`WHEEL_RF`, `WHEEL_LR` and `WHEEL_RR` — suspension, tyres and drivetrain all
+attach to them, and a car without them does not run. That is a platform
+constraint rather than a naming convention an author may or may not follow, and
+all 238 parseable fleet cars have all four. So the axes are a subtraction, not an
+inference: left minus right across the front pair, front minus rear along one
+side.
+
+Validated the same way as the classifier, against a held-out label. On the 145
+cars the old name heuristic was confident about it agrees **145/145**. It
+resolves all 93 it could not decide, and corrects 2 it had actively got wrong —
+`lotus_49` and `pagani_huayra` were both being told that +X was the car's right.
+Every car in the fleet turns out to be `+X` left, `+Z` forward.
+
+The wheel positions also give the track width and wheelbase for free, which are
+worth recording because they are the only numbers in a profile a person can check
+against a spec sheet. Measured against nine cars with published figures they land
+within a centimetre: Miata 2.27 m, AE86 2.40 m, 991 2.45 m, R34 2.67 m.
+
+That check earned its keep twice. It caught a mesh named `A_Wheel_LF3` parented
+under `WHEEL_RF` being counted as part of the left front wheel, which dragged the
+wheel centre inward and shortened the measured wheelbase by 0.7 m — the SIGN
+survived it, so nothing else would have noticed. And it sent me to look up the
+Abarth 595 SS, which measured 1.84 m against the 2.30 m I expected: the AC car is
+the 1968 Fiat-derived original, whose wheelbase is exactly 1,840 mm. The
+measurement was right and my reference was wrong.
