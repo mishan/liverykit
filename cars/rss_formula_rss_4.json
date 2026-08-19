@@ -9,9 +9,12 @@
     "axes": {
       "left": "+X",
       "front": "+Z",
-      "confident": true
+      "confident": true,
+      "from": "wheels",
+      "trackWidth": 1.46,
+      "wheelbase": 2.74
     },
-    "notes": "Panel rects are exact UV island bounds. \"anisotropy\" comes from the UV-to-3D Jacobian. \"adjacent\" lists islands that physically touch on the car, which is what lets artwork continue across a UV seam. \"visible\" is the fraction of a panel readable from trackside viewpoints, computed by ray casting against the whole car, and \"safe\" bounds that readable part \u2014 those two are heuristics, unlike the rest."
+    "notes": "Panel rects are exact UV island bounds. \"anisotropy\" comes from the UV-to-3D Jacobian. \"adjacent\" lists islands that physically touch on the car, which is what lets artwork continue across a UV seam. \"visible\" is the fraction of a panel readable from trackside viewpoints, computed by ray casting against the whole car, and \"safe\" bounds that readable part — those two are heuristics, unlike the rest."
   },
   "textures": {
     "metal": {
@@ -141,14 +144,16 @@
       "width": 32,
       "height": 32,
       "alpha": false,
-      "sizeFrom": "model"
+      "sizeFrom": "model",
+      "notes": "Koni damper body — yellow as shipped, which is why it stood out against the livery."
     },
     "koni_spring_2": {
       "file": "Koni_SPRING_2.dds",
       "width": 32,
       "height": 32,
       "alpha": false,
-      "sizeFrom": "model"
+      "sizeFrom": "model",
+      "notes": "Koni damper body — yellow as shipped, which is why it stood out against the livery."
     },
     "glass": {
       "file": "2017_Glass_DW.dds",
@@ -175,13 +180,6 @@
       "file": "2017_Glass.dds",
       "width": 512,
       "height": 512,
-      "alpha": true,
-      "sizeFrom": "model"
-    },
-    "body_3": {
-      "file": "RSS4_Chassis_Main_Foil.dds",
-      "width": 1024,
-      "height": 1024,
       "alpha": true,
       "sizeFrom": "model"
     },
@@ -261,7 +259,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew": {
       "file": "ac_crew.dds",
@@ -269,7 +267,7 @@
       "height": 1024,
       "alpha": false,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "suit_2": {
       "file": "DRIVER_SUIT_PSD.dds",
@@ -277,7 +275,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet": {
       "file": "HELMET_2012.dds",
@@ -285,7 +283,7 @@
       "height": 512,
       "alpha": false,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "metal_detail": {
       "file": "metal_detail.dds",
@@ -293,7 +291,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "gloves": {
       "file": "2016_Gloves_DIFF.dds",
@@ -301,7 +299,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet_2": {
       "file": "Helmet_2012_Glass.dds",
@@ -309,7 +307,7 @@
       "height": 128,
       "alpha": true,
       "sizeFrom": "skin",
-      "notes": "Not referenced by this model \u2014 most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
+      "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "bodyRear": {
       "file": "RSS4_Chassis_C.dds",
@@ -336,12 +334,135 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "model"
+    },
+    "heatShield": {
+      "file": "RSS4_Chassis_Main_Foil.dds",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "sizeFrom": "model",
+      "notes": "Exhaust heat-shield foil, gold as shipped. Right-hand side only, because that is the side the exhaust exits."
+    }
+  },
+  "bind": {
+    "belts": {
+      "roles": [
+        "belts_2"
+      ],
+      "source": "human"
+    },
+    "body": {
+      "roles": [
+        "body",
+        "bodyRear"
+      ],
+      "source": "human"
+    },
+    "brakes": {
+      "roles": [
+        "rss4_disc"
+      ],
+      "source": "human"
+    },
+    "crew": {
+      "roles": [
+        "crew"
+      ],
+      "source": "human"
+    },
+    "floor": {
+      "roles": [],
+      "source": "human"
+    },
+    "glass": {
+      "roles": [
+        "glass"
+      ],
+      "source": "human"
+    },
+    "gloves": {
+      "roles": [
+        "gloves"
+      ],
+      "source": "human"
+    },
+    "heatShield": {
+      "roles": [
+        "heatShield"
+      ],
+      "source": "human"
+    },
+    "helmet": {
+      "roles": [
+        "helmet"
+      ],
+      "source": "human"
+    },
+    "interior": {
+      "roles": [
+        "interior"
+      ],
+      "source": "human"
+    },
+    "metalTrim": {
+      "roles": [
+        "metal"
+      ],
+      "source": "human"
+    },
+    "mirror": {
+      "roles": [
+        "mirror"
+      ],
+      "source": "human"
+    },
+    "numberPlate": {
+      "roles": [],
+      "source": "human"
+    },
+    "rims": {
+      "roles": [
+        "rimFace"
+      ],
+      "source": "human"
+    },
+    "seat": {
+      "roles": [],
+      "source": "human"
+    },
+    "steeringWheel": {
+      "roles": [
+        "steeringWheel"
+      ],
+      "source": "human"
+    },
+    "suit": {
+      "roles": [
+        "suit"
+      ],
+      "source": "human"
+    },
+    "tyres": {
+      "roles": [
+        "tyres"
+      ],
+      "source": "human"
+    },
+    "wheelLogo": {
+      "roles": [
+        "wheelLogo"
+      ],
+      "source": "human"
+    },
+    "wing": {
+      "roles": [],
+      "source": "human"
     }
   },
   "doNotPaint": [
     {
       "file": "NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -362,7 +483,7 @@
     },
     {
       "file": "RSS4_Disc_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal",
         "txNormalBlur"
@@ -384,7 +505,7 @@
     },
     {
       "file": "RSS4_Tire_NM.png",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -426,21 +547,21 @@
     },
     {
       "file": "RSS4_RimBlur_C_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RUBBERS_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RSS4_Chassis_Main_Foil_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -461,7 +582,7 @@
     },
     {
       "file": "RSS4_Shadow_Map_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -482,7 +603,7 @@
     },
     {
       "file": "RSS4_Chassis_C_MAP.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
@@ -503,14 +624,14 @@
     },
     {
       "file": "RSS4_Chassis_D_DAMAGE_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RSS4_Chassis_D_map.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
@@ -545,7 +666,7 @@
     },
     {
       "file": "SKIN_CABLE_MAP.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
@@ -566,21 +687,21 @@
     },
     {
       "file": "RSS4_Steer_P_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RSS4_Bolt_Wheel_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RSS4_Grip_AO.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
@@ -601,49 +722,49 @@
     },
     {
       "file": "2017_Plaque_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "RSS4_Interior_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "HUB_LODS_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_Belts_M_Map.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "WAVE_BELT_PADS_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "WAVE_BELT_LOGOS_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "WAVE_BELTS_MATT_MAP.dds",
-      "reason": "AC shader map \u2014 gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
       "slots": [
         "txMaps"
       ]
@@ -664,7 +785,7 @@
     },
     {
       "file": "RSS_Emblem_NM.dds",
-      "reason": "normal map \u2014 encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -695,6 +816,11 @@
         "hidden": true,
         "adjacent": [
           "centre_rear_upper"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "centre_rear_upper": {
@@ -720,6 +846,11 @@
         "hidden": true,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "right_tail": {
@@ -748,6 +879,16 @@
           "right_tail_lower",
           "right_tail_lower_2",
           "right_tail_lower_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail"
         ]
       },
       "left_tail": {
@@ -776,6 +917,16 @@
           "left_tail_lower",
           "left_tail_lower_2",
           "left_tail_lower_4"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail"
         ]
       },
       "right_tail_lower": {
@@ -804,6 +955,16 @@
           "right_tail",
           "right_tail_lower_3",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower"
         ]
       },
       "left_tail_lower": {
@@ -832,6 +993,16 @@
           "left_tail",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower"
         ]
       },
       "right_tail_lower_2": {
@@ -860,6 +1031,16 @@
           "right_tail",
           "right_tail_lower_5",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_2"
         ]
       },
       "left_tail_lower_2": {
@@ -888,6 +1069,16 @@
           "left_tail",
           "left_tail_lower_6",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_2"
         ]
       },
       "left_tail_lower_3": {
@@ -914,6 +1105,11 @@
         "adjacent": [
           "left_rear_lower",
           "left_tail_lower_7"
+        ],
+        "tags": [
+          "left",
+          "tail",
+          "lower"
         ]
       },
       "centre_tail": {
@@ -946,6 +1142,12 @@
         "adjacent": [
           "centre_tail_upper_3",
           "centre_tail_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_tail_upper": {
@@ -978,6 +1180,12 @@
         "adjacent": [
           "centre_tail_upper_2",
           "centre_tail_upper_4"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_tail_upper_2": {
@@ -1004,6 +1212,13 @@
         "adjacent": [
           "centre_tail_upper",
           "centre_tail_upper_4"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_tail_upper_3": {
@@ -1030,6 +1245,13 @@
         "adjacent": [
           "centre_tail",
           "centre_tail_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_mid": {
@@ -1054,6 +1276,12 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_mid_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "right_tail_lower_3": {
@@ -1086,6 +1314,17 @@
         "adjacent": [
           "right_tail",
           "right_tail_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail_lower_4",
+          "right_nose"
         ]
       },
       "left_tail_lower_4": {
@@ -1118,6 +1357,17 @@
         "adjacent": [
           "left_tail",
           "left_tail_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "right_nose",
+          "right_tail_lower_3"
         ]
       },
       "left_nose": {
@@ -1146,7 +1396,18 @@
         ],
         "visible": 0.03,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_nose"
+        "mirrorOf": "right_nose",
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower_4",
+          "right_nose",
+          "right_tail_lower_3"
+        ]
       },
       "right_nose": {
         "rect": [
@@ -1174,7 +1435,18 @@
         ],
         "visible": 0.03,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_nose"
+        "mirrorOf": "left_nose",
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail_lower_4",
+          "right_tail_lower_3"
+        ]
       },
       "right_tail_upper": {
         "rect": [
@@ -1201,6 +1473,17 @@
           "right_tail_lower",
           "right_tail_lower_2",
           "right_tail_lower_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_upper"
         ]
       },
       "left_tail_upper": {
@@ -1228,6 +1511,17 @@
           "left_tail_lower",
           "left_tail_lower_2",
           "left_tail_lower_6"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_upper"
         ]
       },
       "left_tail_lower_5": {
@@ -1260,6 +1554,17 @@
         "adjacent": [
           "left_tail_lower_10",
           "left_tail_lower_9"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_4"
         ]
       },
       "right_tail_lower_4": {
@@ -1292,6 +1597,17 @@
         "adjacent": [
           "right_tail_lower_7",
           "right_tail_lower_8"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_5"
         ]
       },
       "left_tail_lower_6": {
@@ -1325,6 +1641,16 @@
           "left_tail_lower_2",
           "left_tail_lower_9",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_5"
         ]
       },
       "right_tail_lower_5": {
@@ -1358,6 +1684,16 @@
           "right_tail_lower_2",
           "right_tail_lower_7",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_6"
         ]
       },
       "centre_mid_upper": {
@@ -1382,6 +1718,12 @@
         "visibleFromCockpit": 0.02,
         "adjacent": [
           "centre_mid_lower_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "left_tail_lower_7": {
@@ -1409,6 +1751,12 @@
         "adjacent": [
           "left_rear_lower",
           "left_tail_lower_3"
+        ],
+        "tags": [
+          "left",
+          "tail",
+          "lower",
+          "mirrored"
         ]
       },
       "right_tail_lower_6": {
@@ -1436,6 +1784,16 @@
         "adjacent": [
           "right_tail_lower_10",
           "right_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_8"
         ]
       },
       "left_tail_lower_8": {
@@ -1468,6 +1826,16 @@
         "adjacent": [
           "left_tail_lower_12",
           "left_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_6"
         ]
       },
       "left_nose_lower": {
@@ -1494,6 +1862,16 @@
         "mirrorOf": "right_nose_lower",
         "adjacent": [
           "left_nose_upper_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower"
         ]
       },
       "right_nose_lower": {
@@ -1520,6 +1898,16 @@
         "mirrorOf": "left_nose_lower",
         "adjacent": [
           "right_nose_upper_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower"
         ]
       },
       "left_nose_lower_2": {
@@ -1548,6 +1936,16 @@
           "left_nose_lower_3",
           "left_nose_lower_7",
           "left_nose_lower_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_2"
         ]
       },
       "right_nose_lower_2": {
@@ -1576,6 +1974,16 @@
           "right_nose_lower_3",
           "right_nose_lower_7",
           "right_nose_lower_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_2"
         ]
       },
       "left_tail_lower_9": {
@@ -1608,6 +2016,16 @@
         "adjacent": [
           "left_tail_lower_5",
           "left_tail_lower_6"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_7"
         ]
       },
       "right_tail_lower_7": {
@@ -1640,6 +2058,16 @@
         "adjacent": [
           "right_tail_lower_4",
           "right_tail_lower_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_9"
         ]
       },
       "centre_mid_lower": {
@@ -1673,6 +2101,12 @@
           "centre_mid_lower_3",
           "centre_mid_upper_2",
           "centre_mid_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "left_tail_upper_2": {
@@ -1699,6 +2133,16 @@
         "adjacent": [
           "left_rear",
           "left_tail_lower_10"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_upper_2"
         ]
       },
       "right_tail_upper_2": {
@@ -1725,6 +2169,16 @@
         "adjacent": [
           "right_rear",
           "right_tail_lower_8"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_upper_2"
         ]
       },
       "centre_rear_upper_2": {
@@ -1747,7 +2201,12 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
+        ]
       },
       "left_rear": {
         "rect": [
@@ -1777,6 +2236,15 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "left_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_rear"
         ]
       },
       "right_rear": {
@@ -1808,6 +2276,15 @@
         "mirrorOf": "left_tail_upper_2",
         "adjacent": [
           "right_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_rear"
         ]
       },
       "centre_tail_upper_4": {
@@ -1834,6 +2311,12 @@
         "adjacent": [
           "centre_tail_upper",
           "centre_tail_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_tail_upper_5": {
@@ -1860,6 +2343,13 @@
         "adjacent": [
           "centre_tail",
           "centre_tail_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_front": {
@@ -1882,7 +2372,12 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0.15,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "left",
+          "front",
+          "lower"
+        ]
       },
       "left_nose_lower_3": {
         "rect": [
@@ -1910,6 +2405,16 @@
           "left_nose_lower_2",
           "left_nose_lower_7",
           "left_nose_lower_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_3"
         ]
       },
       "right_nose_lower_3": {
@@ -1938,6 +2443,16 @@
           "right_nose_lower_2",
           "right_nose_lower_7",
           "right_nose_lower_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_3"
         ]
       },
       "left_tail_lower_10": {
@@ -1970,6 +2485,16 @@
         "adjacent": [
           "left_tail_lower_5",
           "left_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_8"
         ]
       },
       "right_tail_lower_8": {
@@ -2002,6 +2527,16 @@
         "adjacent": [
           "right_tail_lower_4",
           "right_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_10"
         ]
       },
       "left_front_lower": {
@@ -2034,6 +2569,17 @@
         "adjacent": [
           "left_front_upper",
           "left_front_upper_2"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "cockpit",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_front"
         ]
       },
       "right_front": {
@@ -2066,6 +2612,17 @@
         "adjacent": [
           "right_front_upper",
           "right_front_upper_2"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "cockpit",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_front_lower"
         ]
       },
       "left_nose_upper": {
@@ -2093,6 +2650,16 @@
         "adjacent": [
           "left_nose_lower_4",
           "left_nose_lower_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper"
         ]
       },
       "right_nose_upper": {
@@ -2120,6 +2687,16 @@
         "adjacent": [
           "right_nose_lower_4",
           "right_nose_lower_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper"
         ]
       },
       "left_tail_lower_11": {
@@ -2151,6 +2728,16 @@
         "mirrorOf": "right_tail_lower_9",
         "adjacent": [
           "left_rear_lower"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_9"
         ]
       },
       "right_tail_lower_9": {
@@ -2182,6 +2769,16 @@
         "mirrorOf": "left_tail_lower_11",
         "adjacent": [
           "right_rear_lower"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_11"
         ]
       },
       "left_front_lower_2": {
@@ -2204,7 +2801,12 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0.1,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "left",
+          "front",
+          "lower"
+        ]
       },
       "left_front_lower_3": {
         "rect": [
@@ -2226,7 +2828,13 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0.37,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "cockpit"
+        ]
       },
       "left_front_lower_4": {
         "rect": [
@@ -2248,7 +2856,12 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0.21,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "left",
+          "front",
+          "lower"
+        ]
       },
       "left_nose_lower_4": {
         "rect": [
@@ -2275,6 +2888,16 @@
         "adjacent": [
           "left_nose_lower_6",
           "left_nose_upper"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_4"
         ]
       },
       "right_nose_lower_4": {
@@ -2302,6 +2925,16 @@
         "adjacent": [
           "right_nose_lower_6",
           "right_nose_upper"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_4"
         ]
       },
       "left_nose_lower_5": {
@@ -2334,6 +2967,16 @@
         "adjacent": [
           "left_nose_lower_6",
           "left_nose_upper"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_5"
         ]
       },
       "right_nose_lower_5": {
@@ -2361,6 +3004,16 @@
         "adjacent": [
           "right_nose_lower_6",
           "right_nose_upper"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_5"
         ]
       },
       "centre_tail_lower": {
@@ -2389,7 +3042,13 @@
         ],
         "visible": 0.12,
         "visibleFromCockpit": 0,
-        "mirrorOf": "centre_rear_upper_3"
+        "mirrorOf": "centre_rear_upper_3",
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       },
       "centre_tail_lower_2": {
         "rect": [
@@ -2421,6 +3080,24 @@
           "centre_tail_lower_10",
           "centre_tail_lower_11",
           "centre_tail_lower_6"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_3": {
@@ -2453,6 +3130,24 @@
           "centre_tail_lower_11",
           "centre_tail_lower_4",
           "centre_tail_lower_5"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_4": {
@@ -2483,6 +3178,24 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail_lower_3",
+          "centre_tail_lower_9"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
           "centre_tail_lower_9"
         ]
       },
@@ -2516,6 +3229,24 @@
           "centre_tail_lower_3",
           "centre_tail_lower_7",
           "centre_tail_lower_8"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_6": {
@@ -2548,6 +3279,24 @@
           "centre_tail_lower_10",
           "centre_tail_lower_2",
           "centre_tail_lower_9"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_7": {
@@ -2579,6 +3328,24 @@
         "adjacent": [
           "centre_tail_lower_5",
           "centre_tail_lower_8"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_8": {
@@ -2611,6 +3378,24 @@
           "centre_tail_lower_11",
           "centre_tail_lower_5",
           "centre_tail_lower_7"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_9": {
@@ -2643,6 +3428,24 @@
           "centre_tail_lower_11",
           "centre_tail_lower_4",
           "centre_tail_lower_6"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8"
         ]
       },
       "centre_tail_lower_10": {
@@ -2674,6 +3477,24 @@
         "adjacent": [
           "centre_tail_lower_2",
           "centre_tail_lower_6"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_11",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_tail_lower_11": {
@@ -2707,6 +3528,24 @@
           "centre_tail_lower_3",
           "centre_tail_lower_8",
           "centre_tail_lower_9"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 10,
+        "sharesRectWith": [
+          "centre_tail_lower_10",
+          "centre_tail_lower_2",
+          "centre_tail_lower_3",
+          "centre_tail_lower_4",
+          "centre_tail_lower_5",
+          "centre_tail_lower_6",
+          "centre_tail_lower_7",
+          "centre_tail_lower_8",
+          "centre_tail_lower_9"
         ]
       },
       "centre_mid_upper_2": {
@@ -2734,6 +3573,14 @@
           "centre_mid_lower",
           "centre_mid_lower_2",
           "centre_mid_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
         ]
       },
       "centre_mid_upper_3": {
@@ -2766,6 +3613,12 @@
           "centre_mid_lower",
           "centre_mid_lower_2",
           "centre_mid_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "centre_rear_upper_3": {
@@ -2789,7 +3642,17 @@
         "visible": 0,
         "visibleFromCockpit": 0,
         "hidden": true,
-        "mirrorOf": "centre_tail_lower"
+        "mirrorOf": "centre_tail_lower",
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_rear_upper_4"
+        ]
       },
       "centre_rear_upper_4": {
         "rect": [
@@ -2811,7 +3674,17 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_rear_upper_3"
+        ]
       },
       "left_nose_upper_2": {
         "rect": [
@@ -2836,6 +3709,17 @@
         "mirrorOf": "right_nose_upper_2",
         "adjacent": [
           "left_nose_lower"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper_2"
         ]
       },
       "right_nose_upper_2": {
@@ -2861,6 +3745,17 @@
         "mirrorOf": "left_nose_upper_2",
         "adjacent": [
           "right_nose_lower"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper_2"
         ]
       },
       "centre_mid_upper_4": {
@@ -2889,7 +3784,14 @@
         ],
         "visible": 0.71,
         "visibleFromCockpit": 0,
-        "mirrorOf": "centre_mid_upper_2"
+        "mirrorOf": "centre_mid_upper_2",
+        "tags": [
+          "centre",
+          "rear",
+          "upper",
+          "visible",
+          "mirrored"
+        ]
       },
       "right_tail_upper_3": {
         "rect": [
@@ -2915,6 +3817,17 @@
         "adjacent": [
           "right_tail_lower_10",
           "right_tail_lower_6"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_upper_3"
         ]
       },
       "left_tail_upper_3": {
@@ -2941,6 +3854,17 @@
         "adjacent": [
           "left_tail_lower_12",
           "left_tail_lower_8"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_upper_3"
         ]
       },
       "left_front_upper": {
@@ -2973,6 +3897,18 @@
         "adjacent": [
           "left_front_lower",
           "left_front_upper_2"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_front_upper"
         ]
       },
       "right_front_upper": {
@@ -3005,6 +3941,18 @@
         "adjacent": [
           "right_front",
           "right_front_upper_2"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_front_upper"
         ]
       },
       "centre_mid_lower_2": {
@@ -3037,6 +3985,12 @@
           "centre_mid_lower",
           "centre_mid_upper_2",
           "centre_mid_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "centre_mid_lower_3": {
@@ -3068,6 +4022,12 @@
         "adjacent": [
           "centre_mid_lower",
           "centre_mid_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible"
         ]
       },
       "centre_tail_lower_12": {
@@ -3094,6 +4054,16 @@
         "adjacent": [
           "centre_tail_lower_13",
           "centre_tail_upper_6"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_13"
         ]
       },
       "centre_tail_lower_13": {
@@ -3120,6 +4090,16 @@
         "adjacent": [
           "centre_tail_lower_12",
           "centre_tail_upper_7"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_12"
         ]
       },
       "left_front_upper_2": {
@@ -3152,6 +4132,16 @@
         "adjacent": [
           "left_front_lower",
           "left_front_upper"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_front_upper_2"
         ]
       },
       "right_front_upper_2": {
@@ -3184,6 +4174,16 @@
         "adjacent": [
           "right_front",
           "right_front_upper"
+        ],
+        "tags": [
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_front_upper_2"
         ]
       },
       "centre_tail_upper_6": {
@@ -3209,6 +4209,16 @@
         "hidden": true,
         "adjacent": [
           "centre_tail_lower_12"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_upper_7"
         ]
       },
       "centre_tail_upper_7": {
@@ -3234,6 +4244,16 @@
         "hidden": true,
         "adjacent": [
           "centre_tail_lower_13"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_upper_6"
         ]
       },
       "centre_tail_lower_14": {
@@ -3265,6 +4285,17 @@
         "mirrorOf": "centre_tail_lower_15",
         "adjacent": [
           "centre_tail_lower_16"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_15"
         ]
       },
       "centre_tail_lower_15": {
@@ -3296,6 +4327,17 @@
         "mirrorOf": "centre_tail_lower_14",
         "adjacent": [
           "centre_tail_lower_17"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_14"
         ]
       },
       "centre_tail_lower_16": {
@@ -3321,6 +4363,18 @@
         "mirrorOf": "centre_tail_lower_17",
         "adjacent": [
           "centre_tail_lower_14"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_17"
         ]
       },
       "centre_tail_lower_17": {
@@ -3346,6 +4400,18 @@
         "mirrorOf": "centre_tail_lower_16",
         "adjacent": [
           "centre_tail_lower_15"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail_lower_16"
         ]
       },
       "centre_mid_lower_4": {
@@ -3376,6 +4442,11 @@
         "visibleFromCockpit": 0.08,
         "adjacent": [
           "centre_mid"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "left_nose_lower_6": {
@@ -3402,6 +4473,16 @@
         "adjacent": [
           "left_nose_lower_4",
           "left_nose_lower_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_6"
         ]
       },
       "right_nose_lower_6": {
@@ -3434,6 +4515,16 @@
         "adjacent": [
           "right_nose_lower_4",
           "right_nose_lower_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_6"
         ]
       },
       "left_nose_lower_7": {
@@ -3467,6 +4558,12 @@
           "left_nose_lower_2",
           "left_nose_lower_3",
           "left_nose_lower_8"
+        ],
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_nose_lower_7": {
@@ -3500,6 +4597,12 @@
           "right_nose_lower_2",
           "right_nose_lower_3",
           "right_nose_lower_8"
+        ],
+        "tags": [
+          "right",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_tail_lower_10": {
@@ -3527,6 +4630,16 @@
         "adjacent": [
           "right_tail_lower_6",
           "right_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_12"
         ]
       },
       "left_tail_lower_12": {
@@ -3554,6 +4667,16 @@
         "adjacent": [
           "left_tail_lower_8",
           "left_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_10"
         ]
       },
       "left_rear_lower": {
@@ -3587,6 +4710,16 @@
           "left_tail_lower_11",
           "left_tail_lower_3",
           "left_tail_lower_7"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_rear_lower"
         ]
       },
       "right_rear_lower": {
@@ -3613,6 +4746,16 @@
         "mirrorOf": "left_rear_lower",
         "adjacent": [
           "right_tail_lower_9"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_rear_lower"
         ]
       },
       "left_nose_lower_8": {
@@ -3646,6 +4789,12 @@
           "left_nose_lower_2",
           "left_nose_lower_3",
           "left_nose_lower_7"
+        ],
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_nose_lower_8": {
@@ -3679,6 +4828,12 @@
           "right_nose_lower_2",
           "right_nose_lower_3",
           "right_nose_lower_7"
+        ],
+        "tags": [
+          "right",
+          "front",
+          "lower",
+          "mirrored"
         ]
       }
     },
@@ -3730,6 +4885,12 @@
           "right_mid_upper_3",
           "right_mid_upper_4",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible"
         ]
       },
       "centre_rear": {
@@ -3759,6 +4920,12 @@
           "left_mid_lower_2",
           "right_mid",
           "right_mid_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "upper",
+          "visible"
         ]
       },
       "left_mid": {
@@ -3789,6 +4956,13 @@
           "left_mid_lower",
           "left_mid_lower_2",
           "left_mid_upper_4"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_nose": {
@@ -3821,6 +4995,12 @@
           "centre_front",
           "centre_mid",
           "centre_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "nose",
+          "lower",
+          "visible"
         ]
       },
       "right_mid": {
@@ -3851,6 +5031,13 @@
           "right_mid_lower",
           "right_mid_lower_2",
           "right_mid_upper_4"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_nose_upper": {
@@ -3878,6 +5065,12 @@
           "left_nose_lower",
           "right_nose",
           "right_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "nose",
+          "lower",
+          "visible"
         ]
       },
       "centre_front": {
@@ -3903,6 +5096,12 @@
         "adjacent": [
           "centre_mid",
           "centre_nose"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper",
+          "visible"
         ]
       },
       "centre_tail": {
@@ -3924,7 +5123,13 @@
           -1.948
         ],
         "visible": 0.83,
-        "visibleFromCockpit": 0
+        "visibleFromCockpit": 0,
+        "tags": [
+          "centre",
+          "tail",
+          "upper",
+          "visible"
+        ]
       },
       "centre_tail_upper": {
         "rect": [
@@ -3945,7 +5150,13 @@
           -1.982
         ],
         "visible": 0.71,
-        "visibleFromCockpit": 0
+        "visibleFromCockpit": 0,
+        "tags": [
+          "centre",
+          "tail",
+          "upper",
+          "visible"
+        ]
       },
       "right_mid_lower": {
         "rect": [
@@ -3973,6 +5184,13 @@
           "right_mid",
           "right_mid_lower_2",
           "right_mid_upper_4"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_mid_lower": {
@@ -4001,6 +5219,13 @@
           "left_mid",
           "left_mid_lower_2",
           "left_mid_upper_4"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_lower_2": {
@@ -4036,6 +5261,13 @@
           "right_mid_upper",
           "right_mid_upper_4",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "left_mid_lower_2": {
@@ -4071,6 +5303,13 @@
           "left_mid_upper",
           "left_mid_upper_4",
           "left_mid_upper_5"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_upper": {
@@ -4101,6 +5340,14 @@
           "centre_mid_upper",
           "right_mid_lower_2",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
         ]
       },
       "left_mid_upper": {
@@ -4131,6 +5378,14 @@
           "centre_mid_upper",
           "left_mid_lower_2",
           "left_mid_upper_5"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
         ]
       },
       "centre_mid_upper": {
@@ -4161,6 +5416,13 @@
           "right_mid_lower_2",
           "right_mid_upper",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_nose": {
@@ -4187,6 +5449,13 @@
         "adjacent": [
           "centre_nose_upper",
           "right_nose_lower"
+        ],
+        "tags": [
+          "right",
+          "nose",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_nose": {
@@ -4213,6 +5482,13 @@
         "adjacent": [
           "centre_nose_upper",
           "left_nose_lower"
+        ],
+        "tags": [
+          "left",
+          "nose",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "right_nose_lower": {
@@ -4239,6 +5515,13 @@
         "adjacent": [
           "centre_nose_upper",
           "right_nose"
+        ],
+        "tags": [
+          "right",
+          "nose",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_nose_lower": {
@@ -4265,6 +5548,13 @@
         "adjacent": [
           "centre_nose_upper",
           "left_nose"
+        ],
+        "tags": [
+          "left",
+          "nose",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_upper_2": {
@@ -4296,6 +5586,13 @@
         "mirrorOf": "left_mid_upper_2",
         "adjacent": [
           "right_mid_lower_3"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "left_mid_upper_2": {
@@ -4327,6 +5624,13 @@
         "mirrorOf": "right_mid_upper_2",
         "adjacent": [
           "left_mid_lower_3"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_nose_lower": {
@@ -4357,6 +5661,12 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose"
+        ],
+        "tags": [
+          "centre",
+          "nose",
+          "lower",
+          "visible"
         ]
       },
       "centre_rear_upper": {
@@ -4386,6 +5696,13 @@
           "centre_rear_upper_2",
           "left_mid_lower_2",
           "right_mid_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_rear_upper_2": {
@@ -4416,6 +5733,12 @@
         "visibleFromCockpit": 0.68,
         "adjacent": [
           "centre_rear_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "cockpit"
         ]
       },
       "left_mid_lower_3": {
@@ -4443,6 +5766,13 @@
           "centre_mid",
           "left_mid_upper_2",
           "left_mid_upper_3"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_lower_3": {
@@ -4470,6 +5800,13 @@
           "centre_mid",
           "right_mid_upper_2",
           "right_mid_upper_3"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_front_upper": {
@@ -4494,6 +5831,13 @@
         "visibleFromCockpit": 0.38,
         "adjacent": [
           "centre_mid"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_mid_lower": {
@@ -4528,6 +5872,11 @@
           "left_mid_upper_5",
           "right_mid_upper",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "left_mid_upper_3": {
@@ -4554,6 +5903,13 @@
         "adjacent": [
           "centre_mid",
           "left_mid_lower_3"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_upper_3": {
@@ -4580,6 +5936,13 @@
         "adjacent": [
           "centre_mid",
           "right_mid_lower_3"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "visible",
+          "mirrored"
         ]
       },
       "left_mid_upper_4": {
@@ -4608,6 +5971,13 @@
           "left_mid",
           "left_mid_lower",
           "left_mid_lower_2"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid_upper_4": {
@@ -4636,6 +6006,13 @@
           "right_mid",
           "right_mid_lower",
           "right_mid_lower_2"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_front": {
@@ -4664,7 +6041,13 @@
         ],
         "visible": 0.32,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_front"
+        "mirrorOf": "right_front",
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "mirrored"
+        ]
       },
       "right_front": {
         "rect": [
@@ -4692,7 +6075,13 @@
         ],
         "visible": 0.33,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_front"
+        "mirrorOf": "left_front",
+        "tags": [
+          "right",
+          "front",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_mid_upper_5": {
         "rect": [
@@ -4728,6 +6117,12 @@
           "centre_mid_upper",
           "left_mid_lower_2",
           "left_mid_upper"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "right_mid_upper_5": {
@@ -4764,6 +6159,12 @@
           "centre_mid_upper",
           "right_mid_lower_2",
           "right_mid_upper"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "centre_rear_lower": {
@@ -4799,6 +6200,12 @@
           "left_mid_lower_2",
           "right_mid",
           "right_mid_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "upper",
+          "visible"
         ]
       },
       "centre_mid_lower_2": {
@@ -4836,6 +6243,13 @@
           "right_mid_lower_2",
           "right_mid_upper",
           "right_mid_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       }
     },
@@ -4864,6 +6278,11 @@
         "adjacent": [
           "right_front",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "centre_rear": {
@@ -4900,6 +6319,11 @@
           "right_mid",
           "right_rear",
           "right_tail"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "centre_nose": {
@@ -4925,6 +6349,11 @@
         "hidden": true,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "right_front": {
@@ -4956,6 +6385,11 @@
         "adjacent": [
           "centre_mid",
           "right_nose"
+        ],
+        "tags": [
+          "right",
+          "rear",
+          "lower"
         ]
       },
       "right_nose": {
@@ -4987,6 +6421,11 @@
         "adjacent": [
           "centre_mid",
           "right_front"
+        ],
+        "tags": [
+          "right",
+          "rear",
+          "lower"
         ]
       },
       "left_nose": {
@@ -5018,6 +6457,11 @@
         "adjacent": [
           "left_nose_lower",
           "left_nose_upper"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "left_nose_lower": {
@@ -5045,6 +6489,11 @@
           "left_front",
           "left_front_lower",
           "left_nose"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "centre_mid_lower": {
@@ -5070,6 +6519,11 @@
         "hidden": true,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "left_nose_upper": {
@@ -5095,6 +6549,11 @@
         "hidden": true,
         "adjacent": [
           "left_nose"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "left_front": {
@@ -5121,6 +6580,11 @@
         "adjacent": [
           "left_front_lower",
           "left_nose_lower"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "left_tail": {
@@ -5151,6 +6615,11 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "right_mid": {
@@ -5176,6 +6645,11 @@
         "hidden": true,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "right_rear": {
@@ -5206,6 +6680,11 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_rear"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "left_front_lower": {
@@ -5232,6 +6711,11 @@
         "adjacent": [
           "left_front",
           "left_nose_lower"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "right_tail": {
@@ -5264,6 +6748,17 @@
         "adjacent": [
           "centre_rear",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "centre_tail"
         ]
       },
       "centre_tail": {
@@ -5296,6 +6791,17 @@
         "adjacent": [
           "centre_rear",
           "left_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail"
         ]
       },
       "right_tail_upper": {
@@ -5327,6 +6833,17 @@
         "mirrorOf": "centre_tail",
         "adjacent": [
           "right_tail"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_upper"
         ]
       },
       "left_tail_upper": {
@@ -5358,6 +6875,17 @@
         "mirrorOf": "right_tail",
         "adjacent": [
           "centre_tail"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_upper"
         ]
       }
     },
@@ -5382,7 +6910,18 @@
         ],
         "visible": 0.93,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_tail"
+        "mirrorOf": "left_tail",
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail"
+        ]
       },
       "left_tail": {
         "rect": [
@@ -5404,7 +6943,18 @@
         ],
         "visible": 0.93,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_tail"
+        "mirrorOf": "right_tail",
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail"
+        ]
       },
       "right_nose": {
         "rect": [
@@ -5426,7 +6976,14 @@
         ],
         "visible": 0.96,
         "visibleFromCockpit": 0.07,
-        "mirrorOf": "left_nose"
+        "mirrorOf": "left_nose",
+        "tags": [
+          "right",
+          "front",
+          "lower",
+          "visible",
+          "mirrored"
+        ]
       },
       "left_nose": {
         "rect": [
@@ -5448,7 +7005,14 @@
         ],
         "visible": 0.96,
         "visibleFromCockpit": 0.07,
-        "mirrorOf": "right_nose"
+        "mirrorOf": "right_nose",
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "visible",
+          "mirrored"
+        ]
       }
     },
     "interior": {
@@ -5490,6 +7054,12 @@
           "right_front_upper_3",
           "right_rear",
           "right_rear_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "cockpit"
         ]
       },
       "centre_nose": {
@@ -5512,7 +7082,12 @@
         ],
         "visible": 0,
         "visibleFromCockpit": 0,
-        "hidden": true
+        "hidden": true,
+        "tags": [
+          "centre",
+          "front",
+          "lower"
+        ]
       },
       "centre_tail_upper": {
         "rect": [
@@ -5547,6 +7122,11 @@
           "left_front",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_tail_lower": {
@@ -5581,6 +7161,11 @@
           "left_front",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_mid": {
@@ -5607,6 +7192,11 @@
         "adjacent": [
           "centre_mid_upper",
           "centre_mid_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper"
         ]
       },
       "centre_mid_upper": {
@@ -5639,6 +7229,12 @@
           "right_front_upper",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_front": {
@@ -5675,6 +7271,12 @@
           "right_front_upper",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_front_upper": {
@@ -5711,6 +7313,12 @@
           "right_front",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "right_front_upper_2": {
@@ -5748,6 +7356,11 @@
           "right_front",
           "right_front_upper",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower"
         ]
       },
       "right_front_upper_3": {
@@ -5785,6 +7398,11 @@
           "right_front",
           "right_front_upper",
           "right_front_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower"
         ]
       },
       "left_front": {
@@ -5820,6 +7438,12 @@
           "centre_tail",
           "centre_tail_lower",
           "centre_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower",
+          "mirrored"
         ]
       },
       "left_rear": {
@@ -5852,6 +7476,12 @@
         "adjacent": [
           "centre_tail",
           "left_rear_lower"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "right_rear": {
@@ -5884,6 +7514,12 @@
         "adjacent": [
           "centre_tail",
           "right_rear_lower"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "left_rear_lower": {
@@ -5916,6 +7552,12 @@
         "adjacent": [
           "centre_tail",
           "left_rear"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "right_rear_lower": {
@@ -5948,6 +7590,12 @@
         "adjacent": [
           "centre_tail",
           "right_rear"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_mid_upper_2": {
@@ -5980,6 +7628,11 @@
           "right_front_upper",
           "right_front_upper_2",
           "right_front_upper_3"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower"
         ]
       }
     },
@@ -6018,6 +7671,17 @@
           "right_tail_lower_4",
           "right_tail_lower_6",
           "right_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail",
+          "right_nose"
         ]
       },
       "left_tail": {
@@ -6053,6 +7717,17 @@
           "left_tail_lower_3",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "right_nose",
+          "right_tail"
         ]
       },
       "left_nose": {
@@ -6090,6 +7765,17 @@
           "left_nose_lower_5",
           "left_nose_lower_6",
           "left_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail",
+          "right_nose",
+          "right_tail"
         ]
       },
       "right_nose": {
@@ -6127,6 +7813,17 @@
           "right_nose_lower_5",
           "right_nose_lower_6",
           "right_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail",
+          "right_tail"
         ]
       },
       "right_nose_lower": {
@@ -6156,6 +7853,17 @@
           "right_nose_lower_2",
           "right_nose_lower_5",
           "right_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "left_tail_lower",
+          "right_tail_lower"
         ]
       },
       "right_tail_lower": {
@@ -6186,6 +7894,17 @@
           "right_tail_lower_4",
           "right_tail_lower_6",
           "right_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "left_tail_lower",
+          "right_nose_lower"
         ]
       },
       "left_tail_lower": {
@@ -6215,6 +7934,17 @@
           "left_tail_lower_2",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "right_nose_lower",
+          "right_tail_lower"
         ]
       },
       "left_nose_lower": {
@@ -6244,6 +7974,17 @@
           "left_nose_lower_2",
           "left_nose_lower_5",
           "left_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower",
+          "right_nose_lower",
+          "right_tail_lower"
         ]
       },
       "right_nose_lower_2": {
@@ -6273,6 +8014,17 @@
           "right_nose_lower",
           "right_nose_lower_5",
           "right_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_2",
+          "left_tail_lower_2",
+          "right_tail_lower_2"
         ]
       },
       "right_tail_lower_2": {
@@ -6303,6 +8055,17 @@
           "right_tail_lower_4",
           "right_tail_lower_6",
           "right_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_2",
+          "left_tail_lower_2",
+          "right_nose_lower_2"
         ]
       },
       "left_tail_lower_2": {
@@ -6332,6 +8095,17 @@
           "left_tail_lower",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_2",
+          "right_nose_lower_2",
+          "right_tail_lower_2"
         ]
       },
       "left_nose_lower_2": {
@@ -6361,6 +8135,17 @@
           "left_nose_lower",
           "left_nose_lower_5",
           "left_nose_upper"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower_2",
+          "right_nose_lower_2",
+          "right_tail_lower_2"
         ]
       },
       "right_nose_upper": {
@@ -6394,6 +8179,17 @@
           "right_nose",
           "right_nose_lower",
           "right_nose_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper",
+          "left_tail_upper",
+          "right_tail_upper"
         ]
       },
       "right_tail_upper": {
@@ -6427,6 +8223,17 @@
           "right_tail",
           "right_tail_lower",
           "right_tail_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper",
+          "left_tail_upper",
+          "right_nose_upper"
         ]
       },
       "left_tail_upper": {
@@ -6460,6 +8267,17 @@
           "left_tail",
           "left_tail_lower",
           "left_tail_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper",
+          "right_nose_upper",
+          "right_tail_upper"
         ]
       },
       "left_nose_upper": {
@@ -6493,6 +8311,17 @@
           "left_nose",
           "left_nose_lower",
           "left_nose_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_upper",
+          "right_nose_upper",
+          "right_tail_upper"
         ]
       },
       "right_nose_lower_3": {
@@ -6521,6 +8350,17 @@
           "right_nose",
           "right_nose_lower_4",
           "right_nose_lower_6"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_tail_lower_3",
+          "right_tail_lower_3"
         ]
       },
       "right_tail_lower_3": {
@@ -6547,6 +8387,17 @@
         "mirrorOf": "left_tail_lower_3",
         "adjacent": [
           "right_tail"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_tail_lower_3",
+          "right_nose_lower_3"
         ]
       },
       "left_tail_lower_3": {
@@ -6573,6 +8424,17 @@
         "mirrorOf": "right_tail_lower_3",
         "adjacent": [
           "left_tail"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "right_nose_lower_3",
+          "right_tail_lower_3"
         ]
       },
       "left_nose_lower_3": {
@@ -6601,6 +8463,17 @@
           "left_nose",
           "left_nose_lower_4",
           "left_nose_lower_6"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower_3",
+          "right_nose_lower_3",
+          "right_tail_lower_3"
         ]
       },
       "right_tail_lower_4": {
@@ -6630,6 +8503,11 @@
           "right_tail_lower_2",
           "right_tail_lower_5",
           "right_tail_lower_6"
+        ],
+        "tags": [
+          "right",
+          "tail",
+          "lower"
         ]
       },
       "right_tail_lower_5": {
@@ -6655,6 +8533,11 @@
         "hidden": true,
         "adjacent": [
           "right_tail_lower_4"
+        ],
+        "tags": [
+          "right",
+          "tail",
+          "lower"
         ]
       },
       "right_nose_lower_4": {
@@ -6688,6 +8571,16 @@
           "right_nose",
           "right_nose_lower_3",
           "right_nose_lower_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_4"
         ]
       },
       "left_nose_lower_4": {
@@ -6721,6 +8614,16 @@
           "left_nose",
           "left_nose_lower_3",
           "left_nose_lower_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_4"
         ]
       },
       "right_tail_lower_6": {
@@ -6750,6 +8653,17 @@
           "right_tail_lower",
           "right_tail_lower_2",
           "right_tail_lower_4"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_5",
+          "left_tail_lower_4",
+          "right_nose_lower_5"
         ]
       },
       "left_tail_lower_4": {
@@ -6778,6 +8692,17 @@
           "left_tail",
           "left_tail_lower",
           "left_tail_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_5",
+          "right_nose_lower_5",
+          "right_tail_lower_6"
         ]
       },
       "left_nose_lower_5": {
@@ -6806,6 +8731,17 @@
           "left_nose",
           "left_nose_lower",
           "left_nose_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower_4",
+          "right_nose_lower_5",
+          "right_tail_lower_6"
         ]
       },
       "right_nose_lower_5": {
@@ -6834,6 +8770,17 @@
           "right_nose",
           "right_nose_lower",
           "right_nose_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower_5",
+          "left_tail_lower_4",
+          "right_tail_lower_6"
         ]
       },
       "left_nose_lower_6": {
@@ -6862,6 +8809,16 @@
           "left_nose",
           "left_nose_lower_3",
           "left_nose_lower_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_6"
         ]
       },
       "right_nose_lower_6": {
@@ -6890,6 +8847,16 @@
           "right_nose",
           "right_nose_lower_3",
           "right_nose_lower_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_6"
         ]
       }
     },
@@ -6937,6 +8904,11 @@
           "right_rear_lower_3",
           "right_rear_lower_4",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_tail": {
@@ -6977,6 +8949,11 @@
           "left_tail_upper",
           "right_tail",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "centre_tail_upper": {
@@ -7010,6 +8987,13 @@
           "left_tail_upper",
           "right_tail",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_tail_upper_2": {
@@ -7051,6 +9035,11 @@
           "left_tail_upper",
           "right_tail",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "centre_mid": {
@@ -7082,6 +9071,11 @@
         "adjacent": [
           "centre_mid_lower",
           "centre_nose"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper"
         ]
       },
       "centre_tail_upper_3": {
@@ -7113,6 +9107,13 @@
           "centre_tail_upper_4",
           "left_tail_upper",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_nose": {
@@ -7138,6 +9139,11 @@
         "hidden": true,
         "adjacent": [
           "centre_mid"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper"
         ]
       },
       "left_rear": {
@@ -7168,6 +9174,12 @@
           "left_rear_lower_2",
           "left_rear_lower_3",
           "left_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "right_rear": {
@@ -7198,6 +9210,12 @@
           "right_rear_lower_2",
           "right_rear_lower_3",
           "right_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "left_rear_lower": {
@@ -7227,6 +9245,12 @@
           "left_rear_lower_2",
           "left_rear_lower_3",
           "left_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "right_rear_lower": {
@@ -7262,6 +9286,13 @@
           "right_rear_lower_2",
           "right_rear_lower_3",
           "right_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "cockpit",
+          "mirrored"
         ]
       },
       "centre_rear_upper": {
@@ -7294,6 +9325,11 @@
           "centre_mid_lower",
           "centre_rear",
           "centre_tail_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "right_rear_lower_2": {
@@ -7323,6 +9359,11 @@
           "right_rear_lower",
           "right_rear_lower_3",
           "right_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_rear_lower_2": {
@@ -7352,6 +9393,11 @@
           "left_rear_lower",
           "left_rear_lower_3",
           "left_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_tail": {
@@ -7385,6 +9431,12 @@
           "centre_tail",
           "centre_tail_upper",
           "centre_tail_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "centre_tail_upper_4": {
@@ -7421,6 +9473,12 @@
           "centre_tail_upper_3",
           "left_tail_upper",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "cockpit"
         ]
       },
       "centre_tail_lower": {
@@ -7456,6 +9514,13 @@
           "centre_tail_upper_3",
           "left_tail_upper",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_rear_lower_3": {
@@ -7490,6 +9555,11 @@
           "right_rear_lower",
           "right_rear_lower_2",
           "right_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_rear_lower_3": {
@@ -7524,6 +9594,11 @@
           "left_rear_lower",
           "left_rear_lower_2",
           "left_rear_lower_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "right_tail": {
@@ -7557,6 +9632,12 @@
           "centre_tail",
           "centre_tail_upper",
           "centre_tail_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "centre_tail_lower_2": {
@@ -7587,6 +9668,13 @@
           "centre_tail_upper_4",
           "left_tail_upper",
           "right_tail_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "left_tail_upper": {
@@ -7624,6 +9712,13 @@
           "centre_tail_upper_2",
           "centre_tail_upper_3",
           "centre_tail_upper_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_tail_upper": {
@@ -7661,6 +9756,13 @@
           "centre_tail_upper_2",
           "centre_tail_upper_3",
           "centre_tail_upper_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_rear_lower_4": {
@@ -7696,6 +9798,12 @@
           "right_rear_lower",
           "right_rear_lower_2",
           "right_rear_lower_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "left_rear_lower_4": {
@@ -7731,6 +9839,12 @@
           "left_rear_lower",
           "left_rear_lower_2",
           "left_rear_lower_3"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_tail_upper_5": {
@@ -7758,6 +9872,11 @@
           "centre_tail",
           "centre_tail_upper",
           "centre_tail_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_mid_lower": {
@@ -7789,6 +9908,11 @@
         "adjacent": [
           "centre_mid",
           "centre_rear_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       }
     },
@@ -7819,7 +9943,15 @@
         ],
         "visible": 0.51,
         "visibleFromCockpit": 0.41,
-        "mirrorOf": "right_nose"
+        "mirrorOf": "right_nose",
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
+        ]
       },
       "right_nose": {
         "rect": [
@@ -7847,7 +9979,15 @@
         ],
         "visible": 0.51,
         "visibleFromCockpit": 0.41,
-        "mirrorOf": "left_tail"
+        "mirrorOf": "left_tail",
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
+        ]
       }
     },
     "interior_2": {
@@ -7879,6 +10019,12 @@
         "visibleFromCockpit": 0.3,
         "adjacent": [
           "centre_tail"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "cockpit"
         ]
       },
       "centre_tail": {
@@ -7911,6 +10057,11 @@
           "centre_rear",
           "left_rear",
           "right_rear"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_front": {
@@ -7940,6 +10091,13 @@
           "left_nose",
           "right_front",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_front_upper": {
@@ -7975,6 +10133,11 @@
           "left_nose",
           "right_front",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "right_rear": {
@@ -8007,6 +10170,12 @@
         "adjacent": [
           "centre_tail",
           "left_rear"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "left_rear": {
@@ -8039,6 +10208,12 @@
         "adjacent": [
           "centre_tail",
           "right_rear"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "mirrored"
         ]
       },
       "centre_nose": {
@@ -8069,6 +10244,11 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "centre_nose_lower": {
@@ -8105,6 +10285,11 @@
           "left_nose",
           "right_front",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper"
         ]
       },
       "left_front": {
@@ -8139,6 +10324,14 @@
           "centre_front_upper",
           "centre_nose_lower",
           "left_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
         ]
       },
       "left_nose": {
@@ -8173,6 +10366,12 @@
           "centre_front_upper",
           "centre_nose_lower",
           "left_front"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "right_nose": {
@@ -8207,6 +10406,12 @@
           "centre_front_upper",
           "centre_nose_lower",
           "right_front"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored"
         ]
       },
       "right_front": {
@@ -8241,6 +10446,14 @@
           "centre_front_upper",
           "centre_nose_lower",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit",
+          "mirrored"
         ]
       },
       "centre_nose_lower_2": {
@@ -8268,7 +10481,12 @@
           0.002
         ],
         "visible": 0.06,
-        "visibleFromCockpit": 0
+        "visibleFromCockpit": 0,
+        "tags": [
+          "centre",
+          "front",
+          "upper"
+        ]
       },
       "left_nose_lower": {
         "rect": [
@@ -8294,6 +10512,17 @@
         "mirrorOf": "right_nose_lower",
         "adjacent": [
           "left_nose_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower"
         ]
       },
       "right_nose_lower": {
@@ -8320,6 +10549,17 @@
         "mirrorOf": "left_nose_lower",
         "adjacent": [
           "right_nose_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower"
         ]
       },
       "left_nose_lower_2": {
@@ -8345,6 +10585,17 @@
         "mirrorOf": "right_nose_lower_2",
         "adjacent": [
           "left_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_2"
         ]
       },
       "right_nose_lower_2": {
@@ -8376,6 +10627,17 @@
         "mirrorOf": "left_nose_lower_2",
         "adjacent": [
           "right_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_2"
         ]
       }
     },
@@ -8410,6 +10672,16 @@
         "adjacent": [
           "left_nose_lower_2",
           "left_nose_upper_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose"
         ]
       },
       "right_nose": {
@@ -8442,6 +10714,16 @@
         "adjacent": [
           "right_nose_lower_2",
           "right_nose_upper_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose"
         ]
       },
       "left_nose_upper": {
@@ -8470,7 +10752,17 @@
         ],
         "visible": 0.22,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_nose_upper"
+        "mirrorOf": "right_nose_upper",
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper"
+        ]
       },
       "right_nose_upper": {
         "rect": [
@@ -8498,7 +10790,17 @@
         ],
         "visible": 0.2,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_nose_upper"
+        "mirrorOf": "left_nose_upper",
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper"
+        ]
       },
       "left_tail": {
         "rect": [
@@ -8529,6 +10831,16 @@
         "mirrorOf": "right_tail",
         "adjacent": [
           "left_tail_lower"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail"
         ]
       },
       "right_tail": {
@@ -8560,6 +10872,16 @@
         "mirrorOf": "left_tail",
         "adjacent": [
           "right_tail_lower"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail"
         ]
       },
       "left_nose_lower": {
@@ -8591,6 +10913,16 @@
         "mirrorOf": "right_nose_lower",
         "adjacent": [
           "left_nose_upper_3"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower"
         ]
       },
       "right_nose_lower": {
@@ -8622,6 +10954,16 @@
         "mirrorOf": "left_nose_lower",
         "adjacent": [
           "right_nose_upper_3"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower"
         ]
       },
       "left_tail_lower": {
@@ -8647,6 +10989,16 @@
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower"
         ]
       },
       "right_tail_lower": {
@@ -8672,6 +11024,16 @@
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower"
         ]
       },
       "right_nose_lower_2": {
@@ -8704,6 +11066,13 @@
         "adjacent": [
           "right_nose",
           "right_nose_upper_2"
+        ],
+        "tags": [
+          "right",
+          "front",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_nose_lower_2": {
@@ -8736,6 +11105,13 @@
         "adjacent": [
           "left_nose",
           "left_nose_upper_2"
+        ],
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "left_nose_upper_2": {
@@ -8768,6 +11144,16 @@
         "adjacent": [
           "left_nose",
           "left_nose_lower_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper_2"
         ]
       },
       "right_nose_upper_2": {
@@ -8800,6 +11186,16 @@
         "adjacent": [
           "right_nose",
           "right_nose_lower_2"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper_2"
         ]
       },
       "left_nose_upper_3": {
@@ -8831,6 +11227,16 @@
         "mirrorOf": "right_nose_upper_3",
         "adjacent": [
           "left_nose_lower"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper_3"
         ]
       },
       "right_nose_upper_3": {
@@ -8862,6 +11268,16 @@
         "mirrorOf": "left_nose_upper_3",
         "adjacent": [
           "right_nose_lower"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper_3"
         ]
       }
     },
@@ -8891,7 +11307,12 @@
           0.0355
         ],
         "visible": 0.1,
-        "visibleFromCockpit": 0
+        "visibleFromCockpit": 0,
+        "tags": [
+          "left",
+          "rear",
+          "lower"
+        ]
       },
       "left_nose_upper": {
         "rect": [
@@ -8917,6 +11338,11 @@
         "adjacent": [
           "centre_front",
           "left_front"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "right_front": {
@@ -8944,6 +11370,12 @@
         "adjacent": [
           "centre_front",
           "centre_front_lower"
+        ],
+        "tags": [
+          "right",
+          "rear",
+          "lower",
+          "mirrored"
         ]
       },
       "left_front": {
@@ -8970,6 +11402,12 @@
         "mirrorOf": "right_front",
         "adjacent": [
           "left_nose_upper"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower",
+          "mirrored"
         ]
       },
       "left_nose_lower": {
@@ -9001,6 +11439,11 @@
         "adjacent": [
           "centre_front",
           "centre_front_lower"
+        ],
+        "tags": [
+          "left",
+          "rear",
+          "lower"
         ]
       },
       "centre_tail": {
@@ -9031,6 +11474,11 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "left_rear"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "centre_front": {
@@ -9058,6 +11506,11 @@
           "left_nose_lower",
           "left_nose_upper",
           "right_front"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "left_mid": {
@@ -9086,7 +11539,13 @@
         ],
         "visible": 0.04,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_mid"
+        "mirrorOf": "right_mid",
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       },
       "right_mid": {
         "rect": [
@@ -9109,7 +11568,13 @@
         "visible": 0.01,
         "visibleFromCockpit": 0,
         "hidden": true,
-        "mirrorOf": "left_mid"
+        "mirrorOf": "left_mid",
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       },
       "centre_front_lower": {
         "rect": [
@@ -9136,6 +11601,11 @@
           "centre_front",
           "left_nose_lower",
           "right_front"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "left_rear": {
@@ -9166,6 +11636,11 @@
         "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower"
         ]
       },
       "right_rear": {
@@ -9188,7 +11663,13 @@
         ],
         "visible": 0.47,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_rear_lower"
+        "mirrorOf": "left_rear_lower",
+        "tags": [
+          "right",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_rear_lower": {
         "rect": [
@@ -9210,7 +11691,13 @@
         ],
         "visible": 0.38,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_rear"
+        "mirrorOf": "right_rear",
+        "tags": [
+          "left",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       }
     },
     "rss4_disc": {
@@ -9238,6 +11725,17 @@
         "mirrorOf": "left_tail",
         "adjacent": [
           "right_tail_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail",
+          "right_nose"
         ]
       },
       "left_tail": {
@@ -9264,6 +11762,17 @@
         "mirrorOf": "right_tail",
         "adjacent": [
           "left_tail_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "right_nose",
+          "right_tail"
         ]
       },
       "left_nose": {
@@ -9290,6 +11799,17 @@
         "mirrorOf": "right_nose",
         "adjacent": [
           "left_nose_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail",
+          "right_nose",
+          "right_tail"
         ]
       },
       "right_nose": {
@@ -9316,6 +11836,17 @@
         "mirrorOf": "left_nose",
         "adjacent": [
           "right_nose_lower"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose",
+          "left_tail",
+          "right_tail"
         ]
       },
       "right_tail_lower": {
@@ -9342,6 +11873,17 @@
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "left_tail_lower",
+          "right_nose_lower"
         ]
       },
       "left_tail_lower": {
@@ -9368,6 +11910,17 @@
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "right_nose_lower",
+          "right_tail_lower"
         ]
       },
       "left_nose_lower": {
@@ -9394,6 +11947,17 @@
         "mirrorOf": "right_nose_lower",
         "adjacent": [
           "left_nose"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_lower",
+          "right_nose_lower",
+          "right_tail_lower"
         ]
       },
       "right_nose_lower": {
@@ -9421,6 +11985,17 @@
         "adjacent": [
           "right_nose",
           "right_nose_lower_2"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_lower",
+          "left_tail_lower",
+          "right_tail_lower"
         ]
       },
       "right_nose_lower_2": {
@@ -9446,6 +12021,11 @@
         "hidden": true,
         "adjacent": [
           "right_nose_lower"
+        ],
+        "tags": [
+          "right",
+          "front",
+          "lower"
         ]
       }
     },
@@ -9477,6 +12057,11 @@
           "centre_nose_upper_5",
           "left_nose",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_nose_upper": {
@@ -9513,6 +12098,11 @@
           "left_nose_upper",
           "right_nose_lower",
           "right_nose_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_mid": {
@@ -9541,7 +12131,13 @@
         ],
         "visible": 0.25,
         "visibleFromCockpit": 0.25,
-        "mirrorOf": "right_mid"
+        "mirrorOf": "right_mid",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_tail": {
         "rect": [
@@ -9564,7 +12160,13 @@
         "visible": 0,
         "visibleFromCockpit": 0.25,
         "hidden": true,
-        "mirrorOf": "right_tail"
+        "mirrorOf": "right_tail",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "right_tail": {
         "rect": [
@@ -9587,7 +12189,13 @@
         "visible": 0,
         "visibleFromCockpit": 0.25,
         "hidden": true,
-        "mirrorOf": "left_tail"
+        "mirrorOf": "left_tail",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "right_mid": {
         "rect": [
@@ -9615,7 +12223,13 @@
         ],
         "visible": 0.25,
         "visibleFromCockpit": 0.25,
-        "mirrorOf": "left_mid"
+        "mirrorOf": "left_mid",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "centre_nose_upper_2": {
         "rect": [
@@ -9643,6 +12257,11 @@
           "centre_nose_lower",
           "centre_nose_upper_5",
           "centre_nose_upper_6"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_nose_upper_3": {
@@ -9680,6 +12299,12 @@
           "left_nose_upper",
           "right_nose_lower",
           "right_nose_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "cockpit"
         ]
       },
       "centre_nose_lower": {
@@ -9708,6 +12333,11 @@
           "centre_nose_upper_2",
           "centre_nose_upper_5",
           "centre_nose_upper_6"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_nose_upper_4": {
@@ -9741,6 +12371,13 @@
           "centre_nose_upper",
           "centre_nose_upper_3",
           "centre_nose_upper_7"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_nose_upper_5": {
@@ -9770,6 +12407,11 @@
           "centre_nose_upper_2",
           "left_nose",
           "right_nose"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_nose_lower_2": {
@@ -9806,6 +12448,13 @@
           "left_nose_upper",
           "right_nose_lower",
           "right_nose_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "centre_nose_upper_6": {
@@ -9832,6 +12481,11 @@
         "adjacent": [
           "centre_nose_lower",
           "centre_nose_upper_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_nose_upper_7": {
@@ -9863,6 +12517,12 @@
         "adjacent": [
           "centre_nose_upper_3",
           "centre_nose_upper_4"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "cockpit"
         ]
       },
       "left_nose": {
@@ -9889,6 +12549,11 @@
         "adjacent": [
           "centre_nose",
           "centre_nose_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "right_nose": {
@@ -9915,6 +12580,11 @@
         "adjacent": [
           "centre_nose",
           "centre_nose_upper_5"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_mid_lower": {
@@ -9938,7 +12608,13 @@
         "visible": 0,
         "visibleFromCockpit": 0,
         "hidden": true,
-        "mirrorOf": "right_mid_lower"
+        "mirrorOf": "right_mid_lower",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "right_mid_lower": {
         "rect": [
@@ -9961,7 +12637,13 @@
         "visible": 0,
         "visibleFromCockpit": 0,
         "hidden": true,
-        "mirrorOf": "left_mid_lower"
+        "mirrorOf": "left_mid_lower",
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_nose_lower": {
         "rect": [
@@ -9990,6 +12672,11 @@
           "centre_nose_upper_3",
           "left_nose_upper",
           "right_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "right_nose_lower": {
@@ -10019,6 +12706,11 @@
           "centre_nose_upper_3",
           "left_nose_lower",
           "right_nose_upper"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "right_nose_upper": {
@@ -10047,6 +12739,11 @@
           "centre_nose_upper",
           "centre_nose_upper_3",
           "right_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "left_nose_upper": {
@@ -10075,6 +12772,11 @@
           "centre_nose_upper",
           "centre_nose_upper_3",
           "left_nose_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       }
     },
@@ -10105,7 +12807,17 @@
         ],
         "visible": 0.33,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_nose"
+        "mirrorOf": "left_nose",
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 3,
+        "sharesRectWith": [
+          "left_tail",
+          "right_tail"
+        ]
       },
       "left_tail": {
         "rect": [
@@ -10133,7 +12845,17 @@
         ],
         "visible": 0.19,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_tail"
+        "mirrorOf": "right_tail",
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 3,
+        "sharesRectWith": [
+          "right_nose",
+          "right_tail"
+        ]
       },
       "right_tail": {
         "rect": [
@@ -10161,7 +12883,17 @@
         ],
         "visible": 0.2,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_tail"
+        "mirrorOf": "left_tail",
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 3,
+        "sharesRectWith": [
+          "left_tail",
+          "right_nose"
+        ]
       },
       "left_nose": {
         "rect": [
@@ -10189,7 +12921,13 @@
         ],
         "visible": 0.33,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_nose"
+        "mirrorOf": "right_nose",
+        "tags": [
+          "left",
+          "front",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_tail_lower": {
         "rect": [
@@ -10211,7 +12949,17 @@
         ],
         "visible": 0.39,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_tail_lower"
+        "mirrorOf": "right_tail_lower",
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower"
+        ]
       },
       "right_tail_lower": {
         "rect": [
@@ -10233,7 +12981,17 @@
         ],
         "visible": 0.35,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_tail_lower"
+        "mirrorOf": "left_tail_lower",
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower"
+        ]
       },
       "right_tail_upper": {
         "rect": [
@@ -10268,7 +13026,13 @@
           0.3484,
           0.2448
         ],
-        "mirrorOf": "left_tail_upper"
+        "mirrorOf": "left_tail_upper",
+        "tags": [
+          "right",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_tail_upper": {
         "rect": [
@@ -10303,7 +13067,13 @@
           0.3452,
           0.2448
         ],
-        "mirrorOf": "right_tail_upper"
+        "mirrorOf": "right_tail_upper",
+        "tags": [
+          "left",
+          "tail",
+          "lower",
+          "mirrored"
+        ]
       }
     },
     "steeringWheel_2": {
@@ -10326,7 +13096,14 @@
           0.387
         ],
         "visible": 1,
-        "visibleFromCockpit": 1
+        "visibleFromCockpit": 1,
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
+        ]
       },
       "left_tail": {
         "rect": [
@@ -10359,6 +13136,13 @@
           "left_rear_lower",
           "left_rear_lower_2",
           "left_tail_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "right_tail": {
@@ -10392,6 +13176,13 @@
           "right_rear_lower",
           "right_rear_lower_2",
           "right_tail_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "right_tail_lower": {
@@ -10424,6 +13215,13 @@
           "right_rear_lower",
           "right_rear_lower_2",
           "right_tail"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "left_tail_lower": {
@@ -10456,6 +13254,13 @@
           "left_rear",
           "left_rear_lower_2",
           "left_tail"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "left_tail_lower_2": {
@@ -10487,6 +13292,13 @@
         "adjacent": [
           "left_rear",
           "left_rear_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_tail_lower_2": {
@@ -10518,6 +13330,13 @@
         "adjacent": [
           "right_rear",
           "right_rear_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "left_rear": {
@@ -10552,6 +13371,13 @@
           "left_tail",
           "left_tail_lower",
           "left_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "right_rear": {
@@ -10584,6 +13410,13 @@
           "right_rear_lower_2",
           "right_tail",
           "right_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_rear_lower": {
@@ -10616,6 +13449,13 @@
           "right_rear_lower_2",
           "right_tail",
           "right_tail_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "left_rear_lower": {
@@ -10648,6 +13488,13 @@
           "left_rear",
           "left_tail",
           "left_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "upper",
+          "visible",
+          "cockpit"
         ]
       },
       "right_rear_lower_2": {
@@ -10682,6 +13529,13 @@
           "right_tail",
           "right_tail_lower",
           "right_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       },
       "left_rear_lower_2": {
@@ -10714,10 +13568,29 @@
           "left_rear",
           "left_tail",
           "left_tail_lower"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower",
+          "visible",
+          "cockpit"
         ]
       }
     },
-    "belts_2": {},
+    "belts_2": {
+      "straps": {
+        "rect": [
+          0,
+          0.1,
+          0.47,
+          0.9
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "notes": "The webbing texture is an ATLAS: about ten separate straps, each a narrow column ~5% of the texture wide, all running DOWN it (v is along the strap, u is across its 5cm width). A full-width horizontal band therefore crosses every strap like a rung instead of running along any of them — use rotate:90 for artwork that should follow the belt."
+      }
+    },
     "black_plastics": {},
     "koni_spring_1": {},
     "koni_spring_2": {},
@@ -10725,7 +13598,6 @@
     "mirror": {},
     "rims_2": {},
     "glass_2": {},
-    "body_3": {},
     "logo": {},
     "belts_3": {},
     "wheelLogo": {},
@@ -10767,6 +13639,11 @@
           "centre_mid_lower",
           "left_mid",
           "right_mid"
+        ],
+        "tags": [
+          "centre",
+          "rear",
+          "lower"
         ]
       },
       "centre_mid_lower": {
@@ -10799,6 +13676,11 @@
           "centre_mid",
           "left_mid",
           "right_mid"
+        ],
+        "tags": [
+          "centre",
+          "mid",
+          "lower"
         ]
       },
       "centre_tail": {
@@ -10830,6 +13712,12 @@
         "adjacent": [
           "centre_tail_lower",
           "centre_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible"
         ]
       },
       "centre_nose": {
@@ -10855,6 +13743,11 @@
         "hidden": true,
         "adjacent": [
           "centre_nose_upper"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "lower"
         ]
       },
       "right_front": {
@@ -10883,7 +13776,13 @@
         ],
         "visible": 0.07,
         "visibleFromCockpit": 0,
-        "mirrorOf": "left_front"
+        "mirrorOf": "left_front",
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "left_front": {
         "rect": [
@@ -10911,7 +13810,13 @@
         ],
         "visible": 0.07,
         "visibleFromCockpit": 0,
-        "mirrorOf": "right_front"
+        "mirrorOf": "right_front",
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "mirrored"
+        ]
       },
       "centre_nose_upper": {
         "rect": [
@@ -10935,6 +13840,12 @@
         "visibleFromCockpit": 0.04,
         "adjacent": [
           "centre_nose"
+        ],
+        "tags": [
+          "centre",
+          "front",
+          "upper",
+          "visible"
         ]
       },
       "centre_tail_lower": {
@@ -10960,6 +13871,12 @@
         "adjacent": [
           "centre_tail",
           "centre_tail_lower_2"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible"
         ]
       },
       "left_mid": {
@@ -10993,6 +13910,13 @@
           "centre_mid",
           "centre_mid_lower",
           "right_mid"
+        ],
+        "tags": [
+          "left",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "right_mid": {
@@ -11026,6 +13950,13 @@
           "centre_mid",
           "centre_mid_lower",
           "left_mid"
+        ],
+        "tags": [
+          "right",
+          "mid",
+          "lower",
+          "visible",
+          "mirrored"
         ]
       },
       "centre_tail_lower_2": {
@@ -11051,6 +13982,12 @@
         "adjacent": [
           "centre_tail",
           "centre_tail_lower"
+        ],
+        "tags": [
+          "centre",
+          "tail",
+          "lower",
+          "visible"
         ]
       }
     },
@@ -11182,6 +14119,16 @@
           "left_nose_lower",
           "left_nose_upper",
           "left_nose_upper_3"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose"
         ]
       },
       "right_nose": {
@@ -11215,6 +14162,16 @@
           "right_nose_lower",
           "right_nose_upper",
           "right_nose_upper_3"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose"
         ]
       },
       "right_tail": {
@@ -11258,6 +14215,17 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail"
         ]
       },
       "left_tail": {
@@ -11301,6 +14269,17 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail"
         ]
       },
       "left_nose_upper": {
@@ -11345,6 +14324,17 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper"
         ]
       },
       "right_nose_upper": {
@@ -11389,6 +14379,17 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper"
         ]
       },
       "right_tail_lower": {
@@ -11432,6 +14433,16 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower"
         ]
       },
       "left_tail_lower": {
@@ -11475,6 +14486,16 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower"
         ]
       },
       "right_tail_lower_2": {
@@ -11518,6 +14539,17 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_2"
         ]
       },
       "left_tail_lower_2": {
@@ -11561,6 +14593,17 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_2"
         ]
       },
       "right_tail_upper": {
@@ -11598,6 +14641,17 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper_2",
+          "left_tail_upper",
+          "right_nose_upper_2"
         ]
       },
       "left_tail_upper": {
@@ -11635,6 +14689,17 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper_2",
+          "right_nose_upper_2",
+          "right_tail_upper"
         ]
       },
       "left_nose_upper_2": {
@@ -11672,6 +14737,17 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_tail_upper",
+          "right_nose_upper_2",
+          "right_tail_upper"
         ]
       },
       "right_nose_upper_2": {
@@ -11709,6 +14785,17 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 4,
+        "sharesRectWith": [
+          "left_nose_upper_2",
+          "left_tail_upper",
+          "right_tail_upper"
         ]
       },
       "left_nose_lower": {
@@ -11746,6 +14833,17 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower"
         ]
       },
       "right_nose_lower": {
@@ -11783,6 +14881,17 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower"
         ]
       },
       "right_tail_lower_3": {
@@ -11825,6 +14934,17 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_3"
         ]
       },
       "left_tail_lower_3": {
@@ -11867,6 +14987,17 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_3"
         ]
       },
       "left_nose_lower_2": {
@@ -11910,6 +15041,17 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_lower_2"
         ]
       },
       "right_nose_lower_2": {
@@ -11953,6 +15095,17 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "visible",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_lower_2"
         ]
       },
       "left_nose_upper_3": {
@@ -11991,6 +15144,16 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper_3"
         ]
       },
       "right_nose_upper_3": {
@@ -12029,6 +15192,16 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper_3"
         ]
       },
       "left_nose_upper_4": {
@@ -12068,6 +15241,16 @@
           "left_nose_upper_6",
           "left_nose_upper_7",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_nose_upper_4"
         ]
       },
       "right_nose_upper_4": {
@@ -12107,6 +15290,16 @@
           "right_nose_upper_6",
           "right_nose_upper_7",
           "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_nose_upper_4"
         ]
       },
       "right_tail_lower_4": {
@@ -12145,6 +15338,16 @@
           "right_tail_upper_3",
           "right_tail_upper_4",
           "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "left_tail_lower_4"
         ]
       },
       "left_tail_lower_4": {
@@ -12183,6 +15386,16 @@
           "left_tail_upper_3",
           "left_tail_upper_4",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 2,
+        "sharesRectWith": [
+          "right_tail_lower_4"
         ]
       },
       "right_tail_upper_2": {
@@ -12220,6 +15433,34 @@
           "right_tail_lower_4",
           "right_tail_upper",
           "right_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_upper_2": {
@@ -12257,6 +15498,34 @@
           "left_tail_lower_4",
           "left_tail_upper",
           "left_tail_upper_3"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_lower_5": {
@@ -12294,6 +15563,34 @@
           "right_tail_lower_4",
           "right_tail_lower_9",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_5": {
@@ -12331,6 +15628,34 @@
           "left_tail_lower_4",
           "left_tail_lower_9",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_lower_6": {
@@ -12368,6 +15693,34 @@
           "right_tail_lower_3",
           "right_tail_lower_4",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_lower_7": {
@@ -12404,6 +15757,34 @@
           "right_tail_lower_3",
           "right_tail_lower_4",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_upper_3": {
@@ -12441,6 +15822,34 @@
           "right_tail_lower_4",
           "right_tail_upper",
           "right_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_upper_4": {
@@ -12477,6 +15886,34 @@
           "right_tail_lower_3",
           "right_tail_lower_4",
           "right_tail_upper",
+          "right_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
           "right_tail_upper_5"
         ]
       },
@@ -12515,6 +15952,34 @@
           "right_tail_lower_4",
           "right_tail_upper",
           "right_tail_upper_4"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4"
         ]
       },
       "right_tail_lower_8": {
@@ -12551,6 +16016,34 @@
           "right_tail_lower_3",
           "right_tail_lower_4",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_lower_9": {
@@ -12588,6 +16081,34 @@
           "right_tail_lower_4",
           "right_tail_lower_5",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "right_tail_lower_10": {
@@ -12625,6 +16146,34 @@
           "right_tail_lower_4",
           "right_tail_lower_6",
           "right_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_6": {
@@ -12662,6 +16211,34 @@
           "left_tail_lower_3",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_7": {
@@ -12698,6 +16275,34 @@
           "left_tail_lower_3",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_upper_3": {
@@ -12735,6 +16340,34 @@
           "left_tail_lower_4",
           "left_tail_upper",
           "left_tail_upper_2"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_upper_4": {
@@ -12772,6 +16405,34 @@
           "left_tail_lower_4",
           "left_tail_upper",
           "left_tail_upper_5"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_upper_5": {
@@ -12809,6 +16470,34 @@
           "left_tail_lower_4",
           "left_tail_upper",
           "left_tail_upper_4"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_8": {
@@ -12845,6 +16534,34 @@
           "left_tail_lower_3",
           "left_tail_lower_4",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_9": {
@@ -12882,6 +16599,34 @@
           "left_tail_lower_4",
           "left_tail_lower_5",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_10",
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_tail_lower_10": {
@@ -12919,6 +16664,34 @@
           "left_tail_lower_4",
           "left_tail_lower_6",
           "left_tail_upper"
+        ],
+        "tags": [
+          "tail",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_tail_lower_5",
+          "left_tail_lower_6",
+          "left_tail_lower_7",
+          "left_tail_lower_8",
+          "left_tail_lower_9",
+          "left_tail_upper_2",
+          "left_tail_upper_3",
+          "left_tail_upper_4",
+          "left_tail_upper_5",
+          "right_tail_lower_10",
+          "right_tail_lower_5",
+          "right_tail_lower_6",
+          "right_tail_lower_7",
+          "right_tail_lower_8",
+          "right_tail_lower_9",
+          "right_tail_upper_2",
+          "right_tail_upper_3",
+          "right_tail_upper_4",
+          "right_tail_upper_5"
         ]
       },
       "left_nose_upper_5": {
@@ -12956,6 +16729,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_upper_6": {
@@ -12994,6 +16795,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_lower_3": {
@@ -13032,6 +16861,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_upper_7": {
@@ -13070,6 +16927,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_upper_5": {
@@ -13107,6 +16992,34 @@
           "right_nose_upper_3",
           "right_nose_upper_4",
           "right_nose_upper_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_upper_6": {
@@ -13145,6 +17058,34 @@
           "right_nose_upper_3",
           "right_nose_upper_4",
           "right_nose_upper_5"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_3": {
@@ -13183,6 +17124,34 @@
           "right_nose_upper_3",
           "right_nose_upper_4",
           "right_nose_upper_6"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_upper_7": {
@@ -13220,6 +17189,34 @@
           "right_nose_upper_2",
           "right_nose_upper_3",
           "right_nose_upper_4",
+          "right_nose_upper_8"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
           "right_nose_upper_8"
         ]
       },
@@ -13259,6 +17256,34 @@
           "left_nose_upper_2",
           "left_nose_upper_3",
           "left_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_lower_5": {
@@ -13296,6 +17321,34 @@
           "left_nose_upper_2",
           "left_nose_upper_3",
           "left_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_lower_6": {
@@ -13333,6 +17386,34 @@
           "left_nose_upper_2",
           "left_nose_upper_3",
           "left_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_lower_7": {
@@ -13371,6 +17452,34 @@
           "left_nose_upper_2",
           "left_nose_upper_3",
           "left_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_lower_8": {
@@ -13409,6 +17518,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_7"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "left_nose_upper_8": {
@@ -13446,6 +17583,34 @@
           "left_nose_upper_3",
           "left_nose_upper_4",
           "left_nose_upper_7"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_4": {
@@ -13484,6 +17649,34 @@
           "right_nose_upper_2",
           "right_nose_upper_3",
           "right_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_5": {
@@ -13521,6 +17714,34 @@
           "right_nose_upper_2",
           "right_nose_upper_3",
           "right_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_6": {
@@ -13558,6 +17779,34 @@
           "right_nose_upper_2",
           "right_nose_upper_3",
           "right_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_7": {
@@ -13596,6 +17845,34 @@
           "right_nose_upper_2",
           "right_nose_upper_3",
           "right_nose_upper_4"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_lower_8": {
@@ -13634,6 +17911,34 @@
           "right_nose_upper_3",
           "right_nose_upper_4",
           "right_nose_upper_7"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7",
+          "right_nose_upper_8"
         ]
       },
       "right_nose_upper_8": {
@@ -13671,10 +17976,39 @@
           "right_nose_upper_3",
           "right_nose_upper_4",
           "right_nose_upper_7"
+        ],
+        "tags": [
+          "front",
+          "lower",
+          "mirrored",
+          "shared"
+        ],
+        "instances": 20,
+        "sharesRectWith": [
+          "left_nose_lower_3",
+          "left_nose_lower_4",
+          "left_nose_lower_5",
+          "left_nose_lower_6",
+          "left_nose_lower_7",
+          "left_nose_lower_8",
+          "left_nose_upper_5",
+          "left_nose_upper_6",
+          "left_nose_upper_7",
+          "left_nose_upper_8",
+          "right_nose_lower_3",
+          "right_nose_lower_4",
+          "right_nose_lower_5",
+          "right_nose_lower_6",
+          "right_nose_lower_7",
+          "right_nose_lower_8",
+          "right_nose_upper_5",
+          "right_nose_upper_6",
+          "right_nose_upper_7"
         ]
       }
     },
-    "rimsBlur": {}
+    "rimsBlur": {},
+    "heatShield": {}
   },
   "notes": "The original 2017 Race Sim Studio car, not the 2024 one. Generated from the model.",
   "aliases": {
@@ -13726,12 +18060,15 @@
     },
     "rimFace": {
       "face": "left_nose_lower"
+    },
+    "belts_2": {
+      "straps": "straps"
     }
   },
   "leaveStock": [
     {
       "file": "RSS4_Shadow_Map.dds",
-      "reason": "bound as a diffuse but it is a baked shadow/AO overlay \u2014 painting it flattens the shading it exists to provide"
+      "reason": "bound as a diffuse but it is a baked shadow/AO overlay — painting it flattens the shading it exists to provide"
     },
     {
       "file": "Mirror.DDS",
@@ -13751,7 +18088,7 @@
     },
     {
       "file": "RSS_Emblem.dds",
-      "reason": "car maker's badge \u2014 left alone by default; override in your own livery if you want to"
+      "reason": "car maker's badge — left alone by default; override in your own livery if you want to"
     },
     {
       "file": "LOGO_X.dds",

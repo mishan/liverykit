@@ -20,3 +20,8 @@ content/
 *.kn5
 *.rar
 *.7z
+
+# Car content dropped into cars/ for profiling. Profiles are the only thing that
+# belongs in version control here — the models and skins are the car makers'.
+cars/*/
+*.zip
