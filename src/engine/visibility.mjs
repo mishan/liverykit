@@ -216,7 +216,8 @@ const round = (n) => Math.round(n * 10000) / 10000;
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
   let best = null;
   for (const mesh of model.meshes) {
-    if (!/steer|wheel_chassis/i.test(mesh.name)) continue;
+    // Names vary by author and language — an Italian mod calls it 'volante'.
+    if (!/steer|sterzo|volante|wheel_chassis/i.test(mesh.name)) continue;
     if (mesh.vertexCount < 200) continue;
     let x = 0, y = 0, z = 0;
     for (let i = 0; i < mesh.vertexCount; i++) {
