@@ -219,7 +219,7 @@ export function resolveTargets(profile, livery) {
   const notes = [];
   const claimedBy = new Map();
 
-  const claim = (role, spec, from) => {
+  const claim = (role, spec, from, primary = true) => {
     const prior = claimedBy.get(role);
     if (prior) {
       // Both would write the same file, and the second would win silently.
@@ -229,7 +229,7 @@ export function resolveTargets(profile, livery) {
       );
     }
     claimedBy.set(role, from);
-    targets.push({ role, spec, from });
+    targets.push({ role, spec, from, primary });
   };
 
   for (const [role, spec] of Object.entries(livery.paint ?? {})) {
@@ -256,22 +256,26 @@ export function resolveTargets(profile, livery) {
       });
       continue;
     }
-    for (const role of b.roles) {
-      claim(role, spec, `surfaces.${term}`);
+    b.roles.forEach((role, i) => {
+      // The FIRST role a term resolves to is its primary surface. A term can
+      // cover several textures — `body` on the RSS4 is two chassis textures —
+      // and a pattern belongs on all of them, but a car number belongs on the
+      // car once. A region marked `once` is drawn only here.
+      claim(role, spec, `surfaces.${term}`, i === 0);
       // A texture the car's own model never references may still be real — the
       // driver and pit crew live in separate kn5 files that a car skin overrides
       // — or it may be a leftover that paints nothing at all. metal_detail.dds
       // ships in nearly every road-car skin and on several of those cars is
       // bound to no mesh anywhere. This cannot be settled without the other
       // model, so it is flagged rather than guessed at.
-      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {
+      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {  // eslint-disable-line
         notes.push({
           term, status: 'unverified',
           text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
                 `Expected for driver and crew kit; for anything else it may paint nothing`,
         });
       }
-    }
+    });
     if (b.source === 'auto') {
       notes.push({
         term, status: 'unconfirmed',
@@ -347,7 +351,7 @@ export function panel(profile, role, name) {
  * specific, and the failure would be a region painted across half the car rather
  * than an error.
  */
-export function panelsWithTags(profile, role, tags) {
+export function panelsWithTags(profile, role, tags, { limit = Infinity } = {}) {
   const panels = profile.panels?.[role] ?? {};
   const matching = Object.entries(panels)
     .filter(([, p]) => tags.every((t) => (p.tags ?? []).includes(t)))
@@ -359,12 +363,25 @@ export function panelsWithTags(profile, role, tags) {
   // Selecting by name still reaches an individual panel; only tag selection,
   // which cannot know it matched instances of one thing, dedupes.
   const seen = new Set();
-  return matching.filter((name) => {
+  const distinct = matching.filter((name) => {
     const key = (panels[name].rect ?? []).join(',');
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  if (!Number.isFinite(limit)) return distinct;
+
+  // `limit` takes the BIGGEST matches rather than the first ones. A pattern
+  // wants every panel it matches; a piece of text wants one, and wants it to be
+  // the panel with room for it. Sorted by rectangle area, with the name as a
+  // tiebreak so the choice does not depend on object key order.
+  const area = (n) => {
+    const r = panels[n].rect ?? [0, 0, 0, 0];
+    return r[2] * r[3];
+  };
+  return [...distinct]
+    .sort((a, b) => area(b) - area(a) || a.localeCompare(b))
+    .slice(0, limit);
 }
 
 /**
@@ -403,7 +420,14 @@ export function expandRegions(profile, role, regions = []) {
         `"panel" names a single panel on this car, "tags" selects whichever panels match.`
       );
     }
-    const matches = panelsWithTags(profile, role, region.tags);
+    if (region.limit !== undefined
+        && (!Number.isInteger(region.limit) || region.limit < 1)) {
+      throw new Error(
+        `"${region.treatment ?? 'region'}" on role "${role}" has limit: ` +
+        `${JSON.stringify(region.limit)}. It must be a whole number of panels, 1 or more.`
+      );
+    }
+    const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
       notes.push({
         status: 'no-match',

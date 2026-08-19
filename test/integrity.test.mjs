@@ -1249,3 +1249,45 @@ test('an empty or malformed tag selector is refused, not silently everything', a
   const { regions } = expandRegions(p, 'body', [{ treatment: 'fill', panel: 'a' }]);
   assert.equal(regions.length, 1);
 });
+
+test('limit takes the largest matching panels, for text that wants one', async () => {
+  // A pattern wants every panel it matches; a number wants exactly one, and
+  // wants the one with room for it. Without this, [left, visible] put the car
+  // number on seven panels of the Abarth at seven different sizes.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const p = tagCar({}, {
+    small: { rect: [0.0, 0, 0.10, 0.10], tags: ['left', 'visible'] },
+    big: { rect: [0.2, 0, 0.50, 0.50], tags: ['left', 'visible'] },
+    mid: { rect: [0.8, 0, 0.20, 0.20], tags: ['left', 'visible'] },
+  });
+  assert.equal(panelsWithTags(p, 'body', ['left', 'visible']).length, 3, 'unlimited matches all');
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible'], { limit: 1 }), ['big']);
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible'], { limit: 2 }), ['big', 'mid'],
+    'largest first, not profile order');
+
+  const { expandRegions } = await import('../src/profile.mjs');
+  assert.throws(
+    () => expandRegions(p, 'body', [{ treatment: 'text', tags: ['left'], limit: 0 }]),
+    /whole number of panels, 1 or more/,
+  );
+});
+
+test('a `once` region lands on the primary texture only', async () => {
+  // `body` on the RSS4 binds to two chassis textures. A pattern belongs on both;
+  // a car number belongs on the car once, not once per texture.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'c',
+    textures: {
+      front: { file: 'f.dds', width: 64, height: 64 },
+      rear: { file: 'r.dds', width: 64, height: 64 },
+    },
+    bind: { body: { roles: ['front', 'rear'], source: 'human' } },
+  };
+  const { targets } = resolveTargets(p, { name: 'L', surfaces: { body: spec } });
+  assert.deepEqual(targets.map((t) => [t.role, t.primary]), [['front', true], ['rear', false]]);
+
+  // And a `paint` entry is always its own primary — there is nothing to share with.
+  const direct = resolveTargets(p, { name: 'L', paint: { rear: spec } });
+  assert.equal(direct.targets[0].primary, true);
+});
