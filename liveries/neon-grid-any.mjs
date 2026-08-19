@@ -67,6 +67,19 @@ export default {
         { treatment: 'grid', pitch: 0.045, color: 'accent', opacity: 0.18, width: 1.5 },
         { treatment: 'traces', lanes: 22, width: 4, color: 'accent', opacity: 0.75, glow: true },
         { treatment: 'halftone', color: 'violet', cell: 38, dot: 0.12, opacity: 0.35 },
+
+        // Selected by TAG rather than by panel name, which is what lets this run
+        // on a car nobody wrote it for. Each of these renders once per matching
+        // panel: on the RSS4 the left flank is 10 islands and on the Abarth 12,
+        // and the design does not need to know or care.
+        //
+        // `visible` keeps the work where someone can see it. A third of a car's
+        // surface faces the ground or sits inside a bodywork cavity, and paint
+        // there costs render time and buys nothing.
+        { treatment: 'piping', tags: ['left', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
+        { treatment: 'piping', tags: ['right', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
+        { treatment: 'halftone', tags: ['upper', 'visible'], color: 'hot', cell: 30, dot: 0.10, opacity: 0.30, safe: false },
+
         { treatment: 'stripe', at: [0, 0.47, 1, 0.022], color: 'hot', glow: true },
         { treatment: 'scanlines', opacity: 0.12 },
       ],
