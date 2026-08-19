@@ -9,7 +9,11 @@
     "The driver strip is dropped. It targets the panel above the door, which on",
     "this car is 2.3% of the texture at 1.28 anisotropy — a sliver, stretched.",
     "A 500 has nowhere good to put it, and saying so is better than shrinking it",
-    "until it is unreadable."
+    "until it is unreadable.",
+    "The doors are laid sideways in this texture — 270 degrees on the left, 90",
+    "on the right — which is why the design asks for rotate: auto rather than",
+    "hard-coding an angle. That is measured per panel, so this fit says nothing",
+    "about it."
   ],
   "regions": {
     "number-left": { "panel": "left_mid", "at": [0.24, 0.18, 0.52, 0.52] },

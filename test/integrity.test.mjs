@@ -1480,3 +1480,45 @@ test('a stale fit reaches the editor as a note rather than a crash', async () =>
   assert.match(out.notes[0].text, /matches no region/);
   assert.ok(out.placed.length > 0, 'and everything else still renders');
 });
+
+test('rotate: auto follows the panel the unwrapper actually made', async () => {
+  // An unwrapper is free to lay a panel sideways to pack the sheet, and a road
+  // car routinely does. Text placed without compensating reads vertically, which
+  // looks like a bug and is really the texture being honest about its layout.
+  const p = {
+    id: 't',
+    textures: { body: { file: 'b.dds', width: 512, height: 512 } },
+    panels: {
+      body: {
+        upright: { rect: [0, 0, 0.4, 0.4], textRotation: 0 },
+        sideways: { rect: [0.5, 0, 0.4, 0.4], textRotation: 270 },
+        flat: { rect: [0, 0.5, 0.4, 0.4] },              // roof: no measurement
+      },
+    },
+  };
+  const draw = (panel) => renderTexture({
+    profile: p, role: 'body',
+    regions: [{ treatment: 'text', panel, rotate: 'auto', text: 'X', color: 'white' }],
+    treatments: resolveTreatments(['core']), palette: {}, rng: Math.random,
+    font: 'sans-serif', tokens: {},
+  }).base;
+
+  assert.doesNotMatch(draw('upright'), /rotate\(/, 'an upright panel needs no correction');
+  assert.match(draw('sideways'), /rotate\(270/, 'a sideways panel is turned back level');
+  // A near-horizontal panel has no meaningful "up", so the honest answer is to
+  // leave it alone rather than rotate by a number derived from rounding error.
+  assert.doesNotMatch(draw('flat'), /rotate\(/, 'no measurement means no rotation');
+});
+
+test('the shipped profiles carry a measured orientation per panel', async () => {
+  // The measurement that explains what a car looks like: the Abarth's doors are
+  // laid sideways in its texture, the formula car's flanks are not.
+  const { loadProfile } = await import('../src/profile.mjs');
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+
+  assert.equal(ab.panels.skinbase_default.left_mid.textRotation, 270);
+  assert.equal(ab.panels.skinbase_default.right_mid.textRotation, 90);
+  assert.equal(rss.panels.body.left_mid.textRotation, 0);
+  assert.equal(rss.panels.body.right_mid.textRotation, 0);
+});
