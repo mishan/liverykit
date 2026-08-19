@@ -107,7 +107,11 @@ function validateBind(p, err) {
   for (const [term, entry] of Object.entries(p.bind ?? {})) {
     // The vocabulary is fixed on purpose. If any profile can invent a term then
     // a livery cannot rely on one, and the whole layer buys nothing.
-    if (!VOCABULARY[term]) {
+    //
+    // Object.hasOwn, not a truthiness test: VOCABULARY['toString'] inherits a
+    // function from Object.prototype, so bind."toString" would otherwise pass
+    // validation and reopen the vocabulary through the back door.
+    if (!Object.hasOwn(VOCABULARY, term)) {
       err(`bind has an unknown term "${term}". The vocabulary is fixed so that liveries can ` +
           `rely on it: ${Object.keys(VOCABULARY).join(', ')}`);
     }
@@ -150,13 +154,18 @@ function validateBind(p, err) {
  * painting nothing looks exactly like painting something.
  */
 export function binding(profile, term) {
-  const entry = profile.bind?.[term];
-  if (!entry) return { roles: [], source: null, confidence: undefined, status: 'unbound' };
+  // Deliberately defensive about its own input. validateProfile guarantees the
+  // shape, but this is exported and a caller may hand over a profile that never
+  // went through it — a hand-written fixture, or one read straight from disk.
+  // "It never throws" has to be true of the function, not only of the happy path.
+  const entry = Object.hasOwn(profile.bind ?? {}, term) ? profile.bind[term] : undefined;
+  const roles = Array.isArray(entry?.roles) ? entry.roles : null;
+  if (!roles) return { roles: [], source: null, confidence: undefined, status: 'unbound' };
   return {
-    roles: entry.roles,
-    source: entry.source,
+    roles,
+    source: entry.source ?? null,
     confidence: entry.confidence,
-    status: entry.roles.length ? 'bound' : 'absent',
+    status: roles.length ? 'bound' : 'absent',
   };
 }
 
