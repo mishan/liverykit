@@ -210,7 +210,16 @@ for (const p of values.pack) {
 const liveryPath = await resolveLivery(liveryArg);
 const livery = (await import(pathToFileURL(liveryPath).href)).default;
 if (!livery) throw new Error(`${liveryArg} has no default export`);
-if (!livery.car) throw new Error(`${liveryArg} does not say which car it is for (missing "car")`);
+// A PORTABLE livery deliberately has no `car`: it is written against the shared
+// vocabulary rather than against one model, and the profile is chosen at build
+// time. It still needs one of the two.
+if (!livery.car && !values.profile) {
+  throw new Error(
+    `${liveryArg} does not say which car it is for. Either give it a "car" field, ` +
+    `or pass --profile <path> — a livery written entirely in "surfaces" is meant to ` +
+    `work on more than one car, so it has no business naming one.`
+  );
+}
 if (!livery.folder) throw new Error(`${liveryArg} has no "folder" — that is the skin directory name`);
 
 const profilePath = values.profile

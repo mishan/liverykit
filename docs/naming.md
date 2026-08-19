@@ -128,9 +128,16 @@ actually has there, or nothing, reported.
 
 ### Resolution and reporting
 
-One resolver, one rule: a livery's paint block resolves through `bind`, then
-through `aliases`, then falls back to a literal role name for the cars people
-have already hand-tuned. Every term that resolves to nothing is collected and
+Two blocks, one meaning each, rather than one block with precedence rules.
+`paint` stays keyed by this car's own texture roles — exact, not portable, and
+untouched. A new `surfaces` block is keyed by vocabulary terms and resolves
+through `bind`.
+
+Precedence was the tempting design and it is wrong. On the RSS4 `body` is both a
+vocabulary term bound to two chassis textures AND a literal role naming one of
+them, so a livery painting `body` and `bodyRear` differently would suddenly
+render the same artwork on both. Splitting the blocks means no existing livery
+can shift underfoot. Every term that resolves to nothing is collected and
 printed at the end of a build as a summary — *this design asked for six surfaces,
 this car provided four* — because the failure mode this project keeps rediscovering
 is that painting nothing looks exactly like painting something, silently.
@@ -144,6 +151,25 @@ are one surface. Any vocabulary that assumes one panel is one part is wrong on
 every car with symmetric wheels. The binding layer should carry an explicit
 `shared: 4` marker so a livery can at least be told, rather than discovering it
 in-game.
+
+## Proof, on two cars
+
+`liveries/neon-grid-any.mjs` is the same design written entirely in the
+vocabulary. It carries no `car` field, because a portable livery has no business
+naming one; `--profile` chooses at build time.
+
+On the RSS Formula 4 it paints 13 surfaces and reports two it asked for and did
+not get. On the Abarth 500 it paints 7 and reports 8, each by name. The two cars
+share exactly one texture filename between everything painted — `ac_crew.dds`,
+the pit crew, which is a shared AC asset rather than part of either car.
+
+Two constraints follow from being portable, and both are real rather than
+stylistic. A portable design cannot use PANEL names, because panels are named per
+car, so it is limited to whole-texture treatments until panel tags exist. And it
+cannot differentiate between the roles a single term binds to — `body` on the
+RSS4 covers two chassis textures and a design that has never seen the car cannot
+say "and something different on the rear one". Portable means coarser. Worth
+being explicit about rather than pretending the layer is free.
 
 ## Phases
 
@@ -161,7 +187,10 @@ populate it from the classifier at `source: "auto"`, and make regeneration
 preserve anything marked `"human"`. Add a schema test the way the existing
 integrity tests work.
 
-**Three — the resolver.** Vocabulary constants, resolution order, graceful
+**Three — the resolver.** *(done — `resolveTargets` in `src/profile.mjs`, a
+`surfaces` block in liveries, unresolved terms reported at the end of a build.
+Six of neon-grid's surfaces now go through the vocabulary and all 23 output
+files are byte-identical.)* Vocabulary constants, resolution order, graceful
 degradation, and the end-of-build report of unresolved terms. Port `neon-grid` to
 the vocabulary and confirm the output is byte-identical to today's, which is the
 only honest proof that the layer changed nothing it shouldn't have.
