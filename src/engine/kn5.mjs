@@ -331,19 +331,26 @@ function under(mesh, nodeName) {
 }
 
 export function axesFromWheels(model) {
+  // Defaulted rather than assumed. This is exported and gets called with hand-
+  // built models in tests and in tooling, and a missing collection should mean
+  // "no wheels found" — which this function already has an answer for — rather
+  // than a TypeError from deep inside it.
+  const dummies = model.dummies ?? [];
+  const meshes = model.meshes ?? [];
+
   const at = (which) => {
     const key = `WHEEL_${which}`;
     // The node's own translation IS the wheel centre — that is how AC positions
     // it. Averaging the geometry underneath instead gets close but not exact,
     // because a wheel node also holds motion-blur discs and brake parts that are
     // not centred on the axle. On one car that error was 0.46 m of wheelbase.
-    const node = model.dummies.find((d) => d.name.toUpperCase() === key)
-      ?? model.dummies.find((d) => d.name.toUpperCase().startsWith(key));
+    const node = dummies.find((d) => d.name.toUpperCase() === key)
+      ?? dummies.find((d) => d.name.toUpperCase().startsWith(key));
     if (node) return { x: node.world[12], y: node.world[13], z: node.world[14] };
 
     // No such node: fall back to the geometry parented under it.
     let x = 0, y = 0, z = 0, n = 0;
-    for (const mesh of model.meshes) {
+    for (const mesh of meshes) {
       if (!under(mesh, key)) continue;
       const step = Math.max(1, Math.floor(mesh.vertexCount / 200));
       for (let i = 0; i < mesh.vertexCount; i += step) {

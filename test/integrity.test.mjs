@@ -1177,6 +1177,13 @@ test('wheels stacked at the origin give no answer rather than a wrong one', asyn
   const flat = wheelCar({ lf: [0, 0, 0], rf: [0, 0, 0], lr: [0, 0, 0], rr: [0, 0, 0] });
   assert.equal(axesFromWheels(flat), null);
   assert.equal(axesFromWheels({ meshes: [], dummies: [] }), null, 'no wheels, no answer');
+
+  // A model missing a collection entirely should mean "no wheels found", which
+  // this function already has an answer for, rather than a TypeError from deep
+  // inside it. It is exported and gets called with hand-built models.
+  assert.equal(axesFromWheels({}), null, 'no dummies and no meshes');
+  assert.equal(axesFromWheels({ meshes: [] }), null, 'meshes but no dummies');
+  assert.equal(axesFromWheels({ dummies: [] }), null, 'dummies but no meshes');
 });
 
 test('the shipped profiles record axes measured from the wheels', async () => {
