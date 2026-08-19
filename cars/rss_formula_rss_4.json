@@ -141,14 +141,16 @@
       "width": 32,
       "height": 32,
       "alpha": false,
-      "sizeFrom": "model"
+      "sizeFrom": "model",
+      "notes": "Koni damper body \u2014 yellow as shipped, which is why it stood out against the livery."
     },
     "koni_spring_2": {
       "file": "Koni_SPRING_2.dds",
       "width": 32,
       "height": 32,
       "alpha": false,
-      "sizeFrom": "model"
+      "sizeFrom": "model",
+      "notes": "Koni damper body \u2014 yellow as shipped, which is why it stood out against the livery."
     },
     "glass": {
       "file": "2017_Glass_DW.dds",
@@ -10717,7 +10719,19 @@
         ]
       }
     },
-    "belts_2": {},
+    "belts_2": {
+      "straps": {
+        "rect": [
+          0.0,
+          0.1,
+          0.47,
+          0.9
+        ],
+        "anisotropy": 1,
+        "confidence": "measured",
+        "notes": "The webbing texture is an ATLAS: about ten separate straps, each a narrow column ~5% of the texture wide, all running DOWN it (v is along the strap, u is across its 5cm width). A full-width horizontal band therefore crosses every strap like a rung instead of running along any of them \u2014 use rotate:90 for artwork that should follow the belt."
+      }
+    },
     "black_plastics": {},
     "koni_spring_1": {},
     "koni_spring_2": {},
@@ -13726,6 +13740,9 @@
     },
     "rimFace": {
       "face": "left_nose_lower"
+    },
+    "belts_2": {
+      "straps": "straps"
     }
   },
   "leaveStock": [

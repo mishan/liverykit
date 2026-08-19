@@ -154,26 +154,24 @@ export default {
       ],
     },
 
-    // Webbing.
+    // Webbing. The texture is an ATLAS of ~10 straps, each a narrow column
+    // running DOWN it — v is along the strap, u is across its 5 cm width. The
+    // first attempt used full-width horizontal bands, which crossed every
+    // strap like a rung and chopped the lettering into fragments. rotate:90
+    // turns the trace pattern a quarter turn so it follows the belt instead.
     belts_2: {
-      background: 'base',
+      background: 'ink',
       regions: [
-        { treatment: 'stripe', at: [0, 0.00, 1, 0.10], color: 'ink' },
-        { treatment: 'stripe', at: [0, 0.90, 1, 0.10], color: 'ink' },
-        { treatment: 'stripe', at: [0, 0.46, 1, 0.06], color: 'accent', glow: true },
-        { treatment: 'text', at: [0.02, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
-        { treatment: 'text', at: [0.52, 0.14, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
-        { treatment: 'text', at: [0.02, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
-        { treatment: 'text', at: [0.52, 0.58, 0.46, 0.28], text: '{team}', color: 'white', tracking: 0.12 },
+        { treatment: 'traces', panel: 'straps', rotate: 90, lanes: 14, width: 3,
+          color: 'accent', safe: false },
       ],
     },
 
-    // Shoulder pads.
+    // Shoulder pads — black with a cyan edge, same grain as the straps.
     belts_3: {
       background: 'ink',
       regions: [
-        { treatment: 'halftone', at: [0, 0.3, 1, 0.7], color: 'base', angle: 0, cell: 20 },
-        { treatment: 'stripe',   at: [0, 0.22, 1, 0.05], color: 'accent', glow: true },
+        { treatment: 'traces', rotate: 90, at: [0, 0, 1, 1], lanes: 8, width: 3, color: 'accent' },
       ],
     },
 
@@ -263,8 +261,16 @@ export default {
       background: 'ink',
       regions: [
         { treatment: 'fill',   panel: 'face', color: 'ink', safe: false },
-        { treatment: 'traces', panel: 'face', at: [0.05, 0.05, 0.9, 0.9], lanes: 6, width: 3, safe: false },
-        { treatment: 'stripe', panel: 'face', at: [0.46, 0, 0.08, 1], color: 'accent', glow: true, safe: false },
+        // Trace the rim rather than the middle: from the seat the wheel reads
+        // as a dark silhouette, so contrast has to sit on its outline.
+        { treatment: 'traces', panel: 'face', at: [0.02, 0.02, 0.96, 0.20], lanes: 4, width: 5,
+          color: 'accent', safe: false },
+        { treatment: 'traces', panel: 'face', at: [0.02, 0.78, 0.96, 0.20], lanes: 4, width: 5,
+          color: 'accent', safe: false },
+        { treatment: 'traces', panel: 'face', rotate: 90, at: [0.02, 0.02, 0.20, 0.96], lanes: 4, width: 5,
+          color: 'accent', safe: false },
+        { treatment: 'traces', panel: 'face', rotate: 90, at: [0.78, 0.02, 0.20, 0.96], lanes: 4, width: 5,
+          color: 'accent', safe: false },
         { treatment: 'fill',   panel: 'spoke', color: 'base', safe: false },
       ],
     },
@@ -299,6 +305,18 @@ export default {
         { treatment: 'text', at: [0.1, 0.38, 0.8, 0.24], text: '{team}', color: 'white', tracking: 0.08 },
         { treatment: 'text', at: [0.3, 0.6, 0.4, 0.18], text: '{number}', color: 'accent', glow: true, tracking: 0.06 },
       ],
+    },
+
+    // Koni damper bodies. These ship bright yellow and were the last
+    // saturated thing on the car that owed nothing to the palette — two 32x32
+    // textures, easy to miss precisely because they are tiny.
+    koni_spring_1: {
+      background: 'ink',
+      regions: [{ treatment: 'stripe', at: [0, 0.35, 1, 0.30], color: 'accent' }],
+    },
+    koni_spring_2: {
+      background: 'ink',
+      regions: [{ treatment: 'stripe', at: [0, 0.35, 1, 0.30], color: 'accent' }],
     },
 
     // The car's SECOND body texture. Only visible by reading the model: no

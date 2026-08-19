@@ -421,3 +421,26 @@ test('cockpit visibility respects occluders between panel and eye', async () => 
   computeCockpitVisibility(clear, open, { eye: { x: 0, y: 0.1, z: 1.5 }, cellSize: 0.02 });
   assert.ok(open[0].cockpitFraction > 0, 'with nothing in the way it should be visible');
 });
+
+test('rotate turns a treatment without moving the rect it was asked for', async () => {
+  // Motifs have a grain — traces run in horizontal lanes — and a panel's grain
+  // is whatever the unwrapper chose. Seatbelt straps run DOWN their texture, so
+  // unrotated lanes cross them like rungs. The author writes the FINAL rect;
+  // rotation must not shift it.
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const p = { id: 't', textures: { body: { file: 'b.dds', width: 100, height: 100 } },
+    panels: { body: { strip: { rect: [0.2, 0.1, 0.2, 0.8] } } } };
+  const common = { profile: p, role: 'body', treatments: resolveTreatments(['core']),
+    palette: { c: '#0ff' }, rng: Math.random, font: 'sans-serif', tokens: {} };
+
+  const plain = renderTexture({ ...common, regions: [{ treatment: 'fill', panel: 'strip', color: 'c' }] });
+  const spun = renderTexture({ ...common, regions: [{ treatment: 'fill', panel: 'strip', color: 'c', rotate: 90 }] });
+
+  // Unrotated: the rect as written — 20x80 at (20,10).
+  assert.match(plain.base, /x="20" y="10" width="20" height="80"/);
+  // Rotated: drawn 80x20 about the same centre, then spun a quarter turn, which
+  // lands it back on 20x80 at (20,10).
+  assert.match(spun.base, /rotate\(90,30,50\)/);
+  assert.match(spun.base, /x="-10" y="40" width="80" height="20"/);
+});
