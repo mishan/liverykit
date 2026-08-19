@@ -398,6 +398,14 @@ Full procedure in [docs/calibration.md](docs/calibration.md).
 
 All of these fail silently.
 
+- **Some mod cars ship an encrypted kn5.** Geometry, materials and UV layout read
+  normally, but every embedded texture is a 1x1 placeholder with the real ones in
+  a Custom Shaders Patch blob appended to the file. liverykit detects this, uses
+  the geometry, and takes texture sizes from the car's skin folders — so pass
+  `--skins`. It does not decrypt anything and is not going to: that is the
+  author's artwork, protected on purpose. For textures no stock skin overrides,
+  `--assume-size 2048` paints them at a size you choose, recorded in the profile
+  as `"sizeFrom": "assumed"` so it is never mistaken for a measurement.
 - **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
   nothing, so glow is done at the raster stage instead. Don't put filters in
   generated SVG.

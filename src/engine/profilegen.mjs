@@ -23,6 +23,17 @@ import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
 
+/**
+ * A texture the model does not really contain.
+ *
+ * Encrypted models substitute a 1x1 image for every texture. Anything this small
+ * carries no artwork and no usable dimensions — a real car texture is never
+ * smaller than about 8x8 even for a flat colour swatch.
+ */
+function isPlaceholder(h) {
+  return h.width <= 4 && h.height <= 4;
+}
+
 /** DDS/PNG header straight from the blob embedded in the model. */
 function imageHeader(name, data) {
   if (!data || data.length < 32) return null;
@@ -80,9 +91,12 @@ const SLOT_MEANING = {
  */
 export async function profileFromKn5(path, {
   id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008,
-  visibility = true,
+  visibility = true, assumeSize = null,
   skinsDir = null, log = () => {},
 } = {}) {
+  if (assumeSize !== null && !Number.isInteger(Math.log2(assumeSize))) {
+    throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
+  }
   const model = await parseKn5(path, { keepTextureData: true });
   const axes = axisHints(model);
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
@@ -129,6 +143,27 @@ export async function profileFromKn5(path, {
   const usedRoles = new Set();
   const roleOf = new Map();
 
+  // An encrypted model keeps its geometry readable and replaces every texture
+  // with a 1x1 placeholder. Everything this tool needs from a model — the node
+  // tree, materials, UV islands, which texture binds to which slot — survives
+  // that. Only the DIMENSIONS are lost, and those come from skin folders anyway.
+  const placeholder = Boolean(model.encrypted);
+  if (placeholder) {
+    log(`  ! this model is encrypted (${model.encrypted.scheme}, ` +
+        `${(model.encrypted.bytes / 1e6).toFixed(1)} MB protected).`);
+    log('    Geometry, materials and UV layout are all readable and are used normally.');
+    log('    Textures are 1x1 placeholders, so every size must come from a skin folder:');
+    log(`    pass --skins, or the profile will list nothing paintable.${skinsDir ? '  (given)' : '  (NOT GIVEN)'}`);
+    if (assumeSize) {
+      log(`    --assume-size ${assumeSize}: textures no skin overrides will be listed at ` +
+          `${assumeSize}x${assumeSize}, which is a choice rather than a measurement.`);
+    }
+    if (assumeSize) {
+      log(`    --assume-size ${assumeSize}: textures no skin overrides will be listed at ` +
+          `${assumeSize}x${assumeSize}, which is a choice rather than a measurement.`);
+    }
+  }
+
   const paintable = [];
   for (const tex of model.textures) {
     const h = headers.get(tex.name);
@@ -173,6 +208,45 @@ export async function profileFromKn5(path, {
 
     const skin = realSize.get(tex.name.toLowerCase());
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
+
+    // On an encrypted model every embedded texture is a 1x1 placeholder, so the
+    // model's own dimensions are not merely low-resolution — they are fiction.
+    // A skin is then the ONLY source of truth, and without one there is nothing
+    // honest to write down.
+    if (placeholder && isPlaceholder(h)) {
+      if (!skin && !assumeSize) {
+        doNotPaint.push({
+          file: tex.name,
+          reason: 'the model is encrypted and ships a 1x1 placeholder for this texture, ' +
+                  'so its real size is unknown — no stock skin overrides it either. ' +
+                  'Pass --assume-size to paint it at a size of your choosing',
+          encrypted: true,
+        });
+        usedRoles.delete(r);
+        roleOf.delete(tex.name);
+        continue;
+      }
+      if (skin) {
+        entry.width = skin.width;
+        entry.height = skin.height;
+        entry.alpha = skin.alpha;
+        entry.sizeFrom = 'skin';
+        entry.notes = 'The model is encrypted; this size comes from a stock skin, not the model.';
+      } else {
+        // A CHOICE, not a measurement, and labelled as one. It is a safe choice:
+        // AC does not require a skin texture to match the size the model shipped,
+        // because UVs are fractions. The only cost of getting it wrong is disk
+        // space or lost detail, not a broken skin.
+        entry.width = assumeSize;
+        entry.height = assumeSize;
+        entry.sizeFrom = 'assumed';
+        entry.notes = `The model is encrypted and no stock skin overrides this texture. ` +
+                      `${assumeSize}x${assumeSize} was assumed, not measured.`;
+      }
+      textures[r] = entry;
+      continue;
+    }
+
     if (skin && (skin.width !== h.width || skin.height !== h.height)) {
       log(`  ! ${tex.name}: model embeds ${h.width}x${h.height}, skins ship ` +
           `${skin.width}x${skin.height} — using the skin size`);

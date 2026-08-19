@@ -42,6 +42,8 @@ Options
   --explain <kn5>     rank candidates for a vocabulary term and show why
   --term <name>       which term to explain (default: body)
   --no-visibility     skip the ray casting; faster, and 90% accurate not 98%
+  --assume-size <px>  for ENCRYPTED models only: paint textures whose real size
+                      cannot be measured at this size. A choice, not a fact.
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
   --profile <path>    override the car profile (default: cars/<livery.car>.json)
@@ -64,6 +66,7 @@ const { values, positionals } = parseArgs({
     explain: { type: 'string' },
     term: { type: 'string', default: 'body' },
     'no-visibility': { type: 'boolean', default: false },
+    'assume-size': { type: 'string' },
     'from-kn5': { type: 'string' },
     'car-id': { type: 'string' },
     'car-name': { type: 'string' },
@@ -109,6 +112,11 @@ if (values['from-kn5']) {
     id: values['car-id'],
     name: values['car-name'] ?? '',
     skinsDir: values.skins ? resolve(values.skins) : null,
+    // Only meaningful for encrypted models, where the embedded textures are 1x1
+    // placeholders and no measurement is available.
+    assumeSize: values['assume-size']
+      ? num(values['assume-size'], 'assume-size', { min: 8, max: 8192, integer: true })
+      : null,
     log: console.log,
   });
   // Regenerating must never cost hand-checked work. If a profile for this car
