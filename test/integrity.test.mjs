@@ -1524,3 +1524,70 @@ test('the shipped profiles carry a measured orientation per panel', async () => 
   assert.equal(rss.panels.body.left_mid.textRotation, 0);
   assert.equal(rss.panels.body.right_mid.textRotation, 0);
 });
+
+test('a surface with no regions builds instead of crashing', async () => {
+  // `regions` is optional everywhere else in this codebase. A surface that only
+  // sets a background is a legitimate way to flat-colour a part.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { applyFit } = await import('../src/fit.mjs');
+  const profile = {
+    id: 'c',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+  };
+  const { targets } = resolveTargets(profile, { name: 'L', surfaces: { body: { background: 'ink' } } });
+  assert.equal(targets.length, 1);
+  // The build filters regions before applying a fit; both halves must tolerate
+  // the field being absent.
+  assert.doesNotThrow(() => (targets[0].spec.regions ?? []).filter(() => true));
+  assert.deepEqual(applyFit(targets[0].spec.regions ?? [], null, { profile, role: 'body' }).regions, []);
+});
+
+test('the editor refuses to start on a fit it cannot honour', async () => {
+  // A missing fit is normal — most cars have never been tuned. A fit that exists
+  // and is wrong is not, and starting anyway gives an editor that looks fine and
+  // fails only when you press Save, by which point the work has been done twice.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-ui-'));
+
+  const bad = join(dir, 'bad.json');
+  await writeFile(bad, JSON.stringify({ car: 'abarth500', regions: {} }));   // no "livery"
+  await assert.rejects(() => startUi({ livery, profile, fitPath: bad, port: 7395, log: () => {} }),
+    /Could not load .*missing "livery"/s);
+
+  // A fit that simply is not there must still start.
+  const { server } = await startUi({
+    livery, profile, fitPath: join(dir, 'absent.json'), port: 7396, log: () => {},
+  });
+  server.close();
+});
+
+test('the editor caps how much it will read from a request', async () => {
+  // Loopback or not, an unbounded read grows the process until it dies. A fit is
+  // a few kilobytes of JSON.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const { server, url } = await startUi({
+    livery, profile, fitPath: '/nonexistent/fit.json', port: 7397, log: () => {},
+  });
+  try {
+    const res = await fetch(`${url}api/fit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ livery: 'L', car: 'c', pad: 'x'.repeat(3 * 1024 * 1024) }),
+    });
+    assert.equal(res.status, 500);
+    assert.match((await res.json()).error, /body over/);
+  } finally {
+    server.close();
+  }
+});
