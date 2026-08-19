@@ -212,7 +212,7 @@ test('mip chain length is an integer the encoder can actually honour', () => {
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
 
-function buildKn5({ version = 6, extraMeshes = [] } = {}) {
+function buildKn5({ version = 6, extraMeshes = [], placeholderTexture = false, encrypted = false } = {}) {
   const parts = [];
   const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
   const f32 = (n) => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
@@ -223,7 +223,10 @@ function buildKn5({ version = 6, extraMeshes = [] } = {}) {
 
   // textures: one null slot (type 0, no further fields) then one real DDS
   const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
-  dds.writeUInt32LE(64, 12); dds.writeUInt32LE(32, 16);       // height, width
+  // An encrypted model substitutes a 1x1 image for every texture; the real one
+  // lives in the protected blob appended after the node tree.
+  dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
+  dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
   parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
 
   // one material binding that texture as a diffuse
@@ -256,6 +259,14 @@ function buildKn5({ version = 6, extraMeshes = [] } = {}) {
     parts.push(u32(2), str(em.name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
       u32(em.verts.length), ...em.verts.map((v) => Buffer.concat(v.map(f32))),
       u32(idx.length), idxBuf, u32(0), Buffer.alloc(29));
+  }
+
+  // Custom Shaders Patch appends the protected payload after the node tree and
+  // ends the file with a length-prefixed marker.
+  if (encrypted) {
+    const marker = '__AC_SHADERS_PATCH_KN5ENC_v1__';
+    parts.push(Buffer.alloc(4096, 0xab), u32(marker.length), Buffer.from(marker, 'ascii'),
+      Buffer.from([0x44, 0x0a, 0x01]), u32(1));
   }
   return Buffer.concat(parts);
 }
@@ -851,4 +862,64 @@ test('the portable livery expands onto two cars it was not written for', async (
       `${file}: ${regions.length} regions from ${livery.surfaces.body.regions.length} authored`);
     assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
   }
+});
+
+// --- encrypted models -------------------------------------------------------
+
+test('an encrypted model is read, not rejected — and never decrypted', async () => {
+  // Some mod authors ship a kn5 whose geometry is intact but whose textures are
+  // 1x1 placeholders, with the real ones in a Custom Shaders Patch blob appended
+  // to the file. Three cars in a 235-car fleet were built this way, and the
+  // exact-length check refused all three as corrupt.
+  //
+  // The geometry is what this tool actually needs, and it is all there. The
+  // encryption is the author protecting their artwork; nothing here tries to
+  // undo that, and nothing should.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+
+  const plain = parseKn5Buffer(buildKn5());
+  assert.equal(plain.encrypted, null, 'an ordinary model is not flagged');
+
+  const enc = parseKn5Buffer(buildKn5({ encrypted: true }));
+  assert.equal(enc.encrypted.scheme, 'csp-kn5enc-v1');
+  assert.ok(enc.encrypted.bytes > 4000, `protected region measured ${enc.encrypted.bytes} bytes`);
+  assert.equal(enc.meshes.length, plain.meshes.length, 'the geometry reads identically');
+  assert.deepEqual(enc.materials, plain.materials);
+});
+
+test('a genuinely truncated file is still refused', async () => {
+  // The encryption check must not become a way for any short parse to pass. It
+  // only excuses trailing bytes that carry the marker.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const buf = Buffer.concat([buildKn5(), Buffer.alloc(4096, 0xab)]);
+  assert.throws(() => parseKn5Buffer(buf), /parser finished at byte/);
+});
+
+test('placeholder texture sizes are refused rather than believed', async () => {
+  // A 1x1 embedded texture is not a small texture, it is an absent one. Writing
+  // its size into a profile would produce a livery rendered at one pixel.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-enc-'));
+  const file = join(dir, 'car.kn5');
+  await writeFile(file, buildKn5({ placeholderTexture: true, encrypted: true }));
+
+  const bare = await profileFromKn5(file, { id: 'c', visibility: false });
+  assert.equal(Object.keys(bare.textures).length, 0, 'nothing is paintable without a real size');
+  assert.match(bare.doNotPaint[0].reason, /encrypted.*1x1 placeholder/);
+
+  // --assume-size turns it into a choice the user has made, labelled as one.
+  const assumed = await profileFromKn5(file, { id: 'c', visibility: false, assumeSize: 1024 });
+  const tex = Object.values(assumed.textures)[0];
+  assert.equal(tex.width, 1024);
+  assert.equal(tex.sizeFrom, 'assumed');
+  assert.match(tex.notes, /assumed, not measured/);
+
+  await assert.rejects(
+    () => profileFromKn5(file, { id: 'c', visibility: false, assumeSize: 1000 }),
+    /power of two/,
+  );
 });
