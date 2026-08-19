@@ -166,7 +166,32 @@ export const VOCABULARY = {
     describes: 'Brake discs.',
     score: (f) => (f.shaders.some((s) => /ksBrakeDisc/i.test(s)) ? f.area : 0),
   },
+
+  // Terms with no `score` are never proposed automatically, but they are valid
+  // targets for a livery and for a human binding. That split matters: the
+  // vocabulary is the CONTRACT a livery writes against, and it should not be
+  // limited to whatever a classifier currently happens to be good at.
+  wing: { describes: 'Aerodynamic wings and their endplates.' },
+  floor: { describes: 'Underfloor, diffuser, splitter.' },
+  rims: { describes: 'Wheel faces. Usually one texture shared by all four.' },
+  glass: { describes: 'Windows and windscreen. Tintable in principle, easy to ruin.' },
+  mirror: { describes: 'Mirror housings.' },
+  interior: { describes: 'Cabin surfaces — tub, dash, trim.' },
+  seat: { describes: 'Seat shell and cushions, where separable from the interior.' },
+  belts: { describes: 'Harness straps. Usually an atlas of strips running down the texture.' },
+  steeringWheel: { describes: 'Steering wheel rim and spokes.' },
+  wheelLogo: { describes: 'The badge at the centre of the steering wheel.' },
+  helmet: { describes: "The driver's helmet." },
+  suit: { describes: "The driver's race suit." },
+  gloves: { describes: "The driver's gloves." },
+  crew: { describes: 'Pit crew kit. A shared AC asset, not part of the car.' },
+  numberPlate: { describes: 'Road-car registration plate.' },
+  heatShield: { describes: 'Exhaust heat-shield foil, gold as shipped on most cars.' },
+  metalTrim: { describes: 'Bright metal detail — grilles, badges, exhaust tips.' },
 };
+
+/** Terms the classifier can propose. The rest are for a human to bind. */
+export const SCORABLE = Object.keys(VOCABULARY).filter((t) => VOCABULARY[t].score);
 
 /**
  * Bodywork score.
@@ -224,6 +249,14 @@ export function rank(features, term = 'body') {
   if (!spec) {
     throw new Error(
       `Unknown vocabulary term "${term}". Known terms: ${Object.keys(VOCABULARY).join(', ')}.`
+    );
+  }
+  // Distinct from "no such term": this one is real, it just has no measurement
+  // behind it yet, and inventing one would be worse than saying so.
+  if (!spec.score) {
+    throw new Error(
+      `Vocabulary term "${term}" has no scoring rule, so it cannot be proposed automatically. ` +
+      `Bind it by hand in the profile. Scorable terms: ${SCORABLE.join(', ')}.`
     );
   }
 
