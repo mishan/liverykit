@@ -70,6 +70,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
 
   for (const { role, spec } of targets) {
     const tex = texture(profile, role);
+    // Regions that matched no panel are collected here and reported with
+    // everything else at the end, rather than one line at a time mid-build.
+    const regionNotes = [];
     const width = Math.round(tex.width * scale);
     const height = Math.round(tex.height * scale);
 
@@ -86,7 +89,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       rng: mulberry32(seedFrom(seedStr + tex.file)),
       font: render.font,
       tokens,
+      regionNotes,
     });
+    notes.push(...regionNotes);
 
     const png = await composeLayers({
       base: scaleSvg(layers.base, scale),

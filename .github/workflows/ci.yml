@@ -64,6 +64,29 @@ jobs:
       - name: build the example livery
         run: node bin/liverykit.mjs neon-grid --out dist
 
+      # The portability claim, checked rather than asserted. The same design
+      # file on a Formula car and a road car, which between everything painted
+      # share exactly one texture filename. Both profiles are in the repo, so
+      # this needs no game content.
+      - name: build the portable livery on two unrelated cars
+        run: |
+          node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json --out dist-rss
+          node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --out dist-abarth
+          python3 - <<'PY'
+          import glob, sys
+          rss = {f.split('/')[-1] for f in glob.glob('dist-rss/neon_grid_any/*')}
+          ab  = {f.split('/')[-1] for f in glob.glob('dist-abarth/neon_grid_any/*')}
+          if not rss or not ab:
+              sys.exit('one of the cars produced nothing')
+          # ui_skin.json and preview.jpg are ours; the textures are the cars'.
+          # livery.png is the Content Manager thumbnail we write, not a car texture.
+          ours = {'ui_skin.json', 'preview.jpg', 'livery.png'}
+          shared = (rss & ab) - ours
+          print(f'RSS4 {len(rss - ours)} textures, Abarth {len(ab - ours)}, shared names: {sorted(shared)}')
+          if len(shared) > 1:
+              sys.exit(f'expected at most ac_crew.dds in common, got {sorted(shared)}')
+          PY
+
       # The encoder's failure modes are quiet: a wrong mip count or a DX10
       # header produces a file that installs cleanly and renders wrong. Checking
       # the bytes is the only way to notice in CI.

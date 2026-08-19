@@ -331,6 +331,59 @@ export function panel(profile, role, name) {
 }
 
 /**
+ * Panels on a texture role carrying every one of the given tags.
+ *
+ * AND, not OR, and deliberately so. `['left', 'mid']` means the left middle of
+ * the car; if it meant "left or middle" a design could not express anything
+ * specific, and the failure would be a region painted across half the car rather
+ * than an error.
+ */
+export function panelsWithTags(profile, role, tags) {
+  const panels = profile.panels?.[role] ?? {};
+  return Object.entries(panels)
+    .filter(([, p]) => tags.every((t) => (p.tags ?? []).includes(t)))
+    .map(([name]) => name);
+}
+
+/**
+ * Expand a livery's regions against one texture role.
+ *
+ * A region selecting by `tags` becomes one region per matching panel — the same
+ * artwork on every panel that qualifies. That is what makes a design portable:
+ * `{ tags: ['left', 'mid'] }` renders on however many islands this particular
+ * car happens to split its left flank into, which is three on one model and one
+ * on another.
+ *
+ * A region matching nothing is dropped and reported. Silence here would be the
+ * same failure as everywhere else in this project.
+ */
+export function expandRegions(profile, role, regions = []) {
+  const out = [];
+  const notes = [];
+
+  for (const region of regions) {
+    if (!region.tags) { out.push(region); continue; }
+    if (region.panel) {
+      throw new Error(
+        `A region on role "${role}" has both "panel" and "tags". Use one: ` +
+        `"panel" names a single panel on this car, "tags" selects whichever panels match.`
+      );
+    }
+    const matches = panelsWithTags(profile, role, region.tags);
+    if (!matches.length) {
+      notes.push({
+        status: 'no-match',
+        text: `${role}: no panel tagged [${region.tags.join(', ')}] — ` +
+              `"${region.treatment ?? 'region'}" was skipped`,
+      });
+      continue;
+    }
+    for (const panel of matches) out.push({ ...region, panel });
+  }
+  return { regions: out, notes };
+}
+
+/**
  * Turn a livery region spec into an absolute rectangle in texture fractions.
  *
  * `at` is always relative to the panel's full `rect` — [0,0,1,1] (the default)

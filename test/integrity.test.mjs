@@ -758,3 +758,97 @@ test('the portable livery renders on two cars that share no texture names', asyn
   assert.equal([...filesA].filter((f) => filesB.has(f)).length, 1,
     'only ac_crew.dds is common to both cars — everything else is named differently');
 });
+
+// --- panel tags -------------------------------------------------------------
+
+const tagCar = (axes, panels) => ({
+  id: 'c', calibration: { axes }, textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+  panels: { body: panels },
+});
+
+test('tags describe where a panel is in terms true of any car', async () => {
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    nl: { rect: [0, 0, 1, 1], centroid3d: [1, 1, 4] },      // left, nose, upper
+    tr: { rect: [0, 0, 1, 1], centroid3d: [-1, 0, 0] },     // right, tail, lower
+    mc: { rect: [0, 0, 1, 1], centroid3d: [0, 0.5, 2] },    // centre, mid
+  })).body;
+  assert.deepEqual(t.nl, ['left', 'nose', 'upper']);
+  assert.deepEqual(t.tr, ['right', 'tail', 'lower']);
+  assert.equal(t.mc[0], 'centre');
+  assert.equal(t.mc[1], 'mid');
+});
+
+test('tags follow the model\'s idea of forward, not ours', async () => {
+  // Ninety of the 235 fleet cars have no mesh named in a way that reveals which
+  // end is the front. On a model where +Z is rearward, ignoring that would tag
+  // the tail as the nose on every panel.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const panels = { a: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 4] }, b: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 0] } };
+  const fwd = computeTags(tagCar({ left: '+X', front: '+Z' }, panels)).body;
+  const rev = computeTags(tagCar({ left: '+X', front: '-Z' }, panels)).body;
+  assert.equal(fwd.a[1], 'nose');
+  assert.equal(rev.a[1], 'tail', 'the same panel is at the other end of a reversed car');
+  // Left and right swap with the axis too.
+  const flipped = computeTags(tagCar({ left: '-X', front: '+Z' }, {
+    p: { rect: [0, 0, 1, 1], centroid3d: [1, 0, 0] },
+  })).body;
+  assert.equal(flipped.p[0], 'right');
+});
+
+test('a panel with no measured centroid gets the tags that need no geometry', async () => {
+  // Hand-written profiles and the old screenshot workflow have no centroid3d.
+  // Better to give them what can be known than to skip them or invent a side.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    p: { rect: [0, 0, 1, 1], visible: 0.8, mirrorOf: 'q' },
+  })).body;
+  assert.deepEqual(t.p, ['visible', 'mirrored']);
+});
+
+test('selecting by tags is AND, and matching nothing is reported', async () => {
+  const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
+  const p = tagCar({ left: '+X', front: '+Z' }, {
+    a: { rect: [0, 0, 1, 1], tags: ['left', 'mid', 'visible'] },
+    b: { rect: [0, 0, 1, 1], tags: ['left', 'nose'] },
+    c: { rect: [0, 0, 1, 1], tags: ['right', 'mid', 'visible'] },
+  });
+  assert.deepEqual(panelsWithTags(p, 'body', ['left']), ['a', 'b']);
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible']), ['a'],
+    'both tags must be present, not either');
+
+  const { regions, notes } = expandRegions(p, 'body', [
+    { treatment: 'fill', tags: ['left'] },
+    { treatment: 'fill', tags: ['left', 'tail'] },
+  ]);
+  assert.deepEqual(regions.map((r) => r.panel), ['a', 'b'], 'one region per matching panel');
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].text, /no panel tagged \[left, tail\]/);
+});
+
+test('a region may select by name or by tag, not both', async () => {
+  const { expandRegions } = await import('../src/profile.mjs');
+  assert.throws(
+    () => expandRegions(tagCar({}, { a: { rect: [0, 0, 1, 1], tags: ['left'] } }), 'body',
+      [{ treatment: 'fill', panel: 'a', tags: ['left'] }]),
+    /both "panel" and "tags"/,
+  );
+});
+
+test('the portable livery expands onto two cars it was not written for', async () => {
+  // Five authored regions become as many as the car has panels to put them on.
+  const { loadProfile, expandRegions } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const cases = [
+    ['../cars/rss_formula_rss_4.json', 'body'],
+    ['../cars/abarth500.json', 'skinbase_default'],
+  ];
+  for (const [file, role] of cases) {
+    const p = await loadProfile(new URL(file, import.meta.url));
+    const { regions, notes } = expandRegions(p, role, livery.surfaces.body.regions);
+    assert.equal(notes.length, 0, `${file}: ${notes.map((n) => n.text)}`);
+    assert.ok(regions.length > livery.surfaces.body.regions.length,
+      `${file}: ${regions.length} regions from ${livery.surfaces.body.regions.length} authored`);
+    assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
+  }
+});
