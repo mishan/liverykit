@@ -176,7 +176,13 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   // An exact-length parse is the whole validation strategy: any misread field
   // shifts every subsequent offset, so finishing precisely at EOF is very
   // unlikely to happen by accident.
-  if (c.o !== buf.length) {
+  //
+  // There is exactly one legitimate reason to finish early: an ENCRYPTED model,
+  // where the readable part ends precisely where it should and a protected blob
+  // follows it. That is a different situation from a corrupt or unknown layout
+  // and deserves a different answer.
+  const encrypted = trailingEncryption(buf, c.o);
+  if (c.o !== buf.length && !encrypted) {
     throw new Error(
       `${path}: parser finished at byte ${c.o} but the file is ${buf.length} bytes ` +
       `(${buf.length - c.o > 0 ? 'short by' : 'over by'} ${Math.abs(buf.length - c.o)}).\n` +
@@ -185,7 +191,43 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     );
   }
 
-  return { version, textures, materials, meshes, buf };
+  return { version, textures, materials, meshes, buf, encrypted };
+}
+
+/**
+ * Custom Shaders Patch encrypted models.
+ *
+ * Some mod authors publish a kn5 whose geometry is intact but whose textures
+ * have been replaced with 1x1 placeholders, with the real ones appended in an
+ * encrypted blob that CSP decrypts at load. Every such file seen ends with a
+ * length-prefixed `__AC_SHADERS_PATCH_KN5ENC_v1__` marker.
+ *
+ * THIS DOES NOT DECRYPT ANYTHING, AND SHOULD NOT.
+ *
+ * The encryption is there because the author does not want their artwork
+ * extracted, and that is their call to make. It also does not need breaking:
+ * everything this tool actually wants from a model — the node tree, materials,
+ * UV islands, which texture binds to which slot — sits in the readable part.
+ * The only casualty is texture DIMENSIONS, and those come from the car's skin
+ * folders anyway, which is where the real sizes live even on unencrypted cars.
+ *
+ * Returns a description of the protected region, or null.
+ */
+const ENC_MARKER = '__AC_SHADERS_PATCH_KN5ENC_v1__';
+
+export function trailingEncryption(buf, from) {
+  if (from >= buf.length) return null;
+  // The marker sits near the very end: 30 bytes of text, then a few bytes of
+  // trailer. Search a small window rather than the whole file, so a texture that
+  // happens to contain the string cannot produce a false positive.
+  const window = buf.subarray(Math.max(from, buf.length - 128));
+  const at = window.indexOf(ENC_MARKER, 0, 'latin1');
+  if (at < 0) return null;
+  return {
+    scheme: 'csp-kn5enc-v1',
+    start: from,
+    bytes: buf.length - from,
+  };
 }
 
 // Row-major, row-vector convention: p' = p * M, translation in elements 12-14.

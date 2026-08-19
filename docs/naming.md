@@ -222,14 +222,30 @@ thing to defend, and right now it is 174/175 on the labelled subset.
 
 ## Known gaps, recorded so they don't get rediscovered
 
-Three cars fail the kn5 parse outright — `ddm_honda_s2000_ap2`,
-`dthwsh_nissan_180sx_gpsports`, `gue_porsche_911_gt3_cup_992` — each stopping
-roughly halfway through the file. All three are mods, so this is likely a node
-layout the reader hasn't seen. The parser refuses rather than half-parsing, which
-is the correct behaviour, but a format this common in the mod scene is worth
-supporting.
+~~Three cars fail the kn5 parse outright.~~ **Resolved.** They were not a new
+node layout: all three are **encrypted models**. The geometry, materials and node
+tree are entirely standard and parse cleanly; what follows is a Custom Shaders
+Patch blob holding the real textures, ending with a length-prefixed
+`__AC_SHADERS_PATCH_KN5ENC_v1__` marker. The parser stopped exactly where the
+readable part ends, which is why it looked like a truncation.
 
-Two cars ship no kn5 at all in this install and were skipped.
+Nothing here decrypts anything, and nothing should. The author encrypted their
+artwork because they did not want it extracted, and that is their call. It also
+does not need breaking: everything this tool wants from a model — node tree,
+materials, UV islands, slot bindings — is in the readable part. The one casualty
+is texture DIMENSIONS, because every embedded texture is replaced by a 1×1
+placeholder, and those come from skin folders anyway.
+
+A 1×1 texture is not a small texture, it is an absent one, so its size is
+refused rather than believed — writing it into a profile would render a livery at
+one pixel. Sizes come from a stock skin where one overrides the texture, and
+`--assume-size` lets you paint the rest at a size you have chosen, labelled
+`sizeFrom: "assumed"` so nobody later mistakes it for a measurement. That is
+safe: AC does not require a skin texture to match the size the model shipped,
+because UVs are fractions.
+
+With that, 238 of 240 cars profile. The remaining two ship no kn5 at all in this
+install, which is a missing file rather than a parsing problem.
 
 Ninety of 235 cars have low-confidence axes. The classifier doesn't currently
 depend on front/rear, but panel section tags do, so phase four needs a better
