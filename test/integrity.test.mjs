@@ -1134,6 +1134,64 @@ test('the shipped profiles record where parts share texels', async () => {
   assert.ok(!wheel.tags.includes('left') && !wheel.tags.includes('right'));
 });
 
+// --- which way is the car facing --------------------------------------------
+
+function wheelCar({ lf = [0.8, 0.3, 1.3], rf = [-0.8, 0.3, 1.3], lr = [0.8, 0.3, -1.0], rr = [-0.8, 0.3, -1.0] } = {}) {
+  // Only the dummies matter here; axesFromWheels reads the node translations.
+  const d = (name, [x, y, z]) => {
+    const w = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, y, z, 1]);
+    return { name, path: name, depth: 1, world: w };
+  };
+  return {
+    meshes: [],
+    dummies: [d('WHEEL_LF', lf), d('WHEEL_RF', rf), d('WHEEL_LR', lr), d('WHEEL_RR', rr)],
+  };
+}
+
+test('the wheels say which way is left and which is forward', async () => {
+  // Assetto Corsa's physics requires WHEEL_LF/RF/LR/RR on every car — a car
+  // without them does not run — so this is a measurement rather than a guess.
+  // Across 238 fleet cars it resolved every one, agreed with the old name
+  // heuristic on all 145 the heuristic was sure about, and corrected two.
+  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
+
+  const normal = axesFromWheels(wheelCar());
+  assert.equal(normal.left, 1, '+X is the left of a car whose LF sits at positive X');
+  assert.equal(normal.front, 1);
+  assert.ok(normal.confident);
+  assert.ok(Math.abs(normal.wheelbase - 2.3) < 1e-6, `wheelbase ${normal.wheelbase}`);
+  assert.ok(Math.abs(normal.trackWidth - 1.6) < 1e-6, `track ${normal.trackWidth}`);
+
+  // A mirrored or reversed model has to come out mirrored or reversed, not
+  // defaulted to the common case.
+  const mirrored = axesFromWheels(wheelCar({ lf: [-0.8, 0.3, 1.3], rf: [0.8, 0.3, 1.3], lr: [-0.8, 0.3, -1], rr: [0.8, 0.3, -1] }));
+  assert.equal(mirrored.left, -1);
+  const reversed = axesFromWheels(wheelCar({ lf: [0.8, 0.3, -1.3], rf: [-0.8, 0.3, -1.3], lr: [0.8, 0.3, 1], rr: [-0.8, 0.3, 1] }));
+  assert.equal(reversed.front, -1);
+});
+
+test('wheels stacked at the origin give no answer rather than a wrong one', async () => {
+  // A confident wrong answer is worse than none: everything downstream that
+  // asks which way is forward would be silently mirrored.
+  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
+  const flat = wheelCar({ lf: [0, 0, 0], rf: [0, 0, 0], lr: [0, 0, 0], rr: [0, 0, 0] });
+  assert.equal(axesFromWheels(flat), null);
+  assert.equal(axesFromWheels({ meshes: [], dummies: [] }), null, 'no wheels, no answer');
+});
+
+test('the shipped profiles record axes measured from the wheels', async () => {
+  const { loadProfile } = await import('../src/profile.mjs');
+  for (const [file, wb] of [['../cars/rss_formula_rss_4.json', 2.74], ['../cars/abarth500.json', 2.30]]) {
+    const p = await loadProfile(new URL(file, import.meta.url));
+    const a = p.calibration.axes;
+    assert.equal(a.from, 'wheels');
+    assert.equal(a.left, '+X');
+    assert.equal(a.front, '+Z');
+    // A figure a person can check against a spec sheet is the point of storing it.
+    assert.ok(Math.abs(a.wheelbase - wb) < 0.02, `${file}: wheelbase ${a.wheelbase}, expected ~${wb}`);
+  }
+});
+
 test('re-tagging clears shared-rect metadata that no longer applies', async () => {
   // Tagging runs again on every regeneration. A panel that used to share its
   // rectangle may not any more, and a stale `instances: 4` is worse than no
