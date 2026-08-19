@@ -975,3 +975,24 @@ test('the portable livery expands onto two cars it was not written for', async (
     assert.ok(regions.some((r) => r.panel), 'tag-selected regions carry a concrete panel');
   }
 });
+
+test('an empty or malformed tag selector is refused, not silently everything', async () => {
+  // `every` on an empty list is vacuously true, so tags: [] would have matched
+  // every panel and painted the whole texture — the loudest possible version of
+  // this project's quietest bug.
+  const { expandRegions } = await import('../src/profile.mjs');
+  const p = tagCar({}, {
+    a: { rect: [0, 0, 0.3, 0.3], tags: ['left'] },
+    b: { rect: [0.5, 0, 0.3, 0.3], tags: ['right'] },
+  });
+  for (const bad of [[], 'left', {}, null]) {
+    assert.throws(
+      () => expandRegions(p, 'body', [{ treatment: 'fill', tags: bad }]),
+      /non-empty array of tag names/,
+      JSON.stringify(bad),
+    );
+  }
+  // A region with no tags at all is untouched — that is the ordinary case.
+  const { regions } = expandRegions(p, 'body', [{ treatment: 'fill', panel: 'a' }]);
+  assert.equal(regions.length, 1);
+});

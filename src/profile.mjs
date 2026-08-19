@@ -371,7 +371,19 @@ export function expandRegions(profile, role, regions = []) {
   const notes = [];
 
   for (const region of regions) {
-    if (!region.tags) { out.push(region); continue; }
+    if (region.tags === undefined) { out.push(region); continue; }
+
+    // An empty array would match EVERY panel, because `every` on an empty list
+    // is vacuously true — so `tags: []` would silently paint the whole texture
+    // instead of nothing. A non-array fails inside `every` with "tags.every is
+    // not a function", which says nothing useful about the livery.
+    if (!Array.isArray(region.tags) || region.tags.length === 0) {
+      throw new Error(
+        `"${region.treatment ?? 'region'}" on role "${role}" has tags: ` +
+        `${JSON.stringify(region.tags)}. It must be a non-empty array of tag names, ` +
+        `e.g. tags: ['left', 'visible'].`
+      );
+    }
     if (region.panel) {
       throw new Error(
         `A region on role "${role}" has both "panel" and "tags". Use one: ` +
