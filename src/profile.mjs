@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { VOCABULARY } from './engine/classify.mjs';
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
@@ -62,6 +63,8 @@ export function validateProfile(p, source = '<inline>') {
     }
   }
 
+  validateBind(p, err);
+
   for (const [role, panels] of Object.entries(p.panels ?? {})) {
     if (!p.textures[role]) err(`panels are defined for unknown texture role "${role}"`);
     for (const [name, panel] of Object.entries(panels)) {
@@ -71,6 +74,106 @@ export function validateProfile(p, source = '<inline>') {
   }
 
   return p;
+}
+
+// ---------------------------------------------------------------------------
+// Bindings: the layer between what a livery asks for and what a car calls it.
+//
+// A livery says `body`. What `body` IS varies completely between cars — across a
+// 235-car fleet the generated role names came to 1912 distinct names, 1082 of
+// them on exactly one car, and a role literally called `body` existed on 86.
+// So the car profile carries the translation:
+//
+//   "bind": {
+//     "body":  { "roles": ["body", "body_2"], "source": "human" },
+//     "belts": { "roles": ["belts_2"], "confidence": 0.71, "source": "auto" },
+//     "wing":  { "roles": [], "source": "human" }
+//   }
+//
+// One form only, deliberately. An entry is always an object with a `roles`
+// array, and an EMPTY array is a positive statement that this car does not have
+// the surface — different from the term being absent because nobody got round to
+// it. `source` distinguishes a machine proposal from a human confirmation, and
+// regeneration must never overwrite the latter.
+//
+// `roles` is a list rather than a single name because a term genuinely can map
+// to more than one texture: the RSS4 carries the bodywork across
+// RSS4_Chassis_D and RSS4_Chassis_C, 25% and 17% of the car's surface.
+// ---------------------------------------------------------------------------
+
+const BIND_SOURCES = new Set(['auto', 'human']);
+
+function validateBind(p, err) {
+  for (const [term, entry] of Object.entries(p.bind ?? {})) {
+    // The vocabulary is fixed on purpose. If any profile can invent a term then
+    // a livery cannot rely on one, and the whole layer buys nothing.
+    if (!VOCABULARY[term]) {
+      err(`bind has an unknown term "${term}". The vocabulary is fixed so that liveries can ` +
+          `rely on it: ${Object.keys(VOCABULARY).join(', ')}`);
+    }
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      err(`bind."${term}" must be an object like { "roles": [...], "source": "auto" }. ` +
+          `Use an empty roles array to say this car has no such surface.`);
+    }
+    if (!Array.isArray(entry.roles)) err(`bind."${term}".roles must be an array of texture role names`);
+    if (!BIND_SOURCES.has(entry.source)) {
+      err(`bind."${term}".source must be "auto" (proposed by measurement) or ` +
+          `"human" (confirmed by a person), got ${JSON.stringify(entry.source)}`);
+    }
+    if (entry.confidence !== undefined &&
+        (typeof entry.confidence !== 'number' || entry.confidence < 0 || entry.confidence > 1)) {
+      err(`bind."${term}".confidence must be a number in 0..1, got ${JSON.stringify(entry.confidence)}`);
+    }
+    for (const role of entry.roles) {
+      // The whole point of the layer is that a livery stops guessing at names.
+      // A binding pointing at a role that does not exist would reintroduce the
+      // silent-no-op this project keeps rediscovering.
+      if (!p.textures[role]) {
+        err(`bind."${term}" points at texture role "${role}", which this profile does not define. ` +
+            `Known roles: ${Object.keys(p.textures).join(', ')}`);
+      }
+    }
+  }
+}
+
+/**
+ * The texture roles a vocabulary term resolves to on this car.
+ *
+ * Returns `{ roles, source, confidence, status }` where status is one of:
+ *   'bound'       — the car has this surface and the roles are listed
+ *   'absent'      — the car genuinely has no such surface (empty roles array)
+ *   'unbound'     — nobody has said either way
+ *
+ * It never throws. A design asking for a surface a car lacks should degrade to a
+ * reported no-op, not an error: a Formula car has no numberPlate and a van has
+ * no wing, and neither fact should stop a build. The reporting is the point —
+ * painting nothing looks exactly like painting something.
+ */
+export function binding(profile, term) {
+  const entry = profile.bind?.[term];
+  if (!entry) return { roles: [], source: null, confidence: undefined, status: 'unbound' };
+  return {
+    roles: entry.roles,
+    source: entry.source,
+    confidence: entry.confidence,
+    status: entry.roles.length ? 'bound' : 'absent',
+  };
+}
+
+/**
+ * Merge freshly proposed bindings into whatever the profile already had.
+ *
+ * A human confirmation is never overwritten. This is the same guarantee
+ * `aliases` already carries, and for the same reason: a profile is regenerated
+ * every time the model or the classifier changes, and losing hand-checked work
+ * on each regeneration would make confirming it pointless.
+ */
+export function mergeBindings(existing = {}, proposed = {}) {
+  const out = { ...proposed };
+  for (const [term, entry] of Object.entries(existing)) {
+    if (entry?.source === 'human') out[term] = entry;
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));

@@ -81,6 +81,13 @@ Terms are **not** required to exist. A Formula car has no `numberPlate` and a
 Transit has no `wing`; a livery targeting a missing term is a no-op that gets
 reported, not an error.
 
+The vocabulary is also **closed**: a profile binding a term outside it is
+rejected. If any profile can invent a term then no livery can rely on one, and
+the layer buys nothing. Terms the classifier cannot yet score — most of them —
+are still perfectly valid targets for a human binding; the vocabulary is the
+contract a livery writes against, and it should not be limited to whatever a
+classifier currently happens to be good at.
+
 ### The binding, in the car profile
 
 A new top-level `bind` block. Values reference roles that already exist in
@@ -88,18 +95,24 @@ A new top-level `bind` block. Values reference roles that already exist in
 
 ```jsonc
 "bind": {
-  "body":   { "role": "skin_00", "confidence": 0.94, "source": "auto" },
-  "rims":   { "role": "rimFace", "source": "human" },
-  "belts":  { "role": "belts_2", "panels": ["straps"], "source": "human" },
-  "wing":   null   // this car has none; say so explicitly
+  "body":        { "roles": ["body", "bodyRear"], "source": "human" },
+  "belts":       { "roles": ["belts_2"], "confidence": 0.71, "source": "auto" },
+  "numberPlate": { "roles": [], "source": "human" }
 }
 ```
 
 `source: "auto"` means the classifier proposed it and nobody looked. `"human"`
 means someone confirmed it, and regeneration must never overwrite it — the same
-guarantee `aliases` already has. An explicit `null` is a positive statement that
-the car lacks the term, which is different from the term being absent because
-nobody got round to it.
+guarantee `aliases` already has.
+
+Two details changed during implementation. `roles` is a **list**: the RSS4
+carries its bodywork across two chassis textures at 25% and 17% of the car's
+surface, and a one-role binding would silently paint half the car. And absence is
+an **empty array** rather than `null`, so there is exactly one shape to parse;
+`{ "roles": [], "source": "human" }` is someone stating that this car has no
+numberplate, which is a different thing from the term being missing because
+nobody got round to it. The classifier is not allowed to make that claim — a term
+it cannot find a candidate for is simply left out.
 
 ### Panel tags
 
@@ -134,13 +147,16 @@ in-game.
 
 ## Phases
 
-**One — measure and propose.** Move the scoring out of `tools/survey.mjs` and into
+**One — measure and propose.** *(done — `src/engine/classify.mjs`, `--explain`,
+`tools/evaluate.mjs`.)* Move the scoring out of `tools/survey.mjs` and into
 `src/engine/classify.mjs` as a real module, emitting ranked candidates with their
 evidence rather than a single answer. Add `liverykit --explain <car>` to print the
 ranking. This is the piece with the strongest evidence behind it and it changes
 nothing downstream.
 
-**Two — the format.** Add `bind` to the profile schema, teach `profileFromKn5` to
+**Two — the format.** *(done — `bind` in the profile schema, `binding()` and
+`mergeBindings()` in `src/profile.mjs`, RSS4 bound with 20 human-confirmed
+entries.)* Add `bind` to the profile schema, teach `profileFromKn5` to
 populate it from the classifier at `source: "auto"`, and make regeneration
 preserve anything marked `"human"`. Add a schema test the way the existing
 integrity tests work.

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { stat, mkdir, writeFile } from 'node:fs/promises';
+import { stat, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
-import { loadProfile, doNotPaint } from '../src/profile.mjs';
+import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
@@ -111,6 +111,17 @@ if (values['from-kn5']) {
     skinsDir: values.skins ? resolve(values.skins) : null,
     log: console.log,
   });
+  // Regenerating must never cost hand-checked work. If a profile for this car
+  // already exists, anything a human confirmed in its `bind` block survives; the
+  // machine's own earlier guesses are replaced by the current ones.
+  const priorPath = join(ROOT, 'cars', `${profile.id}.json`);
+  const prior = await readFile(priorPath, 'utf8').then(JSON.parse).catch(() => null);
+  if (prior?.bind) {
+    const kept = Object.entries(prior.bind).filter(([, e]) => e?.source === 'human').length;
+    profile.bind = mergeBindings(prior.bind, profile.bind);
+    if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
+  }
+
   const outPath = join(values.out, `${profile.id}.json`);
   await mkdir(values.out, { recursive: true });
   await writeFile(outPath, JSON.stringify(profile, null, 2) + '\n');
