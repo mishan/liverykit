@@ -159,6 +159,37 @@ export function applyFit(regions, fit, { profile, role, used = new Set(), notes 
   return { regions: out, notes };
 }
 
+// ---------------------------------------------------------------------------
+// Coordinates.
+//
+// `at` is PANEL-RELATIVE everywhere in this system: [0, 0, 1, 1] is the whole
+// panel and [0.5, 0, 0.5, 1] its rear half. An editor that lets you drag on a
+// texture works in absolute texture fractions, because that is what a mouse
+// gives you, so it converts on save. Introducing a second meaning for `at`
+// depending on where it was written would be much worse than a conversion.
+// ---------------------------------------------------------------------------
+
+const r4 = (n) => Math.round(n * 10000) / 10000;
+
+/** Panel-relative `at` -> absolute texture fractions. */
+export function toAbsolute(panelRect, at = [0, 0, 1, 1]) {
+  const [px, py, pw, ph] = panelRect;
+  return [r4(px + at[0] * pw), r4(py + at[1] * ph), r4(at[2] * pw), r4(at[3] * ph)];
+}
+
+/**
+ * Absolute texture fractions -> panel-relative `at`.
+ *
+ * A panel with zero width or height cannot express anything relative to itself;
+ * those are dropped at profile generation, but an editor should not divide by
+ * zero if one ever reaches it.
+ */
+export function toPanelRelative(panelRect, abs) {
+  const [px, py, pw, ph] = panelRect;
+  if (!pw || !ph) return [0, 0, 1, 1];
+  return [r4((abs[0] - px) / pw), r4((abs[1] - py) / ph), r4(abs[2] / pw), r4(abs[3] / ph)];
+}
+
 /** Ids a fit mentions that the livery does not declare. */
 export function unusedFitIds(fit, used) {
   return Object.keys(fit?.regions ?? {}).filter((id) => !used.has(id));
