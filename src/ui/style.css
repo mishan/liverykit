@@ -1,0 +1,92 @@
+/* Dark, because you are looking at a dark car texture for an hour and a white
+   page beside it is exhausting. No framework: the whole tool is three files. */
+:root {
+  --bg: #0e1116;
+  --panel: #161b23;
+  --line: #263041;
+  --ink: #d8dee9;
+  --muted: #7d8899;
+  --accent: #00f0ff;
+  --hot: #ff2d95;
+  --warn: #ffb454;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  height: 100vh; display: flex; flex-direction: column;
+}
+header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+h1 { font-size: 14px; font-weight: 600; margin: 0; }
+h1 .on { color: var(--muted); font-weight: 400; }
+h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 18px 0 6px; font-weight: 600;
+}
+h2:first-child { margin-top: 0; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); font-weight: 400; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
+code { font-family: ui-monospace, monospace; color: var(--accent); }
+
+main { flex: 1; display: grid; grid-template-columns: 280px 1fr 300px; min-height: 0; }
+aside {
+  padding: 14px; overflow-y: auto; background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+#right { border-right: 0; border-left: 1px solid var(--line); }
+
+button, select {
+  font: inherit; color: var(--ink); background: #1e2632;
+  border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
+}
+button:not(:disabled):hover { border-color: var(--accent); cursor: pointer; }
+button:disabled { opacity: 0.45; }
+select { width: 100%; }
+
+ul { list-style: none; margin: 0; padding: 0; }
+li {
+  padding: 5px 8px; border-radius: 4px; cursor: pointer;
+  display: flex; align-items: baseline; gap: 6px;
+}
+li:hover { background: #1e2632; }
+li.sel { background: #1e2632; box-shadow: inset 2px 0 0 var(--accent); }
+li.off { opacity: 0.4; }
+li .id { font-family: ui-monospace, monospace; }
+li .meta { color: var(--muted); font-size: 11px; margin-left: auto; }
+li.locked { cursor: default; opacity: 0.5; }
+
+#canvas { display: flex; flex-direction: column; align-items: center; padding: 14px; min-width: 0; }
+#stage {
+  position: relative; flex: 1; min-height: 0; aspect-ratio: 1;
+  border: 1px solid var(--line); background: #05070a;
+}
+#texture, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+#texture svg { width: 100%; height: 100%; display: block; }
+
+.panelrect { fill: transparent; stroke: #ffffff22; stroke-width: 1; cursor: pointer; }
+.panelrect:hover { stroke: var(--accent); stroke-width: 2; }
+.panelrect.host { stroke: var(--accent); stroke-dasharray: 6 4; stroke-width: 2; }
+.ghost { fill: transparent; stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.box { fill: #00f0ff14; stroke: var(--accent); stroke-width: 2; cursor: move; }
+.handle { fill: var(--accent); cursor: nwse-resize; }
+
+#inspector.empty { color: var(--muted); }
+#inspector label { display: block; margin: 8px 0 2px; color: var(--muted); font-size: 11px; }
+#inspector .row { display: flex; gap: 6px; align-items: center; }
+#inspector input[type=number] {
+  width: 100%; font: inherit; font-family: ui-monospace, monospace;
+  background: #1e2632; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 3px 6px;
+}
+pre {
+  background: #05070a; border: 1px solid var(--line); border-radius: 5px;
+  padding: 8px; font-size: 11px; overflow-x: auto; max-height: 260px;
+  font-family: ui-monospace, monospace; color: var(--muted);
+}
+.status { color: var(--muted); font-size: 12px; }
+.status.dirty { color: var(--warn); }
+.note { color: var(--warn); font-size: 12px; margin-top: 6px; }

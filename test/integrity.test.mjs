@@ -1414,3 +1414,69 @@ test('the shipped fits apply cleanly to the cars they name', async () => {
     assert.deepEqual(unusedFitIds(fit, used), [], `${car}: fit ids that matched nothing`);
   }
 });
+
+// --- the fitting editor -----------------------------------------------------
+
+test('panel-relative and absolute coordinates round-trip exactly', async () => {
+  // The editor works in absolute texture fractions because that is what a mouse
+  // gives you, and converts once on the way into the fit. `at` never acquires a
+  // second meaning depending on where it was written.
+  const { toAbsolute, toPanelRelative } = await import('../src/fit.mjs');
+  const panel = [0.2, 0.1, 0.4, 0.5];
+  for (const at of [[0, 0, 1, 1], [0.5, 0, 0.5, 1], [0.25, 0.3, 0.4, 0.2]]) {
+    assert.deepEqual(toPanelRelative(panel, toAbsolute(panel, at)), at, JSON.stringify(at));
+  }
+  assert.deepEqual(toAbsolute([0.2, 0.1, 0.4, 0.5], [0.5, 0, 0.5, 1]), [0.4, 0.1, 0.2, 0.5]);
+  // A degenerate panel cannot express anything relative to itself, and must not
+  // divide by zero on the way to saying so.
+  assert.deepEqual(toPanelRelative([0, 0, 0, 0], [0, 0, 1, 1]), [0, 0, 1, 1]);
+});
+
+test('the editor reports where regions actually landed, not where it thinks they did', async () => {
+  // The overlay draws the rectangle the RENDERER resolved, so if the two ever
+  // disagree you can see it rather than dragging a box that has quietly stopped
+  // corresponding to the artwork.
+  const { renderSurface, editorState } = await import('../src/ui/server.mjs');
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const { loadFit } = await import('../src/fit.mjs');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit });
+  assert.ok(state.surfaces.length > 3, 'editable surfaces');
+  assert.ok(state.surfaces.every((s) => s.panels.length >= 0 && s.file));
+  assert.ok(Object.keys(state.regionIds).includes('number-left'));
+
+  const out = renderSurface({ livery, profile, fit, role });
+  assert.match(out.svg, /^<svg /, 'a self-contained document the browser can render');
+  assert.deepEqual(out.notes, [], `unexpected notes: ${out.notes.map((n) => n.text)}`);
+
+  // The fit moves the number onto the door; the reported placement must agree.
+  const num = out.placed.find((p) => p.id === 'number-left');
+  assert.equal(num.panel, 'left_mid');
+  const door = profile.panels[role].left_mid.rect;
+  assert.ok(num.abs[0] >= door[0] && num.abs[0] + num.abs[2] <= door[0] + door[2] + 1e-9,
+    `placement ${num.abs} should sit inside the panel ${door}`);
+
+  // And a region the fit drops should not be reported as placed at all.
+  assert.equal(out.placed.find((p) => p.id === 'driver-left'), undefined);
+});
+
+test('a stale fit reaches the editor as a note rather than a crash', async () => {
+  const { renderSurface } = await import('../src/ui/server.mjs');
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const out = renderSurface({
+    livery, profile, role,
+    fit: { livery: 'x', car: 'abarth500', regions: { 'no-such-region': { drop: true } } },
+  });
+  assert.equal(out.notes.length, 1);
+  assert.match(out.notes[0].text, /matches no region/);
+  assert.ok(out.placed.length > 0, 'and everything else still renders');
+});
