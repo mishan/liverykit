@@ -850,3 +850,34 @@ test('the portable livery renders on two cars that share no texture names', asyn
   assert.equal([...filesA].filter((f) => filesB.has(f)).length, 1,
     'only ac_crew.dds is common to both cars — everything else is named differently');
 });
+
+test('the build report separates what was not painted from what merely warrants a look', async () => {
+  // Lumping them together makes the report a liar: an unconfirmed binding WAS
+  // painted, and counting it as missing both inflates the number and buries the
+  // signal that actually matters.
+  const { isMissingNote } = await import('../src/build.mjs');
+  const { resolveTargets } = await import('../src/profile.mjs');
+
+  for (const status of ['absent', 'unbound', 'unencodable', 'no-match']) {
+    assert.equal(isMissingNote({ status }), true, status);
+  }
+  for (const status of ['unconfirmed', 'unverified']) {
+    assert.equal(isMissingNote({ status }), false, status);
+  }
+
+  // And the statuses resolveTargets actually emits land on the right side.
+  const p = {
+    id: 'c',
+    textures: { chassis: { file: 'c.dds', width: 64, height: 64 } },
+    bind: {
+      body: { roles: ['chassis'], confidence: 0.4, source: 'auto' },
+      wing: { roles: [], source: 'human' },
+    },
+  };
+  const { targets, notes } = resolveTargets(p, {
+    name: 'L', surfaces: { body: spec, wing: spec, floor: spec },
+  });
+  assert.equal(targets.length, 1, 'the auto-bound surface is painted');
+  assert.deepEqual(notes.filter(isMissingNote).map((n) => n.term).sort(), ['floor', 'wing']);
+  assert.deepEqual(notes.filter((n) => !isMissingNote(n)).map((n) => n.term), ['body']);
+});
