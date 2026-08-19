@@ -144,6 +144,9 @@ export function guessRole(file) {
   if (/belt/.test(n)) return 'belts';
   if (/interior|cockpit|^int[_-]/.test(n)) return 'interior';
   if (/logo|emblem|badge/.test(n)) return 'logo';
+  // Heat-shield foil: gold as shipped, and the only thing on the RSS4 that stayed
+  // off-palette after everything else was painted.
+  if (/foil|heatshield|heat_shield/.test(n)) return 'heatShield';
 
   if (/rim|wheel|brake/.test(n)) return 'rims';
   if (/helmet|casco/.test(n)) return 'helmet';
