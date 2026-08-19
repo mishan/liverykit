@@ -444,3 +444,23 @@ test('rotate turns a treatment without moving the rect it was asked for', async 
   assert.match(spun.base, /rotate\(90,30,50\)/);
   assert.match(spun.base, /x="-10" y="40" width="80" height="20"/);
 });
+
+test('an island collapsed to a line in UV space is dropped, not emitted as a panel', async () => {
+  // Street cars are full of these: trim strips and badges whose unwrap pins them
+  // to a single row of texels. The rect comes out [0, 0.4, 1, 0] — no area, so
+  // nothing can be drawn on it. Emitting them buried a quarter of one profile's
+  // panels in placeholders that no livery could ever address.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { findIslands } = await import('../src/engine/islands.mjs');
+
+  const flat = panelMesh('Trim_Strip', 0.4, 1);
+  for (const v of flat.verts) v[7] = -0.4;                    // every vertex on one V line
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [flat, panelMesh('Real_Panel', 0.6, 1)] }));
+
+  const named = (n) => m.meshes.filter((x) => x.name === n);
+  assert.equal(findIslands(m, named('Trim_Strip')).length, 0, 'zero-height island should be dropped');
+
+  const good = findIslands(m, named('Real_Panel'));
+  assert.equal(good.length, 1, 'a panel with real area still comes through');
+  assert.ok(good[0].rect[3] > 0.5, `and keeps its height, got ${good[0].rect[3]}`);
+});

@@ -307,16 +307,16 @@ export default {
       ],
     },
 
-    // Koni damper bodies. These ship bright yellow and were the last
-    // saturated thing on the car that owed nothing to the palette — two 32x32
-    // textures, easy to miss precisely because they are tiny.
-    koni_spring_1: {
+    // Exhaust heat-shield foil. Ships gold — rgb(107,92,12) — and sits only on
+    // the right-hand side, because that is where the exhaust exits. It was the
+    // last off-palette thing on the car, and the asymmetry is what gave it
+    // away: a livery bug would have been symmetric.
+    heatShield: {
       background: 'ink',
-      regions: [{ treatment: 'stripe', at: [0, 0.35, 1, 0.30], color: 'accent' }],
-    },
-    koni_spring_2: {
-      background: 'ink',
-      regions: [{ treatment: 'stripe', at: [0, 0.35, 1, 0.30], color: 'accent' }],
+      regions: [
+        { treatment: 'halftone', at: [0, 0, 1, 1], color: 'accent', cell: 40, dot: 0.14, start: 0, end: 200 },
+        { treatment: 'scanlines', opacity: 0.12 },
+      ],
     },
 
     // The car's SECOND body texture. Only visible by reading the model: no

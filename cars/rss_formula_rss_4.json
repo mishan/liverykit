@@ -180,13 +180,6 @@
       "alpha": true,
       "sizeFrom": "model"
     },
-    "body_3": {
-      "file": "RSS4_Chassis_Main_Foil.dds",
-      "width": 1024,
-      "height": 1024,
-      "alpha": true,
-      "sizeFrom": "model"
-    },
     "logo": {
       "file": "LOGO_X.dds",
       "width": 512,
@@ -338,6 +331,14 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "model"
+    },
+    "heatShield": {
+      "file": "RSS4_Chassis_Main_Foil.dds",
+      "width": 1024,
+      "height": 1024,
+      "alpha": true,
+      "sizeFrom": "model",
+      "notes": "Exhaust heat-shield foil, gold as shipped. Right-hand side only, because that is the side the exhaust exits."
     }
   },
   "doNotPaint": [
@@ -10739,7 +10740,6 @@
     "mirror": {},
     "rims_2": {},
     "glass_2": {},
-    "body_3": {},
     "logo": {},
     "belts_3": {},
     "wheelLogo": {},
@@ -13688,7 +13688,8 @@
         ]
       }
     },
-    "rimsBlur": {}
+    "rimsBlur": {},
+    "heatShield": {}
   },
   "notes": "The original 2017 Race Sim Studio car, not the 2024 one. Generated from the model.",
   "aliases": {
