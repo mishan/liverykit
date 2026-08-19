@@ -1291,3 +1291,126 @@ test('a `once` region lands on the primary texture only', async () => {
   const direct = resolveTargets(p, { name: 'L', paint: { rear: spec } });
   assert.equal(direct.targets[0].primary, true);
 });
+
+// --- fits -------------------------------------------------------------------
+
+const fitLivery = () => ({
+  name: 'L',
+  surfaces: {
+    body: {
+      background: 'ink',
+      regions: [
+        { treatment: 'grid' },
+        { id: 'num', treatment: 'text', tags: ['left', 'visible'], limit: 1, at: [0.2, 0.2, 0.6, 0.6], text: '{number}' },
+        { id: 'team', treatment: 'text', tags: ['left'], at: [0, 0.8, 1, 0.1], text: '{team}' },
+      ],
+    },
+  },
+});
+const fitCar = () => ({
+  id: 'c',
+  textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+  panels: {
+    body: {
+      quarter: { rect: [0.0, 0, 0.5, 0.5], tags: ['left', 'visible'] },
+      door: { rect: [0.5, 0, 0.3, 0.3], tags: ['left', 'visible'] },
+    },
+  },
+});
+
+test('a fit moves a region without touching the design', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const { expandRegions } = await import('../src/profile.mjs');
+  const livery = fitLivery();
+  const profile = fitCar();
+
+  const before = expandRegions(profile, 'body', livery.surfaces.body.regions).regions;
+  assert.equal(before.find((r) => r.id === 'num').panel, 'quarter', 'largest panel by default');
+
+  const fit = { livery: 'L', car: 'c', regions: { num: { panel: 'door', at: [0.1, 0.1, 0.8, 0.8] } } };
+  const { regions } = applyFit(livery.surfaces.body.regions, fit, { profile, role: 'body' });
+  const after = expandRegions(profile, 'body', regions).regions;
+  const num = after.find((r) => r.id === 'num');
+  assert.equal(num.panel, 'door', 'an explicit panel beats the tag selection');
+  assert.deepEqual(num.at, [0.1, 0.1, 0.8, 0.8]);
+  assert.equal(num.tags, undefined, 'tags are cleared, or panel and tags would conflict');
+  // The design is untouched — a fit adjusts a copy.
+  assert.deepEqual(livery.surfaces.body.regions[1].at, [0.2, 0.2, 0.6, 0.6]);
+});
+
+test('a fit can drop a region a car has nowhere to put', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const fit = { livery: 'L', car: 'c', regions: { team: { drop: true } } };
+  const { regions } = applyFit(fitLivery().surfaces.body.regions, fit, { profile: fitCar(), role: 'body' });
+  assert.deepEqual(regions.map((r) => r.id), [undefined, 'num']);
+});
+
+test('a stale fit is reported and ignored, never silently obeyed', async () => {
+  // A design gets edited, a profile regenerated, a panel renamed. A fit that
+  // quietly does nothing would be this project's oldest bug one level up.
+  const { applyFit, unusedFitIds } = await import('../src/fit.mjs');
+  const notes = [];
+  const used = new Set();
+  const fit = {
+    livery: 'L', car: 'c',
+    regions: { num: { panel: 'nonexistent' }, 'no-such-region': { drop: true } },
+  };
+  const { regions } = applyFit(fitLivery().surfaces.body.regions, fit, { profile: fitCar(), role: 'body', used, notes });
+
+  const num = regions.find((r) => r.id === 'num');
+  assert.equal(num.panel, undefined, 'the bad override is ignored');
+  assert.deepEqual(num.tags, ['left', 'visible'], 'and the region keeps what the livery gave it');
+  assert.equal(notes[0].status, 'fit-stale');
+  assert.match(notes[0].text, /does not have/);
+  assert.deepEqual(unusedFitIds(fit, used), ['no-such-region']);
+});
+
+test('a fit may adjust placement, and nothing else', async () => {
+  // Left open, this becomes a second livery language. Colours and treatments
+  // belong to the design; a fit says where things go on one car.
+  const { validateFit } = await import('../src/fit.mjs');
+  assert.throws(() => validateFit({ livery: 'L', car: 'c', regions: { a: { color: 'red' } } }),
+    /may not override "color"/);
+  assert.throws(() => validateFit({ livery: 'L', car: 'c', regions: { a: { treatment: 'fill' } } }),
+    /may not override "treatment"/);
+  assert.throws(() => validateFit({ car: 'c' }), /missing "livery"/);
+  assert.doesNotThrow(() => validateFit({
+    livery: 'L', car: 'c', notes: ['free text is fine'],
+    regions: { a: { panel: 'p', at: [0, 0, 1, 1], rotate: 90, drop: false } },
+  }));
+});
+
+test('region ids must be unique across a livery', async () => {
+  // Ids are how a fit addresses a region. Two the same makes an override
+  // ambiguous, which silently adjusts one of them and not the other.
+  const { regionIds } = await import('../src/fit.mjs');
+  const dup = fitLivery();
+  dup.surfaces.body.regions[2].id = 'num';
+  assert.throws(() => regionIds(dup), /uses the region id "num" twice/);
+  assert.deepEqual([...regionIds(fitLivery()).keys()], ['num', 'team']);
+});
+
+test('the shipped fits apply cleanly to the cars they name', async () => {
+  const { loadFit, applyFit, regionIds, unusedFitIds } = await import('../src/fit.mjs');
+  const { loadProfile, expandRegions, binding } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const ids = regionIds(livery);
+
+  for (const car of ['abarth500', 'rss_formula_rss_4']) {
+    const fit = await loadFit(new URL(`../fits/neon-grid-any@${car}.json`, import.meta.url));
+    assert.equal(fit.car, car);
+    assert.equal(fit.livery, 'neon-grid-any');
+    for (const id of Object.keys(fit.regions)) {
+      assert.ok(ids.has(id), `${car}: fit names "${id}", which the livery does not declare`);
+    }
+
+    const profile = await loadProfile(new URL(`../cars/${car}.json`, import.meta.url));
+    const role = binding(profile, 'body').roles[0];
+    const used = new Set();
+    const notes = [];
+    const { regions } = applyFit(livery.surfaces.body.regions, fit, { profile, role, used, notes });
+    expandRegions(profile, role, regions);
+    assert.deepEqual(notes, [], `${car}: ${notes.map((n) => n.text)}`);
+    assert.deepEqual(unusedFitIds(fit, used), [], `${car}: fit ids that matched nothing`);
+  }
+});

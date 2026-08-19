@@ -69,7 +69,9 @@ design, because that is the design.
 ### Prerequisite: regions need names
 
 Regions are anonymous array entries today, so there is nothing for a fit to key
-on. They need an optional `id`, unique within a surface:
+on. They need an optional `id`, unique across the WHOLE livery rather than within
+a surface — that is how a fit refers to them, and a fit should not have to know
+which surface a region lives on:
 
 ```js
 { id: 'number-left', treatment: 'text', tags: ['left', 'visible'], limit: 1, … }
@@ -140,16 +142,28 @@ file, the car profile stays shared, and the difference between "renders" and
 "looks like it was made for this car" becomes a small JSON file someone produced
 by dragging a number onto a door.
 
-## Open questions
+## Questions that are now settled
 
-Whether `at` in a fit should stay panel-relative or become absolute. Relative
-keeps the meaning it has everywhere else; absolute is what a UI naturally
-produces when you drag on a texture. Probably relative, converted on save.
+**`at` stays panel-relative**, the same as everywhere else in this system. A tool
+that lets you drag on a texture naturally produces absolute coordinates and
+should convert them on save, rather than introducing a second meaning for the
+same field.
 
-Whether a fit should be able to add regions rather than only adjust them — a
-sponsor patch that only makes sense on one car. It is tempting and it is how
-these formats become second livery languages, so the first pass should not.
+**A fit may not add regions**, only adjust the ones a design declares. Wanting to
+add one — a sponsor patch that only makes sense on a particular car — is a good
+sign the design needs the change rather than this car's copy of it. Left open,
+the format becomes a second livery language.
 
-Whether fits belong in this repo at all, or alongside the design that needs them.
-Shipping `fits/` for the two example cars is useful documentation; shipping them
-for two hundred is a different project.
+**This repo ships examples, not a catalogue.** `fits/` carries the two cars the
+project already profiles, because a format nobody can see an example of is a
+format nobody implements. Two hundred of them is somebody else's repository.
+
+## Still open
+
+Whether a fit should be able to override which PANEL a region uses per side
+independently of `at` — it can today, and it is not obvious whether that is one
+override or two.
+
+Whether the UI should write `notes` into a fit the way the two shipped examples
+do by hand. The prose in those files is the most useful part of them, and no tool
+is going to produce it.
