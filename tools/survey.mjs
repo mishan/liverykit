@@ -37,7 +37,9 @@
 import { readdir, stat, writeFile, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { parseKn5, meshesUsingTexture, triangles, vertex } from '../src/engine/kn5.mjs';
+import { parseKn5 } from '../src/engine/kn5.mjs';
+import { countSkinOverrides } from '../src/engine/scan.mjs';
+import { textureFeatures } from '../src/engine/classify.mjs';
 
 // A deliberate spread, used when no car ids and no --all are given. If a naming
 // scheme only holds for one class it is not a scheme, it is a coincidence.
@@ -81,98 +83,8 @@ async function bestKn5(dir) {
   return sized.sort((a, b) => b.bytes - a.bytes)[0].path;
 }
 
-/** How many stock skins override each texture file, keyed lowercase. */
-async function skinOverrides(dir) {
-  let names;
-  try {
-    names = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return { skinCount: 0, counts: new Map() };
-  }
-  const counts = new Map();
-  let skinCount = 0;
-  for (const e of names) {
-    if (!e.isDirectory()) continue;
-    let files;
-    try { files = await readdir(join(dir, e.name)); } catch { continue; }
-    skinCount++;
-    for (const f of files) {
-      if (!/\.(dds|png)$/i.test(f)) continue;
-      const k = f.toLowerCase();
-      counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-  }
-  return { skinCount, counts };
-}
-
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
-/** Per-texture geometry: area, where it sits, and whether it straddles the centreline. */
-function geometry(model) {
-  const areaOf = new Map();
-  const boxOf = new Map();
-  let X0 = Infinity, X1 = -Infinity, Y0 = Infinity, Y1 = -Infinity, Z0 = Infinity, Z1 = -Infinity;
-
-  for (const mesh of model.meshes) {
-    let a = 0;
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (const [i, j, k] of triangles(model, mesh)) {
-      const p0 = vertex(model, mesh, i), p1 = vertex(model, mesh, j), p2 = vertex(model, mesh, k);
-      const e1 = [p1.x - p0.x, p1.y - p0.y, p1.z - p0.z];
-      const e2 = [p2.x - p0.x, p2.y - p0.y, p2.z - p0.z];
-      const c = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-      a += Math.hypot(c[0], c[1], c[2]) / 2;
-      for (const p of [p0, p1, p2]) {
-        if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
-        if (p.y < y0) y0 = p.y; if (p.y > y1) y1 = p.y;
-        if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z;
-      }
-    }
-    areaOf.set(mesh, a);
-    if (x0 <= x1) {
-      boxOf.set(mesh, [x0, x1, y0, y1, z0, z1]);
-      // The car's own extent comes from meshes with real geometry only. An empty
-      // mesh would otherwise drag the bounds to infinity and normalise everything
-      // to zero.
-      if (x0 < X0) X0 = x0; if (x1 > X1) X1 = x1;
-      if (y0 < Y0) Y0 = y0; if (y1 > Y1) Y1 = y1;
-      if (z0 < Z0) Z0 = z0; if (z1 > Z1) Z1 = z1;
-    }
-  }
-
-  const totalArea = [...areaOf.values()].reduce((a, b) => a + b, 0) || 1;
-  const span = (lo, hi) => (hi - lo) || 1;
-
-  return function describe(file) {
-    const ms = meshesUsingTexture(model, file);
-    let area = 0;
-    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
-    for (const m of ms) {
-      area += areaOf.get(m) ?? 0;
-      const b = boxOf.get(m);
-      if (!b) continue;
-      if (b[0] < x0) x0 = b[0]; if (b[1] > x1) x1 = b[1];
-      if (b[2] < y0) y0 = b[2]; if (b[3] > y1) y1 = b[3];
-      if (b[4] < z0) z0 = b[4]; if (b[5] > z1) z1 = b[5];
-    }
-    if (!ms.length || x0 > x1) return { cover: 0, meshes: ms.length, box: null, straddles: false };
-
-    // Normalised 0..1 against the whole car, so "high and central" reads the
-    // same on a Formula car and a Transit.
-    const box = [
-      r3((x0 - X0) / span(X0, X1)), r3((x1 - X0) / span(X0, X1)),
-      r3((y0 - Y0) / span(Y0, Y1)), r3((y1 - Y0) / span(Y0, Y1)),
-      r3((z0 - Z0) / span(Z0, Z1)), r3((z1 - Z0) / span(Z0, Z1)),
-    ];
-    // Straddling the centreline separates bodywork from a single corner part.
-    // Four wheels sharing one texture also straddle, which is exactly the case
-    // that breaks the assumption that one panel is one part.
-    const halfWidth = Math.max(Math.abs(X0), Math.abs(X1)) || 1;
-    const straddles = x0 < -0.08 * halfWidth && x1 > 0.08 * halfWidth;
-
-    return { cover: r3(area / totalArea), meshes: ms.length, box, straddles };
-  };
-}
 
 // --- argument handling ------------------------------------------------------
 
@@ -243,20 +155,17 @@ for (const { id, klass } of todo) {
       }
     }
     const model = await parseKn5(kn5, { keepTextureData: false });
-    const describe = geometry(model);
-    const { skinCount, counts } = await skinOverrides(join(carsDir, id, 'skins'));
+    const { skinCount, counts } = await countSkinOverrides(join(carsDir, id, 'skins'));
 
-    // Shader names per texture. A material shader is a stronger statement of
-    // intent than a filename: an author picks it for what the surface IS.
-    const shadersFor = new Map();
-    for (const mesh of model.meshes) {
-      const mat = model.materials[mesh.materialId];
-      if (!mat) continue;
-      for (const tex of Object.values(mat.slots)) {
-        if (!shadersFor.has(tex)) shadersFor.set(tex, new Set());
-        shadersFor.get(tex).add(mat.shader);
-      }
-    }
+    // The measurement itself lives in the engine, so the survey and the shipped
+    // classifier cannot drift apart. Two copies of the area maths would be two
+    // different accuracy figures within a month.
+    const visibleByFile = new Map();
+    for (const [role, v] of visOf) visibleByFile.set(prof.textures[role].file, v);
+    const features = textureFeatures(model, {
+      roles: prof.textures, skinCounts: counts, skinCount, visibleByFile,
+    });
+    const byRole = new Map(features.map((f) => [f.role, f]));
 
     const panels = Object.fromEntries(Object.entries(prof.panels).map(([r, p]) => [r, Object.keys(p).length]));
     results.push({
@@ -264,14 +173,14 @@ for (const { id, klass } of todo) {
       model: basename(kn5),
       skinCount,
       roles: Object.fromEntries(Object.entries(prof.textures).map(([role, t]) => {
-        const g = describe(t.file);
+        const f = byRole.get(role);
         return [role, {
           file: t.file, w: t.width, h: t.height,
           panels: panels[role] ?? 0,
-          cover: g.cover, meshes: g.meshes, box: g.box, straddles: g.straddles,
-          ...(visOf.has(role) ? { visible: visOf.get(role) } : {}),
+          cover: f.area, meshes: f.meshes, box: f.box, straddles: f.straddles,
+          ...(typeof f.visible === 'number' ? { visible: f.visible } : {}),
           skins: counts.get(t.file.toLowerCase()) ?? 0,
-          shaders: [...(shadersFor.get(t.file) ?? [])],
+          shaders: f.shaders,
         }];
       })),
       doNotPaint: prof.doNotPaint.length,

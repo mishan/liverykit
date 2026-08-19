@@ -63,6 +63,40 @@ export async function scanSkins(dir) {
 }
 
 /**
+ * Count how many stock skins override each texture file.
+ *
+ * Distinct from `scanSkins`, which dedupes across skins to describe the textures
+ * themselves. Here the COUNT is the point: a file that every skin replaces is
+ * the author saying outright that this surface varies per livery, and that is
+ * one of the signals that identifies bodywork without reference to a filename.
+ *
+ * Keys are lowercased, since NTFS does not distinguish case and neither should
+ * this.
+ */
+export async function countSkinOverrides(dir) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return { skinCount: 0, counts: new Map() };
+  }
+  const counts = new Map();
+  let skinCount = 0;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    let files;
+    try { files = await readdir(join(dir, e.name)); } catch { continue; }
+    skinCount++;
+    for (const f of files) {
+      if (!/\.(dds|png)$/i.test(f)) continue;
+      const k = f.toLowerCase();
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+  }
+  return { skinCount, counts };
+}
+
+/**
  * Classify a texture by filename and encoding. Painting over a normal map or a
  * shader map does not give you a recoloured car — it corrupts surface lighting.
  */
