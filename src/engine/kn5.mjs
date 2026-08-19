@@ -131,6 +131,11 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   // at the origin — which looks fine until you try to reason about where
   // anything is on the car. Transforms are accumulated down the tree here.
   const meshes = [];
+  // Dummy nodes are kept as well as meshes. A dummy carries a transform and
+  // nothing else, which sounds skippable until you need the position of
+  // something that is defined by its node rather than by its geometry — a wheel
+  // centre, for instance, which AC places by the WHEEL_xx node's translation.
+  const dummies = [];
   const readNode = (depth, parentPath, parentMatrix) => {
     const type = c.u32();
     const name = c.str();
@@ -143,6 +148,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
       const m = new Float32Array(16);
       for (let i = 0; i < 16; i++) m[i] = c.f32();
       world = multiply(m, parentMatrix);
+      dummies.push({ name, path: nodePath, depth, world });
     } else if (type === 2 || type === 3) {
       c.skip(3);                          // castShadows, visible, transparent
       let stride = 44;
@@ -176,7 +182,13 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   // An exact-length parse is the whole validation strategy: any misread field
   // shifts every subsequent offset, so finishing precisely at EOF is very
   // unlikely to happen by accident.
-  if (c.o !== buf.length) {
+  //
+  // There is exactly one legitimate reason to finish early: an ENCRYPTED model,
+  // where the readable part ends precisely where it should and a protected blob
+  // follows it. That is a different situation from a corrupt or unknown layout
+  // and deserves a different answer.
+  const encrypted = trailingEncryption(buf, c.o);
+  if (c.o !== buf.length && !encrypted) {
     throw new Error(
       `${path}: parser finished at byte ${c.o} but the file is ${buf.length} bytes ` +
       `(${buf.length - c.o > 0 ? 'short by' : 'over by'} ${Math.abs(buf.length - c.o)}).\n` +
@@ -185,7 +197,43 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     );
   }
 
-  return { version, textures, materials, meshes, buf };
+  return { version, textures, materials, meshes, dummies, buf, encrypted };
+}
+
+/**
+ * Custom Shaders Patch encrypted models.
+ *
+ * Some mod authors publish a kn5 whose geometry is intact but whose textures
+ * have been replaced with 1x1 placeholders, with the real ones appended in an
+ * encrypted blob that CSP decrypts at load. Every such file seen ends with a
+ * length-prefixed `__AC_SHADERS_PATCH_KN5ENC_v1__` marker.
+ *
+ * THIS DOES NOT DECRYPT ANYTHING, AND SHOULD NOT.
+ *
+ * The encryption is there because the author does not want their artwork
+ * extracted, and that is their call to make. It also does not need breaking:
+ * everything this tool actually wants from a model — the node tree, materials,
+ * UV islands, which texture binds to which slot — sits in the readable part.
+ * The only casualty is texture DIMENSIONS, and those come from the car's skin
+ * folders anyway, which is where the real sizes live even on unencrypted cars.
+ *
+ * Returns a description of the protected region, or null.
+ */
+const ENC_MARKER = '__AC_SHADERS_PATCH_KN5ENC_v1__';
+
+export function trailingEncryption(buf, from) {
+  if (from >= buf.length) return null;
+  // The marker sits near the very end: 30 bytes of text, then a few bytes of
+  // trailer. Search a small window rather than the whole file, so a texture that
+  // happens to contain the string cannot produce a false positive.
+  const window = buf.subarray(Math.max(from, buf.length - 128));
+  const at = window.indexOf(ENC_MARKER, 0, 'latin1');
+  if (at < 0) return null;
+  return {
+    scheme: 'csp-kn5enc-v1',
+    start: from,
+    bytes: buf.length - from,
+  };
 }
 
 // Row-major, row-vector convention: p' = p * M, translation in elements 12-14.
@@ -245,6 +293,96 @@ export function vertex(model, mesh, i) {
  * `axisHints` re-derives this per model where the names allow it, so a car that
  * disagrees is detected rather than silently mis-labelled.
  */
+/**
+ * Which way is left, and which way is forward, from the wheels.
+ *
+ * Assetto Corsa's physics REQUIRES a car to carry nodes named WHEEL_LF, WHEEL_RF,
+ * WHEEL_LR and WHEEL_RR — suspension, tyre and drivetrain all attach to them. It
+ * is not a naming convention an author may or may not follow; a car without them
+ * does not run. All 235 cars in the fleet have all four, including all 91 whose
+ * axes the name heuristic could not determine.
+ *
+ * So the axes are readable exactly rather than inferred. LF and RF differ only in
+ * which side they sit on, and LF and LR only in which end, which makes each axis
+ * a subtraction.
+ *
+ * The heuristic in `axisHints` remains as a cross-check for models that somehow
+ * lack the wheels, but this is the measurement.
+ */
+/**
+ * Is this mesh parented under the named node?
+ *
+ * Matching the node NAME rather than a substring of the whole path, because mesh
+ * names are not disciplined: one car has a mesh called `A_Wheel_LF3` sitting
+ * under `WHEEL_RF`, and a substring test counted it as part of the left front
+ * wheel. That dragged the wheel centre toward the middle of the car and shortened
+ * the measured wheelbase by 0.7 m. The SIGN survived it, which is exactly why it
+ * would have gone unnoticed without checking the magnitudes against real cars.
+ */
+function under(mesh, nodeName) {
+  const parts = mesh.path.toUpperCase().split('/');
+  // Ancestors only — the last segment is the mesh's own name, and it is the one
+  // that lies. A mesh that IS the node is still accepted, but only on an exact
+  // match rather than on containing the string.
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (parts[i].startsWith(nodeName)) return true;
+  }
+  return parts[parts.length - 1] === nodeName;
+}
+
+export function axesFromWheels(model) {
+  // Defaulted rather than assumed. This is exported and gets called with hand-
+  // built models in tests and in tooling, and a missing collection should mean
+  // "no wheels found" — which this function already has an answer for — rather
+  // than a TypeError from deep inside it.
+  const dummies = model.dummies ?? [];
+  const meshes = model.meshes ?? [];
+
+  const at = (which) => {
+    const key = `WHEEL_${which}`;
+    // The node's own translation IS the wheel centre — that is how AC positions
+    // it. Averaging the geometry underneath instead gets close but not exact,
+    // because a wheel node also holds motion-blur discs and brake parts that are
+    // not centred on the axle. On one car that error was 0.46 m of wheelbase.
+    const node = dummies.find((d) => d.name.toUpperCase() === key)
+      ?? dummies.find((d) => d.name.toUpperCase().startsWith(key));
+    if (node) return { x: node.world[12], y: node.world[13], z: node.world[14] };
+
+    // No such node: fall back to the geometry parented under it.
+    let x = 0, y = 0, z = 0, n = 0;
+    for (const mesh of meshes) {
+      if (!under(mesh, key)) continue;
+      const step = Math.max(1, Math.floor(mesh.vertexCount / 200));
+      for (let i = 0; i < mesh.vertexCount; i += step) {
+        const v = vertex(model, mesh, i);
+        x += v.x; y += v.y; z += v.z; n++;
+      }
+    }
+    return n ? { x: x / n, y: y / n, z: z / n } : null;
+  };
+
+  const lf = at('LF'), rf = at('RF'), lr = at('LR'), rr = at('RR');
+  if (!lf || !rf || !lr || !rr) return null;
+
+  const track = (lf.x + lr.x) / 2 - (rf.x + rr.x) / 2;   // left minus right
+  const wheelbase = (lf.z + rf.z) / 2 - (lr.z + rr.z) / 2; // front minus rear
+
+  // Degenerate geometry — every wheel at the origin, or a model where the two
+  // axes are indistinguishable — is worse than no answer, because it looks like
+  // one. A real car's track and wheelbase are both comfortably over 10 cm.
+  if (Math.abs(track) < 0.1 || Math.abs(wheelbase) < 0.1) return null;
+
+  return {
+    left: Math.sign(track),
+    front: Math.sign(wheelbase),
+    confident: true,
+    from: 'wheels',
+    // Reported so a person can sanity-check the result against a spec sheet.
+    trackWidth: Math.abs(track),
+    wheelbase: Math.abs(wheelbase),
+  };
+}
+
 export function axisHints(model) {
   const centroid = (mesh) => {
     let x = 0, z = 0;

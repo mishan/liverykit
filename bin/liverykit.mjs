@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-import { stat, mkdir, writeFile } from 'node:fs/promises';
+import { stat, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
-import { loadProfile, doNotPaint } from '../src/profile.mjs';
-import { scanSkins, formatScan } from '../src/engine/scan.mjs';
+import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
+import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { parseKn5 } from '../src/engine/kn5.mjs';
+import { textureFeatures, explain } from '../src/engine/classify.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,6 +20,8 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit <livery> [options]        build a livery
   liverykit <livery> --uvgrid         build its car's UV calibration skin
   liverykit --scan <path>             inspect a car's textures, emit a profile
+  liverykit --explain <kn5>           rank which texture is the bodywork, with
+                                      the evidence, so you can confirm it
 
 Arguments
   <livery>            path to a livery module, or a name in ./liveries/
@@ -35,6 +39,11 @@ Options
   --probe <a,b,c>     also ship these filenames as colour-coded name probes
 
   --scan <path>       point at a car's skins/ directory
+  --explain <kn5>     rank candidates for a vocabulary term and show why
+  --term <name>       which term to explain (default: body)
+  --no-visibility     skip the ray casting; faster, and 90% accurate not 98%
+  --assume-size <px>  for ENCRYPTED models only: paint textures whose real size
+                      cannot be measured at this size. A choice, not a fact.
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
   --profile <path>    override the car profile (default: cars/<livery.car>.json)
@@ -54,6 +63,10 @@ const { values, positionals } = parseArgs({
     cells: { type: 'string' },
     probe: { type: 'string' },
     scan: { type: 'string' },
+    explain: { type: 'string' },
+    term: { type: 'string', default: 'body' },
+    'no-visibility': { type: 'boolean', default: false },
+    'assume-size': { type: 'string' },
     'from-kn5': { type: 'string' },
     'car-id': { type: 'string' },
     'car-name': { type: 'string' },
@@ -99,8 +112,24 @@ if (values['from-kn5']) {
     id: values['car-id'],
     name: values['car-name'] ?? '',
     skinsDir: values.skins ? resolve(values.skins) : null,
+    // Only meaningful for encrypted models, where the embedded textures are 1x1
+    // placeholders and no measurement is available.
+    assumeSize: values['assume-size']
+      ? num(values['assume-size'], 'assume-size', { min: 8, max: 8192, integer: true })
+      : null,
     log: console.log,
   });
+  // Regenerating must never cost hand-checked work. If a profile for this car
+  // already exists, anything a human confirmed in its `bind` block survives; the
+  // machine's own earlier guesses are replaced by the current ones.
+  const priorPath = join(ROOT, 'cars', `${profile.id}.json`);
+  const prior = await readFile(priorPath, 'utf8').then(JSON.parse).catch(() => null);
+  if (prior?.bind) {
+    const kept = Object.entries(prior.bind).filter(([, e]) => e?.source === 'human').length;
+    profile.bind = mergeBindings(prior.bind, profile.bind);
+    if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
+  }
+
   const outPath = join(values.out, `${profile.id}.json`);
   await mkdir(values.out, { recursive: true });
   await writeFile(outPath, JSON.stringify(profile, null, 2) + '\n');
@@ -111,6 +140,50 @@ if (values['from-kn5']) {
     `${profile.doNotPaint.length} excluded`);
   console.log(`  Move it to cars/${profile.id}.json and rename panels to taste — liveries`);
   console.log(`  address them by name, so the names are yours to choose.`);
+  process.exit(0);
+}
+
+// --- explain mode -----------------------------------------------------------
+//
+// Ranks candidates for a vocabulary term and shows the measurements behind each
+// one. It never writes anything: the point is that a human confirms the binding
+// once per car, and confirming is a thirty-second job with the evidence printed
+// and an unbounded one without it.
+if (values.explain) {
+  const src = resolve(values.explain);
+  const useVisibility = !values['no-visibility'];
+  console.log(`Reading ${src}${useVisibility ? '' : '  (visibility skipped)'}\n`);
+
+  const profile = await profileFromKn5(src, {
+    id: values['car-id'],
+    skinsDir: values.skins ? resolve(values.skins) : null,
+    visibility: useVisibility,
+    log: () => {},
+  });
+  const model = await parseKn5(src, { keepTextureData: false });
+
+  // Stock skins are evidence of intent: a file every skin replaces is meant to
+  // vary per livery. Absent a skins directory the classifier simply loses that
+  // signal, which costs accuracy but breaks nothing.
+  const { skinCounts, skinCount } = values.skins
+    ? await countSkinOverrides(resolve(values.skins))
+        .then((r) => ({ skinCounts: r.counts, skinCount: r.skinCount }))
+    : { skinCounts: new Map(), skinCount: 0 };
+  if (!skinCount) {
+    console.log('  ! No --skins given, so "how many stock skins override this" is unavailable.');
+    console.log('    That signal is worth a few points of accuracy; pass --skins for the best ranking.\n');
+  }
+
+  // Panel visibility, averaged per texture.
+  const visibleByFile = new Map();
+  for (const [role, panels] of Object.entries(profile.panels)) {
+    const vals = Object.values(panels).map((p) => p.visible).filter((v) => typeof v === 'number');
+    if (vals.length) visibleByFile.set(profile.textures[role].file, vals.reduce((a, b) => a + b, 0) / vals.length);
+  }
+
+  const features = textureFeatures(model, { roles: profile.textures, skinCounts, skinCount, visibleByFile });
+  console.log(explain(features, values.term));
+  console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
   process.exit(0);
 }
 
@@ -145,7 +218,16 @@ for (const p of values.pack) {
 const liveryPath = await resolveLivery(liveryArg);
 const livery = (await import(pathToFileURL(liveryPath).href)).default;
 if (!livery) throw new Error(`${liveryArg} has no default export`);
-if (!livery.car) throw new Error(`${liveryArg} does not say which car it is for (missing "car")`);
+// A PORTABLE livery deliberately has no `car`: it is written against the shared
+// vocabulary rather than against one model, and the profile is chosen at build
+// time. It still needs one of the two.
+if (!livery.car && !values.profile) {
+  throw new Error(
+    `${liveryArg} does not say which car it is for. Either give it a "car" field, ` +
+    `or pass --profile <path> — a livery written entirely in "surfaces" is meant to ` +
+    `work on more than one car, so it has no business naming one.`
+  );
+}
 if (!livery.folder) throw new Error(`${liveryArg} has no "folder" — that is the skin directory name`);
 
 const profilePath = values.profile

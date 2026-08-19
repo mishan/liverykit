@@ -9,7 +9,7 @@
 // so the emissive layer is rendered on its own, blurred, and screened back on.)
 // ---------------------------------------------------------------------------
 
-import { resolveRect, texture } from './profile.mjs';
+import { resolveRect, texture, expandRegions } from './profile.mjs';
 import { r2 } from './engine/rng.mjs';
 
 /**
@@ -24,7 +24,7 @@ export function makeColorResolver(palette) {
   };
 }
 
-export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens }) {
+export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, regionNotes = [] }) {
   const tex = texture(profile, role);
   const { width, height } = tex;
 
@@ -32,7 +32,12 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   const base = [`<rect width="${width}" height="${height}" fill="${color(background ?? 'black')}"/>`];
   const emissive = [];
 
-  for (const region of regions ?? []) {
+  // A region selecting panels by TAG becomes one region per matching panel, so
+  // the same design covers however many islands this car splits its flank into.
+  const expanded = expandRegions(profile, role, regions ?? []);
+  regionNotes.push(...expanded.notes);
+
+  for (const region of expanded.regions) {
     const entry = treatments.get(region.treatment);
     if (!entry) {
       throw new Error(

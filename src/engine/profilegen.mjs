@@ -16,10 +16,23 @@
 // as a sanity check that the profile matches what the game actually draws.
 // ---------------------------------------------------------------------------
 
-import { parseKn5, meshesUsingTexture, axisHints } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
-import { guessRole, scanSkins } from './scan.mjs';
+import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
+import { textureFeatures, propose, SCORABLE } from './classify.mjs';
+import { tagProfile } from './tags.mjs';
+
+/**
+ * A texture the model does not really contain.
+ *
+ * Encrypted models substitute a 1x1 image for every texture. Anything this small
+ * carries no artwork and no usable dimensions — a real car texture is never
+ * smaller than about 8x8 even for a flat colour swatch.
+ */
+function isPlaceholder(h) {
+  return h.width <= 4 && h.height <= 4;
+}
 
 /** DDS/PNG header straight from the blob embedded in the model. */
 function imageHeader(name, data) {
@@ -78,14 +91,37 @@ const SLOT_MEANING = {
  */
 export async function profileFromKn5(path, {
   id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008,
-  visibility = true,
+  visibility = true, assumeSize = null,
   skinsDir = null, log = () => {},
 } = {}) {
+  if (assumeSize !== null && !Number.isInteger(Math.log2(assumeSize))) {
+    throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
+  }
   const model = await parseKn5(path, { keepTextureData: true });
-  const axes = axisHints(model);
+
+  // Orientation comes from the wheels, which AC's physics requires every car to
+  // name WHEEL_LF/RF/LR/RR — so it is a measurement, not a guess. Across 238
+  // fleet cars it resolved all of them, agreed with the old name heuristic on
+  // all 145 the heuristic was confident about, and corrected 2 it had wrong.
+  // The heuristic stays as a fallback for a model somehow missing its wheels.
+  const wheels = axesFromWheels(model);
+  const hint = axisHints(model);
+  const axes = wheels ?? hint;
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
-  log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
-      `${axes.confident ? '' : '  (LOW CONFIDENCE — few directional mesh names to check against)'}`);
+  if (wheels) {
+    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
+        `  (from the wheels: track ${wheels.trackWidth.toFixed(2)}m, wheelbase ${wheels.wheelbase.toFixed(2)}m)`);
+    // A disagreement is worth surfacing even though the wheels win: it usually
+    // means a mesh is named for the side it is NOT on.
+    if (hint.confident && (hint.left !== wheels.left || hint.front !== wheels.front)) {
+      log('  ! mesh names disagree with the wheels about which way the car faces.');
+      log('    The wheels are used. Check for parts named for the wrong side.');
+    }
+  } else {
+    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
+        `  ! NO WHEEL NODES — falling back to mesh names` +
+        `${axes.confident ? '' : ', which are inconclusive here'}`);
+  }
 
   // `front` matters: cockpitEye sits BACK from the steering wheel, and on a
   // model where +Z is rearward that offset has to flip or the eye ends up out
@@ -126,6 +162,27 @@ export async function profileFromKn5(path, {
   const doNotPaint = [];
   const usedRoles = new Set();
   const roleOf = new Map();
+
+  // An encrypted model keeps its geometry readable and replaces every texture
+  // with a 1x1 placeholder. Everything this tool needs from a model — the node
+  // tree, materials, UV islands, which texture binds to which slot — survives
+  // that. Only the DIMENSIONS are lost, and those come from skin folders anyway.
+  const placeholder = Boolean(model.encrypted);
+  if (placeholder) {
+    log(`  ! this model is encrypted (${model.encrypted.scheme}, ` +
+        `${(model.encrypted.bytes / 1e6).toFixed(1)} MB protected).`);
+    log('    Geometry, materials and UV layout are all readable and are used normally.');
+    log('    Textures are 1x1 placeholders, so every size must come from a skin folder:');
+    log(`    pass --skins, or the profile will list nothing paintable.${skinsDir ? '  (given)' : '  (NOT GIVEN)'}`);
+    if (assumeSize) {
+      log(`    --assume-size ${assumeSize}: textures no skin overrides will be listed at ` +
+          `${assumeSize}x${assumeSize}, which is a choice rather than a measurement.`);
+    }
+    if (assumeSize) {
+      log(`    --assume-size ${assumeSize}: textures no skin overrides will be listed at ` +
+          `${assumeSize}x${assumeSize}, which is a choice rather than a measurement.`);
+    }
+  }
 
   const paintable = [];
   for (const tex of model.textures) {
@@ -171,6 +228,45 @@ export async function profileFromKn5(path, {
 
     const skin = realSize.get(tex.name.toLowerCase());
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
+
+    // On an encrypted model every embedded texture is a 1x1 placeholder, so the
+    // model's own dimensions are not merely low-resolution — they are fiction.
+    // A skin is then the ONLY source of truth, and without one there is nothing
+    // honest to write down.
+    if (placeholder && isPlaceholder(h)) {
+      if (!skin && !assumeSize) {
+        doNotPaint.push({
+          file: tex.name,
+          reason: 'the model is encrypted and ships a 1x1 placeholder for this texture, ' +
+                  'so its real size is unknown — no stock skin overrides it either. ' +
+                  'Pass --assume-size to paint it at a size of your choosing',
+          encrypted: true,
+        });
+        usedRoles.delete(r);
+        roleOf.delete(tex.name);
+        continue;
+      }
+      if (skin) {
+        entry.width = skin.width;
+        entry.height = skin.height;
+        entry.alpha = skin.alpha;
+        entry.sizeFrom = 'skin';
+        entry.notes = 'The model is encrypted; this size comes from a stock skin, not the model.';
+      } else {
+        // A CHOICE, not a measurement, and labelled as one. It is a safe choice:
+        // AC does not require a skin texture to match the size the model shipped,
+        // because UVs are fractions. The only cost of getting it wrong is disk
+        // space or lost detail, not a broken skin.
+        entry.width = assumeSize;
+        entry.height = assumeSize;
+        entry.sizeFrom = 'assumed';
+        entry.notes = `The model is encrypted and no stock skin overrides this texture. ` +
+                      `${assumeSize}x${assumeSize} was assumed, not measured.`;
+      }
+      textures[r] = entry;
+      continue;
+    }
+
     if (skin && (skin.width !== h.width || skin.height !== h.height)) {
       log(`  ! ${tex.name}: model embeds ${h.width}x${h.height}, skins ship ` +
           `${skin.width}x${skin.height} — using the skin size`);
@@ -268,7 +364,39 @@ export async function profileFromKn5(path, {
     adjacencyOut[role] = Object.fromEntries([...adj].map(([k, v]) => [k, [...v].sort()]));
   }
 
-  return {
+  // --- proposed bindings ----------------------------------------------------
+  //
+  // Which of this car's roles each vocabulary term refers to, proposed by
+  // measurement. Everything here is marked `auto`: a proposal is not a
+  // confirmation, and 98% accurate is not the same as trustworthy without
+  // looking. `mergeBindings` protects anything a human has confirmed, so
+  // regenerating a profile never costs hand-checked work.
+  const { skinCount, counts: skinCounts } = skinsDir
+    ? await countSkinOverrides(skinsDir).catch(() => ({ skinCount: 0, counts: new Map() }))
+    : { skinCount: 0, counts: new Map() };
+
+  const visibleByFile = new Map();
+  for (const [role, ps] of Object.entries(panels)) {
+    const vals = Object.values(ps).map((p) => p.visible).filter((v) => typeof v === 'number');
+    if (vals.length) visibleByFile.set(textures[role].file, vals.reduce((a, b) => a + b, 0) / vals.length);
+  }
+
+  const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile });
+  const bind = {};
+  for (const term of SCORABLE) {
+    const p = propose(features, term);
+    // A term with no candidate is left OUT rather than bound to an empty array.
+    // An empty array means "this car has no such surface", which is a claim, and
+    // the classifier is not entitled to make it — only a person is.
+    if (p) bind[term] = { roles: [p.role], confidence: p.confidence, source: 'auto' };
+  }
+  if (!visibility) {
+    log('  ! bindings were proposed without visibility, which is the signal that separates');
+    log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
+  }
+
+  const profile = {
+    bind,
     id: id ?? basenameNoExt(path),
     name,
     game: 'assettocorsa',
@@ -280,6 +408,12 @@ export async function profileFromKn5(path, {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',
         confident: axes.confident,
+        from: wheels ? 'wheels' : 'mesh names',
+        // Checkable against a spec sheet, which is the point of recording it.
+        ...(wheels ? {
+          trackWidth: Math.round(wheels.trackWidth * 100) / 100,
+          wheelbase: Math.round(wheels.wheelbase * 100) / 100,
+        } : {}),
       },
       notes:
         'Generated from the model. Panel rects are exact UV island bounds, and ' +
@@ -295,6 +429,25 @@ export async function profileFromKn5(path, {
     ...(caseCollisions.length ? { caseCollisions } : {}),
     panels,
   };
+
+  // Tags come last, because they are computed from the finished profile rather
+  // than from the model. One implementation then serves both generation and
+  // retagging an existing hand-tuned profile, which is the only way to add them
+  // without discarding its aliases, renames and notes.
+  const { tagged, shared } = tagProfile(profile);
+  log(`  tagged ${tagged} panel(s) with portable descriptors (side, section, level, visibility)`);
+  if (shared) {
+    // Worth saying out loud. It is the difference between "this car has 242
+    // paintable regions" and "this car has 242 panels over 162 regions, and 80
+    // of them cannot be painted independently however much you would like to".
+    const pct = Math.round((100 * shared) / (tagged || 1));
+    log(`  ${shared} of them (${pct}%) share their rectangle with another panel — instanced`);
+    log('    geometry such as four wheels on one rim texture, or mirrored bodywork.');
+    log('    They are drawn from the same texels, so they cannot carry different artwork,');
+    log('    and they no longer claim a side or section their twin contradicts.');
+  }
+
+  return profile;
 }
 
 const r3 = (n) => Math.round(n * 1000) / 1000;

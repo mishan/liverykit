@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { VOCABULARY } from './engine/classify.mjs';
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
@@ -62,6 +63,8 @@ export function validateProfile(p, source = '<inline>') {
     }
   }
 
+  validateBind(p, err);
+
   for (const [role, panels] of Object.entries(p.panels ?? {})) {
     if (!p.textures[role]) err(`panels are defined for unknown texture role "${role}"`);
     for (const [name, panel] of Object.entries(panels)) {
@@ -71,6 +74,220 @@ export function validateProfile(p, source = '<inline>') {
   }
 
   return p;
+}
+
+// ---------------------------------------------------------------------------
+// Bindings: the layer between what a livery asks for and what a car calls it.
+//
+// A livery says `body`. What `body` IS varies completely between cars — across a
+// 235-car fleet the generated role names came to 1912 distinct names, 1082 of
+// them on exactly one car, and a role literally called `body` existed on 86.
+// So the car profile carries the translation:
+//
+//   "bind": {
+//     "body":  { "roles": ["body", "body_2"], "source": "human" },
+//     "belts": { "roles": ["belts_2"], "confidence": 0.71, "source": "auto" },
+//     "wing":  { "roles": [], "source": "human" }
+//   }
+//
+// One form only, deliberately. An entry is always an object with a `roles`
+// array, and an EMPTY array is a positive statement that this car does not have
+// the surface — different from the term being absent because nobody got round to
+// it. `source` distinguishes a machine proposal from a human confirmation, and
+// regeneration must never overwrite the latter.
+//
+// `roles` is a list rather than a single name because a term genuinely can map
+// to more than one texture: the RSS4 carries the bodywork across
+// RSS4_Chassis_D and RSS4_Chassis_C, 25% and 17% of the car's surface.
+// ---------------------------------------------------------------------------
+
+const BIND_SOURCES = new Set(['auto', 'human']);
+
+// Terms that live in a DIFFERENT kn5 by design. The driver and the pit crew are
+// separate models which a car skin overrides, so "this car's model never
+// references it" is the expected state for them and warning about it every build
+// would be pure noise. For anything else it is the signal that matters.
+const ELSEWHERE = new Set(['helmet', 'suit', 'gloves', 'crew']);
+
+function validateBind(p, err) {
+  for (const [term, entry] of Object.entries(p.bind ?? {})) {
+    // The vocabulary is fixed on purpose. If any profile can invent a term then
+    // a livery cannot rely on one, and the whole layer buys nothing.
+    //
+    // Object.hasOwn, not a truthiness test: VOCABULARY['toString'] inherits a
+    // function from Object.prototype, so bind."toString" would otherwise pass
+    // validation and reopen the vocabulary through the back door.
+    if (!Object.hasOwn(VOCABULARY, term)) {
+      err(`bind has an unknown term "${term}". The vocabulary is fixed so that liveries can ` +
+          `rely on it: ${Object.keys(VOCABULARY).join(', ')}`);
+    }
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      err(`bind."${term}" must be an object like { "roles": [...], "source": "auto" }. ` +
+          `Use an empty roles array to say this car has no such surface.`);
+    }
+    if (!Array.isArray(entry.roles)) err(`bind."${term}".roles must be an array of texture role names`);
+    if (!BIND_SOURCES.has(entry.source)) {
+      err(`bind."${term}".source must be "auto" (proposed by measurement) or ` +
+          `"human" (confirmed by a person), got ${JSON.stringify(entry.source)}`);
+    }
+    if (entry.confidence !== undefined &&
+        (typeof entry.confidence !== 'number' || entry.confidence < 0 || entry.confidence > 1)) {
+      err(`bind."${term}".confidence must be a number in 0..1, got ${JSON.stringify(entry.confidence)}`);
+    }
+    for (const role of entry.roles) {
+      // The whole point of the layer is that a livery stops guessing at names.
+      // A binding pointing at a role that does not exist would reintroduce the
+      // silent-no-op this project keeps rediscovering.
+      if (!p.textures[role]) {
+        err(`bind."${term}" points at texture role "${role}", which this profile does not define. ` +
+            `Known roles: ${Object.keys(p.textures).join(', ')}`);
+      }
+    }
+  }
+}
+
+/**
+ * The texture roles a vocabulary term resolves to on this car.
+ *
+ * Returns `{ roles, source, confidence, status }` where status is one of:
+ *   'bound'       — the car has this surface and the roles are listed
+ *   'absent'      — the car genuinely has no such surface (empty roles array)
+ *   'unbound'     — nobody has said either way
+ *
+ * It never throws. A design asking for a surface a car lacks should degrade to a
+ * reported no-op, not an error: a Formula car has no numberPlate and a van has
+ * no wing, and neither fact should stop a build. The reporting is the point —
+ * painting nothing looks exactly like painting something.
+ */
+export function binding(profile, term) {
+  // Deliberately defensive about its own input. validateProfile guarantees the
+  // shape, but this is exported and a caller may hand over a profile that never
+  // went through it — a hand-written fixture, or one read straight from disk.
+  // "It never throws" has to be true of the function, not only of the happy path.
+  const entry = Object.hasOwn(profile.bind ?? {}, term) ? profile.bind[term] : undefined;
+  const roles = Array.isArray(entry?.roles) ? entry.roles : null;
+  if (!roles) return { roles: [], source: null, confidence: undefined, status: 'unbound' };
+  return {
+    roles,
+    source: entry.source ?? null,
+    confidence: entry.confidence,
+    status: roles.length ? 'bound' : 'absent',
+  };
+}
+
+/**
+ * Merge freshly proposed bindings into whatever the profile already had.
+ *
+ * A human confirmation is never overwritten. This is the same guarantee
+ * `aliases` already carries, and for the same reason: a profile is regenerated
+ * every time the model or the classifier changes, and losing hand-checked work
+ * on each regeneration would make confirming it pointless.
+ */
+export function mergeBindings(existing = {}, proposed = {}) {
+  const out = { ...proposed };
+  for (const [term, entry] of Object.entries(existing)) {
+    if (entry?.source === 'human') out[term] = entry;
+  }
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Work out which textures a livery actually paints on this car.
+ *
+ * A livery has two ways to name a surface, and they are kept separate on purpose
+ * rather than resolved by precedence:
+ *
+ *   paint    — keyed by this car's own texture ROLES. Exact, not portable, and
+ *              the only thing that existed before bindings. Untouched.
+ *   surfaces — keyed by VOCABULARY TERMS, resolved through the profile's bind
+ *              table. Portable, and the point of the whole exercise.
+ *
+ * Precedence would have been the tempting design — try the bind table, fall back
+ * to a literal role — but it silently changes what existing liveries do. On the
+ * RSS4 `body` is both a vocabulary term bound to two chassis textures AND a
+ * literal role naming one of them, so a livery that paints `body` and `bodyRear`
+ * differently would suddenly render the same artwork on both. Two blocks, one
+ * meaning each.
+ *
+ * Returns `{ targets, notes }`. Nothing throws for a surface the car lacks: a
+ * design asking for a wing on a van should degrade to a reported no-op. The
+ * report is the whole safety mechanism, because painting nothing looks exactly
+ * like painting something.
+ */
+export function resolveTargets(profile, livery) {
+  const targets = [];
+  const notes = [];
+  const claimedBy = new Map();
+
+  const claim = (role, spec, from) => {
+    const prior = claimedBy.get(role);
+    if (prior) {
+      // Both would write the same file, and the second would win silently.
+      throw new Error(
+        `Livery "${livery.name}" paints texture role "${role}" twice — once via ${prior}, ` +
+        `once via ${from}. They write the same file, so one would overwrite the other.`
+      );
+    }
+    claimedBy.set(role, from);
+    targets.push({ role, spec, from });
+  };
+
+  for (const [role, spec] of Object.entries(livery.paint ?? {})) {
+    texture(profile, role);            // throws with the known-roles list
+    claim(role, spec, `paint.${role}`);
+  }
+
+  for (const [term, spec] of Object.entries(livery.surfaces ?? {})) {
+    if (!VOCABULARY[term]) {
+      throw new Error(
+        `Livery "${livery.name}" paints surface "${term}", which is not in the vocabulary. ` +
+        `Known surfaces: ${Object.keys(VOCABULARY).join(', ')}`
+      );
+    }
+    const b = binding(profile, term);
+    if (b.status === 'absent') {
+      notes.push({ term, status: 'absent', text: `${term}: this car has no such surface (confirmed)` });
+      continue;
+    }
+    if (b.status === 'unbound') {
+      notes.push({
+        term, status: 'unbound',
+        text: `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
+      });
+      continue;
+    }
+    for (const role of b.roles) {
+      claim(role, spec, `surfaces.${term}`);
+      // A texture the car's own model never references may still be real — the
+      // driver and pit crew live in separate kn5 files that a car skin overrides
+      // — or it may be a leftover that paints nothing at all. metal_detail.dds
+      // ships in nearly every road-car skin and on several of those cars is
+      // bound to no mesh anywhere. This cannot be settled without the other
+      // model, so it is flagged rather than guessed at.
+      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {
+        notes.push({
+          term, status: 'unverified',
+          text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
+                `Expected for driver and crew kit; for anything else it may paint nothing`,
+        });
+      }
+    }
+    if (b.source === 'auto') {
+      notes.push({
+        term, status: 'unconfirmed',
+        text: `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
+              (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
+      });
+    }
+  }
+
+  if (!targets.length) {
+    throw new Error(
+      `Livery "${livery.name}" paints nothing on car "${profile.id}". ` +
+      (notes.length ? `\n  ${notes.map((n) => n.text).join('\n  ')}` : '')
+    );
+  }
+  return { targets, notes };
 }
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
@@ -120,6 +337,84 @@ export function panel(profile, role, name) {
     );
   }
   return found;
+}
+
+/**
+ * Panels on a texture role carrying every one of the given tags.
+ *
+ * AND, not OR, and deliberately so. `['left', 'mid']` means the left middle of
+ * the car; if it meant "left or middle" a design could not express anything
+ * specific, and the failure would be a region painted across half the car rather
+ * than an error.
+ */
+export function panelsWithTags(profile, role, tags) {
+  const panels = profile.panels?.[role] ?? {};
+  const matching = Object.entries(panels)
+    .filter(([, p]) => tags.every((t) => (p.tags ?? []).includes(t)))
+    .map(([name]) => name);
+
+  // One name per DISTINCT RECTANGLE. Four wheels sharing a rim texture are four
+  // panels over the same texels, and painting them one at a time would stack the
+  // artwork — four passes of a 0.3 halftone is a 0.76 halftone, not a 0.3 one.
+  // Selecting by name still reaches an individual panel; only tag selection,
+  // which cannot know it matched instances of one thing, dedupes.
+  const seen = new Set();
+  return matching.filter((name) => {
+    const key = (panels[name].rect ?? []).join(',');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Expand a livery's regions against one texture role.
+ *
+ * A region selecting by `tags` becomes one region per matching panel — the same
+ * artwork on every panel that qualifies. That is what makes a design portable:
+ * `{ tags: ['left', 'mid'] }` renders on however many islands this particular
+ * car happens to split its left flank into, which is three on one model and one
+ * on another.
+ *
+ * A region matching nothing is dropped and reported. Silence here would be the
+ * same failure as everywhere else in this project.
+ */
+export function expandRegions(profile, role, regions = []) {
+  const out = [];
+  const notes = [];
+
+  for (const region of regions) {
+    if (region.tags === undefined) { out.push(region); continue; }
+
+    // An empty array would match EVERY panel, because `every` on an empty list
+    // is vacuously true — so `tags: []` would silently paint the whole texture
+    // instead of nothing. A non-array fails inside `every` with "tags.every is
+    // not a function", which says nothing useful about the livery.
+    if (!Array.isArray(region.tags) || region.tags.length === 0) {
+      throw new Error(
+        `"${region.treatment ?? 'region'}" on role "${role}" has tags: ` +
+        `${JSON.stringify(region.tags)}. It must be a non-empty array of tag names, ` +
+        `e.g. tags: ['left', 'visible'].`
+      );
+    }
+    if (region.panel) {
+      throw new Error(
+        `A region on role "${role}" has both "panel" and "tags". Use one: ` +
+        `"panel" names a single panel on this car, "tags" selects whichever panels match.`
+      );
+    }
+    const matches = panelsWithTags(profile, role, region.tags);
+    if (!matches.length) {
+      notes.push({
+        status: 'no-match',
+        text: `${role}: no panel tagged [${region.tags.join(', ')}] — ` +
+              `"${region.treatment ?? 'region'}" was skipped`,
+      });
+      continue;
+    }
+    for (const panel of matches) out.push({ ...region, panel });
+  }
+  return { regions: out, notes };
 }
 
 /**
