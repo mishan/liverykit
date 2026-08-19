@@ -177,6 +177,84 @@ node bin/liverykit.mjs my-livery
 
 ---
 
+## Making a livery that works on more than one car
+
+The problem: cars do not agree on anything. Across a 235-car survey the
+generated texture role names came to 1,912 distinct names, 1,082 of which appear
+on exactly one car. The bodywork is called `Skin_00.dds` on one model,
+`SkinBase_DEFAULT.dds` on another, `paint.dds`, `LIVERY2.dds`, `cobrabody.dds`.
+A livery that names files can only ever work on the car it was written against.
+
+So a car profile carries a **binding** from a small fixed vocabulary onto
+whatever that car happens to call things:
+
+```jsonc
+"bind": {
+  "body":        { "roles": ["body", "bodyRear"], "source": "human" },
+  "rims":        { "roles": ["rimFace"], "source": "human" },
+  "numberPlate": { "roles": [], "source": "human" }   // this car has none
+}
+```
+
+and a livery paints **surfaces** instead of files:
+
+```js
+surfaces: {
+  body: {
+    background: 'base',
+    regions: [
+      { treatment: 'traces', lanes: 22, color: 'accent' },
+      // Panels are named per car, so select them by what they ARE. This renders
+      // once per matching panel — 10 islands on one car, 12 on another.
+      { treatment: 'piping', tags: ['left', 'visible'], color: 'accent' },
+    ],
+  },
+}
+```
+
+Tags available on every panel of a generated profile: `left` `right` `centre`,
+`nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
+trackside), `cockpit` (readable from the driver's seat), `mirrored`.
+
+`liveries/neon-grid-any.mjs` is the worked example. It has no `car` field at all,
+so you choose one at build time:
+
+```sh
+node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json
+node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
+```
+
+Anything a given car lacks is **reported and skipped**, never silently dropped.
+
+### Filling in the binding
+
+`--from-kn5` proposes bindings automatically and marks them `source: "auto"`.
+The proposal is right about 98% of the time, which is very good and is not the
+same as trustworthy without looking, so confirm it:
+
+```sh
+node bin/liverykit.mjs --explain cars/abarth500/abarth500.kn5 --skins cars/abarth500/skins
+```
+
+```
+  role                    file                          area  seen  skins  sym  shader
+  skinbase_default        SkinBase_DEFAULT.dds           37%   75%   90%  yes  ksPerPixelMultiMap_damage_di
+  glass_2                 Glass.dds                       4%   94%    0%  yes  ksPerPixelReflection
+  ...
+  proposal: skinbase_default  (confidence 0.97, margin over runner-up)
+```
+
+Change the entry to `"source": "human"` once you agree. Regenerating the profile
+preserves everything marked `human` and replaces everything marked `auto`, the
+same way `aliases` are preserved.
+
+Two honest limits. A portable design cannot use panel **names**, only tags. And
+it cannot treat the roles behind one term differently — if `body` binds to two
+textures, both get the same artwork. Portable means coarser; a design written for
+one car will always look better on it.
+
+---
+
 ## Writing your own treatments
 
 A treatment takes a rectangle and returns SVG. Anything it puts in `emissive` is
@@ -260,6 +338,10 @@ rather type `liverykit`. `--help` is authoritative.
 --from-kn5 <car>.kn5              generate a car profile from the model
   --skins <dir>                     cross-reference real texture sizes
   --car-id <id> --car-name <name>
+--explain <car>.kn5               rank which texture is the bodywork, with the
+                                  evidence, so you can confirm the binding
+  --term rims                       explain a different vocabulary term
+  --no-visibility                   skip the ray casting: faster, less accurate
 --scan <skins dir>                classify textures without a model
 --out <dir>                       output directory (default: dist)
 ```

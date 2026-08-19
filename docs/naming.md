@@ -123,8 +123,23 @@ side (`left`/`right`/`centre`), section (`nose`…`tail`), level (`upper`/`lower
 plus `visible` and `cockpit` from the visibility pass, and `mirrored` where a
 mirror pair was found.
 
-A livery then addresses `body @ flank + left + upper` and gets whatever the car
-actually has there, or nothing, reported.
+A livery addresses `{ tags: ['left', 'visible'] }` and the region expands to one
+copy per matching panel — 10 islands on the RSS4's left flank, 12 on the
+Abarth's. Selection is AND rather than OR: if `['left', 'mid']` meant "left or
+middle" a design could not express anything specific, and the failure would be a
+region smeared across half the car rather than an error.
+
+`level` is measured against the CAR's vertical extent, not each island's own
+bounding box. The per-island version is nearly content-free — an island's
+centroid sits above or below its own centre for reasons that have nothing to do
+with where it is on the car. "In the top half of the car" is a fact a design can
+use.
+
+Tags are computed from what a profile already stores — `centroid3d`, `visible`,
+`visibleFromCockpit`, `mirrorOf` — rather than from the model. That means an
+existing hand-tuned profile can be tagged without regenerating it and losing its
+aliases and renames, and there is one implementation rather than one for
+generation and another for migration.
 
 ### Resolution and reporting
 
@@ -195,10 +210,13 @@ degradation, and the end-of-build report of unresolved terms. Port `neon-grid` t
 the vocabulary and confirm the output is byte-identical to today's, which is the
 only honest proof that the layer changed nothing it shouldn't have.
 
-**Four — panel tags.** Tags on panels, tag-based targeting in liveries, `shared`
+**Four — panel tags.** *(done — `src/engine/tags.mjs`, `tags` on every panel of
+both shipped profiles, tag selection in `expandRegions`.)* Tags on panels, tag-based targeting in liveries, `shared`
 markers for multi-part textures.
 
-**Five — regression.** `tools/survey.mjs` becomes the harness: run the classifier
+**Five — regression.** *(done — `test/classifier.test.mjs` scores the classifier
+over a committed fixture of fleet measurements on every commit, and CI builds
+the portable livery on both cars.)* `tools/survey.mjs` becomes the harness: run the classifier
 over all 235 cars and assert the accuracy figure doesn't drop. That number is the
 thing to defend, and right now it is 174/175 on the labelled subset.
 

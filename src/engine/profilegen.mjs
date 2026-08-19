@@ -21,6 +21,7 @@ import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './isla
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
+import { tagProfile } from './tags.mjs';
 
 /** DDS/PNG header straight from the blob embedded in the model. */
 function imageHeader(name, data) {
@@ -300,7 +301,7 @@ export async function profileFromKn5(path, {
     log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
   }
 
-  return {
+  const profile = {
     bind,
     id: id ?? basenameNoExt(path),
     name,
@@ -328,6 +329,15 @@ export async function profileFromKn5(path, {
     ...(caseCollisions.length ? { caseCollisions } : {}),
     panels,
   };
+
+  // Tags come last, because they are computed from the finished profile rather
+  // than from the model. One implementation then serves both generation and
+  // retagging an existing hand-tuned profile, which is the only way to add them
+  // without discarding its aliases, renames and notes.
+  const { tagged } = tagProfile(profile);
+  log(`  tagged ${tagged} panel(s) with portable descriptors (side, section, level, visibility)`);
+
+  return profile;
 }
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
