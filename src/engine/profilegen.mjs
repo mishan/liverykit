@@ -92,6 +92,10 @@ export async function profileFromKn5(path, {
   // in front of the car.
   const eye = visibility ? cockpitEye(model, { front: axes.front }) : null;
   if (eye) log(`  driver's eye estimated at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)}) from ${eye.from}`);
+  // Say so. Silently omitting visibleFromCockpit from every panel looks
+  // identical to a car that genuinely has no interior.
+  else if (visibility) log('  ! no steering wheel mesh found — visibleFromCockpit will be omitted.\n' +
+    '    Pass an eye position, or rename the mesh, if this car has a cockpit worth painting.');
 
   const headers = new Map(model.textures.map((t) => [t.name, imageHeader(t.name, t.data)]));
 
