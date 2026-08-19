@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>liverykit — fit</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1><span id="livery">…</span> <span class="on">on</span> <span id="car">…</span></h1>
+    <div class="spacer"></div>
+    <span id="status" class="status"></span>
+    <button id="save" disabled>Save fit</button>
+  </header>
+
+  <main>
+    <aside id="left">
+      <h2>Surface</h2>
+      <select id="surface"></select>
+
+      <h2>Regions</h2>
+      <p class="hint">Only regions the design gave an <code>id</code> can be moved.
+        Everything else is the design's business.</p>
+      <ul id="regions"></ul>
+
+      <h2>Selected</h2>
+      <div id="inspector" class="empty">Nothing selected.</div>
+    </aside>
+
+    <section id="canvas">
+      <div id="stage">
+        <div id="texture"></div>
+        <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+      </div>
+      <p class="hint" id="canvashint">
+        Drag the highlighted box to move a region. Drag a corner to resize.
+        Click a panel outline to move the region onto that panel.
+      </p>
+    </section>
+
+    <aside id="right">
+      <h2>Panels <span id="panelcount" class="muted"></span></h2>
+      <p class="hint">Tags come from the model — side, section, level, and whether
+        the panel is readable from trackside.</p>
+      <ul id="panels"></ul>
+
+      <h2>Fit</h2>
+      <pre id="fitjson">{}</pre>
+      <div id="notes"></div>
+    </aside>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -23,6 +23,7 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit --scan <path>             inspect a car's textures, emit a profile
   liverykit --explain <kn5>           rank which texture is the bodywork, with
                                       the evidence, so you can confirm it
+  liverykit <livery> --ui             open the fitting editor for this car
 
 Arguments
   <livery>            path to a livery module, or a name in ./liveries/
@@ -50,6 +51,8 @@ Options
   --profile <path>    override the car profile (default: cars/<livery.car>.json)
   --fit <path>        per-car placement overrides for this design
                       (default: fits/<livery>@<car>.json, if it exists)
+  --ui                open the fitting editor instead of building
+  --port <n>          port for --ui                            (default: 7391)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
 
@@ -76,6 +79,8 @@ const { values, positionals } = parseArgs({
     skins: { type: 'string' },
     profile: { type: 'string' },
     fit: { type: 'string' },
+    ui: { type: 'boolean', default: false },
+    port: { type: 'string' },
     pack: { type: 'string', multiple: true, default: [] },
     help: { type: 'boolean', default: false },
   },
@@ -260,8 +265,22 @@ const outDir = join(values.out, folder);
 
 console.log(`${livery.name}  ->  ${profile.name ?? profile.id}\n`);
 
-// --- build ------------------------------------------------------------------
-if (values.uvgrid) {
+// --- the fitting editor -----------------------------------------------------
+//
+// Local only. It reads this machine's car models and stock skins, which the
+// project never ships, so it binds to 127.0.0.1 and there is no hosted version.
+if (values.ui) {
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { url } = await startUi({
+    livery,
+    profile,
+    fitPath,
+    port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
+  });
+  console.log(`  fitting editor at ${url}`);
+  console.log(`  writes ${fitPath.replace(ROOT + '/', '')} when you press Save`);
+  console.log('  ctrl-c to stop');
+} else if (values.uvgrid) {
   const pngDir = join(values.out, `${folder}_png`);
   await buildCalibration({
     profile,
