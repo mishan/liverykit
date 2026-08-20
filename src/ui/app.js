@@ -12,6 +12,10 @@
 // happens once, on the way into the fit — never a second meaning for the field.
 // ---------------------------------------------------------------------------
 
+// Relative, so the same specifier resolves in the browser (served alongside
+// app.js) and in Node, where the tests import this module directly.
+import { createViewer, unpack } from './view3d.js';
+
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
 
@@ -22,6 +26,9 @@ const state = {
   fit: null,         // working copy, saved only on demand
   placed: [],        // where each region actually landed, from the server
   dirty: false,
+  svg: '',           // the last render, reused as the 3D texture
+  viewer: null,      // created lazily; a UV-only session never touches WebGL
+  view: 'uv',
 };
 
 const api = async (path, body) => {
@@ -74,6 +81,9 @@ $('#overlay').onpointerdown = (e) => {
   if (panel) movePanel(panel);
 };
 
+$('#tab-uv').onclick = () => showView('uv');
+$('#tab-3d').onclick = () => showView('3d');
+
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
   setDirty(false);
@@ -94,7 +104,9 @@ async function refresh() {
   const t0 = performance.now();
   const out = await api('/api/render', { fit: state.fit, role: state.surface.role });
   state.placed = out.placed;
+  state.svg = out.svg;
   $('#texture').innerHTML = out.svg;
+  if (state.view === '3d') paintCar();
   drawOverlay();
   drawRegions();
   drawInspector();
@@ -287,6 +299,56 @@ function drawInspector() {
     delete state.fit.regions[sel.id];
     setDirty(true); await refresh();
   };
+}
+
+// --- the car ----------------------------------------------------------------
+//
+// The UV view answers "where on the sheet", which you can already see. It cannot
+// answer the one that matters — is that spot flat, does anyone see it, does the
+// number wrap over an arch — so the same texture goes onto the actual geometry.
+//
+// Everything here is lazy and optional. A profile without the car's kn5 beside
+// it still edits perfectly well in UV; the 3D tab simply says why it cannot open.
+
+async function showView(which) {
+  state.view = which;
+  $('#tab-uv').className = `tab${which === 'uv' ? ' on' : ''}`;
+  $('#tab-3d').className = `tab${which === '3d' ? ' on' : ''}`;
+  $('#texture').hidden = which === '3d';
+  $('#overlay').hidden = which === '3d';
+  $('#car').hidden = which !== '3d';
+  if (which !== '3d') return;
+
+  try {
+    if (!state.viewer) {
+      state.viewer = createViewer($('#car'));
+      state.viewer.attach();
+    }
+    const res = await fetch(`/api/model?role=${encodeURIComponent(state.surface.role)}`);
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+    state.viewer.setGeometry(unpack(await res.arrayBuffer()));
+    await paintCar();
+    $('#3dnote').textContent = 'drag to orbit, wheel to zoom';
+  } catch (e) {
+    // No model is an ordinary situation, not a failure: plenty of people have a
+    // profile for a car whose kn5 is not on this machine.
+    $('#3dnote').textContent = `no 3D view — ${e.message}`;
+    $('#car').hidden = true;
+    $('#texture').hidden = false;
+    $('#overlay').hidden = false;
+    state.view = 'uv';
+    $('#tab-uv').className = 'tab on';
+    $('#tab-3d').className = 'tab';
+  }
+}
+
+async function paintCar() {
+  if (!state.viewer || !state.svg) return;
+  try {
+    await state.viewer.setTexture(state.svg);
+  } catch (e) {
+    $('#3dnote').textContent = `texture: ${e.message}`;
+  }
 }
 
 // --- chrome -----------------------------------------------------------------

@@ -93,6 +93,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'style.css']);
 
 /**
  * Everything the browser needs to draw the editor, computed once per request.
@@ -295,7 +296,7 @@ export async function startUi({ livery, profile, fitPath, modelPath = null, port
       // with user input, because a fitting tool has no business serving
       // anything outside its own directory.
       const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!/^[a-z0-9.-]+$/i.test(file) || !MIME[extname(file)]) return send(404, 'text/plain', 'not found');
+      if (!SERVABLE.has(file)) return send(404, 'text/plain', 'not found');
       const data = await readFile(join(HERE, file)).catch(() => null);
       if (!data) return send(404, 'text/plain', 'not found');
       return send(200, MIME[extname(file)], data);
