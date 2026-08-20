@@ -115,6 +115,18 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 function norm(v) { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
+/** Unpack the whole-car blob: a JSON header of known length, then the arrays. */
+export function unpackModel(buffer) {
+  const head = new DataView(buffer);
+  const len = head.getUint32(0, true);
+  const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 4, len)));
+  let o = 4 + len;
+  const positions = new Float32Array(buffer, o, meta.vertexCount * 3); o += meta.vertexCount * 12;
+  const uvs = new Float32Array(buffer, o, meta.vertexCount * 2); o += meta.vertexCount * 8;
+  const indices = new Uint32Array(buffer, o, meta.indexCount);
+  return { positions, uvs, indices, groups: meta.groups, bounds: meta.bounds };
+}
+
 /** Unpack the server's blob: two counts, then positions, UVs and indices. */
 export function unpack(buffer) {
   const head = new Uint32Array(buffer, 0, 2);
@@ -175,14 +187,23 @@ export function createViewer(canvas) {
   };
 
   const buffers = { position: gl.createBuffer(), uv: gl.createBuffer(), index: gl.createBuffer() };
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-  // A single grey texel, so the shape is visible before the first render arrives.
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
-    new Uint8Array([60, 66, 78, 255]));
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  /** A single flat texel — the shape before any render arrives, and unpainted parts. */
+  function greyTexture() {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+      new Uint8Array([60, 66, 78, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  const texture = greyTexture();
+  // Whole-car mode: one texture per painted surface, and one draw call each.
+  // `null` in a group means unpainted, and gets the grey.
+  const byRole = new Map();
+  let groups = null;
 
   gl.enable(gl.DEPTH_TEST);
   // Both faces. Car meshes are not reliably wound one way, and a missing
@@ -224,16 +245,58 @@ export function createViewer(canvas) {
     );
     gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
     gl.uniform1i(loc.map, 0);
-    gl.uniform4fv(loc.region, region);
     gl.uniform1f(loc.border, border);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.drawElements(gl.TRIANGLES, count, ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
+    const bytes = ext ? 4 : 2;
+    const type = ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+
+    if (!groups) {
+      gl.uniform4fv(loc.region, region);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.drawElements(gl.TRIANGLES, count, type, 0);
+      return;
+    }
+
+    // One draw call per painted surface. The highlight is deliberately NOT
+    // applied here: a UV rectangle means something different on each texture, so
+    // dimming the whole car around a rectangle read from one of them would dim
+    // the others by an unrelated coincidence of coordinates.
+    gl.uniform4fv(loc.region, [0, 0, 0, 0]);
+    for (const g of groups) {
+      gl.bindTexture(gl.TEXTURE_2D, byRole.get(g.role) ?? texture);
+      gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
+    }
+  }
+
+  /** Rasterise an SVG into a texture. The only way a browser will do it. */
+  async function uploadSvg(target, svg, size) {
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      const img = new Image();
+      img.width = size;
+      img.height = size;
+      await new Promise((ok, fail) => {
+        img.onload = ok;
+        img.onerror = () => fail(new Error('the browser could not rasterise the texture'));
+        img.src = url;
+      });
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      c.getContext('2d').drawImage(img, 0, 0, size, size);
+      gl.bindTexture(gl.TEXTURE_2D, target);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 
   return {
     /** Upload geometry, and frame the camera on whatever it just received. */
     setGeometry({ positions, uvs, indices }) {
+      groups = null;
       gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
       gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc.position);
@@ -278,28 +341,30 @@ export function createViewer(canvas) {
      * the upload is allowed.
      */
     async setTexture(svg, size = 1024) {
-      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-      try {
-        const img = new Image();
-        img.width = size;
-        img.height = size;
-        await new Promise((ok, fail) => {
-          img.onload = ok;
-          img.onerror = () => fail(new Error('the browser could not rasterise the texture'));
-          img.src = url;
-        });
-        const c = document.createElement('canvas');
-        c.width = c.height = size;
-        c.getContext('2d').drawImage(img, 0, 0, size, size);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
-        gl.generateMipmap(gl.TEXTURE_2D);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        draw();
-      } finally {
-        URL.revokeObjectURL(url);
+      await uploadSvg(texture, svg, size);
+      draw();
+    },
+
+    /**
+     * The whole car: geometry grouped by surface, and one texture per group.
+     *
+     * Textures are rasterised at 512 rather than 1024. Thirty-seven surfaces at
+     * full size is a hundred megabytes of GPU memory and several seconds of SVG
+     * rasterisation to look at a car from four metres away, and at that distance
+     * the difference is invisible. The per-surface view, where you are actually
+     * judging placement, keeps the full size.
+     */
+    async setWholeCar(model, surfaces, size = 512) {
+      // setGeometry clears the grouping, so the groups go on afterwards. The
+      // order matters: a frame drawn with the new buffers and the old group
+      // offsets would index past the end of them.
+      this.setGeometry(model);
+      for (const s of surfaces) {
+        if (!byRole.has(s.role)) byRole.set(s.role, greyTexture());
+        await uploadSvg(byRole.get(s.role), s.svg, size);
       }
+      groups = model.groups ?? null;
+      draw();
     },
 
     /**

@@ -83,6 +83,96 @@ export function modelGeometry(model, file) {
   };
 }
 
+/**
+ * The WHOLE car, grouped by which texture paints each part.
+ *
+ * The per-role view is the right one while you are editing a surface — you are
+ * looking at what you are painting. It is the wrong one for judging a design,
+ * because a livery is not a texture, it is every texture at once, and a stripe
+ * that meets the bodywork perfectly can still miss the sidepod beside it.
+ *
+ * Every mesh appears exactly once. A mesh whose texture the livery does not
+ * paint goes into a group with no role, which the viewer renders in flat grey —
+ * present, obviously unpainted, and not pretending to be stock artwork it does
+ * not have. Leaving those out entirely would be worse: a car with holes in it
+ * reads as a broken export rather than as an unpainted panel.
+ */
+export function wholeModelGeometry(model, files) {
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  const groups = [];
+  let lo = [Infinity, Infinity, Infinity];
+  let hi = [-Infinity, -Infinity, -Infinity];
+
+  const claimed = new Set();
+  const emit = (meshes, group) => {
+    const start = indices.length;
+    for (const mesh of meshes) {
+      const base = positions.length / 3;
+      for (let i = 0; i < mesh.vertexCount; i++) {
+        const v = vertex(model, mesh, i);
+        positions.push(v.x, v.y, v.z);
+        uvs.push(v.u, v.v);
+        for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
+          if (n < lo[k]) lo[k] = n;
+          if (n > hi[k]) hi[k] = n;
+        }
+      }
+      for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
+    }
+    if (indices.length > start) groups.push({ ...group, start, count: indices.length - start });
+  };
+
+  for (const { role, file } of files) {
+    const meshes = meshesUsingTexture(model, file).filter((m) => !claimed.has(m));
+    for (const m of meshes) claimed.add(m);
+    emit(meshes, { role, file });
+  }
+  // Whatever is left: glass, tyres on a livery that ignores them, the aerials.
+  emit((model.meshes ?? []).filter((m) => !claimed.has(m)), { role: null, file: null });
+
+  return {
+    positions: Float32Array.from(positions),
+    uvs: Float32Array.from(uvs),
+    indices: Uint32Array.from(indices),
+    groups,
+    bounds: { lo, hi },
+  };
+}
+
+/**
+ * A JSON header of known length, then the arrays.
+ *
+ * The flat format below cannot describe groups, and encoding role names into a
+ * binary header would mean inventing a string encoding for the sake of four
+ * fields. A length-prefixed JSON header costs a few hundred bytes on a payload
+ * of megabytes and stays readable when something goes wrong with it.
+ */
+export function packModel(g) {
+  const json = Buffer.from(JSON.stringify({
+    vertexCount: g.positions.length / 3,
+    indexCount: g.indices.length,
+    groups: g.groups,
+    bounds: g.bounds,
+  }), 'utf8');
+  // PADDED TO FOUR BYTES. The browser takes Float32Array views straight over
+  // this buffer, and a typed-array view must start on a multiple of its element
+  // size — an unpadded header of arbitrary JSON length throws on three arrivals
+  // out of four, which is a maddening way to find out about an alignment rule.
+  const header = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)]);
+  const out = Buffer.alloc(4 + header.length + g.positions.byteLength
+    + g.uvs.byteLength + g.indices.byteLength);
+  out.writeUInt32LE(header.length, 0);
+  let o = 4;
+  const put = (b) => { b.copy(out, o); o += b.length; };
+  put(header);
+  for (const ta of [g.positions, g.uvs, g.indices]) {
+    put(Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength));
+  }
+  return out;
+}
+
 /** Two counts, then positions, UVs and indices back to back. */
 export function packGeometry(g) {
   const head = new Uint32Array([g.positions.length / 3, g.indices.length]);
@@ -321,6 +411,31 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
       if (req.method === 'POST' && url.pathname === '/api/render') {
         const { fit: working, role, seed } = await body();
         return json(200, renderSurface({ livery, profile, fit: working, role, seed }));
+      }
+
+      // Every painted surface at once, on the whole car. Rendered fresh because
+      // the fit is the thing being judged; the geometry beside it is fetched
+      // once and reused, which is why they are two calls rather than one.
+      if (req.method === 'POST' && url.pathname === '/api/preview') {
+        const { fit: working, seed } = await body();
+        const state = editorState({ livery, profile, fit: working });
+        const surfaces = [];
+        for (const s of state.surfaces) {
+          const out = renderSurface({ livery, profile, fit: working, role: s.role, seed });
+          surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
+        }
+        return json(200, { surfaces });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/model' && url.searchParams.get('all')) {
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const files = editorState({ livery, profile, fit })
+          .surfaces.map((s) => ({ role: s.role, file: s.file }));
+        const g = wholeModelGeometry(m, files);
+        if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
+        return res.end(packModel(g));
       }
 
       if (req.method === 'GET' && url.pathname === '/api/model') {

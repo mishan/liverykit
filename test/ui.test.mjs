@@ -370,3 +370,70 @@ test('a selected region turns into a highlight the shader can use', async () => 
   const tiny = highlightUniforms([0.5, 0.5, 0.004, 0.006]);
   assert.ok(tiny.border < 0.004 / 2, `border ${tiny.border} would swallow a 0.004-wide region`);
 });
+
+test('the whole car packs every mesh exactly once, painted or not', async () => {
+  const { wholeModelGeometry, packModel } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR, buildKn5, vert } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+  const g = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }]);
+
+  // Every triangle in the model is drawn by exactly one group. Drawing one
+  // twice is invisible on an opaque mesh and doubles the cost; missing one
+  // leaves a hole that reads as a broken export rather than an unpainted part.
+  const total = g.groups.reduce((s, x) => s + x.count, 0);
+  assert.equal(total, g.indices.length, 'the groups must tile the index buffer');
+  const covered = new Array(g.indices.length).fill(0);
+  for (const x of g.groups) for (let i = x.start; i < x.start + x.count; i++) covered[i]++;
+  assert.ok(covered.every((n) => n === 1), 'no triangle drawn twice or skipped');
+
+  const back = unpackModel(new Uint8Array(packModel(g)).buffer);
+  assert.deepEqual([...back.positions], [...g.positions]);
+  assert.deepEqual([...back.uvs], [...g.uvs]);
+  assert.deepEqual([...back.indices], [...g.indices]);
+  assert.deepEqual(back.groups, g.groups);
+});
+
+test('the whole-car header is padded so typed arrays can view the buffer', async () => {
+  // Float32Array over a buffer must start on a multiple of four. The header is
+  // arbitrary-length JSON, so without padding this throws on three payloads out
+  // of four — and which three depends on how long the role names happen to be.
+  const { packModel } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  for (const role of ['a', 'ab', 'abc', 'abcd', 'abcde']) {
+    const g = {
+      positions: Float32Array.from([0, 1, 2]),
+      uvs: Float32Array.from([0, 1]),
+      indices: Uint32Array.from([0]),
+      groups: [{ role, file: `${role}.dds`, start: 0, count: 1 }],
+      bounds: { lo: [0, 0, 0], hi: [1, 1, 1] },
+    };
+    const buf = new Uint8Array(packModel(g)).buffer;
+    const back = unpackModel(buf);          // throws on a misaligned offset
+    assert.equal(back.groups[0].role, role);
+    assert.deepEqual([...back.positions], [0, 1, 2]);
+  }
+});
+
+test('an unpainted mesh still reaches the viewer, in its own group', async () => {
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+  // A livery that paints nothing at all: every triangle should still be there,
+  // in the roleless group the viewer draws grey.
+  const none = wholeModelGeometry(model, []);
+  assert.equal(none.groups.length, 1);
+  assert.equal(none.groups[0].role, null);
+  assert.equal(none.groups[0].count, none.indices.length, 'all of it, unpainted');
+
+  const all = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }]);
+  assert.equal(all.indices.length, none.indices.length,
+    'painting a surface must not change how much car there is');
+  assert.deepEqual(all.groups.map((x) => x.role), ['body'],
+    'with the only texture painted there is nothing left over');
+});
