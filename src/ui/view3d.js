@@ -539,7 +539,12 @@ export function createViewer(canvas) {
       canvas.onpointerdown = (e) => {
         if (claim && claim(this.pickUV(e.clientX, e.clientY), e)) return;
         dragging = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch };
-        canvas.setPointerCapture(e.pointerId);
+        // Capture is an optimisation — it keeps the orbit alive when the pointer
+        // leaves the canvas — and it is allowed to fail. It throws
+        // "Invalid pointer id" for a pointer the browser is not currently
+        // tracking, and an exception here escapes the handler and abandons the
+        // gesture entirely: the camera stops responding for no visible reason.
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* orbit anyway */ }
       };
       canvas.onpointermove = (e) => {
         if (!dragging) return;

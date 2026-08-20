@@ -30,6 +30,27 @@ import { startUi } from '../src/ui/server.mjs';
 import { loadProfile } from '../src/profile.mjs';
 import '../src/index.mjs';
 
+/**
+ * Whether an X display is actually usable, as opposed to merely named.
+ *
+ * DISPLAY is set in plenty of environments where nothing will answer on it —
+ * a container inheriting the variable, or a host Xwayland whose auth file this
+ * process cannot read. Firefox then falls back to a path with no GL at all and
+ * reports "Exhausted GL driver options", which reads as "this machine has no
+ * WebGL" when in fact mesa's llvmpipe is installed and works.
+ */
+function displayWorks() {
+  try {
+    execFileSync('xdpyinfo', { stdio: 'pipe', timeout: 5000 });
+    return true;
+  } catch { return false; }
+}
+
+function has(cmd) {
+  try { execFileSync('command', ['-v', cmd], { shell: '/bin/bash', stdio: 'pipe' }); return true; }
+  catch { return false; }
+}
+
 function findBrowser() {
   for (const b of ['firefox', 'chromium', 'chromium-browser', 'google-chrome']) {
     try {
@@ -88,30 +109,55 @@ async function inBrowser(driver, {
   await new Promise((ok) => proxy.listen(0, '127.0.0.1', ok));
   const url = `http://127.0.0.1:${proxy.address().port}/`;
 
+  // --- getting a browser that actually has WebGL ---------------------------
+  //
+  // This took three rounds of "the tests pass but exercise nothing", so it is
+  // worth writing down. Firefox reported "Exhausted GL driver options" and the
+  // GL-dependent tests quietly took their own no-GL branch. Mesa was installed
+  // and working the whole time — `EGL_PLATFORM=surfaceless eglinfo` reported
+  // llvmpipe. Three separate things were in the way:
+  //
+  //   * DISPLAY was set to a compositor's X server this process cannot
+  //     authorise against. Set, named, and unusable — so Firefox fell back to
+  //     no GL rather than reporting a display problem. Xvfb gives a private one.
+  //   * webgl.out-of-process defaults on, and the GPU process cannot start in a
+  //     sandbox. WebGL then fails in the child, which the parent reports as no
+  //     WebGL at all.
+  //   * the prefs have to arrive in a PROFILE. `--setpref` did not take.
+  //
+  // Together with MOZ_X11_EGL and LIBGL_ALWAYS_SOFTWARE this gives a complete
+  // software GL stack, and the renderer tests stop being decorative.
+  const useXvfb = !displayWorks() && has('xvfb-run');
+  const profileDir = await mkdtemp(join(tmpdir(), 'lk-ff-'));
+  await writeFile(join(profileDir, 'user.js'), [
+    'user_pref("webgl.force-enabled", true);',
+    'user_pref("webgl.disabled", false);',
+    'user_pref("webgl.forbid-software", false);',
+    // The one that actually mattered: no GPU process in a sandbox.
+    'user_pref("webgl.out-of-process", false);',
+    'user_pref("layers.acceleration.disabled", true);',
+    'user_pref("gfx.webrender.software", true);',
+    'user_pref("gfx.x11-egl.force-enabled", true);',
+  ].join('\n'));
+
   const args = BROWSER === 'firefox'
-    ? ['--headless', '--window-size=1400,900',
-      // webgl.force-enabled makes Firefox use its software backend rather than
-      // refusing when it finds no GPU driver; without it the GL-dependent tests
-      // silently take their skip branch on a headless box.
-      '--setpref', 'webgl.force-enabled=true',
-      '--setpref', 'webgl.disabled=false',
-      '--setpref', 'webgl.software-rendering-allowed=true',
-      '--setpref', 'gfx.webrender.software=true',
-      url]
+    ? ['--headless', '--window-size=1400,900', '--profile', profileDir, url]
     : ['--headless=new', '--disable-gpu', '--window-size=1400,900', url];
-  // Force the software rasteriser. A headless box has no GPU, and Firefox
-  // otherwise reports "Exhausted GL driver options" on some runs and works on
-  // others — which made the GL-dependent tests pass by taking their own skip
-  // branch, green for no reason at all.
-  const child = spawn(BROWSER, args, {
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      LIBGL_ALWAYS_SOFTWARE: '1',
-      MOZ_WEBRENDER: '0',
-      MOZ_ACCELERATED: '0',
+
+  const child = spawn(
+    useXvfb ? 'xvfb-run' : BROWSER,
+    useXvfb ? ['-a', '-s', '-screen 0 1400x900x24', BROWSER, ...args] : args,
+    {
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        MOZ_X11_EGL: '1',
+        LIBGL_ALWAYS_SOFTWARE: '1',
+        MOZ_WEBRENDER: '0',
+        MOZ_ACCELERATED: '0',
+      },
     },
-  });
+  );
 
   const deadline = Date.now() + 40000;
   while (!report && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
@@ -492,8 +538,12 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
     surfaces: {
       body: {
         role: 'body',
+        // right_mid is the -x face, which is the one the default camera looks
+        // at: yaw -0.9 puts the eye at negative x and positive z. Painting the
+        // far side of the car and then hunting for it on screen would be a test
+        // of the orbit controls.
         regions: [{
-          id: 'mark', panel: 'left_mid', at: [0.3, 0.3, 0.3, 0.3],
+          id: 'mark', panel: 'right_mid', at: [0.15, 0.15, 0.7, 0.7],
           treatment: 'fill', color: 'accent',
         }],
       },
@@ -518,17 +568,6 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
       const r = cv.getBoundingClientRect();
       say('canvas: ' + Math.round(r.width) + 'x' + Math.round(r.height));
 
-      // Sweep the middle band for a point where the car actually is, so this
-      // does not depend on exactly how the camera framed it.
-      let from = null;
-      for (let f = 0.3; f <= 0.7 && !from; f += 0.05) {
-        const x = Math.round(r.x + r.width * f);
-        const y = Math.round(r.y + r.height * 0.5);
-        if (topAt(x, y) === cv) from = [x, y];
-      }
-      if (!from) { say('no point on the canvas was reachable'); return done(); }
-      say('grab at: ' + from.join(','));
-
       const send = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, {
         bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0,
       }));
@@ -537,7 +576,25 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
         bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0,
       }));
 
-      send('pointerdown', from[0], from[1]);
+      // Hunt for a pixel where the REGION is, not merely where the canvas is.
+      // Which way the car faces and where its artwork sits depend on the
+      // camera's framing, so the honest way to find the region is to press and
+      // see whether a drag began. A press that lands on bare bodywork orbits
+      // instead, which is harmless and undone by releasing.
+      let from = null;
+      for (let fy = 0.25; fy <= 0.75 && !from; fy += 0.08) {
+        for (let fx = 0.2; fx <= 0.8 && !from; fx += 0.06) {
+          const x = Math.round(r.x + r.width * fx);
+          const y = Math.round(r.y + r.height * fy);
+          if (topAt(x, y) !== cv) continue;
+          send('pointerdown', x, y);
+          await settle(60);
+          if (/moving|resizing/.test(document.querySelector('#status').textContent)) from = [x, y];
+          else { sendWin('pointerup', x, y); await settle(30); }
+        }
+      }
+      if (!from) { say('never found the region on screen'); return done(); }
+      say('grab at: ' + from.join(','));
       await settle(120);
       for (let i = 1; i <= 5; i++) sendWin('pointermove', from[0] + i * 8, from[1] + i * 5);
       await settle(200);
@@ -561,7 +618,9 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
     return;
   }
 
-  const fit = JSON.parse(find('fit: ').slice('fit: '.length));
+  const raw = find('fit: ').slice('fit: '.length);
+  assert.ok(raw, `the drag never got as far as reporting a fit: ${report.join(' | ')}`);
+  const fit = JSON.parse(raw);
   const at = fit.regions?.mark?.at;
   assert.ok(Array.isArray(at), `the drag never reached the fit: ${report.join(' | ')}`);
   assert.ok(at.every((n) => Number.isFinite(n)), `at must stay numeric, got ${at}`);
