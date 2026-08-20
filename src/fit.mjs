@@ -280,32 +280,45 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   // A mirror whose source lives on another surface is skipped in silence, not
   // reported: applyFit runs once per surface and every one of them would
   // otherwise report every other surface's mirrors as stale.
-  for (const [id, m] of Object.entries(copiesOf(fit))) {
-    const at = regions.findIndex((r, i) => regionKey(surfaceKey, r, i) === m.of);
-    if (at < 0) continue;
-    used.add(id);
-    used.add(m.of);
+  // Resolved in PASSES, because a copy may be a copy of a copy. Duplicating a
+  // duplicate is an ordinary thing to do, and a single pass over the entries
+  // silently produced nothing for it: the source was not a region the livery
+  // declared, so it looked exactly like a copy belonging to another surface.
+  //
+  // Each pass places every copy whose source now exists; the loop ends when a
+  // pass places nothing. What is left over either belongs to another surface or
+  // is part of a cycle, and neither is drawable.
+  const pending = new Map(Object.entries(copiesOf(fit)));
+  for (let placed = 1; placed > 0 && pending.size; ) {
+    placed = 0;
+    for (const [id, m] of [...pending]) {
+      const src = out.find((r) => r.__key === m.of);
+      if (!src) continue;
+      pending.delete(id);
+      placed++;
+      used.add(id);
+      used.add(m.of);
 
-    const src = out.find((r) => r.__key === m.of) ?? regions[at];
-    const clone = { ...src, __key: id, id };
-    // An explicit panel replaces tag selection outright, the same as an
-    // override does; leaving the tags on would trip the "both panel and tags"
-    // guard and would be ambiguous anyway.
-    delete clone.tags;
-    delete clone.limit;
-    delete clone.once;
-    for (const k of ['panel', 'at', 'rotate', 'scale', 'safe']) {
-      if (m[k] !== undefined) clone[k] = m[k];
+      const clone = { ...src, __key: id, id };
+      // An explicit panel replaces tag selection outright, the same as an
+      // override does; leaving the tags on would trip the "both panel and tags"
+      // guard and would be ambiguous anyway.
+      delete clone.tags;
+      delete clone.limit;
+      delete clone.once;
+      for (const k of ['panel', 'at', 'rotate', 'scale', 'safe']) {
+        if (m[k] !== undefined) clone[k] = m[k];
+      }
+      if (m.panel && !profile?.panels?.[role]?.[m.panel] && !profile?.aliases?.[role]?.[m.panel]) {
+        notes.push({
+          term: id, status: 'fit-stale',
+          text: `fit: copied region "${id}" points at panel "${m.panel}", which ${role} ` +
+                `does not have — it was not drawn`,
+        });
+        continue;
+      }
+      out.push(clone);
     }
-    if (m.panel && !profile?.panels?.[role]?.[m.panel] && !profile?.aliases?.[role]?.[m.panel]) {
-      notes.push({
-        term: id, status: 'fit-stale',
-        text: `fit: copied region "${id}" points at panel "${m.panel}", which ${role} ` +
-              `does not have — it was not drawn`,
-      });
-      continue;
-    }
-    out.push(clone);
   }
 
   return { regions: out, notes };

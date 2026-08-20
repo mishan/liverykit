@@ -47,7 +47,22 @@ const state = {
   // "these are not a pair at all". The id convention cannot be argued with any
   // other way — there is no entry to delete.
   severed: new Set(),
+  // --- undo -----------------------------------------------------------------
+  //
+  // SNAPSHOTS, not inverse operations. Everything this editor changes lives in
+  // one plain JSON object plus three small session sets, and a fit is a few
+  // kilobytes — so a clone per action is cheap, and "restore the previous
+  // state" is obviously correct in a way that "apply the inverse of a move that
+  // also rehosted a panel and dragged a mirrored twin across with it" is not.
+  // Inverse operations would need an inverse for every action, and every one of
+  // them is a chance to write an undo that ALMOST undoes.
+  //
+  // Bounded, because a long session should not grow without limit. Fifty is far
+  // more than anyone reaches for and a few hundred kilobytes at worst.
+  past: [],
+  future: [],
 };
+const UNDO_LIMIT = 50;
 
 const api = async (path, body) => {
   const res = await fetch(path, body
@@ -131,6 +146,17 @@ $('#overlay').onpointerdown = (e) => {
   }
 };
 
+$('#undo').onclick = () => undo();
+$('#redo').onclick = () => redo();
+// Ctrl/Cmd+Z, and Shift for the other direction. Ignored while typing in the
+// inspector's number fields, where the browser's own undo is what is wanted.
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+  if (/^(input|textarea|select)$/i.test(e.target?.tagName ?? '')) return;
+  e.preventDefault();
+  if (e.shiftKey) redo(); else undo();
+});
+
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
@@ -140,6 +166,85 @@ $('#save').onclick = async () => {
   setDirty(false);
   status('saved');
 };
+
+// --- undo -------------------------------------------------------------------
+
+/** Everything an action can change, as a value that can be put back. */
+function snapshot() {
+  return {
+    fit: structuredClone(state.fit),
+    paired: [...state.paired],
+    unlinked: [...state.unlinked],
+    severed: [...state.severed],
+    selected: state.selected,
+  };
+}
+
+function restore(snap) {
+  state.fit = structuredClone(snap.fit);
+  state.paired = new Map(snap.paired);
+  state.unlinked = new Set(snap.unlinked);
+  state.severed = new Set(snap.severed);
+  state.selected = snap.selected;
+}
+
+/**
+ * Remember where things stood, and what the person is about to do.
+ *
+ * Called BEFORE an action, not after, so the stack holds states to return to
+ * rather than states just arrived at. The label is for the status line: "undid
+ * move number-left" is a different thing to read than "undid".
+ *
+ * A drag calls this once, on pointerdown. Calling it per pointermove would fill
+ * the stack with fifty intermediate positions of one gesture and make undo mean
+ * "go back four pixels".
+ */
+function remember(label) {
+  state.past.push({ ...snapshot(), label });
+  if (state.past.length > UNDO_LIMIT) state.past.shift();
+  // A new action abandons the redo branch. Keeping it would let a redo jump to
+  // a state that no longer follows from anything.
+  state.future.length = 0;
+  updateUndoButtons();
+}
+
+async function undo() {
+  const snap = state.past.pop();
+  if (!snap) return status('nothing to undo');
+  state.future.push({ ...snapshot(), label: snap.label });
+  restore(snap);
+  await afterTimeTravel(`undid ${snap.label}`);
+}
+
+async function redo() {
+  const snap = state.future.pop();
+  if (!snap) return status('nothing to redo');
+  state.past.push({ ...snapshot(), label: snap.label });
+  restore(snap);
+  await afterTimeTravel(`redid ${snap.label}`);
+}
+
+/**
+ * Put the editor back in step with a fit that changed underneath it.
+ *
+ * Goes through reloadState because undo can restore a fit with a different SET
+ * of regions — undoing a duplicate removes one, undoing a delete brings one
+ * back — and the region list is the server's answer, not something the browser
+ * can reconstruct.
+ */
+async function afterTimeTravel(msg) {
+  setDirty(true);
+  await reloadState();
+  await refresh();
+  updateUndoButtons();
+  status(msg);
+}
+
+function updateUndoButtons() {
+  const u = $('#undo'); const r = $('#redo');
+  if (u) { u.disabled = !state.past.length; u.title = state.past.length ? `undo ${state.past.at(-1).label}` : ''; }
+  if (r) { r.disabled = !state.future.length; r.title = state.future.length ? `redo ${state.future.at(-1).label}` : ''; }
+}
 
 // --- rendering --------------------------------------------------------------
 
@@ -194,6 +299,9 @@ async function refresh() {
   $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
   $('#notes').innerHTML = out.notes
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
+  // Derived from the stacks rather than trusted from the markup, so there is
+  // one source of truth for whether there is anything to go back to.
+  updateUndoButtons();
   status(`rendered in ${Math.round(performance.now() - t0)} ms`);
 }
 
@@ -369,6 +477,7 @@ async function movePanel(name) {
   if (!state.selected) return status('select a region first');
   const panel = state.surface.panels.find((p) => p.name === name);
   if (!panel) return;
+  remember(`move ${state.selected} to ${name}`);
   // Deliberately does NOT require an existing placement: putting a region onto a
   // named panel is how you rescue one this car dropped or never matched.
 
@@ -453,6 +562,9 @@ function startCarDrag(e, mode, startUv) {
   e.preventDefault();
   const sel = state.placed.find((p) => p.id === state.selected);
   if (!sel) return;
+  // Once per GESTURE. Remembering per pointermove would fill the stack with
+  // intermediate positions and make undo mean "go back four pixels".
+  remember(`${mode} ${sel.id}`);
   const start = { uv: startUv, abs: [...sel.abs] };
   let last = startUv;
   // Said at the moment of grabbing rather than on the first move, so a press
@@ -545,6 +657,7 @@ function startDrag(e, mode) {
   const box = svg.getBoundingClientRect();
   const sel = state.placed.find((p) => p.id === state.selected);
   if (!sel) return;
+  remember(`${mode} ${sel.id}`);
 
   const start = { x: e.clientX, y: e.clientY, abs: [...sel.abs] };
   const toFrac = (dx, dy) => [dx / box.width, dy / box.height];
@@ -885,9 +998,14 @@ function drawInspector() {
     <div class="row">${rotationChoices(id, def, o)}</div>
     ${mirrorControl(id)}
     <div class="row" style="margin-top:10px">
-      <button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
+      ${def?.fromFit
+        ? '<button id="delete">Delete</button>'
+        : `<button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>`}
       <button id="reset">Reset</button>
-    </div>`;
+    </div>
+    ${def?.fromFit ? `<p class="hint">A copy of <code>${esc(def.fromFit)}</code>,
+      added by this fit. Deleting removes it; there is no design behind it to
+      restore it to.</p>` : ''}`;
 
   wireInspectorButtons(sel.id);
 }
@@ -909,13 +1027,45 @@ function derivedNote(id) {
 
 /** Shared by both inspector states, so Restore works when nothing is drawn. */
 function wireInspectorButtons(id) {
-  $('#drop').onclick = async () => {
+  // A region the FIT created has no design behind it, so "drop" would be a
+  // half-measure: it would leave an entry describing something deliberately not
+  // drawn, and nothing to ever restore it to. Deleting it is the honest verb.
+  const del = $('#inspector').querySelector?.('#delete');
+  if (del) {
+    del.onclick = async () => {
+      remember(`delete ${id}`);
+      delete state.fit.copies?.[id];
+      delete state.fit.mirrors?.[id];
+      // Anything that was a copy OF this one goes too, or it would resolve
+      // against nothing and vanish silently on the next build.
+      for (const block of [state.fit.copies, state.fit.mirrors]) {
+        for (const [k, v] of Object.entries(block ?? {})) if (v.of === id) delete block[k];
+      }
+      // And the session's opinions about it, which would otherwise outlive it
+      // and attach themselves to the next region to take the name.
+      const twin = state.paired.get(id);
+      state.paired.delete(id);
+      if (twin) state.paired.delete(twin);
+      state.unlinked.delete(id);
+      state.severed.delete(id);
+
+      state.selected = null;
+      setDirty(true);
+      await reloadState();
+      await refresh();
+      status(`deleted ${id}`);
+    };
+  }
+
+  if ($('#inspector').querySelector?.('#drop') !== null) $('#drop').onclick = async () => {
+    remember(`${state.fit.regions[id]?.drop ? 'restore' : 'drop'} ${id}`);
     const ov = override(id);
     if (ov.drop) delete ov.drop; else ov.drop = true;
     setDirty(true);
     await refresh();
   };
   $('#reset').onclick = async () => {
+    remember(`reset ${id}`);
     delete state.fit.regions[id];
     // Reset means back to the design, and the design's symmetry is part of what
     // it said. Leaving the other half of a pair adjusted would make "reset" the
@@ -930,6 +1080,7 @@ function wireInspectorButtons(id) {
   for (const b of $('#inspector').querySelectorAll?.('[data-rotate]') ?? []) {
     b.onclick = async () => {
       const v = b.dataset.rotate;
+      remember(`rotate ${id}`);
       const ov = override(id);
       if (v === 'auto') delete ov.rotate; else ov.rotate = Number(v);
       for (const other of linkedTo(id)) {
@@ -949,6 +1100,7 @@ function wireInspectorButtons(id) {
   const mirror = inspector.querySelector?.('#mirror');
   if (mirror) {
     mirror.onclick = () => {
+      remember(`link ${id}`);
       const other = partnerOf(id);
       if (state.unlinked.has(id)) { state.unlinked.delete(id); state.unlinked.delete(other); }
       else { state.unlinked.add(id); if (other) state.unlinked.add(other); }
@@ -966,6 +1118,7 @@ function wireInspectorButtons(id) {
     pairwith.onchange = async () => {
       const other = pairwith.value;
       if (!other) return;
+      remember(`pair ${id}`);
       state.paired.set(id, other);
       state.paired.set(other, id);
       // Declaring a pair overrides a previous severance, or unpairing would be
@@ -981,20 +1134,21 @@ function wireInspectorButtons(id) {
 
   // Create the other half. See mirrorCopy.
   const create = inspector.querySelector?.('#mirrorcreate');
-  if (create) create.onclick = () => mirrorCopy(id);
+  if (create) create.onclick = () => { remember(`mirror ${id}`); return mirrorCopy(id); };
 
   const duplicate = inspector.querySelector?.('#duplicate');
-  if (duplicate) duplicate.onclick = () => duplicateRegion(id);
+  if (duplicate) duplicate.onclick = () => { remember(`duplicate ${id}`); return duplicateRegion(id); };
 
   // One-shot: copy this placement across without changing the link. The action
   // a broken pair needs when the two sides have drifted and only one of them
   // was meant to.
   const mirrornow = inspector.querySelector?.('#mirrornow');
-  if (mirrornow) mirrornow.onclick = () => mirrorNow(id);
+  if (mirrornow) mirrornow.onclick = () => { remember(`mirror ${id}`); return mirrorNow(id); };
 
   const unpair = inspector.querySelector?.('#unpair');
   if (unpair) {
     unpair.onclick = () => {
+      remember(`unpair ${id}`);
       const other = partnerOf(id);
       // A pair found from the ids cannot be deleted from the map — it is not in
       // it — so unpairing records the SEVERANCE instead, against both halves.
