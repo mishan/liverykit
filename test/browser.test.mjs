@@ -138,6 +138,61 @@ async function inBrowser(driver, {
     'user_pref("layers.acceleration.disabled", true);',
     'user_pref("gfx.webrender.software", true);',
     'user_pref("gfx.x11-egl.force-enabled", true);',
+
+    // --- and nothing off this machine -------------------------------------
+    //
+    // These tests talk to 127.0.0.1 and nowhere else, but a stock Firefox on a
+    // COLD PROFILE does not know that. On every launch it resolves and calls
+    // out to safebrowsing lists, telemetry, remote settings, the addon
+    // blocklist, update servers, the captive-portal probe and the DoH canary —
+    // and this harness starts a fresh profile per test, several tests per run,
+    // and SIGKILLs the browser so nothing is ever cached or cleanly closed.
+    //
+    // Measured with strace: 114 DNS lookups PER LAUNCH before these prefs, 6
+    // after. At several launches per run and many runs an afternoon, that is
+    // enough to trip a filtering resolver's rate limit and get the whole
+    // machine blocked — which is exactly what it did. None of it was buying
+    // anything: a test of a local editor has no business making a single
+    // external request.
+    'user_pref("network.dns.disablePrefetch", true);',
+    'user_pref("network.prefetch-next", false);',
+    'user_pref("network.predictor.enabled", false);',
+    'user_pref("network.captive-portal-service.enabled", false);',
+    'user_pref("network.connectivity-service.enabled", false);',
+    // 5 = DoH off and the canary lookup skipped with it.
+    'user_pref("network.trr.mode", 5);',
+    'user_pref("browser.safebrowsing.malware.enabled", false);',
+    'user_pref("browser.safebrowsing.phishing.enabled", false);',
+    'user_pref("browser.safebrowsing.downloads.enabled", false);',
+    'user_pref("browser.safebrowsing.provider.google4.updateURL", "");',
+    'user_pref("browser.safebrowsing.provider.mozilla.updateURL", "");',
+    'user_pref("toolkit.telemetry.enabled", false);',
+    'user_pref("toolkit.telemetry.unified", false);',
+    'user_pref("toolkit.telemetry.server", "");',
+    'user_pref("datareporting.healthreport.uploadEnabled", false);',
+    'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
+    'user_pref("app.update.enabled", false);',
+    'user_pref("app.update.auto", false);',
+    'user_pref("extensions.update.enabled", false);',
+    'user_pref("extensions.blocklist.enabled", false);',
+    'user_pref("extensions.systemAddon.update.enabled", false);',
+    'user_pref("services.settings.server", "");',
+    'user_pref("browser.region.network.url", "");',
+    'user_pref("browser.newtabpage.activity-stream.feeds.telemetry", false);',
+    'user_pref("browser.discovery.enabled", false);',
+    'user_pref("browser.ping-centre.telemetry", false);',
+    'user_pref("dom.push.connection.enabled", false);',
+    'user_pref("network.http.speculative-parallel-limit", 0);',
+    // The backstop: everything except loopback goes through a proxy that is not
+    // there. A request that slips past the prefs above fails immediately and
+    // locally instead of becoming a DNS lookup.
+    'user_pref("network.proxy.type", 1);',
+    'user_pref("network.proxy.http", "127.0.0.1");',
+    'user_pref("network.proxy.http_port", 1);',
+    'user_pref("network.proxy.ssl", "127.0.0.1");',
+    'user_pref("network.proxy.ssl_port", 1);',
+    'user_pref("network.proxy.allow_hijacking_localhost", false);',
+    'user_pref("network.proxy.no_proxies_on", "127.0.0.1,localhost");',
   ].join('\n'));
 
   const args = BROWSER === 'firefox'
