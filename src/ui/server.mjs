@@ -344,6 +344,31 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         at: r.at ?? [0, 0, 1, 1],
       })),
     });
+
+    // Regions the FIT created: a mirrored copy of one the design declared.
+    // They belong in the list beside the others — one exists on the car, so it
+    // has to be selectable, movable and removable like anything else. Marked so
+    // the inspector can offer to delete it, which is the one thing that makes
+    // sense for a region the design never mentioned.
+    const surface = surfaces[surfaces.length - 1];
+    const keys = new Set(surface.regions.map((r) => r.id));
+    for (const [id, m] of Object.entries(fit?.mirrors ?? {})) {
+      if (!keys.has(m.of)) continue;
+      const src = (t.spec.regions ?? []).find((r, i) => regionKey(t.from, r, i) === m.of);
+      surface.regions.push({
+        index: surface.regions.length,
+        id,
+        derived: false,
+        fromFit: m.of,
+        treatment: src?.treatment,
+        editable: true,
+        mirror: m.of,
+        rotate: m.rotate ?? null,
+        tags: undefined,
+        panel: m.panel,
+        at: m.at ?? [0, 0, 1, 1],
+      });
+    }
   }
 
   // `id` is what a fit calls this design, and it is NOT `folder`. A fit is found

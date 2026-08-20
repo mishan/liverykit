@@ -167,3 +167,39 @@ override or two.
 Whether the UI should write `notes` into a fit the way the two shipped examples
 do by hand. The prose in those files is the most useful part of them, and no tool
 is going to produce it.
+
+## Mirrored copies
+
+A fit may not add a region. That rule has one exception, and it is worth
+spelling out because it is the only place the boundary bends.
+
+```json
+"mirrors": {
+  "badge-mirror": { "of": "badge", "panel": "right_mid", "at": [0.3, 0.2, 0.2, 0.2] }
+}
+```
+
+This creates a second `badge` on the other flank. It invents no artwork:
+treatment, colours, text and glow all come from the region named in `of`, and
+the only new information is a placement — which is exactly what a fit is for.
+Setting anything else is rejected, so a mirrored copy cannot quietly become a
+second way of writing a livery.
+
+It earns the exception because **symmetry is a property of the car, not of the
+design**. A livery that paints one badge is portable to a car with one flank
+worth painting and to a car with two, and the design cannot know which it is
+being run against. Recording that in the fit is recording a fact about the car,
+which is what the file is for.
+
+Where the copy goes is measured rather than assumed. The source panel's
+`mirrorOf` gives the opposite panel, and the two panels' `uAxis` and `vAxis`
+say whether the sheet runs the same way across both — a pair that is reversed
+in UV needs `1 - x - w`, and copying the coordinates across without checking
+puts the artwork at the wrong end of the car. That is not hypothetical: it
+shipped that way, and moving a number forward on one flank moved it backward on
+the other.
+
+A panel with no `mirrorOf` straddles the centreline — a nose, an engine cover —
+so it is its own mirror, and the copy lands on the same panel with its position
+reflected within it. Which axis the centreline cuts is measured too, since an
+island the unwrapper packed sideways has that role fall to `v`.

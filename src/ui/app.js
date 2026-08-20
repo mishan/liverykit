@@ -155,6 +155,20 @@ async function selectSurface(i) {
   if (state.view === '3d') await loadCarGeometry();
 }
 
+/**
+ * Re-read what the surface contains.
+ *
+ * Only needed when the set of regions changes, which is exactly once: creating
+ * a mirrored copy. Everything else in this editor moves regions around, and
+ * `/api/render` already reports where they landed.
+ */
+async function reloadState() {
+  const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
+  state.data = await api('/api/state');
+  state.surface = state.data.surfaces[i < 0 ? 0 : i];
+  drawPanels();
+}
+
 /** Re-render the texture and redraw everything over it. */
 async function refresh() {
   const t0 = performance.now();
@@ -765,16 +779,18 @@ function mirrorControl(id) {
     .map((r) => `<option value="${esc(r.id)}">${esc(r.id)}</option>`).join('');
 
   if (!other) {
-    // Nothing paired. Offer to pair it with anything else on this surface —
-    // the id convention is a guess about what names meant, and a design is free
-    // to call its two halves whatever it likes.
+    // Nothing paired. Two ways out: pair with a region that already exists, or
+    // create the counterpart that does not.
     return `
       <label>mirror</label>
       <div class="row">
-        <select id="pairwith"><option value="">pair with…</option>${candidates}</select>
+        <button id="mirrorcreate">Create mirrored copy</button>
       </div>
-      <p class="hint">Pairing moves the other one to the mirrored position now,
-        and keeps it there as this one is edited.</p>`;
+      <div class="row" style="margin-top:6px">
+        <select id="pairwith"><option value="">or pair with…</option>${candidates}</select>
+      </div>
+      <p class="hint">A copy takes its artwork from this region and appears on the
+        opposite panel. Pairing instead links two regions that both already exist.</p>`;
   }
 
   const linked = !state.unlinked.has(id) && !state.unlinked.has(other);
@@ -934,6 +950,10 @@ function wireInspectorButtons(id) {
     };
   }
 
+  // Create the other half. See mirrorCopy.
+  const create = inspector.querySelector?.('#mirrorcreate');
+  if (create) create.onclick = () => mirrorCopy(id);
+
   // One-shot: copy this placement across without changing the link. The action
   // a broken pair needs when the two sides have drifted and only one of them
   // was meant to.
@@ -956,6 +976,57 @@ function wireInspectorButtons(id) {
       status(`${id} is on its own now`);
     };
   }
+}
+
+/**
+ * Create the region's opposite number, on the mirrored panel.
+ *
+ * This is the one thing a fit does that ADDS a region, and the rule it bends is
+ * one I wrote: a fit cannot add regions, because wanting to usually means the
+ * design needs the change. A mirrored copy earns the exception by inventing no
+ * artwork — treatment, colours and text all come from the region it names, and
+ * the only new information is a placement, which is precisely what a fit is
+ * for. Symmetry is a property of the CAR: a design that paints one badge is
+ * portable to a car with one flank worth painting and to a car with two, and
+ * the design cannot know which it is looking at.
+ */
+async function mirrorCopy(id) {
+  const sel = state.placed.find((p) => p.id === id);
+  if (!sel) return status('nothing placed to copy');
+
+  const here = state.surface.panels.find((p) => p.name === sel.panel);
+  if (!here) return status('this region has no panel to mirror across');
+  const there = state.surface.panels.find((p) => p.name === (here.mirrorOf ?? here.name));
+  const flips = there.name === here.name ? selfMirrorFlips(here) : mirrorFlips(here, there);
+
+  // Named after the source so the fit reads as what it is. A collision would
+  // mean the copy already exists, which is not an error worth a dialog.
+  let copyId = `${id}-mirror`;
+  for (let n = 2; state.surface.regions.some((r) => r.id === copyId); n++) copyId = `${id}-mirror-${n}`;
+
+  const at = toPanelRelative(here.rect, sel.abs);
+  const own = state.fit.regions[id] ?? {};
+  state.fit.mirrors ??= {};
+  state.fit.mirrors[copyId] = {
+    of: id,
+    panel: there.name,
+    at: mirrorAt(at, flips),
+    ...(own.rotate !== undefined ? { rotate: mirrorRotation(own.rotate, flips) } : {}),
+  };
+  // Linked from the start: it was created as this region's other half, and
+  // having to then declare that would be asking twice.
+  state.paired.set(id, copyId);
+  state.paired.set(copyId, id);
+  state.severed.delete(id);
+
+  setDirty(true);
+  // A new region changes what the surface CONTAINS, and only /api/state knows
+  // that. refresh() alone would draw the copy on the car and leave it missing
+  // from the region list — visible, and unselectable.
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  status(`created ${copyId} on ${there.name}`);
 }
 
 /**
