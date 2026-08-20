@@ -1119,3 +1119,105 @@ test('dragging one half of a pair onto a shared panel brings the other with it',
   assert.notDeepEqual(regions['number-right'].at, regions['number-left'].at,
     'the two halves must not end up in the same place');
 });
+
+test('a pair can be declared, mirrored once, and severed', async () => {
+  // The naming convention is a guess about what a design meant by its ids. A
+  // livery is free to call its halves anything, so the person looking at the
+  // car has to be able to say "these two are one idea" — and to take it back.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+
+  const flankL = { name: 'flankL', rect: [0, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'flankR', uAxis: [-0.2, 0, -0.98], vAxis: [0, -1, 0] };
+  const flankR = { name: 'flankR', rect: [0.25, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'flankL', uAxis: [-0.2, 0, 0.98], vAxis: [0, -1, 0] };
+  surface.panels = [flankL, flankR];
+
+  // Two regions the convention will NOT pair: no side in either name.
+  surface.regions = [
+    { ...surface.regions[0], id: 'badgeA', panel: 'flankL', mirror: null },
+    { ...surface.regions[1], id: 'badgeB', panel: 'flankR', mirror: null },
+  ];
+  render.placed = [
+    { ...render.placed[0], id: 'badgeA', panel: 'flankL', abs: [0.02, 0.02, 0.05, 0.05] },
+    { ...render.placed[0], id: 'badgeB', panel: 'flankR', abs: [0.40, 0.14, 0.05, 0.05] },
+  ];
+
+  const { dom, mod } = await runApp({ state, render });
+  const inspector = dom.querySelector('#inspector');
+
+  // The stub inspector has to answer for the controls the real one writes.
+  const nodes = new Map();
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  const stub = (sel, extra = {}) => { const n = { onclick: null, onchange: null, ...extra }; nodes.set(sel, n); return n; };
+  const pairwith = stub('#pairwith', { value: 'badgeB' });
+  stub('#mirror'); const mirrornow = stub('#mirrornow'); const unpair = stub('#unpair');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badgeA' } } });
+  assert.match(inspector.innerHTML, /pair with/, 'an unpaired region offers to be paired');
+
+  // Declaring the pair must mirror IMMEDIATELY. Otherwise it appears to do
+  // nothing, and the only way to find out whether it worked is to drag
+  // something and hope.
+  await pairwith.onchange();
+  const { mirrorFlips, mirrorAt } = await import('../src/fit.mjs');
+  const flips = mirrorFlips(flankL, flankR);
+  let regions = JSON.parse(dom.querySelector('#fitjson').textContent).regions;
+  assert.ok(regions.badgeA?.at, 'the pairing wrote a placement for the region itself');
+  assert.deepEqual(regions.badgeB.at, mirrorAt(regions.badgeA.at, flips),
+    'and put its new partner at the mirrored position straight away');
+
+  // Severing it. The convention cannot be argued with by deleting a map entry —
+  // there is no entry — so unpairing has to record the severance.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badgeA' } } });
+  unpair.onclick();
+  assert.match(inspector.innerHTML, /pair with/, 'a severed region is unpaired again');
+
+  // And re-pairing after severing has to work, or unpair would be permanent
+  // for the session and the dropdown would silently do nothing.
+  await pairwith.onchange();
+  assert.doesNotMatch(inspector.innerHTML, /pair with/, 'declared again');
+  assert.ok(mirrornow.onclick, 'and the one-shot is available while paired');
+});
+
+test('mirror now does not quietly re-link a pair somebody separated', async () => {
+  // The one-shot exists for exactly this case: two sides deliberately editing
+  // apart, and a single copy across wanted without giving up that decision.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+  surface.panels = [
+    { name: 'L', rect: [0, 0, 0.2, 0.2], tags: [], anisotropy: 1, mirrorOf: 'R', uAxis: [-0.2, 0, -0.98], vAxis: [0, -1, 0] },
+    { name: 'R', rect: [0.25, 0, 0.2, 0.2], tags: [], anisotropy: 1, mirrorOf: 'L', uAxis: [-0.2, 0, 0.98], vAxis: [0, -1, 0] },
+  ];
+  render.placed = [
+    { ...render.placed[0], id: 'number-left', panel: 'L', abs: [0.02, 0.02, 0.05, 0.05] },
+    { ...render.placed[0], id: 'number-right', panel: 'R', abs: [0.40, 0.14, 0.05, 0.05] },
+  ];
+
+  const { dom } = await runApp({ state, render });
+  const inspector = dom.querySelector('#inspector');
+  const nodes = new Map();
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  const mk = (sel) => { const n = { onclick: null, onchange: null }; nodes.set(sel, n); return n; };
+  const mirror = mk('#mirror'); const mirrornow = mk('#mirrornow'); mk('#unpair');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  mirror.onclick();                                  // separate the two sides
+  assert.match(inspector.innerHTML, /independent/, 'the sides are now independent');
+
+  await mirrornow.onclick();
+  assert.match(dom.querySelector('#inspector').innerHTML, /independent/,
+    'a one-shot must leave them independent, not silently re-link them');
+});
