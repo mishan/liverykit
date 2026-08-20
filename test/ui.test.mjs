@@ -97,8 +97,9 @@ test('the editor module boots instead of dying in a dead zone', async () => {
 
   // It asked the server for both halves, which means it got past every
   // declaration it needed on the way.
-  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`),
-    ['GET /api/state', 'POST /api/render']);
+  const seen = calls.map((c) => `${c.method} ${c.path}`);
+  assert.ok(seen.includes('GET /api/state'), seen.join(', '));
+  assert.ok(seen.includes('POST /api/render'), seen.join(', '));
 
   // And it actually drew: the header, the surface list, the panels, the regions,
   // the overlay and the texture all have content.

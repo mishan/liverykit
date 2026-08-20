@@ -95,7 +95,10 @@ li.locked { cursor: default; opacity: 0.5; }
 .panelrect { fill: transparent; stroke: #ffffff22; stroke-width: 1; cursor: pointer; pointer-events: all; }
 .panelrect:hover { stroke: var(--accent); stroke-width: 2; }
 .panelrect.host { stroke: var(--accent); stroke-dasharray: 6 4; stroke-width: 2; }
-.ghost { fill: none; stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 3 3; pointer-events: none; }
+/* Clickable: a faint fill is still a hit target, and selecting a region by
+   clicking it on the canvas is the obvious gesture. */
+.ghost { fill: #ff2d9510; stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 3 3; cursor: pointer; }
+.ghost:hover { fill: #ff2d9530; stroke-width: 2.5; }
 .box { fill: #00f0ff14; stroke: var(--accent); stroke-width: 2; cursor: move; }
 .handle { fill: var(--accent); cursor: nwse-resize; }
 

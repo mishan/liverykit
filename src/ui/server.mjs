@@ -229,6 +229,7 @@ export async function startUi({ livery, profile, fitPath, modelPath = null, port
   // that exists and is wrong is not, and starting anyway would give an editor
   // that looks fine and fails only when you press Save, by which point you have
   // done the work twice. Validated on the way in, same as the save path.
+  const started = new Date().toISOString().slice(11, 19);
   let fit = null;
   try {
     fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
@@ -262,6 +263,17 @@ export async function startUi({ livery, profile, fitPath, modelPath = null, port
 
     try {
       const url = new URL(req.url, 'http://localhost');
+
+      // A fingerprint of the files actually on disk. Four rounds of this editor
+      // were spent unable to tell whether the browser was running the code I had
+      // just written, a cached copy, or a server started before the change. The
+      // page shows this, so that question is answerable in one glance.
+      if (req.method === 'GET' && url.pathname === '/api/build') {
+        const { createHash } = await import('node:crypto');
+        const h = createHash('sha256');
+        for (const f of [...SERVABLE].sort()) h.update(await readFile(join(HERE, f)));
+        return json(200, { build: h.digest('hex').slice(0, 8), started });
+      }
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
         return json(200, editorState({ livery, profile, fit }));

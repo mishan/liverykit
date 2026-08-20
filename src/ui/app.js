@@ -48,6 +48,13 @@ state.fit = structuredClone(data.fit);
 state.fit.livery ??= data.livery.folder;
 state.fit.regions ??= {};
 
+// Which code is actually running. Not decoration: several rounds of debugging
+// this editor were spent unable to distinguish "the fix did not work" from "the
+// browser or the server is running something older".
+api('/api/build').then((b) => {
+  $('#build').textContent = `build ${b.build} · server up ${b.started}`;
+}).catch(() => {});
+
 $('#livery').textContent = data.livery.name;
 $('#car').textContent = data.car.name;
 
@@ -75,10 +82,15 @@ $('#panels').onclick = (e) => {
   if (li?.dataset?.panel) movePanel(li.dataset.panel);
 };
 $('#overlay').onpointerdown = (e) => {
-  const drag = e.target?.dataset?.drag;
-  if (drag) return startDrag(e, drag);
-  const panel = e.target?.dataset?.panel;
-  if (panel) movePanel(panel);
+  const d = e.target?.dataset ?? {};
+  if (d.drag) return startDrag(e, d.drag);
+  // Click any other region's rectangle to select it — the canvas should be a
+  // place you can work, not a picture you steer from the sidebar.
+  if (d.id) return selectRegion(d.id);
+  if (d.panel) {
+    if (!state.selected) return status('pick a region first, then click a panel to move it there');
+    return movePanel(d.panel);
+  }
 };
 
 $('#tab-uv').onclick = () => showView('uv');
@@ -178,7 +190,12 @@ function drawOverlay() {
   // overlap before you overlap it.
   for (const p of state.placed) {
     if (p.id === state.selected) continue;
-    parts.push(rect(p.abs, 'ghost'));
+    // Carries its id so it can be CLICKED. Without this the canvas had nothing
+    // selectable on it at all: the only things that responded were panel
+    // outlines, and those do nothing until something is already selected from
+    // the list. So the canvas highlighted under the cursor and refused every
+    // click, which is not a subtle failure to be on the receiving end of.
+    parts.push(rect(p.abs, 'ghost', `data-id="${esc(p.id)}"`));
   }
 
   if (sel) {
@@ -437,7 +454,12 @@ function setDirty(v) {
   $('#save').disabled = !v;
   $('#status').className = v ? 'status dirty' : 'status';
 }
-function status(msg) { $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg; }
+function status(msg) {
+  $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg;
+  // Also under the canvas, where the eyes already are. A hint in the far corner
+  // of the header is a hint nobody reads while dragging.
+  $('#canvashint').textContent = msg;
+}
 /** Escape for both text nodes and quoted attributes. */
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
