@@ -25,14 +25,37 @@ void main() {
 }`;
 
 // No lighting on purpose. A shaded preview would misreport the artwork's colour,
-// which is the one thing this view exists to show honestly. The faint edge
-// darkening is depth cueing only, so the shape reads at all.
+// which is the one thing this view exists to show honestly.
+//
+// The highlight obeys the same rule, and that decides its whole design. Tinting
+// the selected region would be the obvious way to show it and would break the
+// one promise this view makes, precisely where the promise matters most — on
+// the region you are working on. So the selection keeps its true colours and
+// EVERYTHING ELSE is dimmed toward the background, with an accent border on the
+// rectangle's edge so a dark region against dark bodywork still reads.
+//
+// The test is per-fragment against the region's UV rectangle rather than
+// per-triangle. A region rarely lands on triangle boundaries, so a per-triangle
+// highlight would spill over the edges of the very thing it is drawing your
+// attention to, and the spill would be worst on coarse geometry where you can
+// least afford to misjudge the fit.
 const FS = `
 precision mediump float;
 uniform sampler2D map;
+uniform vec4 region;    // x, y, w, h in texture space; w = 0 means no selection
+uniform float border;   // border thickness, in UV units
 varying vec2 vUv;
 void main() {
-  gl_FragColor = vec4(texture2D(map, vUv).rgb, 1.0);
+  vec3 c = texture2D(map, vUv).rgb;
+  if (region.z > 0.0) {
+    vec2 d = vUv - region.xy;
+    if (d.x < 0.0 || d.y < 0.0 || d.x > region.z || d.y > region.w) {
+      c = mix(c, vec3(0.02, 0.03, 0.04), 0.78);
+    } else if (min(min(d.x, region.z - d.x), min(d.y, region.w - d.y)) < border) {
+      c = mix(c, vec3(0.0, 0.94, 1.0), 0.9);
+    }
+  }
+  gl_FragColor = vec4(c, 1.0);
 }`;
 
 function compile(gl, type, src) {
@@ -103,6 +126,28 @@ export function unpack(buffer) {
   return { positions, uvs, indices };
 }
 
+/**
+ * The uniforms a highlight rectangle turns into.
+ *
+ * Pulled out of the viewer because the viewer needs a GPU and this does not.
+ * The shader itself can only be checked by rendering, but the arithmetic
+ * deciding what it is told — what counts as no selection, how thick an edge a
+ * given rectangle gets — is ordinary code and testable as such.
+ */
+export function highlightUniforms(rect) {
+  const on = Array.isArray(rect) && rect.length === 4
+    && Number.isFinite(rect[2]) && Number.isFinite(rect[3])
+    && rect[2] > 0 && rect[3] > 0;
+  if (!on) return { region: [0, 0, 0, 0], border: 0 };
+  return {
+    region: [rect[0], rect[1], rect[2], rect[3]],
+    // A fixed thin border, except on a region small enough that a fixed one
+    // would swallow it whole — then it shrinks to a fifth of the short side, so
+    // a tiny region reads as outlined rather than as a solid accent blob.
+    border: Math.min(0.0025, Math.min(rect[2], rect[3]) * 0.2),
+  };
+}
+
 // Exported for tests: the camera maths is the half of this file that can be
 // checked without a GPU, and it is the half that was wrong.
 export const _internal = { perspective, lookAt, mul };
@@ -125,6 +170,8 @@ export function createViewer(canvas) {
     uv: gl.getAttribLocation(prog, 'uv'),
     mvp: gl.getUniformLocation(prog, 'mvp'),
     map: gl.getUniformLocation(prog, 'map'),
+    region: gl.getUniformLocation(prog, 'region'),
+    border: gl.getUniformLocation(prog, 'border'),
   };
 
   const buffers = { position: gl.createBuffer(), uv: gl.createBuffer(), index: gl.createBuffer() };
@@ -146,6 +193,11 @@ export function createViewer(canvas) {
   const cam = { yaw: -0.9, pitch: 0.35, dist: 6, target: [0, 0.7, 0] };
   let count = 0;
   let ext = null;
+  // Zero width means nothing is selected, which is also the state a fresh
+  // uniform is already in — so a viewer that never calls setHighlight behaves
+  // exactly as it did before this existed.
+  let region = [0, 0, 0, 0];
+  let border = 0.0015;
 
   function resize() {
     const w = canvas.clientWidth || 800;
@@ -172,6 +224,8 @@ export function createViewer(canvas) {
     );
     gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
     gl.uniform1i(loc.map, 0);
+    gl.uniform4fv(loc.region, region);
+    gl.uniform1f(loc.border, border);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.drawElements(gl.TRIANGLES, count, ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT, 0);
@@ -246,6 +300,24 @@ export function createViewer(canvas) {
       } finally {
         URL.revokeObjectURL(url);
       }
+    },
+
+    /**
+     * Show where the selected region lands on the car.
+     *
+     * `rect` is [x, y, w, h] in texture space — the same absolute fractions the
+     * UV overlay draws, so the two views cannot disagree about where a region
+     * is. Pass null to clear.
+     *
+     * A rectangle can highlight in several places at once, and that is a
+     * feature rather than a bug to be suppressed. Four wheels drawn from one rim
+     * texture ARE the same texels: selecting a region on that sheet lights all
+     * four, which is the clearest possible statement of a fact the UV view can
+     * only make in a footnote.
+     */
+    setHighlight(rect) {
+      ({ region, border } = highlightUniforms(rect));
+      draw();
     },
 
     /** Drag to orbit, wheel to zoom. */
