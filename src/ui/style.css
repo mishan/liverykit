@@ -142,3 +142,8 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
 /* The mirror link. Amber when broken, because an asymmetry someone chose is
    worth noticing on the way past, and an asymmetry nobody chose is a bug. */
 #mirror[data-linked="false"] { border-color: var(--warn); color: var(--warn); }
+
+/* The pairing picker sits in a 300px column with everything else about a
+   region, so it gets the same compact treatment as the rotation buttons. */
+#pairwith { font-size: 12px; padding: 4px 6px; }
+#mirrornow, #unpair { padding: 4px 8px; font-size: 12px; }
