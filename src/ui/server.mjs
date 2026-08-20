@@ -17,6 +17,7 @@
 //   GET  /                 the app
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
 //   POST /api/render       a working fit -> SVG + where each region landed
+//   GET  /api/model        the geometry a texture is painted on, packed binary
 //   POST /api/fit          write the fit file
 // ---------------------------------------------------------------------------
 
@@ -25,6 +26,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
 import { applyFit, regionIds, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
@@ -32,6 +34,64 @@ import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * The geometry a texture is painted on, in world space, ready for WebGL.
+ *
+ * A UV view answers "where on the sheet", which is the question you can already
+ * see. It cannot answer the one that actually matters — is that spot flat, does
+ * it face the camera, does the number wrap over a wheel arch — and no amount of
+ * rectangle-dragging will make it.
+ *
+ * Packed binary rather than JSON: the Abarth's body is 17k vertices and 72k
+ * indices, which is 0.6 MB of floats and several megabytes of decimal text. The
+ * layout is deliberately dull — two counts, then positions, then UVs, then
+ * indices — so the browser can take typed-array views straight over the buffer.
+ */
+export function modelGeometry(model, file) {
+  const meshes = meshesUsingTexture(model, file);
+  const positions = [];
+  const uvs = [];
+  const indices = [];
+  let lo = [Infinity, Infinity, Infinity];
+  let hi = [-Infinity, -Infinity, -Infinity];
+
+  for (const mesh of meshes) {
+    const base = positions.length / 3;
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const v = vertex(model, mesh, i);
+      positions.push(v.x, v.y, v.z);
+      // Texture space, the same convention the renderer uses: AC stores V
+      // negative and image y is 1 + v, which `vertex` has already applied.
+      uvs.push(v.u, v.v);
+      for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
+        if (n < lo[k]) lo[k] = n;
+        if (n > hi[k]) hi[k] = n;
+      }
+    }
+    for (const [a, b, c] of triangles(model, mesh)) {
+      indices.push(base + a, base + b, base + c);
+    }
+  }
+
+  return {
+    positions: Float32Array.from(positions),
+    uvs: Float32Array.from(uvs),
+    indices: Uint32Array.from(indices),
+    bounds: { lo, hi },
+    meshes: meshes.length,
+  };
+}
+
+/** Two counts, then positions, UVs and indices back to back. */
+export function packGeometry(g) {
+  const head = new Uint32Array([g.positions.length / 3, g.indices.length]);
+  const out = Buffer.alloc(8 + g.positions.byteLength + g.uvs.byteLength + g.indices.byteLength);
+  let o = 0;
+  const put = (ta) => { Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength).copy(out, o); o += ta.byteLength; };
+  put(head); put(g.positions); put(g.uvs); put(g.indices);
+  return out;
+}
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 
 /**
@@ -165,7 +225,7 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   return { svg: layers.base, emissive: layers.emissive, placed, notes };
 }
 
-export async function startUi({ livery, profile, fitPath, liveryId, port = 7391, log = console.log }) {
+export async function startUi({ livery, profile, fitPath, liveryId, modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
@@ -174,6 +234,25 @@ export async function startUi({ livery, profile, fitPath, liveryId, port = 7391,
   // knows. Guessing it from `livery.folder` is exactly the bug this guards.
   if (!liveryId) throw new Error('startUi needs liveryId — the name a fit knows this design by (see fitLiveryId).');
   const identity = { livery: liveryId, car: profile.id };
+
+  // Parsed on first request rather than at startup: a 45 MB kn5 takes a second
+  // or two, and the UV editor is useful without it. A missing model is not an
+  // error — it means no 3D view, which is exactly the situation for anyone who
+  // has a profile but not the car.
+  let model = null;
+  let modelError = null;
+  const getModel = async () => {
+    if (model || modelError) return model;
+    if (!modelPath) { modelError = 'no model path given'; return null; }
+    try {
+      model = await parseKn5(modelPath, { keepTextureData: false });
+      log(`  model loaded: ${modelPath}`);
+    } catch (e) {
+      modelError = e.message;
+      log(`  ! could not read ${modelPath}: ${e.message}`);
+    }
+    return model;
+  };
 
   // A missing fit is the normal case — most cars have never been tuned. A fit
   // that exists and is wrong is not, and starting anyway would give an editor
@@ -224,6 +303,17 @@ export async function startUi({ livery, profile, fitPath, liveryId, port = 7391,
       if (req.method === 'POST' && url.pathname === '/api/render') {
         const { fit: working, role, seed } = await body();
         return json(200, renderSurface({ livery, profile, fit: working, role, seed }));
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/model') {
+        const role = url.searchParams.get('role');
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const tex = texture(profile, role);
+        const g = modelGeometry(m, tex.file);
+        if (!g.indices.length) return json(404, { error: `no geometry uses ${tex.file}` });
+        res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
+        return res.end(packGeometry(g));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/fit') {
