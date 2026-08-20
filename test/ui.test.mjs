@@ -181,13 +181,29 @@ test('dragging a region writes a panel-relative at into the fit', async () => {
   const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
   const role = binding(profile, 'body').roles[0];
 
+  const state = editorState({ livery, profile, fit, liveryId: 'neon-grid-any' });
   const { dom, window: win } = await runApp({
-    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+    state,
     render: renderSurface({ livery, profile, fit, role }),
   });
 
+  // Where a region actually sits on the sheet, from what the fit records. A
+  // drag can now carry a region onto a NEIGHBOURING PANEL, and once it does,
+  // `at` is measured against a different rectangle — so comparing raw `at`
+  // before and after would compare two different coordinate systems and call
+  // a move in the right direction a move in the wrong one.
+  const panels = state.surfaces.find((x) => x.role === role).panels;
+  const absolute = (entry, fallbackPanel) => {
+    const host = panels.find((p) => p.name === (entry.panel ?? fallbackPanel));
+    const [px, py, pw, ph] = host ? host.rect : [0, 0, 1, 1];
+    const [ax, ay, aw, ah] = entry.at;
+    return [px + ax * pw, py + ay * ph, aw * pw, ah * ph];
+  };
+
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
-  const before = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'].at;
+  const fitBefore = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'];
+  const before = fitBefore.at;
+  const absBefore = absolute(fitBefore, fitBefore.panel);
 
   // Press on the box, move a tenth of the texture right and down, release.
   dom.querySelector('#overlay').onpointerdown({
@@ -197,10 +213,20 @@ test('dragging a region writes a panel-relative at into the fit', async () => {
   win.emit('pointerup', {});
   await new Promise((r) => setTimeout(r, 20));       // the drop re-renders
 
-  const after = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'].at;
+  const fitAfter = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'];
+  const after = fitAfter.at;
   assert.notDeepEqual(after, before, 'the drag reached the fit');
   assert.ok(after.every((n) => Number.isFinite(n)), `at must stay numeric, got ${after}`);
-  assert.ok(after[0] > before[0] && after[1] > before[1], 'and moved the way the pointer did');
+  // PANEL-RELATIVE is the whole point of the format: outside 0..1 the renderer
+  // refuses the region, and a drag must never produce one.
+  assert.ok(after.every((n) => n >= 0 && n <= 1), `at must stay within its panel, got ${after}`);
+
+  // A drag that crosses a boundary must record the panel it landed on. Without
+  // that the fit keeps the new coordinates measured against the OLD panel —
+  // artwork in the wrong place, from a fit that reads perfectly well.
+  const absAfter = absolute(fitAfter, fitBefore.panel);
+  assert.ok(absAfter[0] > absBefore[0] && absAfter[1] > absBefore[1],
+    `moved the way the pointer did: ${absBefore} -> ${absAfter}`);
   assert.equal(dom.querySelector('#save').disabled, false, 'and the fit is now unsaved');
 });
 
@@ -527,7 +553,7 @@ test('a pointer on the car decides between orbit, select, move and resize', asyn
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const ids = state.surfaces[0].regions.map((r) => r.id);
   const big = ids[0], small = ids[1];
@@ -570,7 +596,7 @@ test('a whole-car view that cannot open falls back to something usable', async (
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const id = state.surfaces[0].regions[0].id;
   const panel = state.surfaces[0].panels[0].name;
@@ -587,4 +613,113 @@ test('a whole-car view that cannot open falls back to something usable', async (
   // And the editor still responds: the pointer logic did not get wedged in a
   // view that failed to open.
   assert.equal(mod.claimCarPointer({ u: 0.3, v: 0.3 }, { preventDefault() {} }), true);
+});
+
+test('the highlight carries the host panel as well as the region', async () => {
+  const { highlightUniforms } = await import('../src/ui/view3d.js');
+
+  const both = highlightUniforms([0.2, 0.2, 0.1, 0.1], [0.1, 0.1, 0.5, 0.5]);
+  assert.deepEqual(both.region, [0.2, 0.2, 0.1, 0.1]);
+  assert.deepEqual(both.panel, [0.1, 0.1, 0.5, 0.5]);
+
+  // A region placed by absolute coordinates has no host panel, and claiming one
+  // would draw a boundary that does not constrain anything.
+  assert.deepEqual(highlightUniforms([0.2, 0.2, 0.1, 0.1]).panel, [0, 0, 0, 0]);
+  assert.deepEqual(highlightUniforms([0.2, 0.2, 0.1, 0.1], [0, 0, 0, 0]).panel, [0, 0, 0, 0]);
+  assert.deepEqual(highlightUniforms([0.2, 0.2, 0.1, 0.1], [0, 0, NaN, 1]).panel, [0, 0, 0, 0]);
+
+  // Nothing selected means no panel either — a lone panel outline with no
+  // artwork in it would say a region is there when none is.
+  assert.deepEqual(highlightUniforms(null, [0.1, 0.1, 0.5, 0.5]).panel, [0, 0, 0, 0]);
+});
+
+test('dragging across a boundary takes the region to the new panel', async () => {
+  // Panels are an artefact of how the model was unwrapped: a door and the wing
+  // behind it are one surface to look at and two panels to address. A drag that
+  // stopped dead at that invisible line would be the tool imposing its own
+  // bookkeeping on the person using it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+
+  // Two panels side by side in UV, so a drag between them is unambiguous.
+  const [from, to] = [
+    { name: 'from_panel', rect: [0.0, 0.0, 0.2, 0.2], tags: ['left', 'mid'], anisotropy: 1 },
+    { name: 'to_panel', rect: [0.5, 0.5, 0.2, 0.2], tags: ['right', 'mid'], anisotropy: 1 },
+  ];
+  surface.panels = [from, to];
+  const id = surface.regions[0].id;
+  render.placed = [{ ...render.placed[0], id, panel: from.name, abs: [0.05, 0.05, 0.05, 0.05] }];
+
+  const { dom, window: win } = await runApp({ state, render });
+  dom.querySelector('#regions').onclick({ target: { dataset: { id } } });
+
+  // Drag far enough that the region's centre lands inside the far panel. The
+  // fake overlay is 1000x1000, so a pixel is a thousandth of the texture.
+  dom.querySelector('#overlay').onpointerdown({
+    preventDefault() {}, clientX: 0, clientY: 0, target: { dataset: { drag: 'move' } },
+  });
+  win.emit('pointermove', { clientX: 570, clientY: 570 });
+  win.emit('pointerup', {});
+  await new Promise((r) => setTimeout(r, 20));
+
+  const entry = JSON.parse(dom.querySelector('#fitjson').textContent).regions[id];
+  assert.equal(entry.panel, 'to_panel',
+    'the fit must record the panel the region landed on, not the one it left');
+  // And `at` must be measured against the NEW panel. Recording the new
+  // coordinates against the old rectangle is the silent version of this bug:
+  // the fit reads perfectly well and puts the artwork somewhere else.
+  assert.ok(entry.at.every((n) => n >= 0 && n <= 1),
+    `at must be panel-relative to to_panel, got ${entry.at}`);
+});
+
+test('every shader uniform is located and every location is set', async () => {
+  // A shader is the one part of this project no test here can compile — GLSL is
+  // the driver's job, and headless boxes routinely have no driver. What CAN be
+  // checked is the seam either side of it, which is where the mistakes actually
+  // happen: adding a uniform to the source and forgetting to look up its
+  // location, or looking it up and never writing to it. Neither throws. The
+  // uniform silently reads zero, and a `vec4` of zeros here means "no selection"
+  // — so the highlight just stops appearing, with nothing to explain why.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  const declared = [...src.matchAll(/^uniform\s+\w+\s+(\w+)\s*;/gm)].map((m) => m[1]);
+  assert.ok(declared.includes('region') && declared.includes('panel'),
+    `expected the highlight uniforms, found: ${declared}`);
+
+  for (const name of declared) {
+    assert.match(src, new RegExp(`getUniformLocation\\(prog, '${name}'\\)`),
+      `the shader declares "${name}" but nothing looks up its location`);
+    assert.match(src, new RegExp(`gl\\.uniform\\w+\\(loc\\.${name}\\b`),
+      `nothing ever writes to "${name}" — it will read as zero forever`);
+  }
+
+  // Both draw paths must set both highlight uniforms. The grouped path
+  // deliberately zeroes them, which still counts as setting them; leaving one
+  // over from the previous path would dim the whole car around a rectangle that
+  // means nothing on nineteen of its twenty textures.
+  // Sliced from `function draw()` to the viewer's own `return {` — searched
+  // FROM the draw index, because several helpers earlier in the file return
+  // object literals and the first match lands well before draw() begins.
+  const drawAt = src.indexOf('function draw()');
+  const draw = src.slice(drawAt, src.indexOf('return {', drawAt));
+  for (const name of ['region', 'panel']) {
+    const writes = [...draw.matchAll(new RegExp(`loc\\.${name}\\b`, 'g'))].length;
+    assert.equal(writes, 2, `draw() should set "${name}" on both paths, found ${writes}`);
+  }
+
+  // Balanced braces in each shader, which catches the copy-paste that ends a
+  // function early and turns the rest of the source into a syntax error.
+  for (const [which, body] of [['VS', /const VS = `([\s\S]*?)`;/], ['FS', /const FS = `([\s\S]*?)`;/]]) {
+    const text = src.match(body)?.[1] ?? '';
+    assert.ok(text.length, `${which} source not found`);
+    const open = (text.match(/\{/g) ?? []).length;
+    const close = (text.match(/\}/g) ?? []).length;
+    assert.equal(open, close, `${which} has ${open} { and ${close} }`);
+    assert.match(text, /void main\(\)/, `${which} needs a main`);
+  }
 });

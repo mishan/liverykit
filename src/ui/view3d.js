@@ -39,20 +39,58 @@ void main() {
 // highlight would spill over the edges of the very thing it is drawing your
 // attention to, and the spill would be worst on coarse geometry where you can
 // least afford to misjudge the fit.
+//
+// THREE zones, not two. Dimming everything outside the region told you where
+// the artwork was but not where it was allowed to go, and `at` is
+// panel-relative — the panel is the boundary every drag is clamped to, so
+// working without seeing it means finding the edges by hitting them.
+//
+//   inside the region      true colour, accent border, a grab corner
+//   rest of the host panel lightly dimmed, its own quiet border
+//   the rest of the car    dimmed hard
+//
+// The grab corner is drawn at exactly the size the hit test uses, so what you
+// can see is what you can grab. Resizing existed before this and was invisible,
+// which is the same as not existing.
 const FS = `
 precision mediump float;
 uniform sampler2D map;
 uniform vec4 region;    // x, y, w, h in texture space; w = 0 means no selection
+uniform vec4 panel;     // the region's host panel; w = 0 means unknown
 uniform float border;   // border thickness, in UV units
 varying vec2 vUv;
+
+bool within(vec4 r, vec2 p) {
+  vec2 d = p - r.xy;
+  return d.x >= 0.0 && d.y >= 0.0 && d.x <= r.z && d.y <= r.w;
+}
+float edgeDist(vec4 r, vec2 p) {
+  vec2 d = p - r.xy;
+  return min(min(d.x, r.z - d.x), min(d.y, r.w - d.y));
+}
+
 void main() {
   vec3 c = texture2D(map, vUv).rgb;
   if (region.z > 0.0) {
-    vec2 d = vUv - region.xy;
-    if (d.x < 0.0 || d.y < 0.0 || d.x > region.z || d.y > region.w) {
-      c = mix(c, vec3(0.02, 0.03, 0.04), 0.78);
-    } else if (min(min(d.x, region.z - d.x), min(d.y, region.w - d.y)) < border) {
-      c = mix(c, vec3(0.0, 0.94, 1.0), 0.9);
+    bool inRegion = within(region, vUv);
+    bool inPanel = panel.z > 0.0 && within(panel, vUv);
+
+    if (!inRegion && !inPanel) {
+      c = mix(c, vec3(0.02, 0.03, 0.04), 0.82);
+    } else if (!inRegion) {
+      // The panel around the artwork: visible, clearly not the artwork, and
+      // still showing its true colour well enough to judge against.
+      c = mix(c, vec3(0.02, 0.03, 0.04), 0.42);
+      if (edgeDist(panel, vUv) < border) c = mix(c, vec3(1.0, 0.71, 0.33), 0.75);
+    } else {
+      vec2 d = vUv - region.xy;
+      // The far corner, the quarter that resizes. Drawn solid so it reads as a
+      // handle rather than as part of the artwork.
+      if (d.x > region.z * 0.75 && d.y > region.w * 0.75) {
+        c = mix(c, vec3(0.0, 0.94, 1.0), 0.55);
+      } else if (edgeDist(region, vUv) < border) {
+        c = mix(c, vec3(0.0, 0.94, 1.0), 0.9);
+      }
     }
   }
   gl_FragColor = vec4(c, 1.0);
@@ -194,13 +232,16 @@ export function unpack(buffer) {
  * deciding what it is told — what counts as no selection, how thick an edge a
  * given rectangle gets — is ordinary code and testable as such.
  */
-export function highlightUniforms(rect) {
-  const on = Array.isArray(rect) && rect.length === 4
-    && Number.isFinite(rect[2]) && Number.isFinite(rect[3])
-    && rect[2] > 0 && rect[3] > 0;
-  if (!on) return { region: [0, 0, 0, 0], border: 0 };
+export function highlightUniforms(rect, panelRect = null) {
+  const usable = (r) => Array.isArray(r) && r.length === 4
+    && r.every(Number.isFinite) && r[2] > 0 && r[3] > 0;
+  if (!usable(rect)) return { region: [0, 0, 0, 0], panel: [0, 0, 0, 0], border: 0 };
   return {
     region: [rect[0], rect[1], rect[2], rect[3]],
+    // A panel is optional: a region placed by absolute coordinates has no host,
+    // and claiming one would draw a boundary that does not constrain anything.
+    panel: usable(panelRect) ? [panelRect[0], panelRect[1], panelRect[2], panelRect[3]]
+      : [0, 0, 0, 0],
     // A fixed thin border, except on a region small enough that a fixed one
     // would swallow it whole — then it shrinks to a fifth of the short side, so
     // a tiny region reads as outlined rather than as a solid accent blob.
@@ -231,6 +272,7 @@ export function createViewer(canvas) {
     mvp: gl.getUniformLocation(prog, 'mvp'),
     map: gl.getUniformLocation(prog, 'map'),
     region: gl.getUniformLocation(prog, 'region'),
+    panel: gl.getUniformLocation(prog, 'panel'),
     border: gl.getUniformLocation(prog, 'border'),
   };
 
@@ -270,6 +312,7 @@ export function createViewer(canvas) {
   // uniform is already in — so a viewer that never calls setHighlight behaves
   // exactly as it did before this existed.
   let region = [0, 0, 0, 0];
+  let panel = [0, 0, 0, 0];
   let border = 0.0015;
 
   function resize() {
@@ -309,6 +352,7 @@ export function createViewer(canvas) {
 
     if (!groups) {
       gl.uniform4fv(loc.region, region);
+      gl.uniform4fv(loc.panel, panel);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.drawElements(gl.TRIANGLES, count, type, 0);
       return;
@@ -319,6 +363,7 @@ export function createViewer(canvas) {
     // dimming the whole car around a rectangle read from one of them would dim
     // the others by an unrelated coincidence of coordinates.
     gl.uniform4fv(loc.region, [0, 0, 0, 0]);
+    gl.uniform4fv(loc.panel, [0, 0, 0, 0]);
     for (const g of groups) {
       gl.bindTexture(gl.TEXTURE_2D, byRole.get(g.role) ?? texture);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
@@ -438,8 +483,8 @@ export function createViewer(canvas) {
      * four, which is the clearest possible statement of a fact the UV view can
      * only make in a footnote.
      */
-    setHighlight(rect) {
-      ({ region, border } = highlightUniforms(rect));
+    setHighlight(rect, panelRect = null) {
+      ({ region, panel, border } = highlightUniforms(rect, panelRect));
       draw();
     },
 
