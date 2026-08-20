@@ -314,3 +314,35 @@ test('the page and the script agree about what exists', async () => {
     }
   }
 });
+
+test('the camera matrices compose in the convention GLSL reads them', async () => {
+  // perspective() and lookAt() build COLUMN-major arrays, which is what
+  // uniformMatrix4fv(transpose = false) expects, and mul() was originally a
+  // row-major multiply. The composed matrix put geometry behind the eye — a
+  // vertex that should land at w = 4.7 came out at w = -0.3 — so the viewport
+  // showed the inside of the car with every letter mirrored.
+  const { _internal } = await import('../src/ui/view3d.js');
+  const { perspective, lookAt, mul } = _internal;
+
+  // Apply a column-major matrix the way the shader does.
+  const apply = (m, v) => [0, 1, 2, 3].map((r) =>
+    m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3]);
+
+  const P = perspective(0.8, 1.4, 0.05, 100);
+  const V = lookAt([3, 2, 5], [0, 0.7, 0], [0, 1, 0]);
+  const mvp = mul(P, V);
+
+  for (const pt of [[0, 0.7, 0, 1], [1, 0.5, -1.8, 1], [-0.9, 1.6, 2, 1]]) {
+    const stepwise = apply(P, apply(V, pt));
+    const composed = apply(mvp, pt);
+    for (let i = 0; i < 4; i++) {
+      assert.ok(Math.abs(stepwise[i] - composed[i]) < 1e-6,
+        `composing P and V must equal applying them in turn: ${composed} vs ${stepwise}`);
+    }
+  }
+
+  // And the car must be IN FRONT of the camera: w > 0 for a point at the
+  // target, which is the check that would have caught the inside-out view.
+  const [, , , w] = apply(mvp, [0, 0.7, 0, 1]);
+  assert.ok(w > 0, `the look-at target must be in front of the eye, got w = ${w}`);
+});

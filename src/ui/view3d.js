@@ -61,11 +61,27 @@ function lookAt(eye, at, up) {
     -dot(x, eye), -dot(y, eye), -dot(z, eye), 1];
 }
 
+/**
+ * Column-major product, matching how these matrices are stored and how GLSL
+ * reads them.
+ *
+ * `perspective` and `lookAt` above both build COLUMN-major arrays — that is the
+ * convention `uniformMatrix4fv(..., transpose = false)` expects — and this was
+ * originally written as a row-major multiply. The composed matrix then sent
+ * points behind the camera: a vertex that should land at w = 4.7 came out at
+ * w = -0.3, which is the far side of the eye. The result was a view from inside
+ * the car, looking out through the shell with all the lettering mirrored.
+ *
+ * Element (row r, column c) lives at [c * 4 + r], so the sum runs down a's rows
+ * and across b's columns in that layout.
+ */
 function mul(a, b) {
   const o = new Array(16).fill(0);
-  for (let i = 0; i < 4; i++) {
-    for (let j = 0; j < 4; j++) {
-      for (let k = 0; k < 4; k++) o[i * 4 + j] += a[i * 4 + k] * b[k * 4 + j];
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let sum = 0;
+      for (let k = 0; k < 4; k++) sum += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = sum;
     }
   }
   return o;
@@ -86,6 +102,10 @@ export function unpack(buffer) {
   const indices = new Uint32Array(buffer, o, indexCount);
   return { positions, uvs, indices };
 }
+
+// Exported for tests: the camera maths is the half of this file that can be
+// checked without a GPU, and it is the half that was wrong.
+export const _internal = { perspective, lookAt, mul };
 
 export function createViewer(canvas) {
   const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: false });
