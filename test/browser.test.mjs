@@ -209,10 +209,14 @@ function browserEnv(extra = {}) {
  * the driver into the page, and catches its report. Everything else — the app,
  * the API, the renderer — is the genuine article rather than a stand-in.
  */
-async function inBrowser(driver, { fitPath, livery: liveryName = 'neon-grid-any', car = 'abarth500' }) {
-  const profile = await loadProfile(new URL(`../cars/${car}.json`, import.meta.url));
-  const livery = (await import(`../liveries/${liveryName}.mjs`)).default;
-  const real = await startUi({ livery, profile, fitPath, liveryId: liveryName, port: 0, log: () => {} });
+async function inBrowser(driver, {
+  fitPath, livery: liveryName = 'neon-grid-any', car = 'abarth500',
+  profile: profileOverride = null, liveryObject = null, modelPath = null,
+}) {
+  const profile = profileOverride
+    ?? await loadProfile(new URL(`../cars/${car}.json`, import.meta.url));
+  const livery = liveryObject ?? (await import(`../liveries/${liveryName}.mjs`)).default;
+  const real = await startUi({ livery, profile, fitPath, liveryId: liveryName, modelPath, port: 0, log: () => {} });
   const realPort = real.server.address().port;
 
   let report = null;
@@ -451,4 +455,87 @@ test('a livery with no region ids at all is still editable', { skip: BROWSER ? f
   assert.equal(find('warns about position: '), 'warns about position: true',
     'the weakness of a positional key has to be said, not buried');
   assert.equal(find('boxes: '), 'boxes: 1', 'and it can actually be dragged');
+});
+
+test('the selected region reaches the car as a highlight', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The shader is the one part of this project a fake DOM cannot touch at all:
+  // GLSL is compiled by the driver, and a typo in it throws from inside the tab
+  // switch where the app catches it and writes a note nobody reads.
+  //
+  // Rather than read pixels back — the context is created without
+  // preserveDrawingBuffer, so a readback after the frame is empty — this asks
+  // the GPU program what it was actually told. `getUniform` returns the live
+  // value of `region`, which can only be right if the shader compiled, the
+  // program linked, the app found the selection and the viewer uploaded it. A
+  // wrong rectangle here is a wrong rectangle on the car.
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-car-'));
+  const modelPath = join(dir, 'car.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+
+  // A rectangle chosen to be nobody's default: if the uniform comes back as
+  // this, it came from the region and not from an initial value.
+  const at = [0.25, 0.5, 0.5, 0.25];
+  const livery = {
+    name: 'fixture', car: 'fixture_car',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        role: 'body',
+        regions: [
+          { id: 'flank-mark', panel: 'left_mid', at, treatment: 'fill', color: 'accent' },
+        ],
+      },
+    },
+  };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      const li = [...document.querySelectorAll('#regions li')].find((l) => l.dataset.id === 'flank-mark');
+      const [x, y] = centre(li);
+      clickAt(x, y);
+      await settle(400);
+
+      document.querySelector('#tab-3d').click();
+      await settle(2500);
+      say('note: ' + document.querySelector('#viewnote').textContent);
+
+      const canvas = document.querySelector('#carview');
+      // The same context the viewer holds — getContext returns the existing one.
+      const gl = canvas.getContext('webgl');
+      if (!gl) { say('webgl: absent'); return done(); }
+      say('webgl: present');
+      const prog = gl.getParameter(gl.CURRENT_PROGRAM);
+      if (!prog) { say('program: none'); return done(); }
+      const region = gl.getUniform(prog, gl.getUniformLocation(prog, 'region'));
+      say('region: ' + Array.from(region).map((n) => n.toFixed(4)).join(','));
+      done();
+    })();
+  `, { liveryObject: livery, profile, modelPath, fitPath: join(dir, 'fit.json') });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  if (find('webgl: ') === 'webgl: absent') {
+    // A headless box with no GL is a fact about the box, not a failure of the
+    // code. Everything up to the upload was still exercised.
+    assert.match(find('note: '), /triangles|no 3D view/, report.join(' | '));
+    return;
+  }
+  assert.equal(find('webgl: '), 'webgl: present', report.join(' | '));
+  assert.match(find('note: '), /triangles/, 'the fixture car should have loaded');
+
+  // The panel is [0.02, 0.02, 0.29, 0.46] and `at` is panel-relative, so the
+  // absolute rectangle is the panel's origin plus a quarter of its width, and
+  // so on. Computed here rather than hardcoded, because the point is that the
+  // two ends agree, not that a magic number survived.
+  const p = CAR.faces.left;
+  const want = [p[0] + at[0] * p[2], p[1] + at[1] * p[3], at[2] * p[2], at[3] * p[3]];
+  const got = find('region: ').slice('region: '.length).split(',').map(Number);
+  for (const [i, n] of want.entries()) {
+    assert.ok(Math.abs(got[i] - n) < 0.002,
+      `region[${i}] reached the GPU as ${got[i]}, expected ${n.toFixed(4)} — ${report.join(' | ')}`);
+  }
 });

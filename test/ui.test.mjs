@@ -347,3 +347,26 @@ test('the camera matrices compose in the convention GLSL reads them', async () =
   const [, , , w] = apply(mvp, [0, 0.7, 0, 1]);
   assert.ok(w > 0, `the look-at target must be in front of the eye, got w = ${w}`);
 });
+
+test('a selected region turns into a highlight the shader can use', async () => {
+  const { highlightUniforms } = await import('../src/ui/view3d.js');
+
+  // "Nothing selected" has to be expressible, because it is the state the
+  // editor spends most of its time in.
+  for (const empty of [null, undefined, [], [0.1, 0.1, 0, 0.4], [0.1, 0.1, 0.4, 0]]) {
+    assert.deepEqual(highlightUniforms(empty).region, [0, 0, 0, 0], JSON.stringify(empty));
+  }
+  // NaN reaches here from a drag in progress. A NaN uniform does not throw; it
+  // silently fails every comparison in the shader, so the highlight vanishes
+  // and the car looks like the feature is broken.
+  assert.deepEqual(highlightUniforms([NaN, 0, NaN, 0.2]).region, [0, 0, 0, 0]);
+
+  const big = highlightUniforms([0.1, 0.2, 0.5, 0.4]);
+  assert.deepEqual(big.region, [0.1, 0.2, 0.5, 0.4], 'passed through in texture space');
+  assert.equal(big.border, 0.0025, 'an ordinary region gets the fixed thin edge');
+
+  // A region a few texels across must not come out as a solid block of accent —
+  // at that size a fixed border meets itself in the middle.
+  const tiny = highlightUniforms([0.5, 0.5, 0.004, 0.006]);
+  assert.ok(tiny.border < 0.004 / 2, `border ${tiny.border} would swallow a 0.004-wide region`);
+});
