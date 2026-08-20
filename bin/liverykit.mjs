@@ -11,6 +11,7 @@ import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit } from '../src/fit.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
+import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -141,6 +142,10 @@ if (values['from-kn5']) {
     profile.bind = mergeBindings(prior.bind, profile.bind);
     if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
   }
+
+  const report = preserveHandwork(profile, prior);
+  for (const line of describeHandwork(report, priorPath)) console.log(line);
+
 
   const outPath = join(values.out, `${profile.id}.json`);
   await mkdir(values.out, { recursive: true });
