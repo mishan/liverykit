@@ -291,6 +291,9 @@ export function editorState({ livery, profile, fit }) {
         // across sends artwork to the wrong end of the twin.
         uAxis: p.uAxis,
         vAxis: p.vAxis,
+        // Measured from the model. The editor follows it when a linked pair is
+        // dragged: the twin goes to the mirror of wherever this one landed.
+        mirrorOf: p.mirrorOf,
       })),
       regions: (t.spec.regions ?? []).map((r, i) => ({
         index: i,

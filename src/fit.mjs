@@ -255,6 +255,28 @@ export function mirrorFlips(a, b) {
   return { u: flip('uAxis'), v: flip('vAxis') };
 }
 
+/**
+ * Mirroring WITHIN one panel, for a panel that has no twin.
+ *
+ * A nose, an engine cover, a rear wing: these straddle the centreline, so they
+ * are their own mirror and `mirrorOf` is rightly absent. Dragging one half of a
+ * pair onto such a panel used to have no good answer — leaving the other half
+ * behind splits an idea the design said was one, and unlinking silently decides
+ * something the person did not ask for. Both halves go onto the panel, mirrored
+ * within it, which is what a real car does with two numbers on a nose.
+ *
+ * Which axis to reverse is measured rather than assumed: whichever of the
+ * panel's own axes runs most nearly across the car is the one the centreline
+ * cuts. An island rotated in the unwrap has that role fall to `v`, and guessing
+ * `u` would mirror it top to bottom instead of side to side.
+ */
+export function selfMirrorFlips(panel) {
+  const across = (k) => (Array.isArray(panel?.[k]) && panel[k].length === 3 ? Math.abs(panel[k][0]) : -1);
+  const [u, v] = [across('uAxis'), across('vAxis')];
+  if (u < 0 && v < 0) return { u: false, v: false };   // nothing measured
+  return { u: u >= v, v: v > u };
+}
+
 /** A panel-relative rectangle, moved to the equivalent place on the twin. */
 export function mirrorAt(at, flips) {
   const [x, y, w, h] = at;
