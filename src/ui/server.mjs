@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
-import { applyFit, regionIds, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { applyFit, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
@@ -127,9 +127,13 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
       })),
       regions: (t.spec.regions ?? []).map((r, i) => ({
         index: i,
-        id: r.id,
+        id: regionKey(t.from, r, i),
+        // Named by the design, or addressed by position. Both are editable; the
+        // editor says which, because a positional key moves if the livery gains
+        // a region above it.
+        derived: r.id === undefined,
         treatment: r.treatment,
-        editable: r.id !== undefined,
+        editable: true,
         tags: r.tags,
         // Resolved through the aliases, the same as the placement is, so the
         // two can be compared. The editor asks "is this region still on the
@@ -173,7 +177,8 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
 
   const notes = [];
   const used = new Set();
-  const fitted = applyFit(spec.regions ?? [], fit, { profile, role, used, notes }).regions;
+  const surfaceKey = resolveTargets(profile, livery).targets.find((t) => t.role === role)?.from ?? '';
+  const fitted = applyFit(spec.regions ?? [], fit, { profile, role, surfaceKey, used, notes }).regions;
   for (const id of unusedFitIds(fit, used)) {
     notes.push({ term: id, status: 'fit-stale', text: `"${id}" matches no region in this livery` });
   }
@@ -203,11 +208,11 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   });
 
   const placed = expanded.regions
-    .filter((r) => r.id !== undefined)
+    .filter((r) => r.__key)
     .map((r) => {
       const p = r.panel ? findPanel(profile, role, r.panel) : null;
       return {
-        id: r.id,
+        id: r.__key,
         // The PROFILE's name for the panel, not the livery's. A design is free
         // to say `flankLeft` where the profile calls the island `left_mid`, and
         // only the second is a key in `profile.panels` — which is what the panel
