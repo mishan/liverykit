@@ -354,6 +354,115 @@ async function movePanel(name) {
   await refresh();
 }
 
+/**
+ * Pointerdown on the car. Returns true to take the gesture from the camera.
+ *
+ * Dragging on the sheet means guessing how a rectangle will land on curved
+ * bodywork, then switching tabs to find out. Dragging on the car removes the
+ * guess: the region follows the texel under the cursor, so it goes where you
+ * point, wherever the surface happens to bend.
+ *
+ * Only in the per-surface view. In the whole-car view a UV rectangle means
+ * something different on each of twenty textures, so there is no single answer
+ * to what the cursor is over, and pretending there is would move the wrong
+ * region on the wrong sheet.
+ */
+export function claimCarPointer(uv, e) {
+  // Only the whole-car view is excluded, and only for the reason above. The
+  // condition used to be `view !== '3d'`, which is the same thing in practice —
+  // the callback cannot fire when no car is on screen — but says something
+  // broader than it means, and could not be tested without a GL context.
+  if (state.view === 'all' || !uv) return false;
+
+  const sel = state.placed.find((p) => p.id === state.selected);
+  const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
+  const area = (p) => p.abs[2] * p.abs[3];
+
+  // The SMALLEST region containing the point, because regions stack: a fill
+  // covering the whole panel sits under the number painted on it, and if the
+  // larger won you could never click the number.
+  const hit = state.placed.filter((p) => inside(p.abs)).sort((a, b) => area(a) - area(b))[0];
+  if (!hit) return false;                        // bare bodywork: let it orbit
+
+  // Clicking inside the selection drags it — except when something smaller sits
+  // there too. Without that exception a region on top of the selected one became
+  // unreachable the moment the one underneath it was selected, which is a
+  // strange thing for a click to do and easy not to notice.
+  if (!sel || !inside(sel.abs) || area(hit) < area(sel)) {
+    if (hit.id !== state.selected) { selectRegion(hit.id); return true; }
+  }
+
+  const now = state.placed.find((p) => p.id === state.selected);
+  if (!now) return false;
+
+  // The far corner resizes, the rest moves — the same division the UV overlay
+  // makes with its handle, without a handle to hit on a surface that curves.
+  const [x, y, w, h] = now.abs;
+  const corner = uv.u > x + w * 0.75 && uv.v > y + h * 0.75;
+  startCarDrag(e, corner ? 'resize' : 'move', uv);
+  return true;
+}
+
+/**
+ * Drag a region across the car itself.
+ *
+ * Movement is measured in TEXTURE space, not screen space: each pointer event
+ * asks what texel is under the cursor now, and the region moves by the
+ * difference from the texel it started on. That is what makes it feel attached
+ * to the surface — the same screen distance is a small step across a flat door
+ * and a large one across a curved arch, exactly as the texture is stretched.
+ *
+ * A pointer that leaves the car keeps the last texel it had rather than
+ * reporting nothing. Sliding off the bodywork mid-drag is ordinary; having the
+ * region jump back to where the drag began because of it is not.
+ */
+function startCarDrag(e, mode, startUv) {
+  e.preventDefault();
+  const sel = state.placed.find((p) => p.id === state.selected);
+  if (!sel) return;
+  const start = { uv: startUv, abs: [...sel.abs] };
+  let last = startUv;
+
+  const move = (ev) => {
+    const uv = state.viewer?.pickUV(ev.clientX, ev.clientY) ?? last;
+    last = uv;
+    const dx = uv.u - start.uv.u;
+    const dy = uv.v - start.uv.v;
+    let [x, y, w, h] = start.abs;
+    if (mode === 'move') { x += dx; y += dy; } else { w = Math.max(0.005, w + dx); h = Math.max(0.005, h + dy); }
+    sel.abs = clampToPanel(sel, [x, y, w, h]);
+    drawOverlay();
+    status(`${mode === 'move' ? 'moving' : 'resizing'} ${sel.id} on the car`);
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    commit(sel);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+
+/**
+ * Keep a rectangle inside its panel.
+ *
+ * Not merely inside the texture: `at` is panel-relative and has to stay within
+ * 0..1, so a region dragged past its panel's edge produces coordinates the
+ * renderer rightly refuses — and a failed render used to take the whole editor
+ * down with it.
+ */
+function clampToPanel(sel, [x, y, w, h]) {
+  const host = state.surface.panels.find((p) => p.name === sel.panel);
+  const [bx, by, bw, bh] = host ? host.rect : [0, 0, 1, 1];
+  const cw = Math.min(w, bw);
+  const ch = Math.min(h, bh);
+  return [
+    Math.min(Math.max(bx, x), bx + bw - cw),
+    Math.min(Math.max(by, y), by + bh - ch),
+    cw, ch,
+  ];
+}
+
 function startDrag(e, mode) {
   e.preventDefault();
   const svg = $('#overlay');
@@ -368,18 +477,7 @@ function startDrag(e, mode) {
     const [dx, dy] = toFrac(ev.clientX - start.x, ev.clientY - start.y);
     let [x, y, w, h] = start.abs;
     if (mode === 'move') { x += dx; y += dy; } else { w = Math.max(0.01, w + dx); h = Math.max(0.01, h + dy); }
-
-    // Clamp to the PANEL, not merely to the texture. `at` is panel-relative and
-    // has to stay within 0..1, so a region dragged past its panel's edge
-    // produces coordinates the renderer rightly refuses — and the failed render
-    // used to take the whole editor down with it.
-    const host = state.surface.panels.find((p) => p.name === sel.panel);
-    const [bx, by, bw, bh] = host ? host.rect : [0, 0, 1, 1];
-    w = Math.min(w, bw);
-    h = Math.min(h, bh);
-    x = Math.min(Math.max(bx, x), bx + bw - w);
-    y = Math.min(Math.max(by, y), by + bh - h);
-    sel.abs = [x, y, w, h];
+    sel.abs = clampToPanel(sel, [x, y, w, h]);
     drawOverlay();
   };
   const up = async () => {
@@ -573,7 +671,7 @@ async function showView(which) {
 async function loadWholeCar() {
   if (!state.viewer) {
     state.viewer = createViewer($('#carview'));
-    state.viewer.attach();
+    state.viewer.attach({ claim: claimCarPointer });
   }
   if (!state.wholeGeometry) {
     const res = await fetch('/api/model?all=1');
@@ -607,7 +705,7 @@ async function loadWholeCar() {
 async function loadCarGeometry() {
   if (!state.viewer) {
     state.viewer = createViewer($('#carview'));
-    state.viewer.attach();
+    state.viewer.attach({ claim: claimCarPointer });
   }
   const res = await fetch(`/api/model?role=${encodeURIComponent(state.surface.role)}`);
   if (!res.ok) {
@@ -626,7 +724,8 @@ async function loadCarGeometry() {
   highlightOnCar(state.placed.find((p) => p.id === state.selected)?.abs ?? null);
   $('#viewnote').textContent =
     `${(geom.indices.length / 3).toLocaleString()} triangles painted by ${state.surface.file}` +
-    ' — drag to orbit, wheel to zoom';
+    ' — click a region to select it, drag it to move, drag its far corner to' +
+    ' resize; drag anywhere else to orbit';
 }
 
 /**
