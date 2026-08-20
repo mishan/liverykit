@@ -97,12 +97,27 @@ async function selectSurface(i) {
   state.selected = null;
   drawPanels();
   await refresh();
+  // The viewport shows the geometry THIS texture is painted on, so changing
+  // surface has to reload it. Without this the car kept its old mesh and simply
+  // wore the new texture — which is why picking the driver's suit showed the
+  // car wearing the suit.
+  if (state.view === '3d') await loadCarGeometry();
 }
 
 /** Re-render the texture and redraw everything over it. */
 async function refresh() {
   const t0 = performance.now();
-  const out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+  let out;
+  try {
+    out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+  } catch (e) {
+    // A failed render must not leave the editor frozen with no explanation. It
+    // used to reject into nothing: the page kept its last drawing and quietly
+    // stopped responding to everything.
+    status(`render failed: ${e.message}`);
+    $('#notes').innerHTML = `<div class="note">! ${esc(e.message)}</div>`;
+    return;
+  }
   state.placed = out.placed;
   state.svg = out.svg;
   $('#texture').innerHTML = out.svg;
@@ -194,9 +209,10 @@ function override(id) {
 /** Move the selected region onto a panel, keeping its shape where possible. */
 async function movePanel(name) {
   if (!state.selected) return status('select a region first');
-  const sel = state.placed.find((p) => p.id === state.selected);
   const panel = state.surface.panels.find((p) => p.name === name);
-  if (!sel || !panel) return;
+  if (!panel) return;
+  // Deliberately does NOT require an existing placement: putting a region onto a
+  // named panel is how you rescue one this car dropped or never matched.
 
   const o = override(state.selected);
   o.panel = name;
@@ -227,9 +243,17 @@ function startDrag(e, mode) {
     const [dx, dy] = toFrac(ev.clientX - start.x, ev.clientY - start.y);
     let [x, y, w, h] = start.abs;
     if (mode === 'move') { x += dx; y += dy; } else { w = Math.max(0.01, w + dx); h = Math.max(0.01, h + dy); }
-    // Stay inside the texture. Nothing outside it is painted anyway.
-    x = Math.min(Math.max(0, x), 1 - w);
-    y = Math.min(Math.max(0, y), 1 - h);
+
+    // Clamp to the PANEL, not merely to the texture. `at` is panel-relative and
+    // has to stay within 0..1, so a region dragged past its panel's edge
+    // produces coordinates the renderer rightly refuses — and the failed render
+    // used to take the whole editor down with it.
+    const host = state.surface.panels.find((p) => p.name === sel.panel);
+    const [bx, by, bw, bh] = host ? host.rect : [0, 0, 1, 1];
+    w = Math.min(w, bw);
+    h = Math.min(h, bh);
+    x = Math.min(Math.max(bx, x), bx + bw - w);
+    y = Math.min(Math.max(by, y), by + bh - h);
     sel.abs = [x, y, w, h];
     drawOverlay();
   };
@@ -272,10 +296,36 @@ function toPanelRelative(panelRect, abs) {
 
 function drawInspector() {
   const el = $('#inspector');
-  const sel = state.placed.find((p) => p.id === state.selected);
-  if (!sel) { el.className = 'empty'; el.textContent = 'Nothing selected.'; return; }
+  if (!state.selected) { el.className = 'empty'; el.textContent = 'Nothing selected.'; return; }
 
-  const o = state.fit.regions[sel.id] ?? {};
+  // A selected region does not always have a PLACEMENT. It may be dropped on
+  // this car, or its tags may match nothing here. Falling back to "nothing
+  // selected" in that case was the single most confusing thing in this editor:
+  // the first two regions of the example livery are dropped by the Abarth fit,
+  // so the first two clicks anyone makes did nothing at all and the tool looked
+  // broken. The inspector is exactly where you go to UNDO a drop, so it has to
+  // work hardest when there is nothing on screen.
+  const sel = state.placed.find((p) => p.id === state.selected);
+  const def = state.surface.regions.find((r) => r.id === state.selected);
+  const id = state.selected;
+  const o = state.fit.regions[id] ?? {};
+
+  if (!sel) {
+    el.className = '';
+    const why = o.drop
+      ? 'Dropped on this car by the fit.'
+      : `Nothing on this car matches ${def?.tags ? `[${esc(def.tags.join(', '))}]` : 'this region'}.`;
+    el.innerHTML = `
+      <div><code>${esc(id)}</code></div>
+      <p class="hint">${why} There is nothing to drag until it is placed.</p>
+      <div class="row" style="margin-top:10px">
+        <button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
+        <button id="reset">Reset</button>
+      </div>
+      <p class="hint">Or click a panel on the right to place it there.</p>`;
+    wireInspectorButtons(id);
+    return;
+  }
   el.className = '';
   el.innerHTML = `
     <div><code>${esc(sel.id)}</code></div>
@@ -290,14 +340,21 @@ function drawInspector() {
       <button id="reset">Reset</button>
     </div>`;
 
+  wireInspectorButtons(sel.id);
+}
+
+/** Shared by both inspector states, so Restore works when nothing is drawn. */
+function wireInspectorButtons(id) {
   $('#drop').onclick = async () => {
-    const ov = override(sel.id);
+    const ov = override(id);
     if (ov.drop) delete ov.drop; else ov.drop = true;
-    setDirty(true); await refresh();
+    setDirty(true);
+    await refresh();
   };
   $('#reset').onclick = async () => {
-    delete state.fit.regions[sel.id];
-    setDirty(true); await refresh();
+    delete state.fit.regions[id];
+    setDirty(true);
+    await refresh();
   };
 }
 
@@ -320,19 +377,12 @@ async function showView(which) {
   if (which !== '3d') return;
 
   try {
-    if (!state.viewer) {
-      state.viewer = createViewer($('#carview'));
-      state.viewer.attach();
-    }
-    const res = await fetch(`/api/model?role=${encodeURIComponent(state.surface.role)}`);
-    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-    state.viewer.setGeometry(unpack(await res.arrayBuffer()));
-    await paintCar();
-    $('#viewnote').textContent = 'drag to orbit, wheel to zoom';
+    await loadCarGeometry();
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine.
     $('#viewnote').textContent = `no 3D view — ${e.message}`;
+    status(`3D unavailable for ${state.surface.file}`);
     $('#carview').hidden = true;
     $('#texture').hidden = false;
     $('#overlay').hidden = false;
@@ -340,6 +390,35 @@ async function showView(which) {
     $('#tab-uv').className = 'tab on';
     $('#tab-3d').className = 'tab';
   }
+}
+
+/**
+ * Fetch and upload the geometry for the surface being edited.
+ *
+ * The viewport deliberately shows only the parts THIS texture paints, so the
+ * wheels are absent while you are editing the body. That is the honest framing —
+ * you are looking at what you are painting — but it does surprise people, so the
+ * note says how many pieces are on screen.
+ */
+async function loadCarGeometry() {
+  if (!state.viewer) {
+    state.viewer = createViewer($('#carview'));
+    state.viewer.attach();
+  }
+  const res = await fetch(`/api/model?role=${encodeURIComponent(state.surface.role)}`);
+  if (!res.ok) {
+    const { error } = await res.json().catch(() => ({}));
+    // The driver, the helmet and the pit crew live in SEPARATE kn5 files that a
+    // car skin overrides. There is genuinely no car geometry for them, and
+    // showing the car wearing the suit would be worse than showing nothing.
+    throw new Error(error ?? `no geometry for ${state.surface.file}`);
+  }
+  const geom = unpack(await res.arrayBuffer());
+  state.viewer.setGeometry(geom);
+  await paintCar();
+  $('#viewnote').textContent =
+    `${(geom.indices.length / 3).toLocaleString()} triangles painted by ${state.surface.file}` +
+    ' — drag to orbit, wheel to zoom';
 }
 
 async function paintCar() {
