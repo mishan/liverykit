@@ -207,6 +207,14 @@ function drawOverlay() {
     parts.push(`<rect class="handle" data-drag="resize" x="${x + w - 7}" y="${y + h - 7}" width="14" height="14"/>`);
   }
   svg.innerHTML = parts.join('');
+
+  // Deliberately from THIS function and from this `sel`, rather than from
+  // selectRegion. Every path that moves the selection box — clicking a row,
+  // clicking the canvas, finishing a drag, re-rendering after a save — ends up
+  // here, so the car cannot end up highlighting a rectangle the UV view has
+  // already moved on from. Two views drawing the same thing from two sources
+  // eventually disagree; these read one.
+  highlightOnCar(sel?.abs ?? null);
 }
 
 // A function DECLARATION, deliberately. This module boots with a top-level
@@ -453,9 +461,24 @@ async function loadCarGeometry() {
   const geom = unpack(await res.arrayBuffer());
   state.viewer.setGeometry(geom);
   await paintCar();
+  // Opening the 3D tab with something already selected should show it selected.
+  // Without this the highlight only appeared once you touched the selection
+  // again, which reads as the feature being broken rather than merely late.
+  highlightOnCar(state.placed.find((p) => p.id === state.selected)?.abs ?? null);
   $('#viewnote').textContent =
     `${(geom.indices.length / 3).toLocaleString()} triangles painted by ${state.surface.file}` +
     ' — drag to orbit, wheel to zoom';
+}
+
+/**
+ * Show the selected region on the car, if there is a car on screen to show it on.
+ *
+ * Cheap and silent when the 3D view has never been opened, which is the common
+ * case: this runs on every selection and every drag frame, and a UV-only session
+ * should not pay for a feature it is not looking at.
+ */
+function highlightOnCar(abs) {
+  state.viewer?.setHighlight(abs);
 }
 
 async function paintCar() {
