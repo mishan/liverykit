@@ -1406,3 +1406,126 @@ test('both spellings of a copy block load, and copies wins', async () => {
   assert.throws(() => validateFit({ livery: 'x', car: 'y', mirrors: { a: { of: 'b', color: 'red' } } }),
     /may not set "color"/);
 });
+
+test('undo steps back through several actions, and redo forward again', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const { dom } = await runApp({
+    state: editorState({ livery, profile, fit }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+
+  const inspector = dom.querySelector('#inspector');
+  const buttons = new Map();
+  inspector.querySelectorAll = (sel) => (sel === '[data-rotate]' ? [...buttons.values()] : []);
+  inspector.querySelector = () => null;
+  for (const v of ['auto', '0', '90', '180', '270']) buttons.set(v, { dataset: { rotate: v }, onclick: null });
+
+  const rot = () => JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left']?.rotate;
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  const start = rot();
+
+  assert.equal(dom.querySelector('#undo').disabled, true, 'nothing to undo yet');
+
+  await buttons.get('90').onclick();
+  await buttons.get('180').onclick();
+  await buttons.get('270').onclick();
+  assert.equal(rot(), 270);
+  assert.equal(dom.querySelector('#undo').disabled, false);
+
+  // MULTIPLE steps back, which is the whole ask.
+  await dom.querySelector('#undo').onclick();
+  assert.equal(rot(), 180, 'one step back');
+  await dom.querySelector('#undo').onclick();
+  assert.equal(rot(), 90, 'two steps back');
+  await dom.querySelector('#undo').onclick();
+  assert.equal(rot(), start, 'back to where it started');
+  assert.equal(dom.querySelector('#undo').disabled, true, 'and there is no further back');
+
+  // Forward again.
+  await dom.querySelector('#redo').onclick();
+  assert.equal(rot(), 90);
+  await dom.querySelector('#redo').onclick();
+  assert.equal(rot(), 180);
+
+  // A new action abandons the redo branch — keeping it would let a redo jump to
+  // a state that no longer follows from anything.
+  await buttons.get('0').onclick();
+  assert.equal(dom.querySelector('#redo').disabled, true, 'the redo branch is gone');
+  assert.equal(rot(), 0);
+});
+
+test('undo restores regions a copy created, and removes ones it did not', async () => {
+  // Undo has to cope with the SET of regions changing, not just their
+  // placements. Undoing a duplicate removes one; undoing a delete brings one
+  // back. Both go through the server, because the region list is its answer.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+  surface.panels = [{ name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
+    uAxis: [1, 0, 0], vAxis: [0, -1, 0] }];
+  surface.regions = [{ ...surface.regions[0], id: 'badge', panel: 'L', mirror: null }];
+  render.placed = [{ ...render.placed[0], id: 'badge', panel: 'L', abs: [0.04, 0.04, 0.08, 0.08] }];
+
+  const { dom } = await runApp({ state, render });
+  const inspector = dom.querySelector('#inspector');
+  const nodes = new Map();
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  for (const sel of ['#mirrorcreate', '#mirrornow', '#unpair', '#mirror', '#pairwith', '#delete']) {
+    nodes.set(sel, { onclick: null, onchange: null, value: '' });
+  }
+  const dup = { onclick: null };
+  nodes.set('#duplicate', dup);
+
+  const copies = () => Object.keys(JSON.parse(dom.querySelector('#fitjson').textContent).copies ?? {});
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  await dup.onclick();
+  assert.deepEqual(copies(), ['badge-copy'], 'the duplicate exists');
+
+  await dom.querySelector('#undo').onclick();
+  assert.deepEqual(copies(), [], 'undo removed the region it created');
+
+  await dom.querySelector('#redo').onclick();
+  assert.deepEqual(copies(), ['badge-copy'], 'and redo brought it back');
+});
+
+test('a drag is one undo step, not one per pointer event', async () => {
+  // The stack has to hold ACTIONS. Remembering per pointermove would fill it
+  // with intermediate positions of one gesture and make undo mean "go back four
+  // pixels" — technically correct and completely useless.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const { dom, window: win } = await runApp({
+    state: editorState({ livery, profile, fit }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+
+  const at = () => JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'].at;
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  const before = at();
+
+  dom.querySelector('#overlay').onpointerdown({
+    preventDefault() {}, clientX: 100, clientY: 100, target: { dataset: { drag: 'move' } },
+  });
+  // Ten moves. One gesture.
+  for (let i = 1; i <= 10; i++) win.emit('pointermove', { clientX: 100 + i * 10, clientY: 100 + i * 10 });
+  win.emit('pointerup', {});
+  await new Promise((r) => setTimeout(r, 30));
+  assert.notDeepEqual(at(), before, 'the drag landed');
+
+  await dom.querySelector('#undo').onclick();
+  assert.deepEqual(at(), before, 'ONE undo returns to before the whole gesture');
+  assert.equal(dom.querySelector('#undo').disabled, true, 'and there is nothing behind it');
+});
