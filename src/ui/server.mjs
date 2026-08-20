@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
-import { applyFit, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
@@ -352,7 +352,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     // sense for a region the design never mentioned.
     const surface = surfaces[surfaces.length - 1];
     const keys = new Set(surface.regions.map((r) => r.id));
-    for (const [id, m] of Object.entries(fit?.mirrors ?? {})) {
+    for (const [id, m] of Object.entries(copiesOf(fit))) {
       if (!keys.has(m.of)) continue;
       const src = (t.spec.regions ?? []).find((r, i) => regionKey(t.from, r, i) === m.of);
       surface.regions.push({

@@ -90,31 +90,33 @@ export function validateFit(f, source = '<inline>') {
   if (f.regions && (typeof f.regions !== 'object' || Array.isArray(f.regions))) {
     err('"regions" must be an object keyed by region id');
   }
-  if (f.mirrors && (typeof f.mirrors !== 'object' || Array.isArray(f.mirrors))) {
-    err('"mirrors" must be an object keyed by the new region id');
+  for (const block of ['copies', 'mirrors']) {
+    if (f[block] && (typeof f[block] !== 'object' || Array.isArray(f[block]))) {
+      err(`"${block}" must be an object keyed by the new region id`);
+    }
   }
 
   const declared = new Set(Object.keys(f.regions ?? {}));
-  for (const [id, m] of Object.entries(f.mirrors ?? {})) {
+  for (const [id, m] of Object.entries(copiesOf(f))) {
     if (!m || typeof m !== 'object' || Array.isArray(m)) {
-      err(`mirrors."${id}" must be an object`);
+      err(`copies."${id}" must be an object`);
     }
     if (!m.of || typeof m.of !== 'string') {
-      err(`mirrors."${id}" needs "of": the id of the region it is a copy of`);
+      err(`copies."${id}" needs "of": the id of the region it is a copy of`);
     }
-    if (m.of === id) err(`mirrors."${id}" cannot be a mirror of itself`);
+    if (m.of === id) err(`copies."${id}" cannot be a copy of itself`);
     if (declared.has(id)) {
-      err(`"${id}" is both a mirrored region and an override; it can only be one`);
+      err(`"${id}" is both a copied region and an override; it can only be one`);
     }
     for (const k of Object.keys(m)) {
       if (k !== 'of' && !OVERRIDABLE.has(k)) {
-        err(`mirrors."${id}" may not set "${k}". A mirrored copy states where a ` +
-            `region also appears: ${['of', ...OVERRIDABLE].join(', ')}. It takes its ` +
-            `artwork from "${m.of}" and cannot have any of its own.`);
+        err(`copies."${id}" may not set "${k}". A copy states where a region ALSO ` +
+            `appears: ${['of', ...OVERRIDABLE].join(', ')}. It takes its artwork from ` +
+            `"${m.of}" and cannot have any of its own.`);
       }
     }
     if (m.drop !== undefined) {
-      err(`mirrors."${id}" cannot be dropped — delete the entry instead`);
+      err(`copies."${id}" cannot be dropped — delete the entry instead`);
     }
   }
 
@@ -133,6 +135,19 @@ export function validateFit(f, source = '<inline>') {
     }
   }
   return f;
+}
+
+/**
+ * The regions a fit adds, from either spelling.
+ *
+ * `mirrors` was the first name, before duplicating a region without mirroring
+ * it turned out to be the same feature: a copy that takes its artwork from
+ * another region and states a placement. A mirrored copy is one whose placement
+ * was computed by reflecting; that is a fact about how the number was arrived
+ * at, not about what the entry means. Both spellings load, `copies` is written.
+ */
+export function copiesOf(fit) {
+  return { ...(fit?.mirrors ?? {}), ...(fit?.copies ?? {}) };
 }
 
 /**
@@ -265,7 +280,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   // A mirror whose source lives on another surface is skipped in silence, not
   // reported: applyFit runs once per surface and every one of them would
   // otherwise report every other surface's mirrors as stale.
-  for (const [id, m] of Object.entries(fit?.mirrors ?? {})) {
+  for (const [id, m] of Object.entries(copiesOf(fit))) {
     const at = regions.findIndex((r, i) => regionKey(surfaceKey, r, i) === m.of);
     if (at < 0) continue;
     used.add(id);
@@ -285,7 +300,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
     if (m.panel && !profile?.panels?.[role]?.[m.panel] && !profile?.aliases?.[role]?.[m.panel]) {
       notes.push({
         term: id, status: 'fit-stale',
-        text: `fit: mirrored region "${id}" points at panel "${m.panel}", which ${role} ` +
+        text: `fit: copied region "${id}" points at panel "${m.panel}", which ${role} ` +
               `does not have — it was not drawn`,
       });
       continue;
@@ -416,6 +431,6 @@ export function mirrorRotation(rotate, flips) {
 
 /** Ids a fit mentions that the livery does not declare. */
 export function unusedFitIds(fit, used) {
-  return [...Object.keys(fit?.regions ?? {}), ...Object.keys(fit?.mirrors ?? {})]
+  return [...Object.keys(fit?.regions ?? {}), ...Object.keys(copiesOf(fit))]
     .filter((id) => !used.has(id));
 }

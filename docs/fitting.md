@@ -168,18 +168,22 @@ Whether the UI should write `notes` into a fit the way the two shipped examples
 do by hand. The prose in those files is the most useful part of them, and no tool
 is going to produce it.
 
-## Mirrored copies
+## Copies
 
 A fit may not add a region. That rule has one exception, and it is worth
 spelling out because it is the only place the boundary bends.
 
 ```json
-"mirrors": {
-  "badge-mirror": { "of": "badge", "panel": "right_mid", "at": [0.3, 0.2, 0.2, 0.2] }
+"copies": {
+  "badge-mirror": { "of": "badge", "panel": "right_mid", "at": [0.3, 0.2, 0.2, 0.2] },
+  "badge-copy":   { "of": "badge", "panel": "left_mid",  "at": [0.5, 0.4, 0.2, 0.2] }
 }
 ```
 
-This creates a second `badge` on the other flank. It invents no artwork:
+This creates a second and third `badge`. A MIRRORED copy and a DUPLICATE are
+the same entry: both take their artwork from `of` and state a placement, and
+mirroring is only how that placement was arrived at. The block was called
+`mirrors` first; that spelling still loads. It invents no artwork:
 treatment, colours, text and glow all come from the region named in `of`, and
 the only new information is a placement — which is exactly what a fit is for.
 Setting anything else is rejected, so a mirrored copy cannot quietly become a

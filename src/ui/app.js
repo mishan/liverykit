@@ -772,41 +772,70 @@ function rotationChoices(id, def, o) {
  * sides deliberately differ is not a mistake, it is most of what makes a livery
  * worth looking at.
  */
+/**
+ * Everything about this region's other half, in one stable block.
+ *
+ * The controls do not appear and disappear with the state; they are always
+ * there and DISABLED when they would do nothing. A row of buttons that changes
+ * shape depending on what is selected makes you re-read it every time, and a
+ * control you have never seen enabled is a feature you do not know exists.
+ */
 function mirrorControl(id) {
   const other = partnerOf(id);
+  const linked = other && !state.unlinked.has(id) && !state.unlinked.has(other);
   const candidates = state.surface.regions
     .filter((r) => r.id !== id && r.id !== other)
     .map((r) => `<option value="${esc(r.id)}">${esc(r.id)}</option>`).join('');
 
-  if (!other) {
-    // Nothing paired. Two ways out: pair with a region that already exists, or
-    // create the counterpart that does not.
-    return `
-      <label>mirror</label>
-      <div class="row">
-        <button id="mirrorcreate">Create mirrored copy</button>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <select id="pairwith"><option value="">or pair with…</option>${candidates}</select>
-      </div>
-      <p class="hint">A copy takes its artwork from this region and appears on the
-        opposite panel. Pairing instead links two regions that both already exist.</p>`;
-  }
+  // "Mirror now" is a one-shot copy across, so it has nothing to do when the
+  // two sides ALREADY agree. Disabling it on "has a counterpart" would disable
+  // it exactly whenever it was possible, which cannot be what anyone means.
+  const stale = other ? !alreadyMirrored(id, other) : false;
+  const off = (yes) => (yes ? ' disabled' : '');
 
-  const linked = !state.unlinked.has(id) && !state.unlinked.has(other);
   return `
     <label>mirror</label>
     <div class="row">
-      <button id="mirror" data-linked="${linked}">${linked ? 'linked' : 'independent'}</button>
-      <span class="muted">${esc(other)}</span>
+      <button id="mirror"${off(!other)} data-linked="${!!linked}">${
+        other ? (linked ? 'linked' : 'independent') : 'not paired'}</button>
+      <span class="muted">${other ? esc(other) : 'no counterpart'}</span>
     </div>
     <div class="row" style="margin-top:6px">
-      <button id="mirrornow">Mirror now</button>
-      <button id="unpair">Unpair</button>
+      <button id="mirrornow"${off(!stale)}>Mirror now</button>
+      <button id="unpair"${off(!other)}>Unpair</button>
     </div>
-    <p class="hint">${linked
-      ? 'Moving, resizing or rotating this also moves its opposite number.'
-      : 'Edits affect this side only. “Mirror now” copies this placement across once.'}</p>`;
+    <div class="row" style="margin-top:6px">
+      <button id="mirrorcreate"${off(!!other)}>Create mirrored copy</button>
+      <button id="duplicate">Duplicate</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <select id="pairwith"${off(!!other)}>
+        <option value="">pair with…</option>${candidates}</select>
+    </div>
+    <p class="hint">${other
+      ? (linked ? 'Moving, resizing or rotating this also moves its opposite number.'
+        : 'Edits affect this side only.')
+      : 'A copy takes its artwork from this region and appears on the opposite panel.'}</p>`;
+}
+
+/**
+ * Whether the two halves are already in mirrored positions.
+ *
+ * Compared through the same arithmetic that would place them, so "already
+ * mirrored" means exactly "mirroring again would change nothing" rather than
+ * some second opinion about it.
+ */
+function alreadyMirrored(id, other) {
+  const a = state.placed.find((p) => p.id === id);
+  const b = state.placed.find((p) => p.id === other);
+  if (!a || !b) return false;
+  const here = state.surface.panels.find((p) => p.name === a.panel);
+  const there = state.surface.panels.find((p) => p.name === b.panel);
+  if (!here || !there) return false;
+  const flips = there.name === here.name ? selfMirrorFlips(here) : mirrorFlips(here, there);
+  const want = mirrorAt(toPanelRelative(here.rect, a.abs), flips);
+  const have = toPanelRelative(there.rect, b.abs);
+  return want.every((n, i) => Math.abs(n - have[i]) < 0.001);
 }
 
 function drawInspector() {
@@ -954,6 +983,9 @@ function wireInspectorButtons(id) {
   const create = inspector.querySelector?.('#mirrorcreate');
   if (create) create.onclick = () => mirrorCopy(id);
 
+  const duplicate = inspector.querySelector?.('#duplicate');
+  if (duplicate) duplicate.onclick = () => duplicateRegion(id);
+
   // One-shot: copy this placement across without changing the link. The action
   // a broken pair needs when the two sides have drifted and only one of them
   // was meant to.
@@ -993,40 +1025,79 @@ function wireInspectorButtons(id) {
 async function mirrorCopy(id) {
   const sel = state.placed.find((p) => p.id === id);
   if (!sel) return status('nothing placed to copy');
-
   const here = state.surface.panels.find((p) => p.name === sel.panel);
   if (!here) return status('this region has no panel to mirror across');
+
   const there = state.surface.panels.find((p) => p.name === (here.mirrorOf ?? here.name));
   const flips = there.name === here.name ? selfMirrorFlips(here) : mirrorFlips(here, there);
-
-  // Named after the source so the fit reads as what it is. A collision would
-  // mean the copy already exists, which is not an error worth a dialog.
-  let copyId = `${id}-mirror`;
-  for (let n = 2; state.surface.regions.some((r) => r.id === copyId); n++) copyId = `${id}-mirror-${n}`;
-
-  const at = toPanelRelative(here.rect, sel.abs);
   const own = state.fit.regions[id] ?? {};
-  state.fit.mirrors ??= {};
-  state.fit.mirrors[copyId] = {
-    of: id,
+
+  const copyId = await addCopy(id, 'mirror', {
     panel: there.name,
-    at: mirrorAt(at, flips),
+    at: mirrorAt(toPanelRelative(here.rect, sel.abs), flips),
     ...(own.rotate !== undefined ? { rotate: mirrorRotation(own.rotate, flips) } : {}),
-  };
+  });
   // Linked from the start: it was created as this region's other half, and
   // having to then declare that would be asking twice.
   state.paired.set(id, copyId);
   state.paired.set(copyId, id);
   state.severed.delete(id);
+  await refresh();
+  selectRegion(id);
+  status(`created ${copyId} on ${there.name}`);
+}
 
+/**
+ * Duplicate a region in place, nudged clear of the original.
+ *
+ * The same mechanism as a mirrored copy — a copy is a copy, and mirroring is
+ * only how the placement was arrived at. It is NOT paired with its source: two
+ * badges on the same panel are two things, and linking them would make every
+ * edit move both, which is the opposite of why anyone duplicates something.
+ *
+ * Offset rather than placed exactly on top. A duplicate hidden under its
+ * original looks like the button did nothing, and the way to find out otherwise
+ * is to drag the one you can see and discover a second underneath.
+ */
+async function duplicateRegion(id) {
+  const sel = state.placed.find((p) => p.id === id);
+  if (!sel) return status('nothing placed to duplicate');
+  const here = state.surface.panels.find((p) => p.name === sel.panel);
+
+  const at = here ? toPanelRelative(here.rect, sel.abs) : [...sel.abs];
+  const step = 0.06;
+  const nudged = [
+    Math.min(Math.max(0, at[0] + step), 1 - at[2]),
+    Math.min(Math.max(0, at[1] + step), 1 - at[3]),
+    at[2], at[3],
+  ];
+  const own = state.fit.regions[id] ?? {};
+  const copyId = await addCopy(id, 'copy', {
+    ...(sel.panel ? { panel: sel.panel } : {}),
+    at: nudged,
+    ...(own.rotate !== undefined ? { rotate: own.rotate } : {}),
+  });
+  await refresh();
+  selectRegion(copyId);
+  status(`duplicated as ${copyId}`);
+}
+
+/** Write a copy into the fit and re-read what the surface now contains. */
+async function addCopy(id, suffix, placement) {
+  // Named after the source so the fit reads as what it is, and numbered on
+  // collision because duplicating twice is an ordinary thing to do.
+  let copyId = `${id}-${suffix}`;
+  for (let n = 2; state.surface.regions.some((r) => r.id === copyId); n++) {
+    copyId = `${id}-${suffix}-${n}`;
+  }
+  state.fit.copies ??= {};
+  state.fit.copies[copyId] = { of: id, ...placement };
   setDirty(true);
   // A new region changes what the surface CONTAINS, and only /api/state knows
   // that. refresh() alone would draw the copy on the car and leave it missing
   // from the region list — visible, and unselectable.
   await reloadState();
-  await refresh();
-  selectRegion(id);
-  status(`created ${copyId} on ${there.name}`);
+  return copyId;
 }
 
 /**
