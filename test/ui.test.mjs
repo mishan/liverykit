@@ -56,28 +56,32 @@ async function runApp({ state, render }) {
   const dom = fakeDom();
   const calls = [];
   const g = globalThis;
-  const saved = {
-    document: g.document, fetch: g.fetch,
-    performance: g.performance, structuredClone: g.structuredClone,
-  };
 
+  // Installed for the whole test, not just the import. Handlers run later —
+  // clicking a region re-renders, which needs both document and fetch — so
+  // tearing the globals down after the module loads breaks every interaction
+  // the test is trying to exercise.
   g.document = dom;
   g.performance ??= { now: () => 0 };
   g.structuredClone ??= (o) => JSON.parse(JSON.stringify(o));
+  // A window that can carry the pointermove/pointerup pair a drag listens for.
+  const listeners = new Map();
+  g.window = {
+    addEventListener: (t, fn) => listeners.set(t, [...(listeners.get(t) ?? []), fn]),
+    removeEventListener: (t, fn) => listeners.set(t, (listeners.get(t) ?? []).filter((f) => f !== fn)),
+    emit: (t, ev) => (listeners.get(t) ?? []).slice().forEach((fn) => fn(ev)),
+  };
   g.fetch = async (path, init) => {
     calls.push({ path, method: init?.method ?? 'GET' });
     const body = path === '/api/state' ? state : render;
     return { ok: true, status: 200, json: async () => body };
   };
 
-  try {
-    // Cache-busted so each test gets a fresh evaluation; a module that throws
-    // on first import would otherwise be cached as failed.
-    await import(`../src/ui/app.js?t=${Date.now()}${Math.random()}`);
-  } finally {
-    Object.assign(g, saved);
-  }
-  return { dom, calls };
+  // Cache-busted so each test gets a fresh evaluation; a module that throws on
+  // first import would otherwise be cached as failed and every later test would
+  // see the cached failure instead of the real one.
+  const mod = await import(`../src/ui/app.js?t=${Date.now()}${Math.random()}`);
+  return { dom, calls, mod, window: g.window };
 }
 
 test('the editor module boots instead of dying in a dead zone', async () => {
@@ -135,4 +139,66 @@ test('app.js declares its helpers before the boot await reaches them', async () 
   assert.ok(boot > 0, 'the module still boots by selecting a surface');
   const after = src.slice(boot).split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
   assert.equal(after.length, 1, `nothing may follow the boot await, found: ${after.slice(1)}`);
+});
+
+test('clicking a region selects it and gives it something to drag', async () => {
+  // The editor shipped once where every handler was bound to a node that the
+  // next innerHTML replaced, so the page highlighted on hover and did nothing on
+  // click. Handlers are delegated to the containers now, and this exercises the
+  // whole path rather than trusting that they are.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const { dom } = await runApp({
+    state: editorState({ livery, profile, fit }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+
+  const overlay = dom.querySelector('#overlay');
+  assert.doesNotMatch(overlay.innerHTML, /class="box"/, 'nothing is selected yet');
+
+  // The containers carry the handlers, and they survive every redraw.
+  assert.equal(typeof dom.querySelector('#regions').onclick, 'function');
+  assert.equal(typeof dom.querySelector('#panels').onclick, 'function');
+  assert.equal(typeof dom.querySelector('#overlay').onpointerdown, 'function');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  assert.match(overlay.innerHTML, /class="box"/, 'the selected region gets a draggable box');
+  assert.match(overlay.innerHTML, /data-drag="move"/);
+  assert.match(overlay.innerHTML, /class="handle"/, 'and a resize handle');
+  assert.match(dom.querySelector('#regions').innerHTML, /class="sel/, 'and the list shows it');
+  assert.match(dom.querySelector('#inspector').innerHTML, /number-left/);
+});
+
+test('dragging a region writes a panel-relative at into the fit', async () => {
+  // The conversion the design settled on, exercised end to end: the mouse works
+  // in absolute texture fractions, the fit stores panel-relative.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const { dom, window: win } = await runApp({
+    state: editorState({ livery, profile, fit }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  const before = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'].at;
+
+  // Press on the box, move a tenth of the texture right and down, release.
+  dom.querySelector('#overlay').onpointerdown({
+    preventDefault() {}, clientX: 100, clientY: 100, target: { dataset: { drag: 'move' } },
+  });
+  win.emit('pointermove', { clientX: 200, clientY: 200 });
+  win.emit('pointerup', {});
+  await new Promise((r) => setTimeout(r, 20));       // the drop re-renders
+
+  const after = JSON.parse(dom.querySelector('#fitjson').textContent).regions['number-left'].at;
+  assert.notDeepEqual(after, before, 'the drag reached the fit');
+  assert.ok(after.every((n) => Number.isFinite(n)), `at must stay numeric, got ${after}`);
+  assert.ok(after[0] > before[0] && after[1] > before[1], 'and moved the way the pointer did');
+  assert.equal(dom.querySelector('#save').disabled, false, 'and the fit is now unsaved');
 });

@@ -52,6 +52,28 @@ $('#surface').innerHTML = data.surfaces
   .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
 $('#surface').onchange = () => selectSurface(+$('#surface').value);
 
+// --- wiring -----------------------------------------------------------------
+//
+// Delegated, and attached exactly once. Every draw here replaces a container's
+// innerHTML, which throws away the nodes inside it — so handlers bound to those
+// nodes are thrown away with them, and the next redraw leaves a page that looks
+// right and does nothing. Listening on the container instead survives any number
+// of redraws, and there is one place to look when a click does not arrive.
+$('#regions').onclick = (e) => {
+  const li = e.target.closest?.('li[data-id]') ?? e.target;
+  selectRegion(li?.dataset?.id);
+};
+$('#panels').onclick = (e) => {
+  const li = e.target.closest?.('li[data-panel]') ?? e.target;
+  if (li?.dataset?.panel) movePanel(li.dataset.panel);
+};
+$('#overlay').onpointerdown = (e) => {
+  const drag = e.target?.dataset?.drag;
+  if (drag) return startDrag(e, drag);
+  const panel = e.target?.dataset?.panel;
+  if (panel) movePanel(panel);
+};
+
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
   setDirty(false);
@@ -90,9 +112,6 @@ function drawPanels() {
       <span class="id">${esc(p.name)}</span>
       <span class="meta">${p.instances ? `×${esc(p.instances)} ` : ''}${esc(p.tags.join(' '))}</span>
     </li>`).join('');
-  for (const li of $('#panels').children) {
-    li.onclick = () => movePanel(li.dataset.panel);
-  }
 }
 
 function drawRegions() {
@@ -108,10 +127,15 @@ function drawRegions() {
       <span class="id">${esc(r.id ?? r.treatment)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
-  for (const li of $('#regions').children) {
-    if (!li.dataset.id) continue;
-    li.onclick = () => { state.selected = li.dataset.id; drawRegions(); drawOverlay(); drawInspector(); };
-  }
+}
+
+/** Select a region by id, from the list or from the overlay. */
+export function selectRegion(id) {
+  if (!id) return;
+  state.selected = id;
+  drawRegions();
+  drawOverlay();
+  drawInspector();
 }
 
 function drawOverlay() {
@@ -136,13 +160,6 @@ function drawOverlay() {
     parts.push(`<rect class="handle" data-drag="resize" x="${x + w - 7}" y="${y + h - 7}" width="14" height="14"/>`);
   }
   svg.innerHTML = parts.join('');
-
-  for (const el of svg.querySelectorAll('.panelrect')) {
-    el.onclick = () => movePanel(el.dataset.panel);
-  }
-  for (const el of svg.querySelectorAll('[data-drag]')) {
-    el.onpointerdown = (e) => startDrag(e, el.dataset.drag);
-  }
 }
 
 // A function DECLARATION, deliberately. This module boots with a top-level
