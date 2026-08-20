@@ -1221,3 +1221,115 @@ test('mirror now does not quietly re-link a pair somebody separated', async () =
   assert.match(dom.querySelector('#inspector').innerHTML, /independent/,
     'a one-shot must leave them independent, not silently re-link them');
 });
+
+test('a mirrored copy renders through the same path a build uses', async () => {
+  // The editor writing a fit nobody else understands would be worse than no
+  // feature. This goes through applyFit — the one function both the editor and
+  // the CLI use — so a mirrored copy is a property of the FIT, not of the tool
+  // that happened to create it.
+  const { applyFit } = await import('../src/fit.mjs');
+  const profile = {
+    panels: { body: { L: { rect: [0, 0, 0.4, 0.4] }, R: { rect: [0.5, 0, 0.4, 0.4] } } },
+  };
+  const regions = [{ id: 'badge', panel: 'L', treatment: 'text', text: 'AC', color: 'ink' }];
+  const fit = {
+    livery: 'x', car: 'y',
+    mirrors: { 'badge-mirror': { of: 'badge', panel: 'R', at: [0.3, 0.2, 0.2, 0.2] } },
+  };
+
+  const used = new Set();
+  const notes = [];
+  const out = applyFit(regions, fit, { profile, role: 'body', surfaceKey: 'paint.body', used, notes });
+
+  assert.equal(out.regions.length, 2, 'the copy is drawn alongside the original');
+  const copy = out.regions.find((r) => r.__key === 'badge-mirror');
+  assert.ok(copy, 'the copy is addressable by its own id');
+
+  // It INHERITS the artwork and overrides only the placement. A fit that could
+  // set colours or text would be a second livery language wearing a disguise.
+  assert.equal(copy.treatment, 'text');
+  assert.equal(copy.text, 'AC');
+  assert.equal(copy.color, 'ink');
+  assert.equal(copy.panel, 'R');
+  assert.deepEqual(copy.at, [0.3, 0.2, 0.2, 0.2]);
+  assert.notEqual(copy, out.regions[0], 'and it is a copy, not the same object');
+
+  // Both ids count as used, or the editor would report the source as a stale
+  // fit entry the moment it became somebody's mirror.
+  assert.ok(used.has('badge-mirror') && used.has('badge'));
+  assert.deepEqual(notes, []);
+});
+
+test('a mirrored copy pointing at a panel the car lacks is reported, not drawn', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const profile = { panels: { body: { L: { rect: [0, 0, 0.4, 0.4] } } } };
+  const notes = [];
+  const out = applyFit(
+    [{ id: 'badge', panel: 'L', treatment: 'fill' }],
+    { livery: 'x', car: 'y', mirrors: { 'badge-mirror': { of: 'badge', panel: 'GONE' } } },
+    { profile, role: 'body', surfaceKey: 'paint.body', notes },
+  );
+  assert.equal(out.regions.length, 1, 'nothing is drawn on a panel that does not exist');
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].text, /GONE/);
+});
+
+test('mirrors on other surfaces are skipped in silence', async () => {
+  // applyFit runs once per surface. Reporting every other surface's mirrors as
+  // stale would bury the real notes under one line per surface per mirror.
+  const { applyFit, unusedFitIds } = await import('../src/fit.mjs');
+  const profile = { panels: { body: { L: { rect: [0, 0, 0.4, 0.4] } } } };
+  const notes = [];
+  const used = new Set();
+  applyFit(
+    [{ id: 'badge', panel: 'L', treatment: 'fill' }],
+    { livery: 'x', car: 'y', mirrors: { elsewhere: { of: 'a-region-on-the-suit', panel: 'L' } } },
+    { profile, role: 'body', surfaceKey: 'paint.body', used, notes },
+  );
+  assert.deepEqual(notes, []);
+  // But it is still counted as unused overall, so a mirror pointing at nothing
+  // anywhere is reported once, by the caller that can see every surface.
+  assert.deepEqual(unusedFitIds({ mirrors: { elsewhere: {} } }, used), ['elsewhere']);
+});
+
+test('creating a mirrored copy writes it into the fit and lists it', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+  const L = { name: 'L', rect: [0, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'R', uAxis: [-0.2, 0, -0.98], vAxis: [0, -1, 0] };
+  const R = { name: 'R', rect: [0.25, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'L', uAxis: [-0.2, 0, 0.98], vAxis: [0, -1, 0] };
+  surface.panels = [L, R];
+  surface.regions = [{ ...surface.regions[0], id: 'badge', panel: 'L', mirror: null }];
+  render.placed = [{ ...render.placed[0], id: 'badge', panel: 'L', abs: [0.02, 0.02, 0.05, 0.05] }];
+
+  const { dom } = await runApp({ state, render });
+  const inspector = dom.querySelector('#inspector');
+  const nodes = new Map();
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  const create = { onclick: null };
+  nodes.set('#mirrorcreate', create);
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.match(inspector.innerHTML, /Create mirrored copy/,
+    'an unpaired region should offer to have its other half made');
+
+  await create.onclick();
+
+  const fit = JSON.parse(dom.querySelector('#fitjson').textContent);
+  const copy = fit.mirrors?.['badge-mirror'];
+  assert.ok(copy, `no mirrored copy was written: ${JSON.stringify(fit)}`);
+  assert.equal(copy.of, 'badge');
+  assert.equal(copy.panel, 'R', 'it goes on the measured mirror of the source panel');
+
+  const { mirrorFlips, mirrorAt, toPanelRelative } = await import('../src/fit.mjs');
+  const at = toPanelRelative(L.rect, [0.02, 0.02, 0.05, 0.05]);
+  assert.deepEqual(copy.at, mirrorAt(at, mirrorFlips(L, R)),
+    'and at the mirrored position, using the measured flip');
+});

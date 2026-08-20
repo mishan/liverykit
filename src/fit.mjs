@@ -90,6 +90,33 @@ export function validateFit(f, source = '<inline>') {
   if (f.regions && (typeof f.regions !== 'object' || Array.isArray(f.regions))) {
     err('"regions" must be an object keyed by region id');
   }
+  if (f.mirrors && (typeof f.mirrors !== 'object' || Array.isArray(f.mirrors))) {
+    err('"mirrors" must be an object keyed by the new region id');
+  }
+
+  const declared = new Set(Object.keys(f.regions ?? {}));
+  for (const [id, m] of Object.entries(f.mirrors ?? {})) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      err(`mirrors."${id}" must be an object`);
+    }
+    if (!m.of || typeof m.of !== 'string') {
+      err(`mirrors."${id}" needs "of": the id of the region it is a copy of`);
+    }
+    if (m.of === id) err(`mirrors."${id}" cannot be a mirror of itself`);
+    if (declared.has(id)) {
+      err(`"${id}" is both a mirrored region and an override; it can only be one`);
+    }
+    for (const k of Object.keys(m)) {
+      if (k !== 'of' && !OVERRIDABLE.has(k)) {
+        err(`mirrors."${id}" may not set "${k}". A mirrored copy states where a ` +
+            `region also appears: ${['of', ...OVERRIDABLE].join(', ')}. It takes its ` +
+            `artwork from "${m.of}" and cannot have any of its own.`);
+      }
+    }
+    if (m.drop !== undefined) {
+      err(`mirrors."${id}" cannot be dropped — delete the entry instead`);
+    }
+  }
 
   for (const [id, o] of Object.entries(f.regions ?? {})) {
     if (!o || typeof o !== 'object' || Array.isArray(o)) {
@@ -219,6 +246,53 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
 
     out.push(next);
   }
+
+  // --- mirrored copies ------------------------------------------------------
+  //
+  // This is the one place a fit adds a region, and it is worth being honest
+  // about the tension. The rule above says a fit cannot ADD a region, because
+  // wanting to usually means the DESIGN needs the change. A mirrored copy is
+  // the exception that proves it rather than breaking it: it invents no
+  // artwork. Treatment, colours, glow, text all come from the region it names,
+  // and the only new information is a placement — which is exactly what a fit
+  // is for.
+  //
+  // It earns the exception because symmetry is a property of the CAR, not of
+  // the design. A livery that paints one badge is portable to a car with one
+  // flank worth painting and to a car with two, and which of those you have is
+  // not something the design can know.
+  //
+  // A mirror whose source lives on another surface is skipped in silence, not
+  // reported: applyFit runs once per surface and every one of them would
+  // otherwise report every other surface's mirrors as stale.
+  for (const [id, m] of Object.entries(fit?.mirrors ?? {})) {
+    const at = regions.findIndex((r, i) => regionKey(surfaceKey, r, i) === m.of);
+    if (at < 0) continue;
+    used.add(id);
+    used.add(m.of);
+
+    const src = out.find((r) => r.__key === m.of) ?? regions[at];
+    const clone = { ...src, __key: id, id };
+    // An explicit panel replaces tag selection outright, the same as an
+    // override does; leaving the tags on would trip the "both panel and tags"
+    // guard and would be ambiguous anyway.
+    delete clone.tags;
+    delete clone.limit;
+    delete clone.once;
+    for (const k of ['panel', 'at', 'rotate', 'scale', 'safe']) {
+      if (m[k] !== undefined) clone[k] = m[k];
+    }
+    if (m.panel && !profile?.panels?.[role]?.[m.panel] && !profile?.aliases?.[role]?.[m.panel]) {
+      notes.push({
+        term: id, status: 'fit-stale',
+        text: `fit: mirrored region "${id}" points at panel "${m.panel}", which ${role} ` +
+              `does not have — it was not drawn`,
+      });
+      continue;
+    }
+    out.push(clone);
+  }
+
   return { regions: out, notes };
 }
 
@@ -342,5 +416,6 @@ export function mirrorRotation(rotate, flips) {
 
 /** Ids a fit mentions that the livery does not declare. */
 export function unusedFitIds(fit, used) {
-  return Object.keys(fit?.regions ?? {}).filter((id) => !used.has(id));
+  return [...Object.keys(fit?.regions ?? {}), ...Object.keys(fit?.mirrors ?? {})]
+    .filter((id) => !used.has(id));
 }
