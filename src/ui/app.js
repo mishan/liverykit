@@ -322,24 +322,24 @@ async function showView(which) {
   $('#tab-3d').className = `tab${which === '3d' ? ' on' : ''}`;
   $('#texture').hidden = which === '3d';
   $('#overlay').hidden = which === '3d';
-  $('#car').hidden = which !== '3d';
+  $('#carview').hidden = which !== '3d';
   if (which !== '3d') return;
 
   try {
     if (!state.viewer) {
-      state.viewer = createViewer($('#car'));
+      state.viewer = createViewer($('#carview'));
       state.viewer.attach();
     }
     const res = await fetch(`/api/model?role=${encodeURIComponent(state.surface.role)}`);
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
     state.viewer.setGeometry(unpack(await res.arrayBuffer()));
     await paintCar();
-    $('#3dnote').textContent = 'drag to orbit, wheel to zoom';
+    $('#viewnote').textContent = 'drag to orbit, wheel to zoom';
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine.
-    $('#3dnote').textContent = `no 3D view — ${e.message}`;
-    $('#car').hidden = true;
+    $('#viewnote').textContent = `no 3D view — ${e.message}`;
+    $('#carview').hidden = true;
     $('#texture').hidden = false;
     $('#overlay').hidden = false;
     state.view = 'uv';
@@ -353,7 +353,7 @@ async function paintCar() {
   try {
     await state.viewer.setTexture(state.svg);
   } catch (e) {
-    $('#3dnote').textContent = `texture: ${e.message}`;
+    $('#viewnote').textContent = `texture: ${e.message}`;
   }
 }
 
