@@ -36,6 +36,17 @@ const state = {
   // the fit file has no business recording an editor mode. Once the two sides
   // differ, the fit already says so in the only way that matters.
   unlinked: new Set(),
+  // Pairs the person declared. The id convention finds `driver-left` and
+  // `driver-right` on its own, but a design free to name its regions anything
+  // is free to name them `numberA` and `numberB`, and nothing should stop two
+  // regions being treated as one idea just because nobody anticipated the
+  // words. Session-only, like `unlinked`, and for the same reason.
+  paired: new Map(),
+  // Pairs severed outright, as opposed to merely unlinked. `unlinked` means
+  // "these are two halves of one idea but I am editing them apart"; this means
+  // "these are not a pair at all". The id convention cannot be argued with any
+  // other way — there is no entry to delete.
+  severed: new Set(),
 };
 
 const api = async (path, body) => {
@@ -729,18 +740,39 @@ function rotationChoices(id, def, o) {
  * sides deliberately differ is not a mistake, it is most of what makes a livery
  * worth looking at.
  */
-function mirrorControl(id, def) {
-  if (!def?.mirror) return '';
-  const linked = !state.unlinked.has(id) && !state.unlinked.has(def.mirror);
+function mirrorControl(id) {
+  const other = partnerOf(id);
+  const candidates = state.surface.regions
+    .filter((r) => r.id !== id && r.id !== other)
+    .map((r) => `<option value="${esc(r.id)}">${esc(r.id)}</option>`).join('');
+
+  if (!other) {
+    // Nothing paired. Offer to pair it with anything else on this surface —
+    // the id convention is a guess about what names meant, and a design is free
+    // to call its two halves whatever it likes.
+    return `
+      <label>mirror</label>
+      <div class="row">
+        <select id="pairwith"><option value="">pair with…</option>${candidates}</select>
+      </div>
+      <p class="hint">Pairing moves the other one to the mirrored position now,
+        and keeps it there as this one is edited.</p>`;
+  }
+
+  const linked = !state.unlinked.has(id) && !state.unlinked.has(other);
   return `
     <label>mirror</label>
     <div class="row">
       <button id="mirror" data-linked="${linked}">${linked ? 'linked' : 'independent'}</button>
-      <span class="muted">${esc(def.mirror)}</span>
+      <span class="muted">${esc(other)}</span>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button id="mirrornow">Mirror now</button>
+      <button id="unpair">Unpair</button>
     </div>
     <p class="hint">${linked
       ? 'Moving, resizing or rotating this also moves its opposite number.'
-      : 'Edits affect this side only.'}</p>`;
+      : 'Edits affect this side only. “Mirror now” copies this placement across once.'}</p>`;
 }
 
 function drawInspector() {
@@ -788,7 +820,7 @@ function drawInspector() {
     <div><code>${(o.at ?? []).map((n) => n.toFixed(3)).join(', ') || 'from the design'}</code></div>
     <label>rotation</label>
     <div class="row">${rotationChoices(id, def, o)}</div>
-    ${mirrorControl(id, def)}
+    ${mirrorControl(id)}
     <div class="row" style="margin-top:10px">
       <button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
       <button id="reset">Reset</button>
@@ -846,19 +878,90 @@ function wireInspectorButtons(id) {
     };
   }
 
-  const mirror = $('#inspector').querySelector?.('#mirror');
+  const inspector = $('#inspector');
+
+  // Break or restore the link. Recorded against BOTH ids: the switch is reached
+  // from whichever half is selected, and a link broken from the left but still
+  // reading "linked" from the right would be worse than no switch at all.
+  const mirror = inspector.querySelector?.('#mirror');
   if (mirror) {
     mirror.onclick = () => {
-      const def = state.surface.regions.find((r) => r.id === id);
-      // Recorded against BOTH ids. The switch is reached from whichever half
-      // happens to be selected, and a link that was broken from the left but
-      // still looked joined from the right would be worse than no switch.
-      if (state.unlinked.has(id)) { state.unlinked.delete(id); state.unlinked.delete(def?.mirror); }
-      else { state.unlinked.add(id); if (def?.mirror) state.unlinked.add(def.mirror); }
+      const other = partnerOf(id);
+      if (state.unlinked.has(id)) { state.unlinked.delete(id); state.unlinked.delete(other); }
+      else { state.unlinked.add(id); if (other) state.unlinked.add(other); }
       drawInspector();
       status(state.unlinked.has(id) ? 'sides edit independently' : 'sides move together');
     };
   }
+
+  // Pair with a region the naming convention did not catch. Pairing MIRRORS
+  // immediately rather than only taking effect on the next edit — otherwise
+  // declaring a pair appears to do nothing, and the way to find out whether it
+  // worked is to drag something and hope.
+  const pairwith = inspector.querySelector?.('#pairwith');
+  if (pairwith) {
+    pairwith.onchange = async () => {
+      const other = pairwith.value;
+      if (!other) return;
+      state.paired.set(id, other);
+      state.paired.set(other, id);
+      // Declaring a pair overrides a previous severance, or unpairing would be
+      // permanent for the session and the dropdown would silently do nothing.
+      state.severed.delete(id);
+      state.severed.delete(other);
+      state.unlinked.delete(id);
+      state.unlinked.delete(other);
+      await mirrorNow(id);
+      status(`${id} and ${other} now move together`);
+    };
+  }
+
+  // One-shot: copy this placement across without changing the link. The action
+  // a broken pair needs when the two sides have drifted and only one of them
+  // was meant to.
+  const mirrornow = inspector.querySelector?.('#mirrornow');
+  if (mirrornow) mirrornow.onclick = () => mirrorNow(id);
+
+  const unpair = inspector.querySelector?.('#unpair');
+  if (unpair) {
+    unpair.onclick = () => {
+      const other = partnerOf(id);
+      // A pair found from the ids cannot be deleted from the map — it is not in
+      // it — so unpairing records the SEVERANCE instead, against both halves.
+      state.paired.delete(id);
+      if (other) state.paired.delete(other);
+      state.severed.add(id);
+      if (other) state.severed.add(other);
+      state.unlinked.delete(id);
+      if (other) state.unlinked.delete(other);
+      drawInspector();
+      status(`${id} is on its own now`);
+    };
+  }
+}
+
+/**
+ * Push this region's placement onto its opposite number, once.
+ *
+ * Goes through writeFit so there is exactly one implementation of what
+ * mirroring means — measured flips, the twin's own panel, the rotation rule.
+ * A second copy of that arithmetic living behind a button is how the two would
+ * quietly diverge.
+ */
+async function mirrorNow(id) {
+  const sel = state.placed.find((p) => p.id === id);
+  if (!sel) return status('nothing placed to mirror');
+  const other = partnerOf(id);
+  if (!other) return status('no opposite number to mirror onto');
+  const wasUnlinked = state.unlinked.has(id) || state.unlinked.has(other);
+  state.unlinked.delete(id);
+  state.unlinked.delete(other);
+  writeFit(sel);
+  // An explicit one-shot must not quietly re-link a pair somebody separated.
+  if (wasUnlinked) { state.unlinked.add(id); state.unlinked.add(other); }
+  setDirty(true);
+  await refresh();
+  status(`mirrored onto ${other}`);
 }
 
 /**
@@ -869,10 +972,24 @@ function wireInspectorButtons(id) {
  * null check at four call sites is four chances to forget one.
  */
 function linkedTo(id) {
-  const def = state.surface.regions.find((r) => r.id === id);
-  if (!def?.mirror) return [];
-  if (state.unlinked.has(id) || state.unlinked.has(def.mirror)) return [];
-  return state.surface.regions.some((r) => r.id === def.mirror) ? [def.mirror] : [];
+  const other = partnerOf(id);
+  if (!other) return [];
+  if (state.unlinked.has(id) || state.unlinked.has(other)) return [];
+  return [other];
+}
+
+/**
+ * This region's other half, linked or not.
+ *
+ * A pair the person declared outranks one found from the ids: they are looking
+ * at the car and the convention is only a guess about what the names meant.
+ */
+function partnerOf(id) {
+  if (state.severed.has(id)) return null;
+  const declared = state.paired.get(id);
+  if (declared) return state.surface.regions.some((r) => r.id === declared) ? declared : null;
+  const found = state.surface.regions.find((r) => r.id === id)?.mirror;
+  return found && state.surface.regions.some((r) => r.id === found) ? found : null;
 }
 
 // --- the car ----------------------------------------------------------------
