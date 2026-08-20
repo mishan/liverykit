@@ -202,3 +202,32 @@ test('dragging a region writes a panel-relative at into the fit', async () => {
   assert.ok(after[0] > before[0] && after[1] > before[1], 'and moved the way the pointer did');
   assert.equal(dom.querySelector('#save').disabled, false, 'and the fit is now unsaved');
 });
+
+test('the car geometry survives the trip to the browser', async () => {
+  // Packed on the server, unpacked by the viewer. Both halves are tested at once
+  // because a mismatch between them is silent: the mesh still draws, just wrong.
+  const { modelGeometry, packGeometry } = await import('../src/ui/server.mjs');
+  const { unpack } = await import('../src/ui/view3d.js');
+  const { parseKn5 } = await import('../src/engine/kn5.mjs');
+
+  const model = await parseKn5('content/cars/abarth500/abarth500.kn5', { keepTextureData: false });
+  const g = modelGeometry(model, 'SkinBase_DEFAULT.dds');
+
+  assert.ok(g.positions.length / 3 > 10000, 'a car body is not a handful of vertices');
+  assert.equal(g.indices.length % 3, 0, 'triangles');
+  assert.ok(Math.max(...g.indices) < g.positions.length / 3, 'no index past the end');
+
+  // Real car dimensions, which is the cheapest check that the transforms were
+  // applied: a Fiat 500 is about 1.9 m wide and 3.7 m long.
+  const width = g.bounds.hi[0] - g.bounds.lo[0];
+  const length = g.bounds.hi[2] - g.bounds.lo[2];
+  assert.ok(width > 1.5 && width < 2.2, `width ${width.toFixed(2)} m`);
+  assert.ok(length > 3.0 && length < 4.2, `length ${length.toFixed(2)} m`);
+
+  const back = unpack(new Uint8Array(packGeometry(g)).buffer);
+  assert.deepEqual([...back.positions.slice(0, 9)], [...g.positions.slice(0, 9)]);
+  assert.deepEqual([...back.uvs.slice(0, 6)], [...g.uvs.slice(0, 6)]);
+  assert.deepEqual([...back.indices.slice(0, 12)], [...g.indices.slice(0, 12)]);
+  assert.equal(back.positions.length, g.positions.length);
+  assert.equal(back.indices.length, g.indices.length);
+});

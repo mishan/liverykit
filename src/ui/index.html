@@ -28,9 +28,15 @@
     </aside>
 
     <section id="canvas">
+      <div class="tabs">
+        <button id="tab-uv" class="tab on">UV</button>
+        <button id="tab-3d" class="tab">Car</button>
+        <span id="3dnote" class="hint"></span>
+      </div>
       <div id="stage">
         <div id="texture"></div>
         <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+        <canvas id="car" hidden></canvas>
       </div>
       <p class="hint" id="canvashint">
         Drag the highlighted box to move a region. Drag a corner to resize.
