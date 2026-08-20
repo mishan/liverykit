@@ -11,6 +11,15 @@
   --warn: #ffb454;
 }
 * { box-sizing: border-box; }
+
+/* The `hidden` attribute is only a UA rule of `display: none`, and ANY id or
+   class rule setting `display` outranks it. `#carview { display: block }` did
+   exactly that: the canvas stayed on top of the stage while marked hidden,
+   swallowing every click meant for a panel outline or a drag box, and turning
+   solid black the moment WebGL cleared it — so the UV view "went blank and
+   stayed blank" while the tabs themselves worked perfectly.
+   This wins on specificity so `hidden` means hidden. */
+[hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
