@@ -279,6 +279,23 @@ test('the page and the script agree about what exists', async () => {
   assert.deepEqual(selectors.filter((s) => /^#[0-9]/.test(s)), [],
     'an id selector may not begin with a digit — querySelector throws on these');
 
+  // `hidden` is only a UA rule of `display: none`, and any id or class rule
+  // setting `display` outranks it. #carview did exactly that: the canvas stayed
+  // over the stage while marked hidden, ate every click meant for a panel or a
+  // drag box, and went solid black once WebGL cleared it — so the UV view went
+  // blank and stayed blank while the tabs themselves worked.
+  //
+  // The reset must therefore exist, and must be able to win.
+  assert.match(css, /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/,
+    'the stylesheet needs a [hidden] reset that outranks its own display rules');
+
+  // And anything app.js toggles with `hidden` must be covered by it.
+  const toggled = [...new Set([...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]))];
+  assert.ok(toggled.length, 'the editor toggles something with hidden');
+  for (const id of toggled) {
+    assert.ok(ids.includes(id), `app.js hides #${id}, which the page does not contain`);
+  }
+
   // Every id the stylesheet positions absolutely must be one of the stage
   // layers. That is precisely the rule the #car collision broke.
   //

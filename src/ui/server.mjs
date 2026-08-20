@@ -336,6 +336,14 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
         return json(200, { saved: fitPath });
       }
 
+      // A tiny transparent icon. Not cosmetic: a 404 here is the one line that
+      // is always in the console, and it trains you to ignore the console.
+      if (url.pathname === '/favicon.ico') {
+        res.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'max-age=86400' });
+        return res.end(Buffer.from(
+          'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      }
+
       // Static. The path is taken from a fixed allowlist rather than joined
       // with user input, because a fitting tool has no business serving
       // anything outside its own directory.
