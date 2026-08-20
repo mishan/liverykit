@@ -194,6 +194,13 @@ const ready = async () => {
   }
   return false;
 };
+// The editor opens on the CAR now, so a test about the UV sheet has to ask for
+// it — the same as a person would. Without this the overlay is hidden and every
+// hit test lands on the canvas covering it.
+const uvTab = async () => {
+  document.querySelector('#tab-uv').click();
+  await settle(500);
+};
 `;
 
 test('a real pointer can select a region from the list', { skip: BROWSER ? false : 'no browser' }, async () => {
@@ -203,6 +210,7 @@ test('a real pointer can select a region from the list', { skip: BROWSER ? false
   const report = await inBrowser(PRELUDE + `
     (async () => {
       if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      await uvTab();
       const li = [...document.querySelectorAll('#regions li')].find((l) => l.dataset.id);
       say('target: ' + li.dataset.id);
       const [x, y] = centre(li);
@@ -234,6 +242,7 @@ test('a real pointer can select and drag a region on the canvas', { skip: BROWSE
   const report = await inBrowser(PRELUDE + `
     (async () => {
       if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      await uvTab();
       const ghost = document.querySelector('#overlay .ghost');
       if (!ghost) { say('THREW no other region drawn on the canvas'); return done(); }
       const [gx, gy] = centre(ghost);
@@ -746,4 +755,88 @@ test('the editor opens on the car, and a linked drag moves both sides', { skip: 
   const named = [regions['mark-left'].panel, regions['mark-right'].panel].filter(Boolean);
   assert.notEqual(named[0] !== undefined && named[0] === named[1], true,
     `both halves ended up on ${named[0]}, which is the mirror collapsing`);
+});
+
+test('the artwork follows the pointer, without waiting for the release', { skip: BROWSER ? false : 'no browser' }, async (t) => {
+  // The claim is specifically about what happens BEFORE mouseup. Watching a
+  // rectangle move and finding out on release whether the number actually fits
+  // is the guessing the car view exists to remove, so the test holds the button
+  // down and reads the fit while the gesture is still in progress.
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-live-'));
+  const modelPath = join(dir, 'car.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+
+  const livery = {
+    name: 'fixture', car: 'fixture_car',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        role: 'body',
+        regions: [{ id: 'mark', panel: 'right_mid', at: [0.15, 0.15, 0.6, 0.6], treatment: 'fill', color: 'accent' }],
+      },
+    },
+  };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      await settle(2500);
+      const cv = document.querySelector('#carview');
+      say('webgl: ' + (cv.getContext('webgl') ? 'present' : 'absent'));
+      const r = cv.getBoundingClientRect();
+
+      const li = [...document.querySelectorAll('#regions li')].find((l) => l.dataset.id === 'mark');
+      clickAt(...centre(li));
+      await settle(400);
+      const at = () => JSON.parse(document.querySelector('#fitjson').textContent).regions?.mark?.at;
+      say('before: ' + JSON.stringify(at() ?? null));
+
+      const send = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+      const sendWin = (type, x, y) => window.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+
+      let from = null;
+      for (let fy = 0.25; fy <= 0.75 && !from; fy += 0.08) {
+        for (let fx = 0.2; fx <= 0.8 && !from; fx += 0.06) {
+          const x = Math.round(r.x + r.width * fx), y = Math.round(r.y + r.height * fy);
+          if (topAt(x, y) !== cv) continue;
+          send('pointerdown', x, y);
+          await settle(50);
+          if (/moving|resizing/.test(document.querySelector('#status').textContent)) from = [x, y];
+          else { sendWin('pointerup', x, y); await settle(20); }
+        }
+      }
+      if (!from) { say('never found the region on screen'); return done(); }
+
+      // Move, and read WITHOUT releasing.
+      for (let i = 1; i <= 5; i++) sendWin('pointermove', from[0] + i * 6, from[1] + i * 4);
+      await settle(600);
+      say('mid-drag: ' + JSON.stringify(at() ?? null));
+      say('button still down: ' + /moving|resizing/.test(document.querySelector('#status').textContent));
+
+      sendWin('pointerup', from[0] + 30, from[1] + 20);
+      await settle(900);
+      say('after: ' + JSON.stringify(at() ?? null));
+      done();
+    })();
+  `, { liveryObject: livery, profile, modelPath, fitPath: join(dir, 'fit.json') });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
+  if (find('webgl: ') !== 'webgl: present') return;
+
+  const val = (p) => JSON.parse(find(p).slice(p.length));
+  const before = val('before: ');
+  const mid = val('mid-drag: ');
+  assert.ok(Array.isArray(mid), `no placement mid-drag: ${report.join(' | ')}`);
+  assert.equal(find('button still down: '), 'button still down: true',
+    'the gesture must not have ended before the reading was taken');
+  assert.notDeepEqual(mid, before,
+    'the fit should already reflect the drag while the button is still down');
+  assert.ok(mid.every((n) => n >= 0 && n <= 1), `at must stay panel-relative mid-drag: ${mid}`);
 });

@@ -253,7 +253,7 @@ export function hoverPanel(name) {
   // Hovering a panel shows that panel as its own boundary, so the same three
   // zones mean the same thing whether you are looking or working.
   if (rect) highlightOnCar(rect, name);
-  else highlightOnCar(sel?.abs ?? null, sel?.panel);
+  else highlightOnCar(sel?.abs ?? null, sel?.panel, linkedTo(state.selected)[0]);
 }
 
 /**
@@ -308,7 +308,7 @@ function drawOverlay() {
   // here, so the car cannot end up highlighting a rectangle the UV view has
   // already moved on from. Two views drawing the same thing from two sources
   // eventually disagree; these read one.
-  highlightOnCar(sel?.abs ?? null, sel?.panel);
+  highlightOnCar(sel?.abs ?? null, sel?.panel, linkedTo(state.selected)[0]);
 
   // A redraw replaces every node, so a panel being hovered loses its marking
   // even though the pointer never moved. Re-applying it is one line; leaving it
@@ -447,6 +447,12 @@ function startCarDrag(e, mode, startUv) {
 
     sel.abs = clampToPanel(sel, [x, y, w, h]);
     drawOverlay();
+    // The artwork follows the pointer, not the release. Watching a rectangle
+    // move and then finding out on mouseup whether the number actually fits is
+    // the guessing this view exists to remove.
+    writeFit(sel);
+    setDirty(true);
+    livePreview();
     status(`${mode === 'move' ? 'moving' : 'resizing'} ${sel.id} on ${sel.panel ?? 'the texture'}`);
   };
   const up = () => {
@@ -521,6 +527,9 @@ function startDrag(e, mode) {
     if (mode === 'move') rehost(sel, { u: x + w / 2, v: y + h / 2 });
     sel.abs = clampToPanel(sel, [x, y, w, h]);
     drawOverlay();
+    writeFit(sel);
+    setDirty(true);
+    livePreview();
   };
   const up = async () => {
     window.removeEventListener('pointermove', move);
@@ -537,7 +546,50 @@ function startDrag(e, mode) {
  * This is the conversion the design doc settled on: the editor works in absolute
  * coordinates because that is what a mouse gives you, and converts once, here.
  */
-async function commit(sel) {
+/**
+ * Re-render the artwork mid-gesture, without redrawing the rest of the editor.
+ *
+ * Server-side rendering is 0.2 ms on the RSS4 and 1.3 ms on the Abarth, so the
+ * cost is entirely in the browser: rasterising the SVG and uploading it. Two
+ * things keep that inside a frame.
+ *
+ * COALESCED. One request in flight at a time; a position that arrives while one
+ * is running replaces any other waiting one, and only the newest is drawn. A
+ * queue would render every intermediate position of the pointer and fall
+ * steadily further behind the hand holding it.
+ *
+ * SMALLER WHILE MOVING. 512 during the gesture rather than 1024. The difference
+ * is invisible on a car turning under the cursor and it roughly quarters the
+ * upload; the full size goes back on when the pointer is released.
+ */
+let previewing = false;
+let previewPending = false;
+
+async function livePreview() {
+  if (previewing) { previewPending = true; return; }
+  previewing = true;
+  try {
+    const out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+    state.svg = out.svg;
+    // `placed` too: a drag that crosses onto another panel changes where the
+    // MIRRORED half landed, and its highlight is drawn from this.
+    state.placed = out.placed;
+    if (state.view === '3d') await state.viewer?.setTexture(out.svg, 512);
+    else $('#texture').innerHTML = out.svg;
+    // Cheap, and the numbers changing under the cursor is how you learn what a
+    // panel-relative coordinate actually means.
+    $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
+  } catch {
+    // A dropped frame mid-drag is not worth interrupting the gesture over. The
+    // release does a full render and will report anything genuinely wrong.
+  } finally {
+    previewing = false;
+    if (previewPending) { previewPending = false; livePreview(); }
+  }
+}
+
+/** Write a placement into the working fit. No redraw — see commit. */
+function writeFit(sel) {
   const panel = state.surface.panels.find((p) => p.name === sel.panel);
   const o = override(sel.id);
   o.at = panel ? toPanelRelative(panel.rect, sel.abs) : sel.abs.map(r4);
@@ -582,6 +634,17 @@ async function commit(sel) {
     const twinDeclared = state.surface.regions.find((r) => r.id === other)?.panel;
     if (there && there.name !== twinDeclared) twin.panel = there.name;
   }
+}
+
+/**
+ * Write it, and redraw everything. What the END of a gesture does.
+ *
+ * The moves in between call writeFit and livePreview directly, which updates
+ * the artwork without rebuilding the region list, the inspector and the fit
+ * JSON on every pointer event.
+ */
+async function commit(sel) {
+  writeFit(sel);
   setDirty(true);
   await refresh();
 }
@@ -936,7 +999,7 @@ async function loadCarGeometry() {
   // Without this the highlight only appeared once you touched the selection
   // again, which reads as the feature being broken rather than merely late.
   const opened = state.placed.find((p) => p.id === state.selected);
-  highlightOnCar(opened?.abs ?? null, opened?.panel);
+  highlightOnCar(opened?.abs ?? null, opened?.panel, linkedTo(state.selected)[0]);
   $('#viewnote').textContent =
     `${(geom.indices.length / 3).toLocaleString()} triangles painted by ${state.surface.file}` +
     ' — click a region to select it, drag to move it across panels, drag the' +
@@ -950,10 +1013,19 @@ async function loadCarGeometry() {
  * case: this runs on every selection and every drag frame, and a UV-only session
  * should not pay for a feature it is not looking at.
  */
-function highlightOnCar(abs, panelName) {
-  const host = panelName === undefined ? null
-    : state.surface.panels.find((p) => p.name === panelName);
-  state.viewer?.setHighlight(abs, host?.rect ?? null);
+function highlightOnCar(abs, panelName, twinId) {
+  if (!state.viewer) return;
+  const rectOf = (name) => state.surface.panels.find((p) => p.name === name)?.rect ?? null;
+  // The opposite number, and where it lives. Shown because a linked edit moves
+  // BOTH, and watching only the half under the pointer means finding out what
+  // happened to the other one by orbiting round to look.
+  const twin = twinId ? state.placed.find((p) => p.id === twinId) : null;
+  state.viewer.setHighlight({
+    region: abs,
+    panel: panelName === undefined ? null : rectOf(panelName),
+    twin: twin?.abs ?? null,
+    twinPanel: twin ? rectOf(twin.panel) : null,
+  });
 }
 
 async function paintCar() {
