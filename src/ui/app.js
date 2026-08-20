@@ -245,7 +245,10 @@ export function hoverPanel(name) {
   // On the car, the hovered panel takes precedence over the selected region and
   // hands it back on the way out — so a hover is a look, never a change.
   const sel = state.placed.find((p) => p.id === state.selected);
-  highlightOnCar(rect ?? sel?.abs ?? null);
+  // Hovering a panel shows that panel as its own boundary, so the same three
+  // zones mean the same thing whether you are looking or working.
+  if (rect) highlightOnCar(rect, name);
+  else highlightOnCar(sel?.abs ?? null, sel?.panel);
 }
 
 /**
@@ -300,7 +303,7 @@ function drawOverlay() {
   // here, so the car cannot end up highlighting a rectangle the UV view has
   // already moved on from. Two views drawing the same thing from two sources
   // eventually disagree; these read one.
-  highlightOnCar(sel?.abs ?? null);
+  highlightOnCar(sel?.abs ?? null, sel?.panel);
 
   // A redraw replaces every node, so a panel being hovered loses its marking
   // even though the pointer never moved. Re-applying it is one line; leaving it
@@ -424,9 +427,18 @@ function startCarDrag(e, mode, startUv) {
     const dy = uv.v - start.uv.v;
     let [x, y, w, h] = start.abs;
     if (mode === 'move') { x += dx; y += dy; } else { w = Math.max(0.005, w + dx); h = Math.max(0.005, h + dy); }
+
+    // Dragging onto a different panel takes the region with it. A car's
+    // bodywork is split into islands that mean nothing to a person — a door and
+    // the wing behind it are one surface to look at and two panels to address —
+    // so a drag that stopped dead at an invisible boundary would be the tool
+    // imposing its own bookkeeping. Only while MOVING: a resize that changed
+    // which panel a region belonged to would be two edits in one gesture.
+    if (mode === 'move') rehost(sel, uv);
+
     sel.abs = clampToPanel(sel, [x, y, w, h]);
     drawOverlay();
-    status(`${mode === 'move' ? 'moving' : 'resizing'} ${sel.id} on the car`);
+    status(`${mode === 'move' ? 'moving' : 'resizing'} ${sel.id} on ${sel.panel ?? 'the texture'}`);
   };
   const up = () => {
     window.removeEventListener('pointermove', move);
@@ -445,6 +457,30 @@ function startCarDrag(e, mode, startUv) {
  * renderer rightly refuses — and a failed render used to take the whole editor
  * down with it.
  */
+/**
+ * Move a region to whichever panel the cursor is now over.
+ *
+ * The smallest panel containing the point, for the same reason the smallest
+ * region wins a click: panels overlap where instanced geometry shares a
+ * rectangle, and the larger would swallow the more specific one.
+ *
+ * A point over no panel at all leaves the host alone rather than clearing it.
+ * Textures have bare areas between islands, and passing over one on the way
+ * somewhere else should not detach the region from its panel — `at` is
+ * panel-relative, and a region with no host has nothing to be relative to.
+ *
+ * Returns whether it moved, so the caller can say so.
+ */
+function rehost(sel, uv) {
+  const over = state.surface.panels
+    .filter((p) => uv.u >= p.rect[0] && uv.u <= p.rect[0] + p.rect[2]
+      && uv.v >= p.rect[1] && uv.v <= p.rect[1] + p.rect[3])
+    .sort((a, b) => a.rect[2] * a.rect[3] - b.rect[2] * b.rect[3])[0];
+  if (!over || over.name === sel.panel) return false;
+  sel.panel = over.name;
+  return true;
+}
+
 function clampToPanel(sel, [x, y, w, h]) {
   const host = state.surface.panels.find((p) => p.name === sel.panel);
   const [bx, by, bw, bh] = host ? host.rect : [0, 0, 1, 1];
@@ -471,6 +507,9 @@ function startDrag(e, mode) {
     const [dx, dy] = toFrac(ev.clientX - start.x, ev.clientY - start.y);
     let [x, y, w, h] = start.abs;
     if (mode === 'move') { x += dx; y += dy; } else { w = Math.max(0.01, w + dx); h = Math.max(0.01, h + dy); }
+    // The same crossing the car view allows. The sheet is where the panel
+    // boundaries are actually visible, so refusing it here would be stranger.
+    if (mode === 'move') rehost(sel, { u: x + w / 2, v: y + h / 2 });
     sel.abs = clampToPanel(sel, [x, y, w, h]);
     drawOverlay();
   };
@@ -493,11 +532,17 @@ async function commit(sel) {
   const panel = state.surface.panels.find((p) => p.name === sel.panel);
   const o = override(sel.id);
   o.at = panel ? toPanelRelative(panel.rect, sel.abs) : sel.abs.map(r4);
-  if (sel.panel && !state.surface.regions.find((r) => r.id === sel.id)?.panel) {
-    // The region reached this panel through tags. Pin it, or the next profile
-    // regeneration could move the artwork somewhere else entirely.
-    o.panel = sel.panel;
-  }
+
+  // Pin the panel whenever it is not the one the design asked for. That covers
+  // two cases: a region that reached this panel through TAGS, which the next
+  // profile regeneration could otherwise re-match somewhere else entirely; and
+  // a region DRAGGED onto a different panel, where the whole point of the
+  // gesture is that it now lives there. Before this the drag could carry a
+  // region across a boundary and the fit would record only the new coordinates,
+  // measured against the old panel — artwork in the wrong place, from a fit
+  // that looked reasonable.
+  const declared = state.surface.regions.find((r) => r.id === sel.id)?.panel;
+  if (sel.panel && sel.panel !== declared) o.panel = sel.panel;
   setDirty(true);
   await refresh();
 }
@@ -715,11 +760,12 @@ async function loadCarGeometry() {
   // Opening the 3D tab with something already selected should show it selected.
   // Without this the highlight only appeared once you touched the selection
   // again, which reads as the feature being broken rather than merely late.
-  highlightOnCar(state.placed.find((p) => p.id === state.selected)?.abs ?? null);
+  const opened = state.placed.find((p) => p.id === state.selected);
+  highlightOnCar(opened?.abs ?? null, opened?.panel);
   $('#viewnote').textContent =
     `${(geom.indices.length / 3).toLocaleString()} triangles painted by ${state.surface.file}` +
-    ' — click a region to select it, drag it to move, drag its far corner to' +
-    ' resize; drag anywhere else to orbit';
+    ' — click a region to select it, drag to move it across panels, drag the' +
+    ' marked corner to resize; drag bare bodywork to orbit';
 }
 
 /**
@@ -729,8 +775,10 @@ async function loadCarGeometry() {
  * case: this runs on every selection and every drag frame, and a UV-only session
  * should not pay for a feature it is not looking at.
  */
-function highlightOnCar(abs) {
-  state.viewer?.setHighlight(abs);
+function highlightOnCar(abs, panelName) {
+  const host = panelName === undefined ? null
+    : state.surface.panels.find((p) => p.name === panelName);
+  state.viewer?.setHighlight(abs, host?.rect ?? null);
 }
 
 async function paintCar() {
