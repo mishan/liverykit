@@ -64,8 +64,6 @@ $('#save').onclick = async () => {
   status('saved');
 };
 
-await selectSurface(0);
-
 // --- rendering --------------------------------------------------------------
 
 async function selectSurface(i) {
@@ -153,9 +151,15 @@ function drawOverlay() {
   }
 }
 
-const rect = (r, cls, extra = '') =>
-  `<rect class="${cls}" ${extra} x="${r[0] * VIEW}" y="${r[1] * VIEW}" ` +
-  `width="${r[2] * VIEW}" height="${r[3] * VIEW}"/>`;
+// A function DECLARATION, deliberately. This module boots with a top-level
+// await that runs before the rest of the file is evaluated, so a `const` arrow
+// down here is still in its temporal dead zone when the first draw happens — and
+// the whole module throws, leaving a page that renders its static HTML and does
+// nothing. That is exactly what "it looks like a mockup" is.
+function rect(r, cls, extra = '') {
+  return `<rect class="${cls}" ${extra} x="${r[0] * VIEW}" y="${r[1] * VIEW}" ` +
+    `width="${r[2] * VIEW}" height="${r[3] * VIEW}"/>`;
+}
 
 // --- editing ----------------------------------------------------------------
 
@@ -234,12 +238,14 @@ async function commit(sel) {
   await refresh();
 }
 
-const r4 = (n) => Math.round(n * 10000) / 10000;
-const toPanelRelative = (panelRect, abs) => {
+function r4(n) { return Math.round(n * 10000) / 10000; }
+
+/** Mirrors toPanelRelative in src/fit.mjs; the browser cannot import that. */
+function toPanelRelative(panelRect, abs) {
   const [px, py, pw, ph] = panelRect;
   if (!pw || !ph) return [0, 0, 1, 1];
   return [r4((abs[0] - px) / pw), r4((abs[1] - py) / ph), r4(abs[2] / pw), r4(abs[3] / ph)];
-};
+}
 
 function drawInspector() {
   const el = $('#inspector');
@@ -285,3 +291,8 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+// --- boot, last -------------------------------------------------------------
+//
+// After every declaration, so no helper can be reached before it exists.
+await selectSurface(0);
