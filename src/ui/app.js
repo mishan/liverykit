@@ -158,12 +158,15 @@ function drawRegions() {
   $('#regions').innerHTML = s.regions.map((r) => {
     const o = r.id ? state.fit.regions[r.id] : null;
     const cls = [r.id === state.selected ? 'sel' : '', !r.editable ? 'locked' : '', o?.drop ? 'off' : ''];
-    const meta = !r.editable ? 'no id'
-      : o?.drop ? 'dropped'
+    const meta = o?.drop ? 'dropped'
       : o ? 'adjusted'
       : (r.tags ? r.tags.join(' ') : r.panel ?? '');
-    return `<li class="${cls.join(' ')}" data-id="${esc(r.id ?? '')}">
-      <span class="id">${esc(r.id ?? r.treatment)}</span>
+    // A derived key is positional, so the label shows the treatment — which is
+    // what you recognise — rather than "surfaces.body#7", which is not.
+    const label = r.derived ? `${r.treatment} ${r.index}` : r.id;
+    return `<li class="${cls.join(' ')}${r.derived ? ' derived' : ''}" data-id="${esc(r.id ?? '')}"
+      title="${esc(r.derived ? `addressed by position as ${r.id} — give it an id in the livery to make it stable` : r.id)}">
+      <span class="id">${esc(label)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
 }
@@ -334,6 +337,7 @@ function drawInspector() {
       : `Nothing on this car matches ${def?.tags ? `[${esc(def.tags.join(', '))}]` : 'this region'}.`;
     el.innerHTML = `
       <div><code>${esc(id)}</code></div>
+      ${derivedNote(id)}
       <p class="hint">${why} There is nothing to drag until it is placed.</p>
       <div class="row" style="margin-top:10px">
         <button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
@@ -346,6 +350,7 @@ function drawInspector() {
   el.className = '';
   el.innerHTML = `
     <div><code>${esc(sel.id)}</code></div>
+    ${derivedNote(sel.id)}
     <label>panel</label><div>${sel.panel ? esc(sel.panel) : '<span class="muted">absolute</span>'}</div>
     <label>anisotropy</label><div>${sel.anisotropy.toFixed(2)}
       ${sel.anisotropy > 1.15 || sel.anisotropy < 0.87
@@ -358,6 +363,21 @@ function drawInspector() {
     </div>`;
 
   wireInspectorButtons(sel.id);
+}
+
+/**
+ * Warn when a region is addressed by position rather than by name.
+ *
+ * A positional key shifts meaning if the livery gains a region above it, and the
+ * fit then adjusts the wrong thing. The remedy is one line in the design, so it
+ * is worth saying every time rather than burying in documentation.
+ */
+function derivedNote(id) {
+  const r = state.surface.regions.find((x) => x.id === id);
+  if (!r?.derived) return '';
+  return `<p class="note">Addressed by position. Give this region an <code>id</code>
+    in the livery, or inserting another region above it will move what this fit
+    refers to.</p>`;
 }
 
 /** Shared by both inspector states, so Restore works when nothing is drawn. */

@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel } from '../profile.mjs';
-import { applyFit, regionIds, unusedFitIds, validateFit, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { applyFit, regionIds, regionKey, unusedFitIds, validateFit, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
@@ -127,9 +127,13 @@ export function editorState({ livery, profile, fit }) {
       })),
       regions: (t.spec.regions ?? []).map((r, i) => ({
         index: i,
-        id: r.id,
+        id: regionKey(t.from, r, i),
+        // Named by the design, or addressed by position. Both are editable; the
+        // editor says which, because a positional key moves if the livery gains
+        // a region above it.
+        derived: r.id === undefined,
         treatment: r.treatment,
-        editable: r.id !== undefined,
+        editable: true,
         tags: r.tags,
         panel: r.panel,
         at: r.at ?? [0, 0, 1, 1],
@@ -161,7 +165,8 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
 
   const notes = [];
   const used = new Set();
-  const fitted = applyFit(spec.regions ?? [], fit, { profile, role, used, notes }).regions;
+  const surfaceKey = resolveTargets(profile, livery).targets.find((t) => t.role === role)?.from ?? '';
+  const fitted = applyFit(spec.regions ?? [], fit, { profile, role, surfaceKey, used, notes }).regions;
   for (const id of unusedFitIds(fit, used)) {
     notes.push({ term: id, status: 'fit-stale', text: `"${id}" matches no region in this livery` });
   }
@@ -191,11 +196,11 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   });
 
   const placed = expanded.regions
-    .filter((r) => r.id !== undefined)
+    .filter((r) => r.__key)
     .map((r) => {
       const p = r.panel ? findPanel(profile, role, r.panel) : null;
       return {
-        id: r.id,
+        id: r.__key,
         panel: r.panel ?? null,
         // Absolute texture fractions, which is what the overlay draws in.
         abs: p ? toAbsolute(p.rect, r.at) : (r.at ?? [0, 0, 1, 1]),
