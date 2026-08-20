@@ -245,3 +245,55 @@ test('the car geometry survives the trip to the browser', async () => {
   assert.deepEqual([...back.indices], [...g.indices]);
 });
 
+test('the page and the script agree about what exists', async () => {
+  // A structural check, because the DOM harness above cannot make one: it
+  // invents an element for any selector asked of it, which is exactly how it
+  // hid two bugs that made the editor completely unusable.
+  //
+  // The first was a DUPLICATE id. The 3D canvas was given `car`, which the
+  // header's car-name span already had, and the stylesheet then applied
+  // `position: absolute; inset: 0` to both. The span's containing block is the
+  // viewport, so it became an invisible page-sized sheet over the whole editor
+  // and swallowed every click. Nothing looked wrong.
+  //
+  // The second was an INVALID selector. `#3dnote` cannot be a CSS id selector —
+  // they may not start with a digit — so querySelector throws a SyntaxError
+  // rather than returning null.
+  const [html, app, css] = await Promise.all(
+    ['index.html', 'app.js', 'style.css'].map((f) =>
+      readFile(new URL(`../src/ui/${f}`, import.meta.url), 'utf8')));
+
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids.filter((v, i) => ids.indexOf(v) !== i), [],
+    'duplicate ids: querySelector silently takes the first, and CSS takes both');
+
+  const selectors = [...new Set([...app.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]))];
+
+  // These are built by drawInspector into #inspector's innerHTML, so they exist
+  // when they are asked for but never appear in the static page.
+  const dynamic = new Set(['#drop', '#reset']);
+  const missing = selectors.filter((s) =>
+    s.startsWith('#') && !dynamic.has(s) && !ids.includes(s.slice(1)));
+  assert.deepEqual(missing, [], 'app.js queries ids the page does not contain');
+
+  assert.deepEqual(selectors.filter((s) => /^#[0-9]/.test(s)), [],
+    'an id selector may not begin with a digit — querySelector throws on these');
+
+  // Every id the stylesheet positions absolutely must be one of the stage
+  // layers. That is precisely the rule the #car collision broke.
+  //
+  // Parsed rule by rule rather than with one regex over the whole file: a
+  // pattern that spans `{` happily matches a hex colour in the previous rule's
+  // body, which is a fine way to make a test that fails for the wrong reason.
+  // Comments first: they sit between rules, so splitting on `}` glues a
+  // comment onto the next selector — and this file's comments mention the very
+  // id the check is about.
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, '').split('}')) {
+    const [selector, body = ''] = rule.split('{');
+    if (!/position:\s*absolute/.test(body)) continue;
+    for (const [, id] of selector.matchAll(/#([\w-]+)/g)) {
+      assert.ok(['texture', 'overlay', 'carview'].includes(id),
+        `#${id} is positioned absolutely but is not a stage layer`);
+    }
+  }
+});
