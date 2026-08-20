@@ -967,6 +967,7 @@ test('both copies of the mirror arithmetic agree', async () => {
   for (const a of panels) {
     for (const b of panels) {
       assert.deepEqual(app.mirrorFlips(a, b), fit.mirrorFlips(a, b), JSON.stringify([a, b]));
+      assert.deepEqual(app.selfMirrorFlips(a), fit.selfMirrorFlips(a), JSON.stringify(a));
       const flips = fit.mirrorFlips(a, b);
       for (const at of [[0.1, 0.2, 0.3, 0.4], [0, 0, 1, 1], [0.45, 0.45, 0.1, 0.1]]) {
         assert.deepEqual(app.mirrorAt(at, flips), fit.mirrorAt(at, flips), `${at} ${JSON.stringify(flips)}`);
@@ -976,4 +977,77 @@ test('both copies of the mirror arithmetic agree', async () => {
       }
     }
   }
+});
+
+test('a panel that straddles the centreline is its own mirror', async () => {
+  const { selfMirrorFlips, mirrorAt } = await import('../src/fit.mjs');
+
+  // A nose, laid out the obvious way: +u runs across the car, so the centreline
+  // cuts the sheet left-to-right and that is the axis to reverse.
+  const nose = { uAxis: [0.98, 0.1, 0.15], vAxis: [0.05, -0.99, 0.1] };
+  assert.deepEqual(selfMirrorFlips(nose), { u: true, v: false });
+  assert.deepEqual(mirrorAt([0.1, 0.3, 0.2, 0.2], selfMirrorFlips(nose)), [0.7, 0.3, 0.2, 0.2]);
+
+  // The same nose, packed sideways by the unwrapper. Now +v is the axis running
+  // across the car, and reversing u would mirror it top to bottom instead —
+  // both numbers stacked one above the other rather than side by side.
+  const sideways = { uAxis: [0.05, -0.99, 0.1], vAxis: [0.98, 0.1, 0.15] };
+  assert.deepEqual(selfMirrorFlips(sideways), { u: false, v: true });
+
+  // Mirroring twice returns where it started, on either layout.
+  for (const p of [nose, sideways]) {
+    const f = selfMirrorFlips(p);
+    assert.deepEqual(mirrorAt(mirrorAt([0.1, 0.3, 0.2, 0.2], f), f), [0.1, 0.3, 0.2, 0.2]);
+  }
+
+  // Nothing measured: no flip, rather than a guess about which way is across.
+  assert.deepEqual(selfMirrorFlips({}), { u: false, v: false });
+  assert.deepEqual(selfMirrorFlips(undefined), { u: false, v: false });
+});
+
+test('dragging one half of a pair onto a shared panel brings the other with it', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+
+  // A flank with a mirror, and a nose with none — the two cases.
+  const flankL = { name: 'flankL', rect: [0, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'flankR', uAxis: [-0.2, 0, -0.98], vAxis: [0, -1, 0] };
+  const flankR = { name: 'flankR', rect: [0.25, 0, 0.2, 0.2], tags: [], anisotropy: 1,
+    mirrorOf: 'flankL', uAxis: [-0.2, 0, 0.98], vAxis: [0, -1, 0] };
+  const nose = { name: 'nose', rect: [0.5, 0.5, 0.4, 0.4], tags: [], anisotropy: 1,
+    uAxis: [0.98, 0, 0.1], vAxis: [0, -1, 0] };
+  surface.panels = [flankL, flankR, nose];
+  render.placed = [
+    { ...render.placed[0], id: 'number-left', panel: 'flankL', abs: [0.02, 0.02, 0.05, 0.05] },
+    { ...render.placed[0], id: 'number-right', panel: 'flankR', abs: [0.27, 0.02, 0.05, 0.05] },
+  ];
+
+  const { dom, window: win } = await runApp({ state, render });
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+
+  // Drag the left one onto the nose. The overlay is 1000x1000 in the harness.
+  dom.querySelector('#overlay').onpointerdown({
+    preventDefault() {}, clientX: 0, clientY: 0, target: { dataset: { drag: 'move' } },
+  });
+  win.emit('pointermove', { clientX: 660, clientY: 660 });
+  win.emit('pointerup', {});
+  await new Promise((r) => setTimeout(r, 30));
+
+  const regions = JSON.parse(dom.querySelector('#fitjson').textContent).regions;
+  assert.equal(regions['number-left'].panel, 'nose', 'the dragged half landed on the nose');
+  assert.equal(regions['number-right'].panel, 'nose',
+    'and its opposite number followed, rather than being left behind on a flank');
+
+  // Mirrored WITHIN the nose, not stacked on top of it. Two regions at the same
+  // place would render as one and look like the pair had silently collapsed.
+  const { selfMirrorFlips, mirrorAt } = await import('../src/fit.mjs');
+  assert.deepEqual(regions['number-right'].at,
+    mirrorAt(regions['number-left'].at, selfMirrorFlips(nose)));
+  assert.notDeepEqual(regions['number-right'].at, regions['number-left'].at,
+    'the two halves must not end up in the same place');
 });

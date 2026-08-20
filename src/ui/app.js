@@ -559,16 +559,24 @@ async function commit(sel) {
   // recorded axes rather than assumed either way.
   for (const other of linkedTo(sel.id)) {
     const twin = override(other);
-    const twinPlaced = state.placed.find((p) => p.id === other);
     const here = state.surface.panels.find((p) => p.name === sel.panel);
-    const there = state.surface.panels.find((p) => p.name === twinPlaced?.panel);
-    const flips = here && there ? mirrorFlips(here, there) : { u: false, v: false };
+    // The twin FOLLOWS: it goes to the mirror of wherever this half landed,
+    // not wherever it happened to be. Dragging one side onto the rear wing and
+    // leaving the other on a flank splits an idea the design said was one.
+    //
+    // A panel with no mirror straddles the centreline — a nose, an engine
+    // cover — so it is its own twin, and both halves live on it mirrored
+    // within it. That is what a car with two numbers on its nose looks like.
+    const there = state.surface.panels.find((p) => p.name === (here?.mirrorOf ?? sel.panel));
+    const flips = !here || !there ? { u: false, v: false }
+      : there.name === here.name ? selfMirrorFlips(here)
+      : mirrorFlips(here, there);
     twin.at = mirrorAt(o.at, flips);
     if (o.rotate !== undefined) twin.rotate = mirrorRotation(o.rotate, flips);
     // Its own panel, not this one's. The whole point of the pair is that they
     // live on opposite sides; copying the panel across would stack both halves
     // on one flank, which renders perfectly and looks like the mirror broke.
-    pinPanel(twin, other, twinPlaced?.panel);
+    pinPanel(twin, other, there?.name);
   }
   setDirty(true);
   await refresh();
@@ -625,6 +633,13 @@ export function mirrorFlips(a, b) {
     return x && y ? dot3([-x[0], x[1], x[2]], y) < 0 : false;
   };
   return { u: flip('uAxis'), v: flip('vAxis') };
+}
+
+export function selfMirrorFlips(panel) {
+  const across = (k) => (Array.isArray(panel?.[k]) && panel[k].length === 3 ? Math.abs(panel[k][0]) : -1);
+  const u = across('uAxis'), v = across('vAxis');
+  if (u < 0 && v < 0) return { u: false, v: false };
+  return { u: u >= v, v: v > u };
 }
 
 export function mirrorAt(at, flips) {
