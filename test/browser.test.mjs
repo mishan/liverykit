@@ -89,9 +89,29 @@ async function inBrowser(driver, {
   const url = `http://127.0.0.1:${proxy.address().port}/`;
 
   const args = BROWSER === 'firefox'
-    ? ['--headless', '--window-size=1400,900', url]
+    ? ['--headless', '--window-size=1400,900',
+      // webgl.force-enabled makes Firefox use its software backend rather than
+      // refusing when it finds no GPU driver; without it the GL-dependent tests
+      // silently take their skip branch on a headless box.
+      '--setpref', 'webgl.force-enabled=true',
+      '--setpref', 'webgl.disabled=false',
+      '--setpref', 'webgl.software-rendering-allowed=true',
+      '--setpref', 'gfx.webrender.software=true',
+      url]
     : ['--headless=new', '--disable-gpu', '--window-size=1400,900', url];
-  const child = spawn(BROWSER, args, { stdio: 'ignore' });
+  // Force the software rasteriser. A headless box has no GPU, and Firefox
+  // otherwise reports "Exhausted GL driver options" on some runs and works on
+  // others — which made the GL-dependent tests pass by taking their own skip
+  // branch, green for no reason at all.
+  const child = spawn(BROWSER, args, {
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      LIBGL_ALWAYS_SOFTWARE: '1',
+      MOZ_WEBRENDER: '0',
+      MOZ_ACCELERATED: '0',
+    },
+  });
 
   const deadline = Date.now() + 40000;
   while (!report && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
@@ -285,7 +305,7 @@ test('a livery with no region ids at all is still editable', { skip: BROWSER ? f
   assert.equal(find('boxes: '), 'boxes: 1', 'and it can actually be dragged');
 });
 
-test('the selected region reaches the car as a highlight', { skip: BROWSER ? false : 'no browser' }, async () => {
+test('the selected region reaches the car as a highlight', { skip: BROWSER ? false : 'no browser' }, async (t) => {
   // The shader is the one part of this project a fake DOM cannot touch at all:
   // GLSL is compiled by the driver, and a typo in it throws from inside the tab
   // switch where the app catches it and writes a note nobody reads.
@@ -346,6 +366,7 @@ test('the selected region reaches the car as a highlight', { skip: BROWSER ? fal
   `, { liveryObject: livery, profile, modelPath, fitPath: join(dir, 'fit.json') });
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
   if (find('webgl: ') === 'webgl: absent') {
     // A headless box with no GL is a fact about the box, not a failure of the
     // code. Everything up to the upload was still exercised.
@@ -368,7 +389,7 @@ test('the selected region reaches the car as a highlight', { skip: BROWSER ? fal
   }
 });
 
-test('the whole-car view puts every painted surface on the model at once', { skip: BROWSER ? false : 'no browser' }, async () => {
+test('the whole-car view puts every painted surface on the model at once', { skip: BROWSER ? false : 'no browser' }, async (t) => {
   // The per-surface view answers "did this land where I meant". This one answers
   // "does the design work", which needs every texture on the car at once — and
   // it is the only view that exercises multi-texture drawing, grouped index
@@ -402,13 +423,6 @@ test('the whole-car view puts every painted surface on the model at once', { ski
     (async () => {
       if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
 
-      // Asked on a THROWAWAY canvas. Firefox caches the failure against the
-      // element it was asked on, so probing #carview would break the very thing
-      // under test.
-      const probe = document.createElement('canvas');
-      probe.width = probe.height = 64;
-      say('webgl: ' + (probe.getContext('webgl') ? 'present' : 'absent'));
-
       document.querySelector('#tab-all').click();
       await settle(4000);
       say('note: ' + document.querySelector('#viewnote').textContent);
@@ -418,7 +432,11 @@ test('the whole-car view puts every painted surface on the model at once', { ski
       const mid = [Math.round(stage.x + stage.width / 2), Math.round(stage.y + stage.height / 2)];
       say('topmost over stage: ' + (topAt(mid[0], mid[1])?.id ?? 'nothing'));
 
+      // Asked AFTER the tab has opened, on the real canvas. A detached probe
+      // canvas reports no WebGL even when the page has it — which quietly sent
+      // this test down its own skip branch and made it green for nothing.
       const gl = document.querySelector('#carview').getContext('webgl');
+      say('webgl: ' + (gl ? 'present' : 'absent'));
       if (gl) {
         const prog = gl.getParameter(gl.CURRENT_PROGRAM);
         const region = prog ? gl.getUniform(prog, gl.getUniformLocation(prog, 'region')) : [];
@@ -429,6 +447,7 @@ test('the whole-car view puts every painted surface on the model at once', { ski
   `, { liveryObject: livery, profile, modelPath, fitPath: join(dir, 'fit.json') });
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
 
   if (find('webgl: ') === 'webgl: absent') {
     // No driver. The editor must fall back to UV and stay WORKABLE — the canvas
@@ -451,4 +470,103 @@ test('the whole-car view puts every painted surface on the model at once', { ski
   // the others by an unrelated coincidence of coordinates.
   assert.equal(find('region: '), 'region: 0,0,0,0',
     'the whole-car view must not dim itself around one surface\'s rectangle');
+});
+
+test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no browser' }, async (t) => {
+  // The gesture Misha asked for: adjust placement on the model instead of
+  // guessing on the sheet and switching tabs to check. This drives it the way a
+  // hand does — pointerdown on the car, move, up — and then reads the fit that
+  // was written to disk, so nothing between the pointer and the file is assumed.
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-drag3d-'));
+  const modelPath = join(dir, 'car.kn5');
+  const fitPath = join(dir, 'fit.json');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+
+  const livery = {
+    name: 'fixture', car: 'fixture_car',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        role: 'body',
+        regions: [{
+          id: 'mark', panel: 'left_mid', at: [0.3, 0.3, 0.3, 0.3],
+          treatment: 'fill', color: 'accent',
+        }],
+      },
+    },
+  };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      const li = [...document.querySelectorAll('#regions li')].find((l) => l.dataset.id === 'mark');
+      clickAt(...centre(li));
+      await settle(400);
+
+      document.querySelector('#tab-3d').click();
+      await settle(2500);
+      say('note: ' + document.querySelector('#viewnote').textContent.slice(0, 40));
+
+      const cv = document.querySelector('#carview');
+      // On the real canvas, after the tab opened it: a detached probe canvas
+      // says "no WebGL" on a page that plainly has it.
+      say('webgl: ' + (cv.getContext('webgl') ? 'present' : 'absent'));
+      const r = cv.getBoundingClientRect();
+      say('canvas: ' + Math.round(r.width) + 'x' + Math.round(r.height));
+
+      // Sweep the middle band for a point where the car actually is, so this
+      // does not depend on exactly how the camera framed it.
+      let from = null;
+      for (let f = 0.3; f <= 0.7 && !from; f += 0.05) {
+        const x = Math.round(r.x + r.width * f);
+        const y = Math.round(r.y + r.height * 0.5);
+        if (topAt(x, y) === cv) from = [x, y];
+      }
+      if (!from) { say('no point on the canvas was reachable'); return done(); }
+      say('grab at: ' + from.join(','));
+
+      const send = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0,
+      }));
+      // pointermove/up go to the window, which is where the drag listens.
+      const sendWin = (type, x, y) => window.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0,
+      }));
+
+      send('pointerdown', from[0], from[1]);
+      await settle(120);
+      for (let i = 1; i <= 5; i++) sendWin('pointermove', from[0] + i * 8, from[1] + i * 5);
+      await settle(200);
+      sendWin('pointerup', from[0] + 40, from[1] + 25);
+      await settle(1200);
+
+      say('status: ' + document.querySelector('#status').textContent);
+      say('fit: ' + document.querySelector('#fitjson').textContent.replace(/\\s+/g, ' '));
+      done();
+    })();
+  `, { liveryObject: livery, profile, modelPath, fitPath });
+
+  // Said out loud, because a test that quietly takes the no-GL branch is green
+  // for the wrong reason and nobody would know.
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
+  if (find('webgl: ') === 'webgl: absent') {
+    // No GL driver in this browser. Everything up to the pick was still run,
+    // and the editor must not have died on the way.
+    assert.match(find('note: '), /no 3D view/, report.join(' | '));
+    return;
+  }
+
+  const fit = JSON.parse(find('fit: ').slice('fit: '.length));
+  const at = fit.regions?.mark?.at;
+  assert.ok(Array.isArray(at), `the drag never reached the fit: ${report.join(' | ')}`);
+  assert.ok(at.every((n) => Number.isFinite(n)), `at must stay numeric, got ${at}`);
+  assert.notDeepEqual(at, [0.3, 0.3, 0.3, 0.3], 'the region should have moved');
+  // Panel-relative and in range, which is the invariant the whole fit format
+  // rests on — a value outside 0..1 is one the renderer refuses.
+  assert.ok(at.every((n) => n >= 0 && n <= 1), `at must stay panel-relative: ${at}`);
 });
