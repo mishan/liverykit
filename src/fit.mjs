@@ -109,6 +109,26 @@ export function validateFit(f, source = '<inline>') {
 }
 
 /**
+ * The key a fit uses to address a region.
+ *
+ * An explicit `id` if the design gave one, and otherwise a POSITIONAL key made
+ * from the surface and the region's index. Without this an existing livery is
+ * entirely uneditable: neon-grid has 95 regions and not one id, so every row in
+ * the editor read "no id" and nothing could be selected at all. The tool did
+ * exactly what it was told and was useless, which is a flaw in the design rather
+ * than in the code.
+ *
+ * A positional key is weaker than a name and is honestly worse: inserting a
+ * region above it shifts what it refers to, and the fit then adjusts the wrong
+ * thing. That is a real cost, so the editor labels these as derived and the
+ * remedy — give the region an `id` in the livery — is one line. Being able to
+ * work at all beats being unable to start.
+ */
+export function regionKey(surfaceKey, region, index) {
+  return region.id ?? `${surfaceKey}#${index}`;
+}
+
+/**
  * Collect every region id a livery declares, and reject duplicates.
  *
  * Ids are flat across the whole livery rather than per surface, because that is
@@ -156,31 +176,38 @@ export function regionIds(livery) {
  * the one option not on the table — a fit quietly doing nothing is this
  * project's oldest bug wearing yet another costume.
  */
-export function applyFit(regions, fit, { profile, role, used = new Set(), notes = [] } = {}) {
-  if (!fit?.regions) return { regions, notes };
+export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [] } = {}) {
+  // Keys are stamped even with no fit at all. A car nobody has tuned is the
+  // common case, and the editor still has to be able to name every region in
+  // order to let you start tuning one.
+  const overrides = fit?.regions ?? {};
 
   const out = [];
-  for (const region of regions) {
-    const o = region.id !== undefined ? fit.regions[region.id] : undefined;
-    if (!o) { out.push(region); continue; }
-    used.add(region.id);
+  for (const [i, region] of regions.entries()) {
+    const key = regionKey(surfaceKey, region, i);
+    // Stamped on every region, overridden or not, so everything downstream —
+    // the overlay, the placement report — can name it without recomputing the
+    // index it came from.
+    const o = overrides[key];
+    if (!o) { out.push({ ...region, __key: key }); continue; }
+    used.add(key);
 
     if (o.drop) continue;
 
-    const next = { ...region };
+    const next = { ...region, __key: key };
     for (const k of OVERRIDABLE) {
       if (k === 'drop' || o[k] === undefined) continue;
       next[k] = o[k];
     }
 
     if (o.panel !== undefined) {
-      if (!profile?.panels?.[role]?.[o.panel] && !profile?.aliases?.[role]?.[o.panel]) {
+      if (!profile?.panels?.[role]?.[o.panel] && !profile?.aliases?.[role]?.[o.panel]) {  // stale
         notes.push({
-          term: region.id, status: 'fit-stale',
-          text: `fit: "${region.id}" points at panel "${o.panel}", which ${role} does not have — ` +
+          term: key, status: 'fit-stale',
+          text: `fit: "${key}" points at panel "${o.panel}", which ${role} does not have — ` +
                 `the region was left as the livery placed it`,
         });
-        out.push(region);
+        out.push({ ...region, __key: key });
         continue;
       }
       // An explicit panel replaces the tag selection outright. Leaving the tags
