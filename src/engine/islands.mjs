@@ -206,6 +206,28 @@ const round = (n) => Math.round(n * 10000) / 10000;
 const clamp01 = (n) => Math.min(1, Math.max(0, n));
 
 /**
+ * The car's own extent, sampled from every mesh in the model.
+ *
+ * Needed because names like `nose` and `tail` are claims about a position on the
+ * CAR, and the only way to make such a claim is to measure the car. Sampled with
+ * a stride: bounds converge almost immediately, and a full pass over a few
+ * hundred thousand vertices to move a bound by a millimetre is not worth it.
+ */
+export function carBounds(model) {
+  let xMax = 0, zMin = Infinity, zMax = -Infinity;
+  for (const mesh of model.meshes ?? []) {
+    const step = Math.max(1, Math.floor(mesh.vertexCount / 400));
+    for (let i = 0; i < mesh.vertexCount; i += step) {
+      const v = vertex(model, mesh, i);
+      xMax = Math.max(xMax, Math.abs(v.x));
+      zMin = Math.min(zMin, v.z); zMax = Math.max(zMax, v.z);
+    }
+  }
+  if (!Number.isFinite(zMin) || !Number.isFinite(zMax)) return null;
+  return { zMin, zMax, halfWidth: xMax || 1 };
+}
+
+/**
  * Systematic geometric names: side_section_level.
  *
  * Deliberately NOT semantic. Calling something "sidepod" requires knowing what
@@ -213,12 +235,28 @@ const clamp01 = (n) => Math.min(1, Math.max(0, n));
  * the same thing on all of them, which is what makes a livery portable. Rename
  * to taste in the profile — the geometry is the measurement, the name is a
  * convenience.
+ *
+ * `bounds` is the CAR's extent and matters far more than it looks. This
+ * originally normalised each island's position against the extent of the other
+ * islands ON THE SAME TEXTURE, which is only the car's extent when that texture
+ * happens to cover the whole car. For anything smaller the five bands collapse
+ * onto whatever that one sheet spans, and the frontmost thing on it is called
+ * `nose` no matter where on the car it actually sits. A tyre sheet holds four
+ * wheels, so the front pair were `*_nose` and the rear pair `*_tail`; a steering
+ * wheel 30 cm across got a nose, a middle and a tail of its own. Measured over
+ * two profiles, every single name on `interior`, `belts` and `steeringWheel` was
+ * wrong in this way, and 239 of 416 panels on one car.
+ *
+ * Omitting `bounds` falls back to the islands' own extent, which is correct only
+ * when the islands are the whole car. Callers that have a model should pass
+ * `carBounds(model)`.
  */
-export function nameIslands(islands, axes) {
+export function nameIslands(islands, axes, bounds = null) {
   const xs = islands.map((i) => i.centroid.x);
   const zs = islands.map((i) => i.centroid.z);
-  const zMin = Math.min(...zs), zMax = Math.max(...zs);
-  const halfWidth = Math.max(...xs.map(Math.abs)) || 1;
+  const zMin = bounds ? bounds.zMin : Math.min(...zs);
+  const zMax = bounds ? bounds.zMax : Math.max(...zs);
+  const halfWidth = (bounds ? bounds.halfWidth : Math.max(...xs.map(Math.abs))) || 1;
 
   const counts = new Map();
   for (const isl of islands) {
