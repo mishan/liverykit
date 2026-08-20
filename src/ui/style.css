@@ -147,3 +147,7 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
    region, so it gets the same compact treatment as the rotation buttons. */
 #pairwith { font-size: 12px; padding: 4px 6px; }
 #mirrornow, #unpair { padding: 4px 8px; font-size: 12px; }
+
+/* Disabled controls stay in place rather than vanishing, so they need to read
+   as unavailable rather than as missing. */
+#inspector button:disabled, #inspector select:disabled { opacity: 0.4; cursor: default; }

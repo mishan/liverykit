@@ -1158,9 +1158,17 @@ test('a pair can be declared, mirrored once, and severed', async () => {
   const stub = (sel, extra = {}) => { const n = { onclick: null, onchange: null, ...extra }; nodes.set(sel, n); return n; };
   const pairwith = stub('#pairwith', { value: 'badgeB' });
   stub('#mirror'); const mirrornow = stub('#mirrornow'); const unpair = stub('#unpair');
+  stub('#mirrorcreate'); stub('#duplicate');
+
+  // The controls are always present and disabled when they would do nothing, so
+  // the assertions are about STATE rather than about what exists.
+  const disabled = (which) => new RegExp(`id="${which}"[^>]*\\sdisabled`).test(inspector.innerHTML);
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badgeA' } } });
-  assert.match(inspector.innerHTML, /pair with/, 'an unpaired region offers to be paired');
+  assert.equal(disabled('pairwith'), false, 'an unpaired region can be paired');
+  assert.equal(disabled('mirrorcreate'), false, 'or have its other half created');
+  assert.equal(disabled('unpair'), true, 'and has nothing to unpair');
+  assert.equal(disabled('mirror'), true, 'and no link to break');
 
   // Declaring the pair must mirror IMMEDIATELY. Otherwise it appears to do
   // nothing, and the only way to find out whether it worked is to drag
@@ -1176,14 +1184,16 @@ test('a pair can be declared, mirrored once, and severed', async () => {
   // Severing it. The convention cannot be argued with by deleting a map entry —
   // there is no entry — so unpairing has to record the severance.
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badgeA' } } });
+  assert.equal(disabled('unpair'), false, 'a paired region can be unpaired');
+  assert.equal(disabled('pairwith'), true, 'and cannot be paired with a third');
   unpair.onclick();
-  assert.match(inspector.innerHTML, /pair with/, 'a severed region is unpaired again');
+  assert.equal(disabled('unpair'), true, 'a severed region is unpaired again');
 
   // And re-pairing after severing has to work, or unpair would be permanent
   // for the session and the dropdown would silently do nothing.
   await pairwith.onchange();
-  assert.doesNotMatch(inspector.innerHTML, /pair with/, 'declared again');
-  assert.ok(mirrornow.onclick, 'and the one-shot is available while paired');
+  assert.equal(disabled('unpair'), false, 'declared again');
+  assert.ok(mirrornow.onclick, 'and the one-shot is wired while paired');
 });
 
 test('mirror now does not quietly re-link a pair somebody separated', async () => {
@@ -1315,6 +1325,7 @@ test('creating a mirrored copy writes it into the fit and lists it', async () =>
   inspector.querySelectorAll = () => [];
   const create = { onclick: null };
   nodes.set('#mirrorcreate', create);
+  nodes.set('#duplicate', { onclick: null });
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   assert.match(inspector.innerHTML, /Create mirrored copy/,
@@ -1323,7 +1334,7 @@ test('creating a mirrored copy writes it into the fit and lists it', async () =>
   await create.onclick();
 
   const fit = JSON.parse(dom.querySelector('#fitjson').textContent);
-  const copy = fit.mirrors?.['badge-mirror'];
+  const copy = fit.copies?.['badge-mirror'];
   assert.ok(copy, `no mirrored copy was written: ${JSON.stringify(fit)}`);
   assert.equal(copy.of, 'badge');
   assert.equal(copy.panel, 'R', 'it goes on the measured mirror of the source panel');
@@ -1332,4 +1343,66 @@ test('creating a mirrored copy writes it into the fit and lists it', async () =>
   const at = toPanelRelative(L.rect, [0.02, 0.02, 0.05, 0.05]);
   assert.deepEqual(copy.at, mirrorAt(at, mirrorFlips(L, R)),
     'and at the mirrored position, using the measured flip');
+});
+
+test('duplicating a region offsets it and leaves it unpaired', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const surface = state.surfaces.find((x) => x.role === role);
+  const L = { name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
+    uAxis: [1, 0, 0], vAxis: [0, -1, 0] };
+  surface.panels = [L];
+  surface.regions = [{ ...surface.regions[0], id: 'badge', panel: 'L', mirror: null }];
+  render.placed = [{ ...render.placed[0], id: 'badge', panel: 'L', abs: [0.04, 0.04, 0.08, 0.08] }];
+
+  const { dom } = await runApp({ state, render });
+  const inspector = dom.querySelector('#inspector');
+  const nodes = new Map();
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  const dup = { onclick: null };
+  for (const sel of ['#mirrorcreate', '#mirrornow', '#unpair', '#mirror', '#pairwith']) {
+    nodes.set(sel, { onclick: null, onchange: null, value: '' });
+  }
+  nodes.set('#duplicate', dup);
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await dup.onclick();
+
+  const fit = JSON.parse(dom.querySelector('#fitjson').textContent);
+  const copy = fit.copies?.['badge-copy'];
+  assert.ok(copy, `no duplicate was written: ${JSON.stringify(fit)}`);
+  assert.equal(copy.of, 'badge', 'it takes its artwork from the original');
+  assert.equal(copy.panel, 'L', 'and stays on the same panel');
+
+  // OFFSET, not stacked. A duplicate hidden under its original looks exactly
+  // like the button did nothing, and the way to discover otherwise is to drag
+  // the one you can see and find a second underneath.
+  const at = [0.1, 0.1, 0.2, 0.2];               // the source, panel-relative
+  assert.notDeepEqual(copy.at, at, 'a duplicate must not sit exactly on top');
+  assert.ok(copy.at[0] > at[0] && copy.at[1] > at[1], `offset: ${copy.at}`);
+  assert.ok(copy.at.every((n) => n >= 0 && n <= 1), `still panel-relative: ${copy.at}`);
+  assert.deepEqual(copy.at.slice(2), at.slice(2), 'and keeps its size');
+});
+
+test('both spellings of a copy block load, and copies wins', async () => {
+  // `mirrors` was the first name, before duplicating without mirroring turned
+  // out to be the same feature. Fits written in the last hour keep working.
+  const { copiesOf, validateFit } = await import('../src/fit.mjs');
+  assert.deepEqual(copiesOf({ mirrors: { a: { of: 'x' } } }), { a: { of: 'x' } });
+  assert.deepEqual(copiesOf({ copies: { a: { of: 'x' } } }), { a: { of: 'x' } });
+  assert.deepEqual(copiesOf({}), {});
+  assert.deepEqual(copiesOf(null), {});
+  assert.deepEqual(
+    copiesOf({ mirrors: { a: { of: 'old' } }, copies: { a: { of: 'new' } } }),
+    { a: { of: 'new' } }, 'the current spelling wins a collision');
+
+  // And validation covers both, so an old fit cannot smuggle in a field the
+  // new one would reject.
+  assert.throws(() => validateFit({ livery: 'x', car: 'y', mirrors: { a: { of: 'b', color: 'red' } } }),
+    /may not set "color"/);
 });
