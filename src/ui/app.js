@@ -14,7 +14,7 @@
 
 // Relative, so the same specifier resolves in the browser (served alongside
 // app.js) and in Node, where the tests import this module directly.
-import { createViewer, unpack } from './view3d.js';
+import { createViewer, unpack, unpackModel } from './view3d.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -29,6 +29,8 @@ const state = {
   svg: '',           // the last render, reused as the 3D texture
   viewer: null,      // created lazily; a UV-only session never touches WebGL
   view: 'uv',
+  hover: null,       // a panel being looked at, which must never become a change
+  wholeGeometry: null, // the whole car, fetched once; only its textures change
 };
 
 const api = async (path, body) => {
@@ -87,6 +89,20 @@ $('#panels').onclick = (e) => {
   const li = e.target.closest?.('li[data-panel]') ?? e.target;
   if (li?.dataset?.panel) movePanel(li.dataset.panel);
 };
+
+// Hovering a panel shows where it is — on the sheet and on the car — WITHOUT
+// selecting anything or touching the fit. Finding out where `centre_mid_lower_4`
+// lives should not require moving a region onto it and then undoing that.
+$('#panels').onpointerover = (e) => {
+  const name = e.target.closest?.('li[data-panel]')?.dataset?.panel;
+  if (name) hoverPanel(name);
+};
+$('#panels').onpointerout = (e) => {
+  // Only when the pointer has left the list entirely. Moving between two rows
+  // fires `out` for the first before `over` for the second, so clearing on every
+  // `out` makes the highlight flicker off between neighbours.
+  if (!e.relatedTarget || !$('#panels').contains?.(e.relatedTarget)) hoverPanel(null);
+};
 $('#overlay').onpointerdown = (e) => {
   const d = e.target?.dataset ?? {};
   if (d.drag) return startDrag(e, d.drag);
@@ -101,6 +117,7 @@ $('#overlay').onpointerdown = (e) => {
 
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
+$('#tab-all').onclick = () => showView('all');
 
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
@@ -140,6 +157,7 @@ async function refresh() {
   state.svg = out.svg;
   $('#texture').innerHTML = out.svg;
   if (state.view === '3d') paintCar();
+  else if (state.view === 'all') loadWholeCar().catch((e) => status(`preview: ${e.message}`));
   drawOverlay();
   drawRegions();
   drawInspector();
@@ -149,14 +167,50 @@ async function refresh() {
   status(`rendered in ${Math.round(performance.now() - t0)} ms`);
 }
 
+// A panel list in profile order is a list in whatever order the unwrapper
+// emitted islands, which is no order at all — you scroll it looking for the
+// door. These put it in the order you would walk around the car: nose to tail,
+// then left, centre, right, then upper before lower, then biggest first.
+const SECTIONS = ['nose', 'front', 'mid', 'rear', 'tail'];
+const SIDES = ['left', 'centre', 'right'];
+
+/** Where a panel sits, from its tags, falling back to its generated name. */
+function place(p) {
+  const has = (t) => p.tags.includes(t) || p.name.split('_').includes(t);
+  const pick = (list) => { const i = list.findIndex(has); return i < 0 ? list.length : i; };
+  return {
+    section: pick(SECTIONS),
+    side: pick(SIDES),
+    level: has('upper') ? 0 : 1,
+    area: (p.rect?.[2] ?? 0) * (p.rect?.[3] ?? 0),
+  };
+}
+
 function drawPanels() {
   const s = state.surface;
   $('#panelcount').textContent = `${s.panels.length}`;
-  $('#panels').innerHTML = s.panels.map((p) => `
-    <li data-panel="${esc(p.name)}">
-      <span class="id">${esc(p.name)}</span>
-      <span class="meta">${p.instances ? `×${esc(p.instances)} ` : ''}${esc(p.tags.join(' '))}</span>
-    </li>`).join('');
+
+  const sorted = s.panels.map((p) => ({ p, at: place(p) })).sort((a, b) =>
+    a.at.section - b.at.section || a.at.side - b.at.side
+    || a.at.level - b.at.level || b.at.area - a.at.area
+    || a.p.name.localeCompare(b.p.name));
+
+  const rows = [];
+  let heading = null;
+  for (const { p, at } of sorted) {
+    // A heading per section, so the list reads as a car rather than as 66 names.
+    const label = SECTIONS[at.section] ?? 'unplaced';
+    if (label !== heading) { heading = label; rows.push(`<li class="head">${esc(label)}</li>`); }
+    // The percentage is how much of the sheet this panel owns, which is the
+    // number that decides whether artwork will fit on it.
+    const share = at.area >= 0.001 ? `${(at.area * 100).toFixed(1)}%` : '<0.1%';
+    rows.push(`
+      <li data-panel="${esc(p.name)}" title="${esc(`${p.name} — ${p.tags.join(' ') || 'no tags'}`)}">
+        <span class="id">${esc(p.name)}</span>
+        <span class="meta">${p.instances ? `×${esc(p.instances)} ` : ''}${esc(share)}</span>
+      </li>`);
+  }
+  $('#panels').innerHTML = rows.join('');
 }
 
 function drawRegions() {
@@ -175,6 +229,38 @@ function drawRegions() {
       <span class="id">${esc(label)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
+}
+
+/**
+ * Preview a panel's location, on both views, changing nothing.
+ *
+ * Deliberately not a redraw. drawOverlay replaces the whole SVG, and doing that
+ * on every pointermove would throw away the node the pointer is currently over,
+ * which browsers handle by firing another `out` — a loop that reads as flicker.
+ * Toggling one class on one existing node is both cheaper and correct.
+ */
+export function hoverPanel(name) {
+  state.hover = name;
+  for (const el of $('#overlay').querySelectorAll?.('.panelrect.hot') ?? []) {
+    el.classList.remove('hot');
+  }
+  const rect = name ? state.surface.panels.find((p) => p.name === name)?.rect : null;
+  if (name) {
+    $('#overlay').querySelector?.(`[data-panel="${cssEscape(name)}"]`)?.classList?.add('hot');
+  }
+  // On the car, the hovered panel takes precedence over the selected region and
+  // hands it back on the way out — so a hover is a look, never a change.
+  const sel = state.placed.find((p) => p.id === state.selected);
+  highlightOnCar(rect ?? sel?.abs ?? null);
+}
+
+/**
+ * Quote a panel name for an attribute selector. Names come from a car profile,
+ * so they are whatever an unwrapper produced. A function declaration, not a
+ * const: this file has produced three temporal-dead-zone bugs already.
+ */
+function cssEscape(s) {
+  return window.CSS?.escape ? window.CSS.escape(s) : s.replace(/["\\]/g, '\\$&');
 }
 
 /** Select a region by id, from the list or from the overlay. */
@@ -221,6 +307,11 @@ function drawOverlay() {
   // already moved on from. Two views drawing the same thing from two sources
   // eventually disagree; these read one.
   highlightOnCar(sel?.abs ?? null);
+
+  // A redraw replaces every node, so a panel being hovered loses its marking
+  // even though the pointer never moved. Re-applying it is one line; leaving it
+  // out means the highlight blinks off whenever anything else re-renders.
+  if (state.hover) hoverPanel(state.hover);
 }
 
 // A function DECLARATION, deliberately. This module boots with a top-level
@@ -418,17 +509,40 @@ function wireInspectorButtons(id) {
 // Everything here is lazy and optional. A profile without the car's kn5 beside
 // it still edits perfectly well in UV; the 3D tab simply says why it cannot open.
 
+/**
+ * Wait for the browser to lay out what was just changed.
+ *
+ * A function declaration and defined above its caller, because this file has
+ * produced three temporal-dead-zone bugs and one of them shipped.
+ */
+function nextFrame() {
+  return new Promise((ok) => (window.requestAnimationFrame
+    ? window.requestAnimationFrame(() => ok())
+    : setTimeout(ok, 16)));
+}
+
 async function showView(which) {
   state.view = which;
-  $('#tab-uv').className = `tab${which === 'uv' ? ' on' : ''}`;
-  $('#tab-3d').className = `tab${which === '3d' ? ' on' : ''}`;
-  $('#texture').hidden = which === '3d';
-  $('#overlay').hidden = which === '3d';
-  $('#carview').hidden = which !== '3d';
-  if (which !== '3d') return;
+  const is3d = which === '3d' || which === 'all';
+  for (const [id, name] of [['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all']]) {
+    $(id).className = `tab${which === name ? ' on' : ''}`;
+  }
+  $('#texture').hidden = is3d;
+  $('#overlay').hidden = is3d;
+  $('#carview').hidden = !is3d;
+  if (!is3d) return;
+
+  // Unhiding is not the same as being laid out. `hidden = false` takes effect on
+  // the next frame, and until then the canvas is still 0x0 — and Firefox hands
+  // back a null WebGL context for a zero-sized canvas, which this code reports
+  // as "WebGL is unavailable in this browser". It is available; the canvas just
+  // did not exist yet. Waiting one frame is the whole fix.
+  await nextFrame();
 
   try {
-    await loadCarGeometry();
+    $('#viewnote').textContent = which === 'all' ? 'rendering every surface…' : 'loading…';
+    if (which === 'all') await loadWholeCar();
+    else await loadCarGeometry();
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine.
@@ -440,7 +554,46 @@ async function showView(which) {
     state.view = 'uv';
     $('#tab-uv').className = 'tab on';
     $('#tab-3d').className = 'tab';
+    $('#tab-all').className = 'tab';
   }
+}
+
+/**
+ * The whole car, with every painted surface on it at once.
+ *
+ * The per-surface view answers "did this land where I meant", and it is the
+ * right view while dragging. It cannot answer "does this design work", because
+ * a livery is not a texture — it is every texture at once, and a stripe that
+ * meets the bodywork perfectly can still miss the sidepod next to it.
+ *
+ * The geometry is fetched once and kept; only the textures are re-rendered when
+ * the fit changes. Anything the livery does not paint appears in flat grey,
+ * because a car with holes where its glass should be reads as a broken export.
+ */
+async function loadWholeCar() {
+  if (!state.viewer) {
+    state.viewer = createViewer($('#carview'));
+    state.viewer.attach();
+  }
+  if (!state.wholeGeometry) {
+    const res = await fetch('/api/model?all=1');
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({}));
+      throw new Error(error ?? 'no model for this car');
+    }
+    state.wholeGeometry = unpackModel(await res.arrayBuffer());
+  }
+  const g = state.wholeGeometry;
+  const { surfaces } = await api('/api/preview', { fit: state.fit });
+  await state.viewer.setWholeCar(g, surfaces);
+
+  const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
+  const bare = g.groups.filter((x) => !x.role).reduce((s, x) => s + x.count / 3, 0);
+  $('#viewnote').textContent =
+    `${(g.indices.length / 3).toLocaleString()} triangles · ${painted.size} painted surface` +
+    `${painted.size === 1 ? '' : 's'}` +
+    (bare ? ` · ${bare.toLocaleString()} triangles unpainted, shown grey` : '') +
+    ' — drag to orbit, wheel to zoom';
 }
 
 /**

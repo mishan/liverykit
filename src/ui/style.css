@@ -119,3 +119,17 @@ pre {
 .status { color: var(--muted); font-size: 12px; }
 .status.dirty { color: var(--warn); }
 .note { color: var(--warn); font-size: 12px; margin-top: 6px; }
+
+/* A section heading in the panel list. Not clickable, and it must not look it:
+   the list is 66 names on some cars and unreadable without them. */
+li.head {
+  color: var(--muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.09em; margin-top: 10px; padding: 2px 8px; cursor: default;
+}
+li.head:first-child { margin-top: 0; }
+li.head:hover { background: none; }
+
+/* A panel being HOVERED in the list, shown on the sheet. Distinct from .host,
+   which means the selected region actually lives there — looking at a panel and
+   having a region on it are different facts and should not share a colour. */
+.panelrect.hot { stroke: var(--warn); stroke-width: 3; fill: #ffb45418; }
