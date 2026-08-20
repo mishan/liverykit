@@ -52,6 +52,8 @@ Options
   --fit <path>        per-car placement overrides for this design
                       (default: fits/<livery>@<car>.json, if it exists)
   --ui                open the fitting editor instead of building
+  --model <kn5>       car model for the editor's 3D view; defaults to
+                      content/cars/<car>/<the kn5 the profile was built from>
   --port <n>          port for --ui                            (default: 7391)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
@@ -80,6 +82,7 @@ const { values, positionals } = parseArgs({
     profile: { type: 'string' },
     fit: { type: 'string' },
     ui: { type: 'boolean', default: false },
+    model: { type: 'string' },
     port: { type: 'string' },
     pack: { type: 'string', multiple: true, default: [] },
     help: { type: 'boolean', default: false },
@@ -271,11 +274,21 @@ console.log(`${livery.name}  ->  ${profile.name ?? profile.id}\n`);
 // project never ships, so it binds to 127.0.0.1 and there is no hosted version.
 if (values.ui) {
   const { startUi } = await import('../src/ui/server.mjs');
+
+  // The profile records which kn5 it was generated from, so the usual case needs
+  // no flag. A missing model is not an error — it costs the 3D view and nothing
+  // else, which is the right trade for anyone holding a profile for a car they
+  // do not have unpacked.
+  const modelPath = values.model
+    ? resolve(values.model)
+    : join(ROOT, 'content', 'cars', profile.id, profile.calibration?.source ?? '');
+
   const { url } = await startUi({
     livery,
     profile,
     fitPath,
     liveryId: liveryName,
+    modelPath,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
   console.log(`  fitting editor at ${url}`);
