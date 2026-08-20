@@ -355,6 +355,13 @@ export async function profileFromKn5(path, {
         confidence: 'measured',
         source: { mesh: i.mesh, vertices: i.vertexCount },
         centroid3d: [r3(i.centroid.x), r3(i.centroid.y), r3(i.centroid.z)],
+        // Which way +u and +v travel across the car. Needed to mirror a
+        // placement onto the opposite flank: `mirrorOf` is measured from
+        // geometry and says nothing about how each island was laid out, and
+        // two panels that are mirror images in 3D are very often unwrapped the
+        // same way round in UV — or very often not.
+        uAxis: i.uAxis ?? undefined,
+        vAxis: i.vAxis ?? undefined,
       };
       // How far this island is rotated from upright, so artwork can read level
       // on a panel the unwrapper laid sideways. Omitted for near-horizontal

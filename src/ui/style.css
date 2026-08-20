@@ -133,3 +133,12 @@ li.head:hover { background: none; }
    which means the selected region actually lives there — looking at a panel and
    having a region on it are different facts and should not share a colour. */
 .panelrect.hot { stroke: var(--warn); stroke-width: 3; fill: #ffb45418; }
+
+/* Rotation choices. Small, because there are five of them and they sit inside
+   a 300px column next to everything else about the region. */
+button.rot { padding: 4px 8px; font-size: 12px; }
+button.rot.on { border-color: var(--accent); color: var(--accent); background: #12313a; }
+
+/* The mirror link. Amber when broken, because an asymmetry someone chose is
+   worth noticing on the way past, and an asymmetry nobody chose is a bug. */
+#mirror[data-linked="false"] { border-color: var(--warn); color: var(--warn); }

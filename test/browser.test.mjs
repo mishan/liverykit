@@ -629,3 +629,121 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
   // rests on — a value outside 0..1 is one the renderer refuses.
   assert.ok(at.every((n) => n >= 0 && n <= 1), `at must stay panel-relative: ${at}`);
 });
+
+test('the editor opens on the car, and a linked drag moves both sides', { skip: BROWSER ? false : 'no browser' }, async (t) => {
+  // Two claims at once, because they share a page load and the second needs the
+  // first: the Car tab is where the work happens now, so it is what opens, and a
+  // design that named `mark-left` and `mark-right` has said they are one idea.
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-pair-'));
+  const modelPath = join(dir, 'car.kn5');
+  const fitPath = join(dir, 'fit.json');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+
+  // right_mid is the -x face the default camera looks at; left_mid is its
+  // measured mirror, so the pair is exactly the case this feature is for.
+  const livery = {
+    name: 'fixture', car: 'fixture_car',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        role: 'body',
+        regions: [
+          { id: 'mark-right', panel: 'right_mid', at: [0.15, 0.15, 0.7, 0.7], treatment: 'fill', color: 'accent' },
+          { id: 'mark-left', panel: 'left_mid', at: [0.15, 0.15, 0.7, 0.7], treatment: 'fill', color: 'accent' },
+        ],
+      },
+    },
+  };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      await settle(2500);
+      // Whatever the app chose on its own — no tab was clicked.
+      say('opening tab: ' + [...document.querySelectorAll('.tab')].find((b) => b.className.includes('on'))?.id);
+      say('canvas hidden: ' + document.querySelector('#carview').hidden);
+
+      const cv = document.querySelector('#carview');
+      say('webgl: ' + (cv.getContext('webgl') ? 'present' : 'absent'));
+      const r = cv.getBoundingClientRect();
+
+      const li = [...document.querySelectorAll('#regions li')].find((l) => l.dataset.id === 'mark-right');
+      clickAt(...centre(li));
+      await settle(400);
+      say('inspector mentions the pair: ' + document.querySelector('#inspector').textContent.includes('mark-left'));
+
+      const send = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+      const sendWin = (type, x, y) => window.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, pointerId: 1, button: 0 }));
+
+      let from = null;
+      for (let fy = 0.25; fy <= 0.75 && !from; fy += 0.08) {
+        for (let fx = 0.2; fx <= 0.8 && !from; fx += 0.06) {
+          const x = Math.round(r.x + r.width * fx), y = Math.round(r.y + r.height * fy);
+          if (topAt(x, y) !== cv) continue;
+          send('pointerdown', x, y);
+          await settle(50);
+          if (/moving|resizing/.test(document.querySelector('#status').textContent)) from = [x, y];
+          else { sendWin('pointerup', x, y); await settle(20); }
+        }
+      }
+      if (!from) { say('never found the region on screen'); return done(); }
+
+      for (let i = 1; i <= 5; i++) sendWin('pointermove', from[0] + i * 6, from[1] + i * 4);
+      await settle(200);
+      sendWin('pointerup', from[0] + 30, from[1] + 20);
+      await settle(1200);
+      say('fit: ' + document.querySelector('#fitjson').textContent.replace(/\\s+/g, ' '));
+      done();
+    })();
+  `, { liveryObject: livery, profile, modelPath, fitPath });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
+
+  // The tab choice does not depend on GL: without it the app falls back, which
+  // is its own correct answer and worth asserting either way.
+  if (find('webgl: ') === 'webgl: present') {
+    assert.equal(find('opening tab: '), 'opening tab: tab-3d', report.join(' | '));
+    assert.equal(find('canvas hidden: '), 'canvas hidden: false');
+  } else {
+    assert.equal(find('opening tab: '), 'opening tab: tab-uv',
+      'with no WebGL it must fall back to a view that works');
+    return;
+  }
+
+  assert.equal(find('inspector mentions the pair: '), 'inspector mentions the pair: true',
+    'the inspector should name the opposite number');
+
+  const raw = find('fit: ').slice('fit: '.length);
+  assert.ok(raw, `the drag never reported a fit: ${report.join(' | ')}`);
+  const regions = JSON.parse(raw).regions ?? {};
+  assert.ok(regions['mark-right']?.at, `the drag never reached the fit: ${raw}`);
+  assert.ok(regions['mark-left']?.at, `the opposite number was not moved: ${raw}`);
+  // MIRRORED, not copied. Whether that means the same numbers depends on how
+  // the two islands were unwrapped, so the expectation is computed from the
+  // profile's own measured axes rather than written down here — writing it down
+  // would just be asserting the fixture's unwrap, not the behaviour.
+  const { mirrorFlips, mirrorAt } = await import('../src/fit.mjs');
+  const panels = profile.panels.body;
+  const flips = mirrorFlips(panels[regions['mark-right'].panel ?? 'right_mid'],
+    panels[regions['mark-left'].panel ?? 'left_mid']);
+  assert.deepEqual(regions['mark-left'].at, mirrorAt(regions['mark-right'].at, flips),
+    `a linked pair mirrors: flips ${JSON.stringify(flips)}`);
+  // And each half stays on its OWN panel. Copying the panel across would stack
+  // both halves on one flank, which renders perfectly and looks like the mirror
+  // simply stopped working.
+  //
+  // A fit records `panel` only when a region has LEFT the one its design named,
+  // so the usual outcome here is that neither carries one — the sides are kept
+  // apart by the design and there is nothing to write down. What must never
+  // happen is both halves naming the same panel.
+  const named = [regions['mark-left'].panel, regions['mark-right'].panel].filter(Boolean);
+  assert.notEqual(named[0] !== undefined && named[0] === named[1], true,
+    `both halves ended up on ${named[0]}, which is the mirror collapsing`);
+});
