@@ -367,3 +367,88 @@ test('the selected region reaches the car as a highlight', { skip: BROWSER ? fal
       `region[${i}] reached the GPU as ${got[i]}, expected ${n.toFixed(4)} — ${report.join(' | ')}`);
   }
 });
+
+test('the whole-car view puts every painted surface on the model at once', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The per-surface view answers "did this land where I meant". This one answers
+  // "does the design work", which needs every texture on the car at once — and
+  // it is the only view that exercises multi-texture drawing, grouped index
+  // offsets and the padded binary header together.
+  //
+  // Headless browsers do not reliably have a GL driver; this one reports
+  // "Exhausted GL driver options" on some runs and works on others. So the test
+  // asserts BOTH outcomes rather than skipping, because the no-GL path is a real
+  // path a real person hits on a real machine, and what matters there is that
+  // the editor degrades to something usable instead of dying.
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-all-'));
+  const modelPath = join(dir, 'car.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+
+  const livery = {
+    name: 'fixture', car: 'fixture_car',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        role: 'body',
+        regions: [{ id: 'flank', panel: 'left_mid', treatment: 'fill', color: 'accent' }],
+      },
+    },
+  };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+
+      // Asked on a THROWAWAY canvas. Firefox caches the failure against the
+      // element it was asked on, so probing #carview would break the very thing
+      // under test.
+      const probe = document.createElement('canvas');
+      probe.width = probe.height = 64;
+      say('webgl: ' + (probe.getContext('webgl') ? 'present' : 'absent'));
+
+      document.querySelector('#tab-all').click();
+      await settle(4000);
+      say('note: ' + document.querySelector('#viewnote').textContent);
+      say('canvas hidden: ' + document.querySelector('#carview').hidden);
+
+      const stage = document.querySelector('#stage').getBoundingClientRect();
+      const mid = [Math.round(stage.x + stage.width / 2), Math.round(stage.y + stage.height / 2)];
+      say('topmost over stage: ' + (topAt(mid[0], mid[1])?.id ?? 'nothing'));
+
+      const gl = document.querySelector('#carview').getContext('webgl');
+      if (gl) {
+        const prog = gl.getParameter(gl.CURRENT_PROGRAM);
+        const region = prog ? gl.getUniform(prog, gl.getUniformLocation(prog, 'region')) : [];
+        say('region: ' + Array.from(region).join(','));
+      }
+      done();
+    })();
+  `, { liveryObject: livery, profile, modelPath, fitPath: join(dir, 'fit.json') });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+
+  if (find('webgl: ') === 'webgl: absent') {
+    // No driver. The editor must fall back to UV and stay WORKABLE — the canvas
+    // out of the way and the overlay reachable again. A dead stage with a
+    // hidden canvas still on top of it is this editor's oldest failure.
+    assert.equal(find('canvas hidden: '), 'canvas hidden: true', report.join(' | '));
+    assert.match(find('note: '), /no 3D view/, report.join(' | '));
+    assert.equal(find('topmost over stage: '), 'topmost over stage: overlay',
+      `without WebGL the UV editor must still be reachable: ${report.join(' | ')}`);
+    return;
+  }
+
+  assert.equal(find('canvas hidden: '), 'canvas hidden: false', report.join(' | '));
+  assert.equal(find('topmost over stage: '), 'topmost over stage: carview',
+    `something is covering the car: ${report.join(' | ')}`);
+  assert.match(find('note: '), /painted surface/, report.join(' | '));
+  assert.doesNotMatch(find('note: '), /^note: 0 triangles/, report.join(' | '));
+  // Grouped drawing must NOT dim the car: a UV rectangle means something
+  // different on every texture, so a highlight read off one of them would dim
+  // the others by an unrelated coincidence of coordinates.
+  assert.equal(find('region: '), 'region: 0,0,0,0',
+    'the whole-car view must not dim itself around one surface\'s rectangle');
+});
