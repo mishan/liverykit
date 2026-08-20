@@ -253,6 +253,71 @@ export function toPanelRelative(panelRect, abs) {
   return [r4((abs[0] - px) / pw), r4((abs[1] - py) / ph), r4(abs[2] / pw), r4(abs[3] / ph)];
 }
 
+// ---------------------------------------------------------------------------
+// Mirroring a placement onto the opposite flank.
+//
+// `mirrorOf` is measured from GEOMETRY and says only that two panels are mirror
+// images on the car. It says nothing about how each was unwrapped, and that is
+// the part that matters. Copying a panel-relative `at` across assumes both
+// islands run the same way in UV; on the RSS4 they do not, so moving the number
+// forward on one flank moved it backward on the other. Reported from the car,
+// exactly the shape the bug predicts.
+//
+// So the direction is measured too. Each panel records `uAxis` and `vAxis`: the
+// world directions +u and +v travel in. Reflect one panel's axis through the
+// centreline and compare it with the other's — agreement means the coordinate
+// runs the same way, disagreement means it is reversed.
+// ---------------------------------------------------------------------------
+
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Reflect through the centreline. Left and right differ only in x. */
+const reflect = (v) => [-v[0], v[1], v[2]];
+
+/**
+ * Which of a mirrored pair's texture axes run opposite to each other.
+ *
+ * A panel with no measured axes — hand-written, or from a profile built before
+ * this was recorded — reports no flip rather than a guess. That is exactly the
+ * old behaviour: right about as often as it is wrong, but no worse than what
+ * was there before, and it degrades quietly rather than inventing a direction.
+ */
+export function mirrorFlips(a, b) {
+  const axis = (p, k) => (Array.isArray(p?.[k]) && p[k].length === 3 ? p[k] : null);
+  const flip = (k) => {
+    const x = axis(a, k), y = axis(b, k);
+    return x && y ? dot3(reflect(x), y) < 0 : false;
+  };
+  return { u: flip('uAxis'), v: flip('vAxis') };
+}
+
+/** A panel-relative rectangle, moved to the equivalent place on the twin. */
+export function mirrorAt(at, flips) {
+  const [x, y, w, h] = at;
+  return [
+    r4(flips.u ? 1 - x - w : x),
+    r4(flips.v ? 1 - y - h : y),
+    r4(w), r4(h),
+  ];
+}
+
+/**
+ * The rotation that keeps artwork the same way up on the twin.
+ *
+ * Only the V axis matters, which is worth stating because it looks wrong at
+ * first. Rotation is about which way the artwork READS, and "up" in an image is
+ * the -v direction. Reversing u moves the artwork to the other end of the panel
+ * without turning it over; reversing v inverts the panel's idea of up, so the
+ * artwork needs half a turn to match.
+ *
+ * `auto` passes through untouched, because it is not an angle. It defers to
+ * each panel's own measured textRotation, which already accounts for all of it.
+ */
+export function mirrorRotation(rotate, flips) {
+  if (typeof rotate !== 'number' || !Number.isFinite(rotate)) return rotate;
+  return flips.v ? (((rotate + 180) % 360) + 360) % 360 : rotate;
+}
+
 /** Ids a fit mentions that the livery does not declare. */
 export function unusedFitIds(fit, used) {
   return Object.keys(fit?.regions ?? {}).filter((id) => !used.has(id));

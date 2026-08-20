@@ -105,6 +105,11 @@ function measure(model, mesh, verts, tris) {
   // rotation artwork has to undo.
   let aniso = 0, wsum = 0, uvArea = 0, area3d = 0;
   let bx = 0, by = 0, bz = 0, nx = 0, ny = 0, nz = 0;
+  // The tangent's DIRECTION, not just its length. The length alone gives
+  // anisotropy; the direction says which way along the car "rightwards on the
+  // sheet" actually points, and that is the only thing that can tell you
+  // whether a mirrored pair of panels was unwrapped the same way round.
+  let tx = 0, ty = 0, tz = 0;
   for (const [a, b, c] of tris) {
     const p0 = vertex(model, mesh, a), p1 = vertex(model, mesh, b), p2 = vertex(model, mesh, c);
     const du1 = p1.u - p0.u, dv1 = p1.v - p0.v;
@@ -129,6 +134,7 @@ function measure(model, mesh, verts, tris) {
     // Area-weighted so a few stray triangles at a panel's edge cannot outvote
     // the flat middle of it.
     bx += (B[0] / lb) * w; by += (B[1] / lb) * w; bz += (B[2] / lb) * w;
+    if (lt > 1e-9) { tx += (T[0] / lt) * w; ty += (T[1] / lt) * w; tz += (T[2] / lt) * w; }
     const fn = cross(e1, e2), fl = len(fn) || 1;
     nx += (fn[0] / fl) * w; ny += (fn[1] / fl) * w; nz += (fn[2] / fl) * w;
   }
@@ -143,8 +149,15 @@ function measure(model, mesh, verts, tris) {
 
   const upright = textRotation([bx, by, bz], [nx, ny, nz]);
 
+  // Unit world directions for +u and +v on this island, rounded because three
+  // decimals is far more than a sign comparison needs and a profile is read by
+  // people.
+  const unit = (v) => { const l = Math.hypot(...v); return l < 1e-9 ? null : v.map((n) => Math.round((n / l) * 1000) / 1000); };
+
   return {
     mesh: mesh.name,
+    uAxis: unit([tx, ty, tz]),
+    vAxis: unit([bx, by, bz]),
     textRotation: upright,
     vertices: verts,
     vertexCount: n,

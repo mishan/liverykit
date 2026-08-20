@@ -192,6 +192,77 @@ const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'style.css']);
  * judgement in it, and a test should be able to reach it without opening a
  * socket.
  */
+/**
+ * The id of a region's opposite number, if its own id names a side.
+ *
+ * A design says `driver-left` and `driver-right`, or `numberLeft` and
+ * `numberRight`. That is the design stating its own symmetry, and it is a much
+ * better signal than guessing from geometry — two regions can sit on mirrored
+ * panels and still be deliberately different, which is most of what makes a
+ * livery interesting.
+ *
+ * `_` counts as a boundary even though it is a word character to a regex, so
+ * `driver_left` pairs. A capital after a lowercase letter counts too, so
+ * `numberLeft` pairs. `flew` and `alright` do not, which is the point of
+ * checking the boundaries at all.
+ */
+export function partnerId(id) {
+  if (typeof id !== 'string') return null;
+  const re = /(left|right)/gi;
+  let m;
+  while ((m = re.exec(id)) !== null) {
+    const before = id[m.index - 1];
+    const after = id[m.index + m[0].length];
+    const startsWord = m.index === 0 || !/[A-Za-z]/.test(before)
+      || (/[a-z]/.test(before) && /[A-Z]/.test(m[0][0]));
+    const endsWord = after === undefined || !/[a-z]/.test(after);
+    if (!startsWord || !endsWord) continue;
+
+    const swapped = m[0].toLowerCase() === 'left'
+      ? matchCase(m[0], 'right') : matchCase(m[0], 'left');
+    return id.slice(0, m.index) + swapped + id.slice(m.index + m[0].length);
+  }
+  return null;
+}
+
+/** Keep LEFT/Left/left when swapping in the other side. */
+function matchCase(sample, word) {
+  if (sample === sample.toUpperCase()) return word.toUpperCase();
+  if (sample[0] === sample[0].toUpperCase()) return word[0].toUpperCase() + word.slice(1);
+  return word;
+}
+
+/**
+ * Regions that are two halves of one idea, and should move together.
+ *
+ * Both halves have to exist, and if both name a panel outright those panels
+ * have to be each other's mirror. That second check is what stops a livery
+ * where `badge-left` sits on the door and `badge-right` on the roof from being
+ * linked into nonsense — and it costs nothing, because `mirrorOf` is measured
+ * from the model rather than guessed from a name.
+ */
+export function mirrorPairs(livery, profile, role) {
+  const byId = new Map();
+  for (const spec of [...Object.values(livery.paint ?? {}), ...Object.values(livery.surfaces ?? {})]) {
+    for (const r of spec.regions ?? []) if (r.id) byId.set(r.id, r);
+  }
+
+  const panels = profile.panels?.[role] ?? {};
+  const out = new Map();
+  for (const [id, r] of byId) {
+    const other = partnerId(id);
+    if (!other || !byId.has(other)) continue;
+    const o = byId.get(other);
+    if (r.panel && o.panel) {
+      const mine = panels[r.panel] ?? profile.panels?.[profile.aliases?.[role]?.[r.panel]] ?? null;
+      const theirs = panels[o.panel];
+      if (mine && theirs && mine.mirrorOf !== o.panel && theirs.mirrorOf !== r.panel) continue;
+    }
+    out.set(id, other);
+  }
+  return out;
+}
+
 export function editorState({ livery, profile, fit, liveryId = null }) {
   const ids = regionIds(livery);
   const { targets } = resolveTargets(profile, livery);
@@ -202,6 +273,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
   for (const t of targets) {
     if (!t.primary) continue;                       // one entry per term, not per texture
     const tex = texture(profile, t.role);
+    const pairs = mirrorPairs(livery, profile, t.role);
     surfaces.push({
       from: t.from,
       role: t.role,
@@ -214,6 +286,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         tags: p.tags ?? [],
         instances: p.instances,
         anisotropy: p.anisotropy ?? 1,
+        // Which way the sheet runs across this panel. The editor needs it to
+        // mirror a placement onto the opposite flank; without it, copying `at`
+        // across sends artwork to the wrong end of the twin.
+        uAxis: p.uAxis,
+        vAxis: p.vAxis,
       })),
       regions: (t.spec.regions ?? []).map((r, i) => ({
         index: i,
@@ -224,6 +301,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         derived: r.id === undefined,
         treatment: r.treatment,
         editable: true,
+        // The design's own opposite number, if it declared one. Sent from here
+        // rather than worked out in the browser: it needs the profile's
+        // measured `mirrorOf`, and it is far easier to test in Node.
+        mirror: pairs.get(regionKey(t.from, r, i)) ?? null,
+        rotate: r.rotate ?? null,
         tags: r.tags,
         // Resolved through the aliases, the same as the placement is, so the
         // two can be compared. The editor asks "is this region still on the

@@ -31,6 +31,11 @@ const state = {
   view: 'uv',
   hover: null,       // a panel being looked at, which must never become a change
   wholeGeometry: null, // the whole car, fetched once; only its textures change
+  // Pairs the person has deliberately separated. Session-only on purpose: it is
+  // a statement about how you are working right now, not about the design, and
+  // the fit file has no business recording an editor mode. Once the two sides
+  // differ, the fit already says so in the only way that matters.
+  unlinked: new Set(),
 };
 
 const api = async (path, body) => {
@@ -544,6 +549,27 @@ async function commit(sel) {
   o.at = panel ? toPanelRelative(panel.rect, sel.abs) : sel.abs.map(r4);
 
   pinPanel(o, sel.id, sel.panel);
+
+  // The other side, if the design named one and the link is still on.
+  //
+  // The placement is MIRRORED, not copied. Copying assumes both islands were
+  // unwrapped the same way round, which the RSS4 disproves: its two flanks run
+  // in opposite directions, so a copied `at` moved the number forward on one
+  // side and backward on the other. The flip is measured from the panels' own
+  // recorded axes rather than assumed either way.
+  for (const other of linkedTo(sel.id)) {
+    const twin = override(other);
+    const twinPlaced = state.placed.find((p) => p.id === other);
+    const here = state.surface.panels.find((p) => p.name === sel.panel);
+    const there = state.surface.panels.find((p) => p.name === twinPlaced?.panel);
+    const flips = here && there ? mirrorFlips(here, there) : { u: false, v: false };
+    twin.at = mirrorAt(o.at, flips);
+    if (o.rotate !== undefined) twin.rotate = mirrorRotation(o.rotate, flips);
+    // Its own panel, not this one's. The whole point of the pair is that they
+    // live on opposite sides; copying the panel across would stack both halves
+    // on one flank, which renders perfectly and looks like the mirror broke.
+    pinPanel(twin, other, twinPlaced?.panel);
+  }
   setDirty(true);
   await refresh();
 }
@@ -572,11 +598,89 @@ function pinPanel(o, id, name) {
 
 function r4(n) { return Math.round(n * 10000) / 10000; }
 
-/** Mirrors toPanelRelative in src/fit.mjs; the browser cannot import that. */
+// --- copies of src/fit.mjs -------------------------------------------------
+//
+// The browser cannot import that module: it reads files, so it opens with
+// `node:fs/promises` and the import would fail before any of this ran. These
+// four are pure arithmetic and are duplicated deliberately rather than the
+// module being split for the sake of it.
+//
+// Duplication is a liability, so it is held down by a test: `both copies of the
+// mirror arithmetic agree` runs the same cases through this file and through
+// fit.mjs and requires identical answers. A divergence would otherwise be
+// invisible — the editor would place artwork one way and a rebuild from the CLI
+// another, and the fit file would look fine in both.
+
 function toPanelRelative(panelRect, abs) {
   const [px, py, pw, ph] = panelRect;
   if (!pw || !ph) return [0, 0, 1, 1];
   return [r4((abs[0] - px) / pw), r4((abs[1] - py) / ph), r4(abs[2] / pw), r4(abs[3] / ph)];
+}
+
+export function mirrorFlips(a, b) {
+  const axis = (p, k) => (Array.isArray(p?.[k]) && p[k].length === 3 ? p[k] : null);
+  const dot3 = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+  const flip = (k) => {
+    const x = axis(a, k), y = axis(b, k);
+    return x && y ? dot3([-x[0], x[1], x[2]], y) < 0 : false;
+  };
+  return { u: flip('uAxis'), v: flip('vAxis') };
+}
+
+export function mirrorAt(at, flips) {
+  const [x, y, w, h] = at;
+  return [r4(flips.u ? 1 - x - w : x), r4(flips.v ? 1 - y - h : y), r4(w), r4(h)];
+}
+
+export function mirrorRotation(rotate, flips) {
+  if (typeof rotate !== 'number' || !Number.isFinite(rotate)) return rotate;
+  return flips.v ? (((rotate + 180) % 360) + 360) % 360 : rotate;
+}
+
+/**
+ * Quarter turns, and `auto`.
+ *
+ * Quarter turns only, deliberately. An unwrapper lays panels out at right
+ * angles to each other — a door packed sideways to save sheet space is the
+ * common case — so every rotation anyone actually needs is one of four, and a
+ * continuous control would mostly be a way to end up at 87 degrees by accident.
+ *
+ * `auto` is not a fifth angle, it is the absence of an opinion: the renderer
+ * uses the panel's own measured `textRotation`, which is usually right and is
+ * the only choice that keeps working when the design moves to another car.
+ * It is offered first for that reason.
+ */
+function rotationChoices(id, def, o) {
+  const current = o.rotate ?? def?.rotate ?? 'auto';
+  return ['auto', 0, 90, 180, 270].map((v) => {
+    const on = String(current) === String(v);
+    return `<button class="rot${on ? ' on' : ''}" data-rotate="${v}"
+      ${on ? 'aria-pressed="true"' : ''}>${v === 'auto' ? 'auto' : `${v}°`}</button>`;
+  }).join('');
+}
+
+/**
+ * The link to a region's opposite number, and the switch that breaks it.
+ *
+ * Linked is the default because a design that named `driver-left` and
+ * `driver-right` has said they are one idea, and moving one and then hunting
+ * for the other to match it by hand is exactly the fiddliness this tool exists
+ * to remove. Breaking it has to be one click, though: a livery where the two
+ * sides deliberately differ is not a mistake, it is most of what makes a livery
+ * worth looking at.
+ */
+function mirrorControl(id, def) {
+  if (!def?.mirror) return '';
+  const linked = !state.unlinked.has(id) && !state.unlinked.has(def.mirror);
+  return `
+    <label>mirror</label>
+    <div class="row">
+      <button id="mirror" data-linked="${linked}">${linked ? 'linked' : 'independent'}</button>
+      <span class="muted">${esc(def.mirror)}</span>
+    </div>
+    <p class="hint">${linked
+      ? 'Moving, resizing or rotating this also moves its opposite number.'
+      : 'Edits affect this side only.'}</p>`;
 }
 
 function drawInspector() {
@@ -622,6 +726,9 @@ function drawInspector() {
         ? '<span class="note">stretched — text is pre-compensated, art is not</span>' : ''}</div>
     <label>at (panel-relative)</label>
     <div><code>${(o.at ?? []).map((n) => n.toFixed(3)).join(', ') || 'from the design'}</code></div>
+    <label>rotation</label>
+    <div class="row">${rotationChoices(id, def, o)}</div>
+    ${mirrorControl(id, def)}
     <div class="row" style="margin-top:10px">
       <button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
       <button id="reset">Reset</button>
@@ -655,9 +762,57 @@ function wireInspectorButtons(id) {
   };
   $('#reset').onclick = async () => {
     delete state.fit.regions[id];
+    // Reset means back to the design, and the design's symmetry is part of what
+    // it said. Leaving the other half of a pair adjusted would make "reset" the
+    // one action that creates an asymmetry rather than removing one.
+    for (const other of linkedTo(id)) delete state.fit.regions[other];
     setDirty(true);
     await refresh();
   };
+
+  // Rotation is a fit override like any other, so it travels with the region
+  // and never edits the design.
+  for (const b of $('#inspector').querySelectorAll?.('[data-rotate]') ?? []) {
+    b.onclick = async () => {
+      const v = b.dataset.rotate;
+      const ov = override(id);
+      if (v === 'auto') delete ov.rotate; else ov.rotate = Number(v);
+      for (const other of linkedTo(id)) {
+        const oo = override(other);
+        if (v === 'auto') delete oo.rotate; else oo.rotate = Number(v);
+      }
+      setDirty(true);
+      await refresh();
+    };
+  }
+
+  const mirror = $('#inspector').querySelector?.('#mirror');
+  if (mirror) {
+    mirror.onclick = () => {
+      const def = state.surface.regions.find((r) => r.id === id);
+      // Recorded against BOTH ids. The switch is reached from whichever half
+      // happens to be selected, and a link that was broken from the left but
+      // still looked joined from the right would be worse than no switch.
+      if (state.unlinked.has(id)) { state.unlinked.delete(id); state.unlinked.delete(def?.mirror); }
+      else { state.unlinked.add(id); if (def?.mirror) state.unlinked.add(def.mirror); }
+      drawInspector();
+      status(state.unlinked.has(id) ? 'sides edit independently' : 'sides move together');
+    };
+  }
+}
+
+/**
+ * The other half of this region's pair, when the two are still linked.
+ *
+ * An array rather than a value, so callers loop instead of branching — every
+ * one of them does the same thing to the partner as to the region itself, and a
+ * null check at four call sites is four chances to forget one.
+ */
+function linkedTo(id) {
+  const def = state.surface.regions.find((r) => r.id === id);
+  if (!def?.mirror) return [];
+  if (state.unlinked.has(id) || state.unlinked.has(def.mirror)) return [];
+  return state.surface.regions.some((r) => r.id === def.mirror) ? [def.mirror] : [];
 }
 
 // --- the car ----------------------------------------------------------------
@@ -835,4 +990,10 @@ function esc(s) {
 // --- boot, last -------------------------------------------------------------
 //
 // After every declaration, so no helper can be reached before it exists.
+//
+// It opens on the CAR. That is where the work happens now — you can select,
+// move, resize and rotate there, and it is the only view that answers whether a
+// placement is any good. showView falls back to the UV sheet on its own if
+// there is no model or no WebGL, so this is a preference rather than a demand.
 await selectSurface(0);
+await showView('3d');

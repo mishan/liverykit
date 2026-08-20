@@ -136,10 +136,21 @@ test('app.js declares its helpers before the boot await reaches them', async () 
   // statement, so no future edit can reintroduce the ordering problem without
   // moving it.
   const src = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
-  const boot = src.lastIndexOf('await selectSurface(');
+  const boot = src.indexOf('await selectSurface(');
   assert.ok(boot > 0, 'the module still boots by selecting a surface');
-  const after = src.slice(boot).split('\n').filter((l) => l.trim() && !l.trim().startsWith('//'));
-  assert.equal(after.length, 1, `nothing may follow the boot await, found: ${after.slice(1)}`);
+
+  // The boot is more than one statement now — it opens the car view too — so
+  // the rule is not "one line" but "nothing DECLARED after the boot begins".
+  // That is what the original bug was: a `const` below a top-level await that
+  // reached it. Top-level awaits after this point are the boot itself.
+  const after = src.slice(boot).split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('//'));
+  const declarations = after.filter((l) => /^(function|const|let|var|class)\b/.test(l));
+  assert.deepEqual(declarations, [],
+    `nothing may be declared after the boot await: ${declarations.join(' | ')}`);
+  assert.ok(after.every((l) => /^await |^\}?\)?;?$/.test(l) || l.startsWith('await')),
+    `only boot statements may follow: ${after.join(' | ')}`);
 });
 
 test('clicking a region selects it and gives it something to drag', async () => {
@@ -760,5 +771,209 @@ test('every shader uniform is located and every location is set', async () => {
     const close = (text.match(/\}/g) ?? []).length;
     assert.equal(open, close, `${which} has ${open} { and ${close} }`);
     assert.match(text, /void main\(\)/, `${which} needs a main`);
+  }
+});
+
+test('a region id that names a side finds its opposite number', async () => {
+  const { partnerId } = await import('../src/ui/server.mjs');
+  assert.equal(partnerId('driver-left'), 'driver-right');
+  assert.equal(partnerId('driver_right'), 'driver_left');
+  assert.equal(partnerId('numberLeft'), 'numberRight');
+  assert.equal(partnerId('TEAM-RIGHT'), 'TEAM-LEFT');
+  assert.equal(partnerId('left'), 'right');
+
+  // Words that merely contain the letters are not sides. Without the boundary
+  // checks `alright` would pair with `alleft`, which exists nowhere, and the
+  // link would silently do nothing while claiming to be on.
+  for (const no of ['flew', 'alright', 'rightful', 'leftover', 'brightest']) {
+    assert.equal(partnerId(no), null, no);
+  }
+  assert.equal(partnerId(undefined), null);
+  assert.equal(partnerId(42), null);
+});
+
+test('mirror pairs need both halves and mirrored panels', async () => {
+  const { mirrorPairs } = await import('../src/ui/server.mjs');
+  const profile = {
+    panels: {
+      body: {
+        left_mid: { rect: [0, 0, 0.4, 0.4], mirrorOf: 'right_mid' },
+        right_mid: { rect: [0.5, 0, 0.4, 0.4], mirrorOf: 'left_mid' },
+        roof: { rect: [0, 0.5, 0.4, 0.4] },
+      },
+    },
+  };
+  const pairs = (regions) => mirrorPairs({ surfaces: { body: { regions } } }, profile, 'body');
+
+  assert.deepEqual([...pairs([
+    { id: 'number-left', panel: 'left_mid' },
+    { id: 'number-right', panel: 'right_mid' },
+  ])], [['number-left', 'number-right'], ['number-right', 'number-left']]);
+
+  // One half missing: nothing to link to.
+  assert.equal(pairs([{ id: 'number-left', panel: 'left_mid' }]).size, 0);
+
+  // Named sides on panels that are NOT each other's mirror. A livery is free to
+  // do this and it is not a mistake, but linking them would move artwork from a
+  // door onto a roof and call it symmetry.
+  assert.equal(pairs([
+    { id: 'badge-left', panel: 'left_mid' },
+    { id: 'badge-right', panel: 'roof' },
+  ]).size, 0);
+
+  // Tag-selected regions declare no panel, so there is nothing to contradict
+  // and the design's own naming is taken at its word.
+  assert.equal(pairs([
+    { id: 'stripe-left', tags: ['left'] },
+    { id: 'stripe-right', tags: ['right'] },
+  ]).size, 2);
+});
+
+test('the shipped example livery pairs all three of its sided regions', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const state = editorState({ livery, profile, fit: null });
+  const surface = state.surfaces[0];
+
+  const linked = surface.regions.filter((r) => r.mirror).map((r) => `${r.id}->${r.mirror}`);
+  assert.deepEqual(linked.sort(), [
+    'driver-left->driver-right', 'driver-right->driver-left',
+    'number-left->number-right', 'number-right->number-left',
+    'team-left->team-right', 'team-right->team-left',
+  ]);
+});
+
+test('rotating one half of a pair rotates the other', async () => {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const { dom } = await runApp({
+    state: editorState({ livery, profile, fit }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+
+  // The inspector's rotation buttons are found through the container, the same
+  // way a pointer would find them.
+  const inspector = dom.querySelector('#inspector');
+  const buttons = new Map();
+  inspector.querySelectorAll = (sel) => (sel === '[data-rotate]' ? [...buttons.values()] : []);
+  for (const v of ['auto', '0', '90', '180', '270']) {
+    buttons.set(v, { dataset: { rotate: v }, onclick: null });
+  }
+  inspector.querySelector = () => null;              // no mirror button in this stub
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+
+  await buttons.get('90').onclick();
+  const fitAfter = JSON.parse(dom.querySelector('#fitjson').textContent).regions;
+  assert.equal(fitAfter['number-left'].rotate, 90);
+  assert.equal(fitAfter['number-right'].rotate, 90,
+    'the opposite number should have turned with it');
+
+  // `auto` is the absence of an opinion, so it REMOVES the override rather than
+  // storing a fifth angle — otherwise the design could never take the wheel
+  // back on a car whose panel is laid out differently.
+  await buttons.get('auto').onclick();
+  const back = JSON.parse(dom.querySelector('#fitjson').textContent).regions;
+  assert.equal(back['number-left'].rotate, undefined);
+  assert.equal(back['number-right'].rotate, undefined);
+});
+
+test('a mirrored placement is measured, not assumed', async () => {
+  const { mirrorFlips, mirrorAt, mirrorRotation } = await import('../src/fit.mjs');
+
+  // The RSS4's two flanks, as measured from the model. Their u axes run in
+  // opposite directions once one is reflected through the centreline, which is
+  // why copying `at` across moved the number forward on one side and backward
+  // on the other.
+  const left = { uAxis: [-0.203, -0.052, -0.978], vAxis: [0.02, -0.999, 0.03] };
+  const right = { uAxis: [-0.201, 0.051, 0.978], vAxis: [-0.02, -0.999, 0.03] };
+  const flips = mirrorFlips(left, right);
+  assert.equal(flips.u, true, 'the flanks run opposite ways along the car');
+  assert.equal(flips.v, false, 'but agree about which way is up');
+
+  // Forward on one side has to be forward on the other.
+  assert.deepEqual(mirrorAt([0.1, 0.2, 0.3, 0.4], flips), [0.6, 0.2, 0.3, 0.4]);
+  // Mirroring twice is the identity, which is the cheapest check that this is
+  // a reflection and not a slide.
+  assert.deepEqual(mirrorAt(mirrorAt([0.1, 0.2, 0.3, 0.4], flips), flips), [0.1, 0.2, 0.3, 0.4]);
+
+  // Panels laid out the same way need no flip at all.
+  const same = mirrorFlips(left, { uAxis: [0.203, -0.052, -0.978], vAxis: left.vAxis });
+  assert.deepEqual(same, { u: false, v: false });
+  assert.deepEqual(mirrorAt([0.1, 0.2, 0.3, 0.4], same), [0.1, 0.2, 0.3, 0.4]);
+
+  // Only V affects which way the artwork reads: reversing u moves it to the
+  // other end of the panel without turning it over.
+  assert.equal(mirrorRotation(90, { u: true, v: false }), 90);
+  assert.equal(mirrorRotation(90, { u: false, v: true }), 270);
+  assert.equal(mirrorRotation(0, { u: false, v: true }), 180);
+  // `auto` is not an angle. It defers to each panel's own measured rotation,
+  // which already accounts for every bit of this.
+  assert.equal(mirrorRotation('auto', { u: true, v: true }), 'auto');
+  assert.equal(mirrorRotation(undefined, { u: true, v: true }), undefined);
+
+  // A profile from before the axes were recorded reports no flip rather than
+  // guessing — the old behaviour, degrading quietly.
+  assert.deepEqual(mirrorFlips({}, {}), { u: false, v: false });
+  assert.deepEqual(mirrorFlips({ uAxis: [1, 0, 0] }, {}), { u: false, v: false });
+});
+
+test('the shipped profiles record which way their panels run', async () => {
+  // Without these the mirror silently falls back to copying, which is the bug
+  // that started this. A profile that has lost them looks completely fine.
+  for (const car of ['rss_formula_rss_4', 'abarth500']) {
+    const p = JSON.parse(await readFile(new URL(`../cars/${car}.json`, import.meta.url), 'utf8'));
+    const measured = Object.values(p.panels).flatMap((ps) => Object.values(ps))
+      .filter((x) => x.confidence === 'measured');
+    const withAxes = measured.filter((x) => Array.isArray(x.uAxis) && Array.isArray(x.vAxis));
+    assert.ok(withAxes.length / measured.length > 0.95,
+      `${car}: only ${withAxes.length} of ${measured.length} measured panels record their axes`);
+  }
+});
+
+test('both copies of the mirror arithmetic agree', async () => {
+  // app.js cannot import fit.mjs — that module reads files, so it opens with
+  // `node:fs/promises` and the import would fail in a browser. The functions
+  // are duplicated, and a divergence would be invisible: the editor would place
+  // artwork one way, a rebuild from the CLI another, and the fit would look
+  // perfectly reasonable in both.
+  const fit = await import('../src/fit.mjs');
+  const { dom } = await runApp({
+    state: editorState({
+      livery: (await import('../liveries/neon-grid-any.mjs')).default,
+      profile: await loadProfile(new URL('../cars/abarth500.json', import.meta.url)),
+      fit: null,
+    }),
+    render: renderSurface({
+      livery: (await import('../liveries/neon-grid-any.mjs')).default,
+      profile: await loadProfile(new URL('../cars/abarth500.json', import.meta.url)),
+      fit: null,
+      role: binding(await loadProfile(new URL('../cars/abarth500.json', import.meta.url)), 'body').roles[0],
+    }),
+  });
+  assert.ok(dom, 'the app module loaded');
+  const app = await import(`../src/ui/app.js?agree=${Math.random()}`);
+
+  const panels = [
+    { uAxis: [-0.2, 0, -0.98], vAxis: [0, -1, 0] },
+    { uAxis: [-0.2, 0, 0.98], vAxis: [0, -1, 0] },
+    { uAxis: [1, 0, 0], vAxis: [0, 1, 0] },
+    {},
+  ];
+  for (const a of panels) {
+    for (const b of panels) {
+      assert.deepEqual(app.mirrorFlips(a, b), fit.mirrorFlips(a, b), JSON.stringify([a, b]));
+      const flips = fit.mirrorFlips(a, b);
+      for (const at of [[0.1, 0.2, 0.3, 0.4], [0, 0, 1, 1], [0.45, 0.45, 0.1, 0.1]]) {
+        assert.deepEqual(app.mirrorAt(at, flips), fit.mirrorAt(at, flips), `${at} ${JSON.stringify(flips)}`);
+      }
+      for (const r of ['auto', 0, 90, 180, 270, undefined]) {
+        assert.deepEqual(app.mirrorRotation(r, flips), fit.mirrorRotation(r, flips), `${r}`);
+      }
+    }
   }
 });
