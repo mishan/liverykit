@@ -425,6 +425,10 @@ function startCarDrag(e, mode, startUv) {
   if (!sel) return;
   const start = { uv: startUv, abs: [...sel.abs] };
   let last = startUv;
+  // Said at the moment of grabbing rather than on the first move, so a press
+  // that catches the resize corner tells you so before you have committed to
+  // dragging it somewhere.
+  status(`${mode === 'move' ? 'moving' : 'resizing'} ${sel.id} on ${sel.panel ?? 'the texture'}`);
 
   const move = (ev) => {
     const uv = state.viewer?.pickUV(ev.clientX, ev.clientY) ?? last;
