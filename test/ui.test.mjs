@@ -437,3 +437,154 @@ test('an unpainted mesh still reaches the viewer, in its own group', async () =>
   assert.deepEqual(all.groups.map((x) => x.role), ['body'],
     'with the only texture painted there is nothing left over');
 });
+
+test('a ray finds the texel under it, not merely the triangle', async () => {
+  const { rayTriangle, cameraRay } = await import('../src/ui/view3d.js');
+
+  // A unit triangle in the z = 0 plane, seen from straight in front.
+  const a = [0, 0, 0], b = [1, 0, 0], c = [0, 1, 0];
+  const straightOn = rayTriangle([0.25, 0.25, 5], [0, 0, -1], a, b, c);
+  assert.ok(straightOn, 'a ray aimed at the middle should hit');
+  assert.equal(Number(straightOn.dist.toFixed(6)), 5);
+  // Barycentrics: u weights the second corner, v the third, and 1-u-v the first.
+  assert.equal(Number(straightOn.u.toFixed(6)), 0.25);
+  assert.equal(Number(straightOn.v.toFixed(6)), 0.25);
+
+  assert.equal(rayTriangle([2, 2, 5], [0, 0, -1], a, b, c), null, 'a miss is a miss');
+  assert.equal(rayTriangle([0.25, 0.25, -5], [0, 0, -1], a, b, c), null,
+    'geometry behind the eye must not be pickable — it is not on screen');
+  // Winding is not culled: car meshes are not reliably wound one way, and a
+  // triangle you can plainly see should be pickable from the side you see it.
+  assert.ok(rayTriangle([0.25, 0.25, -5], [0, 0, 1], a, b, c), 'hit from behind');
+});
+
+test('the camera ray points where the pixel is', async () => {
+  const { cameraRay } = await import('../src/ui/view3d.js');
+  const eye = [0, 0, 5], target = [0, 0, 0], up = [0, 1, 0];
+
+  const centre = cameraRay(eye, target, up, 0.8, 1, 0, 0);
+  assert.deepEqual(centre.dir.map((n) => Number(n.toFixed(6))), [0, 0, -1],
+    'the middle of the canvas looks straight at the target');
+  assert.deepEqual(centre.orig, eye);
+
+  // Up on screen is up in the world; right on screen is +x when looking down -z.
+  assert.ok(cameraRay(eye, target, up, 0.8, 1, 0, 0.9).dir[1] > 0, 'up is up');
+  assert.ok(cameraRay(eye, target, up, 0.8, 1, 0.9, 0).dir[0] > 0, 'right is right');
+
+  // Aspect stretches horizontally only — a wide canvas must not also widen the
+  // vertical field, which would make the picked point drift from the cursor.
+  const wide = cameraRay(eye, target, up, 0.8, 2, 0.5, 0.5);
+  const square = cameraRay(eye, target, up, 0.8, 1, 0.5, 0.5);
+  assert.ok(Math.abs(wide.dir[0]) > Math.abs(square.dir[0]));
+  assert.equal(Number((wide.dir[1] / wide.dir[2]).toFixed(6)),
+    Number((square.dir[1] / square.dir[2]).toFixed(6)));
+});
+
+test('picking a face of the fixture car returns that face’s UV', async () => {
+  // The end-to-end claim: a ray cast at a known face comes back with the texture
+  // coordinate that face was unwrapped to. This is the arithmetic behind
+  // dragging a region on the car, and it is checkable without a GPU.
+  const { rayTriangle, cameraRay } = await import('../src/ui/view3d.js');
+  const { modelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const g = modelGeometry(parseKn5Buffer(carKn5()), CAR.texture);
+  // Looking at the car's left flank (+x) from outside it.
+  const eye = [6, CAR.height / 2, 0];
+  const { orig, dir } = cameraRay(eye, [0, CAR.height / 2, 0], [0, 1, 0], 0.8, 1, 0, 0);
+
+  let best = null;
+  const at = (i) => [g.positions[i * 3], g.positions[i * 3 + 1], g.positions[i * 3 + 2]];
+  for (let i = 0; i < g.indices.length; i += 3) {
+    const [ia, ib, ic] = [g.indices[i], g.indices[i + 1], g.indices[i + 2]];
+    const hit = rayTriangle(orig, dir, at(ia), at(ib), at(ic));
+    if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic };
+  }
+  assert.ok(best, 'the ray should meet the car');
+
+  const w = 1 - best.u - best.v;
+  const uv = (k) => g.uvs[best.ia * 2 + k] * w + g.uvs[best.ib * 2 + k] * best.u
+    + g.uvs[best.ic * 2 + k] * best.v;
+  const [rx, ry, rw, rh] = CAR.faces.left;
+  assert.ok(uv(0) >= rx && uv(0) <= rx + rw && uv(1) >= ry && uv(1) <= ry + rh,
+    `hit landed at ${uv(0).toFixed(3)},${uv(1).toFixed(3)}, outside the left flank ${CAR.faces.left}`);
+  // Dead centre of the flank, so dead centre of its island.
+  assert.equal(Number(uv(0).toFixed(3)), Number((rx + rw / 2).toFixed(3)));
+  assert.equal(Number(uv(1).toFixed(3)), Number((ry + rh / 2).toFixed(3)));
+});
+
+test('a pointer on the car decides between orbit, select, move and resize', async () => {
+  // The GL-dependent browser test can only run where a GL driver exists, and a
+  // headless box often has none. This is the same decision logic with the pick
+  // handed in directly: what a pointer does is a function of where it landed and
+  // what is selected, and none of that needs a GPU.
+  //
+  // The rectangles are set here rather than taken from the livery, because the
+  // example paints its whole sheet and leaves no bare texture to aim at — the
+  // "miss" case would be untestable against it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const ids = state.surfaces[0].regions.map((r) => r.id);
+  const big = ids[0], small = ids[1];
+  const panel = state.surfaces[0].panels[0].name;
+  // Built from a real placement so every field the inspector reads is present;
+  // only the rectangles are chosen.
+  const like = (id, abs) => ({ ...render.placed[0], id, panel, abs });
+  render.placed = [like(big, [0.1, 0.1, 0.4, 0.4]), like(small, [0.2, 0.2, 0.04, 0.04])];
+
+  const { dom, mod } = await runApp({ state, render });
+  const ev = { preventDefault() {} };
+  // innerHTML, not textContent: the fake DOM stores what was written and does
+  // not derive one from the other, and drawInspector writes innerHTML.
+  const selected = () => dom.querySelector('#inspector').innerHTML;
+
+  // Empty space belongs to the camera. Refusing to orbit because the ray missed
+  // every region would make the model feel stuck.
+  assert.equal(mod.claimCarPointer({ u: 0.9, v: 0.9 }, ev), false, 'a miss orbits');
+  assert.equal(mod.claimCarPointer(null, ev), false, 'no hit at all orbits');
+
+  // A press inside a region selects it AND claims the gesture, so the car does
+  // not swing round underneath the selection just made.
+  assert.equal(mod.claimCarPointer({ u: 0.4, v: 0.4 }, ev), true);
+  assert.match(selected(), new RegExp(big), 'the region under the cursor is selected');
+
+  // The smallest match wins. A background fill covering the panel sits under
+  // everything else; if the largest won, it would swallow every click meant for
+  // the number painted on top of it and the number would be unselectable.
+  assert.equal(mod.claimCarPointer({ u: 0.21, v: 0.21 }, ev), true);
+  assert.match(selected(), new RegExp(small),
+    'the small region on top must win, not the fill underneath it');
+});
+
+test('a whole-car view that cannot open falls back to something usable', async () => {
+  // Opening it needs WebGL and a model, and this harness has neither — which is
+  // exactly the situation of anyone whose machine has no GL driver. What matters
+  // is that the editor lands back on the UV view still working, rather than on a
+  // dead stage. That was this editor's most persistent failure.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit: null });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const id = state.surfaces[0].regions[0].id;
+  const panel = state.surfaces[0].panels[0].name;
+  render.placed = [{ ...render.placed[0], id, panel, abs: [0.1, 0.1, 0.4, 0.4] }];
+
+  const { dom, mod } = await runApp({ state, render });
+  dom.querySelector('#tab-all').onclick?.();
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert.equal(dom.querySelector('#tab-uv').className, 'tab on', 'back on the UV tab');
+  assert.equal(dom.querySelector('#tab-all').className, 'tab', 'and not still on Whole car');
+  assert.equal(dom.querySelector('#texture').hidden, false, 'the sheet is visible again');
+  assert.equal(dom.querySelector('#overlay').hidden, false, 'and the overlay is reachable');
+  // And the editor still responds: the pointer logic did not get wedged in a
+  // view that failed to open.
+  assert.equal(mod.claimCarPointer({ u: 0.3, v: 0.3 }, { preventDefault() {} }), true);
+});

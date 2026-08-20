@@ -115,6 +115,54 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 function norm(v) { const l = Math.hypot(...v) || 1; return [v[0] / l, v[1] / l, v[2] / l]; }
 
+/**
+ * Where a ray meets a triangle, and where that is in texture space.
+ *
+ * Möller–Trumbore, returning the barycentric coordinates as well as the
+ * distance, because the barycentrics are the whole point: they interpolate the
+ * triangle's UVs to the exact texel under the cursor. A hit position in 3D would
+ * only have to be converted back into one.
+ *
+ * Culling is deliberately off. Car meshes are not reliably wound one way — the
+ * renderer already draws both faces for that reason — and a back-facing triangle
+ * you can plainly see should be pickable.
+ */
+export function rayTriangle(orig, dir, a, b, c) {
+  const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const p = cross(dir, e2);
+  const det = dot(e1, p);
+  if (Math.abs(det) < 1e-12) return null;         // parallel
+  const inv = 1 / det;
+  const t = [orig[0] - a[0], orig[1] - a[1], orig[2] - a[2]];
+  const u = dot(t, p) * inv;
+  if (u < 0 || u > 1) return null;
+  const q = cross(t, e1);
+  const v = dot(dir, q) * inv;
+  if (v < 0 || u + v > 1) return null;
+  const dist = dot(e2, q) * inv;
+  if (dist <= 0) return null;                      // behind the eye
+  return { dist, u, v };
+}
+
+/**
+ * The world-space ray through a point on the canvas.
+ *
+ * Built from the camera basis rather than by inverting the view-projection
+ * matrix. Both work; this one has no matrix inverse to get wrong, and the last
+ * time this file composed matrices by hand the result was a camera inside the
+ * car. Exported so it can be checked without a GPU.
+ */
+export function cameraRay(eye, target, up, fovy, aspect, ndcX, ndcY) {
+  const fwd = norm(sub(target, eye));
+  const right = norm(cross(fwd, up));
+  const trueUp = cross(right, fwd);
+  const h = Math.tan(fovy / 2);
+  const dir = [0, 1, 2].map((k) =>
+    fwd[k] + right[k] * ndcX * h * aspect + trueUp[k] * ndcY * h);
+  return { orig: eye.slice(), dir: norm(dir) };
+}
+
 /** Unpack the whole-car blob: a JSON header of known length, then the arrays. */
 export function unpackModel(buffer) {
   const head = new DataView(buffer);
@@ -204,6 +252,10 @@ export function createViewer(canvas) {
   // `null` in a group means unpainted, and gets the grey.
   const byRole = new Map();
   let groups = null;
+  // Kept on the CPU as well as uploaded, because picking needs to intersect it.
+  // A body is a megabyte of floats; holding it is cheaper than a round trip to
+  // the server on every pointer event.
+  let mesh = null;
 
   gl.enable(gl.DEPTH_TEST);
   // Both faces. Car meshes are not reliably wound one way, and a missing
@@ -229,16 +281,21 @@ export function createViewer(canvas) {
     gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
+  /** Where the camera is, given the orbit angles. Used to draw and to pick. */
+  function eyePosition() {
+    return [
+      cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw),
+      cam.target[1] + cam.dist * Math.sin(cam.pitch),
+      cam.target[2] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw),
+    ];
+  }
+
   function draw() {
     resize();
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     if (!count) return;
 
-    const eye = [
-      cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw),
-      cam.target[1] + cam.dist * Math.sin(cam.pitch),
-      cam.target[2] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw),
-    ];
+    const eye = eyePosition();
     const mvp = mul(
       perspective(0.8, canvas.width / canvas.height, 0.05, 100),
       lookAt(eye, cam.target, [0, 1, 0]),
@@ -297,6 +354,7 @@ export function createViewer(canvas) {
     /** Upload geometry, and frame the camera on whatever it just received. */
     setGeometry({ positions, uvs, indices }) {
       groups = null;
+      mesh = { positions, uvs, indices };
       gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
       gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc.position);
@@ -385,10 +443,56 @@ export function createViewer(canvas) {
       draw();
     },
 
-    /** Drag to orbit, wheel to zoom. */
-    attach() {
+    /**
+     * What texel is under this point on the canvas.
+     *
+     * Brute force over every triangle, nearest hit wins. A body is around forty
+     * thousand triangles and this comes in near a millisecond, which is far
+     * inside a frame — an acceleration structure would be code to get wrong in
+     * exchange for time nobody is short of. It would matter if this ran per
+     * pixel; it runs per pointer event.
+     *
+     * Returns texture-space UV, the same coordinates a panel rectangle is in, so
+     * the caller never has to know a ray was involved.
+     */
+    pickUV(clientX, clientY) {
+      if (!mesh) return null;
+      const r = canvas.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      const ndcX = ((clientX - r.left) / r.width) * 2 - 1;
+      const ndcY = 1 - ((clientY - r.top) / r.height) * 2;
+      const { orig, dir } = cameraRay(
+        eyePosition(), cam.target, [0, 1, 0], 0.8, r.width / r.height, ndcX, ndcY);
+
+      const { positions, uvs, indices } = mesh;
+      let best = null;
+      const at = (i) => [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
+      for (let i = 0; i < indices.length; i += 3) {
+        const [ia, ib, ic] = [indices[i], indices[i + 1], indices[i + 2]];
+        const hit = rayTriangle(orig, dir, at(ia), at(ib), at(ic));
+        if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic };
+      }
+      if (!best) return null;
+
+      // Barycentric interpolation of the corners' UVs: w for the first vertex,
+      // u for the second, v for the third, in Möller–Trumbore's naming.
+      const w = 1 - best.u - best.v;
+      const uv = (k) => uvs[best.ia * 2 + k] * w + uvs[best.ib * 2 + k] * best.u
+        + uvs[best.ic * 2 + k] * best.v;
+      return { u: uv(0), v: uv(1), dist: best.dist };
+    },
+
+    /**
+     * Drag to orbit, wheel to zoom — unless `claim` takes the gesture first.
+     *
+     * The camera cannot simply own every pointerdown once regions are draggable
+     * on the car, and the decision needs the pick, which only the viewer can do.
+     * So the viewer offers the hit to `claim` and orbits only if it declines.
+     */
+    attach({ claim = null } = {}) {
       let dragging = null;
       canvas.onpointerdown = (e) => {
+        if (claim && claim(this.pickUV(e.clientX, e.clientY), e)) return;
         dragging = { x: e.clientX, y: e.clientY, yaw: cam.yaw, pitch: cam.pitch };
         canvas.setPointerCapture(e.pointerId);
       };
