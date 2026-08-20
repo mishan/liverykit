@@ -13,6 +13,7 @@ import { makeProbes, gridShape } from '../src/engine/uvgrid.mjs';
 import { makeZip } from '../src/engine/zip.mjs';
 import { definePack, registerPack, unregisterPack, resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
+import { buildKn5 } from './fixtures/kn5.mjs';
 import '../src/index.mjs';
 
 const profile = {
@@ -211,65 +212,6 @@ test('mip chain length is an integer the encoder can actually honour', () => {
 // verified byte-exact against a real 50 MB car. A synthetic file is used
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
-
-function buildKn5({ version = 6, extraMeshes = [], placeholderTexture = false, encrypted = false } = {}) {
-  const parts = [];
-  const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
-  const f32 = (n) => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
-  const str = (s) => Buffer.concat([u32(Buffer.byteLength(s)), Buffer.from(s, 'utf8')]);
-
-  parts.push(Buffer.from('sc6969', 'ascii'), u32(version));
-  if (version > 5) parts.push(u32(0));
-
-  // textures: one null slot (type 0, no further fields) then one real DDS
-  const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
-  // An encrypted model substitutes a 1x1 image for every texture; the real one
-  // lives in the protected blob appended after the node tree.
-  dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
-  dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
-  parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
-
-  // one material binding that texture as a diffuse
-  parts.push(u32(1), str('BodyMat'), str('ksPerPixel'), Buffer.from([0, 0]), u32(0),
-    u32(0), u32(1), str('txDiffuse'), u32(0), str('body.dds'));
-
-  // root dummy -> one mesh child
-  const ident = Buffer.concat([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1].map(f32));
-  parts.push(u32(1), str('root'), u32(1 + extraMeshes.length), Buffer.from([1]), ident);
-
-  const verts = [
-    [0, 0, 0,  0, 1, 0,  0.25, -0.75,  0, 0, 0],
-    [1, 0, 0,  0, 1, 0,  0.75, -0.75,  0, 0, 0],
-    [0, 0, 1,  0, 1, 0,  0.25, -0.25,  0, 0, 0],
-  ];
-  parts.push(u32(2), str('body_mesh'), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
-    u32(verts.length), ...verts.map((v) => Buffer.concat(v.map(f32))),
-    u32(3), Buffer.from([0, 0, 1, 0, 2, 0]),
-    u32(0),                    // materialId — first of the 33-byte trailer
-    Buffer.alloc(29));         // layer, lodIn, lodOut, bounding sphere, isRenderable
-
-  // Extra meshes, for tests that need geometry the analysis will look for by
-  // name (a steering wheel) or trip over (an occluder).
-  for (const em of extraMeshes) {
-    // Indices matter: the occupancy grid is built by SAMPLING TRIANGLES, so a
-    // mesh with no index buffer occupies nothing and cannot occlude.
-    const idx = em.indices ?? [];
-    const idxBuf = Buffer.alloc(idx.length * 2);
-    idx.forEach((v, i) => idxBuf.writeUInt16LE(v, i * 2));
-    parts.push(u32(2), str(em.name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
-      u32(em.verts.length), ...em.verts.map((v) => Buffer.concat(v.map(f32))),
-      u32(idx.length), idxBuf, u32(0), Buffer.alloc(29));
-  }
-
-  // Custom Shaders Patch appends the protected payload after the node tree and
-  // ends the file with a length-prefixed marker.
-  if (encrypted) {
-    const marker = '__AC_SHADERS_PATCH_KN5ENC_v1__';
-    parts.push(Buffer.alloc(4096, 0xab), u32(marker.length), Buffer.from(marker, 'ascii'),
-      Buffer.from([0x44, 0x0a, 0x01]), u32(1));
-  }
-  return Buffer.concat(parts);
-}
 
 test('kn5: parses a well-formed file to the exact final byte', async () => {
   const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');

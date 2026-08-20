@@ -208,26 +208,40 @@ test('the car geometry survives the trip to the browser', async () => {
   // because a mismatch between them is silent: the mesh still draws, just wrong.
   const { modelGeometry, packGeometry } = await import('../src/ui/server.mjs');
   const { unpack } = await import('../src/ui/view3d.js');
-  const { parseKn5 } = await import('../src/engine/kn5.mjs');
+  //
+  // Built from a fixture rather than a real car. This used to read a kn5 out of
+  // content/, which passed on the machine it was written on and failed in CI —
+  // that file is somebody else's artwork and is not in the repository, and never
+  // can be. The fixture also lets the assertions be exact: against a real car
+  // this said "width between 1.5 and 2.2 m", which tests a Fiat more than it
+  // tests the transform stack.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
-  const model = await parseKn5('content/cars/abarth500/abarth500.kn5', { keepTextureData: false });
-  const g = modelGeometry(model, 'SkinBase_DEFAULT.dds');
+  const model = parseKn5Buffer(carKn5());
+  const g = modelGeometry(model, CAR.texture);
 
-  assert.ok(g.positions.length / 3 > 10000, 'a car body is not a handful of vertices');
-  assert.equal(g.indices.length % 3, 0, 'triangles');
+  // Counted from the fixture's own constants, so subdividing it more finely
+  // later cannot leave this test asserting a stale number.
+  const perFace = (CAR.grid + 1) ** 2;
+  assert.equal(g.positions.length / 3, perFace * CAR.faceCount,
+    'every face keeps its own corners — welding them would merge the UV islands');
+  assert.equal(g.indices.length, CAR.grid ** 2 * 6 * CAR.faceCount, 'two triangles a quad');
   assert.ok(Math.max(...g.indices) < g.positions.length / 3, 'no index past the end');
 
-  // Real car dimensions, which is the cheapest check that the transforms were
-  // applied: a Fiat 500 is about 1.9 m wide and 3.7 m long.
-  const width = g.bounds.hi[0] - g.bounds.lo[0];
-  const length = g.bounds.hi[2] - g.bounds.lo[2];
-  assert.ok(width > 1.5 && width < 2.2, `width ${width.toFixed(2)} m`);
-  assert.ok(length > 3.0 && length < 4.2, `length ${length.toFixed(2)} m`);
+  const size = [0, 1, 2].map((k) => Number((g.bounds.hi[k] - g.bounds.lo[k]).toFixed(3)));
+  assert.deepEqual(size, [CAR.width, CAR.height, CAR.length],
+    'the node transforms were applied, and applied exactly once');
+
+  // UVs arrive in TEXTURE space, already flipped out of AC's negative-V
+  // convention. Getting this wrong puts the artwork on the car upside down,
+  // which reads as a bad unwrap rather than as a bug in this function.
+  assert.ok(Math.min(...g.uvs) >= 0 && Math.max(...g.uvs) <= 1,
+    `uvs outside 0..1: ${Math.min(...g.uvs)}..${Math.max(...g.uvs)}`);
 
   const back = unpack(new Uint8Array(packGeometry(g)).buffer);
-  assert.deepEqual([...back.positions.slice(0, 9)], [...g.positions.slice(0, 9)]);
-  assert.deepEqual([...back.uvs.slice(0, 6)], [...g.uvs.slice(0, 6)]);
-  assert.deepEqual([...back.indices.slice(0, 12)], [...g.indices.slice(0, 12)]);
-  assert.equal(back.positions.length, g.positions.length);
-  assert.equal(back.indices.length, g.indices.length);
+  assert.deepEqual([...back.positions], [...g.positions]);
+  assert.deepEqual([...back.uvs], [...g.uvs]);
+  assert.deepEqual([...back.indices], [...g.indices]);
 });
+
