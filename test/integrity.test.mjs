@@ -1447,8 +1447,13 @@ test('the editor reports where regions actually landed, not where it thinks they
   const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit });
+  const state = editorState({ livery, profile, fit, liveryId: 'neon-grid-any' });
   assert.ok(state.surfaces.length > 3, 'editable surfaces');
+  // The name a FIT knows this design by is the module basename, not the skin
+  // folder the game installs. The browser writes it into any fit it creates, so
+  // the two must not be confused.
+  assert.equal(state.livery.id, 'neon-grid-any');
+  assert.equal(state.livery.folder, 'neon_grid_any');
   assert.ok(state.surfaces.every((s) => s.panels.length >= 0 && s.file));
   assert.ok(Object.keys(state.regionIds).includes('number-left'));
 
@@ -1557,16 +1562,76 @@ test('the editor refuses to start on a fit it cannot honour', async () => {
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const dir = await mkdtemp(join(tmpdir(), 'lk-ui-'));
 
+  const ui = (fitPath, port) =>
+    startUi({ livery, profile, fitPath, liveryId: 'neon-grid-any', port, log: () => {} });
+
   const bad = join(dir, 'bad.json');
   await writeFile(bad, JSON.stringify({ car: 'abarth500', regions: {} }));   // no "livery"
-  await assert.rejects(() => startUi({ livery, profile, fitPath: bad, port: 7395, log: () => {} }),
-    /Could not load .*missing "livery"/s);
+  await assert.rejects(() => ui(bad, 7395), /Could not load .*missing "livery"/s);
 
   // A fit that simply is not there must still start.
-  const { server } = await startUi({
-    livery, profile, fitPath: join(dir, 'absent.json'), port: 7396, log: () => {},
-  });
+  const { server } = await ui(join(dir, 'absent.json'), 7396);
   server.close();
+});
+
+test('the editor refuses a fit that is for some other design or car', async () => {
+  // `--fit` takes any path and the conventional one outlives the profile it was
+  // written for, so a file being open is no evidence it belongs here. Unchecked,
+  // the editor resolves one design's ids against another car's panels and then
+  // overwrites the original on Save — silently, because each step is valid.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp, writeFile, readFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-ui-'));
+
+  for (const [name, fit, expected] of [
+    ['othercar.json', { livery: 'neon-grid-any', car: 'rss_formula_rss_4' }, /"car" is "rss_formula_rss_4"/],
+    ['otherdesign.json', { livery: 'something-else', car: 'abarth500' }, /"livery" is "something-else"/],
+  ]) {
+    const path = join(dir, name);
+    await writeFile(path, JSON.stringify({ ...fit, regions: {} }));
+    await assert.rejects(
+      () => startUi({ livery, profile, fitPath: path, liveryId: 'neon-grid-any', port: 7398, log: () => {} }),
+      expected, name);
+  }
+
+  // And Save is a whole-file overwrite, so the same check has to hold there: a
+  // client that has drifted must not be able to replace this pair's fit with
+  // another pair's.
+  const path = join(dir, 'mine.json');
+  await writeFile(path, JSON.stringify({ livery: 'neon-grid-any', car: 'abarth500', regions: {} }));
+  const { server, url } = await startUi({
+    livery, profile, fitPath: path, liveryId: 'neon-grid-any', port: 7399, log: () => {},
+  });
+  try {
+    const res = await fetch(`${url}api/fit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ livery: 'neon-grid-any', car: 'rss_formula_rss_4', regions: { x: { drop: true } } }),
+    });
+    assert.equal(res.status, 409, 'the server is fine; the submission is for something else');
+    assert.match((await res.json()).error, /"car" is "rss_formula_rss_4"/);
+    const onDisk = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(onDisk.car, 'abarth500', 'and the file on disk is untouched');
+    assert.deepEqual(onDisk.regions, {});
+  } finally {
+    server.close();
+  }
+});
+
+test('a fit knows a design by its module name, not its skin folder', async () => {
+  // fits/<livery>@<car>.json, and the file repeats the pair inside itself. Derive
+  // the two halves differently and the contents disagree with the filename.
+  const { fitLiveryId } = await import('../src/fit.mjs');
+  assert.equal(fitLiveryId('/a/b/liveries/neon-grid-any.mjs'), 'neon-grid-any');
+  assert.equal(fitLiveryId('neon-grid.mjs'), 'neon-grid');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  assert.notEqual(livery.folder, 'neon-grid-any', 'the skin folder is the underscored name, and is not this');
 });
 
 test('the editor caps how much it will read from a request', async () => {
@@ -1577,7 +1642,7 @@ test('the editor caps how much it will read from a request', async () => {
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const { server, url } = await startUi({
-    livery, profile, fitPath: '/nonexistent/fit.json', port: 7397, log: () => {},
+    livery, profile, fitPath: '/nonexistent/fit.json', liveryId: 'neon-grid-any', port: 7397, log: () => {},
   });
   try {
     const res = await fetch(`${url}api/fit`, {
