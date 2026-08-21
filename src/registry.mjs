@@ -27,12 +27,54 @@
 
 const packs = new Map();
 
-export function definePack(name, treatments) {
+/** Option kinds a schema may declare. Anything else is an error in the pack. */
+const OPTION_TYPES = new Set(['string', 'number', 'boolean', 'color', 'colors', 'enum', 'rects']);
+
+/**
+ * Describe what a treatment takes, so a tool can offer controls for it.
+ *
+ * Optional, and the build never reads it. A treatment is a function that reads
+ * whatever it likes off `ctx.opts`, and that stays true — this is metadata for
+ * anything trying to present the treatment to a person, which today is the
+ * fitting editor and tomorrow might be documentation. A pack that describes
+ * nothing works exactly as before; its treatments simply get a raw JSON field
+ * instead of controls.
+ *
+ * `hint` is the code's own default, WRITTEN OUT for a human to read. It is a
+ * string on purpose. If it held the real value it would be a second source of
+ * truth for defaults, free to drift from the `?? 0.42` in the function — and
+ * this project's whole disposition is that two copies of one fact drift
+ * silently. A tool shows it as placeholder text and writes nothing.
+ */
+export function definePack(name, treatments, describe = {}) {
   if (!name) throw new Error('definePack needs a name');
   for (const [key, fn] of Object.entries(treatments)) {
     if (typeof fn !== 'function') throw new Error(`Treatment "${name}.${key}" is not a function`);
   }
-  return { name, treatments };
+
+  for (const [key, spec] of Object.entries(describe)) {
+    // A description of something that does not exist is a typo, and a silent one
+    // — the treatment it was meant for would just show no controls.
+    if (!treatments[key]) {
+      throw new Error(
+        `Pack "${name}" describes a treatment "${key}" it does not define. ` +
+        `Defined: ${Object.keys(treatments).join(', ')}`
+      );
+    }
+    for (const [opt, o] of Object.entries(spec.options ?? {})) {
+      if (!OPTION_TYPES.has(o?.type)) {
+        throw new Error(
+          `Pack "${name}", treatment "${key}", option "${opt}": type ` +
+          `${JSON.stringify(o?.type)} is not one of ${[...OPTION_TYPES].join(', ')}`
+        );
+      }
+      if (o.type === 'enum' && !Array.isArray(o.values)) {
+        throw new Error(`Pack "${name}", treatment "${key}", option "${opt}": an enum needs "values"`);
+      }
+    }
+  }
+
+  return { name, treatments, describe };
 }
 
 /**
@@ -87,7 +129,7 @@ export function resolveTreatments(packNames = ['core']) {
       if (table.has(key)) {
         console.warn(`  ! Pack "${name}" overrides treatment "${key}" from "${table.get(key).pack}"`);
       }
-      table.set(key, { fn, pack: name });
+      table.set(key, { fn, pack: name, describe: getPack(name).describe?.[key] ?? null });
     }
   }
   return table;
