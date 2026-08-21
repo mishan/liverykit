@@ -343,7 +343,7 @@ async function movePanel(name) {
   // named panel is how you rescue one this car dropped or never matched.
 
   const o = override(state.selected);
-  o.panel = name;
+  pinPanel(o, state.selected, name);
   // `at` is panel-RELATIVE, so moving to a different panel keeps the region's
   // proportions rather than its size — which is what you want, since a door and
   // a rear quarter are nothing like the same size and a number that kept its
@@ -460,14 +460,6 @@ function startCarDrag(e, mode, startUv) {
 }
 
 /**
- * Keep a rectangle inside its panel.
- *
- * Not merely inside the texture: `at` is panel-relative and has to stay within
- * 0..1, so a region dragged past its panel's edge produces coordinates the
- * renderer rightly refuses — and a failed render used to take the whole editor
- * down with it.
- */
-/**
  * Move a region to whichever panel the cursor is now over.
  *
  * The smallest panel containing the point, for the same reason the smallest
@@ -491,6 +483,14 @@ function rehost(sel, uv) {
   return true;
 }
 
+/**
+ * Keep a rectangle inside its panel.
+ *
+ * Not merely inside the texture: `at` is panel-relative and has to stay within
+ * 0..1, so a region dragged past its panel's edge produces coordinates the
+ * renderer rightly refuses — and a failed render used to take the whole editor
+ * down with it.
+ */
 function clampToPanel(sel, [x, y, w, h]) {
   const host = state.surface.panels.find((p) => p.name === sel.panel);
   const [bx, by, bw, bh] = host ? host.rect : [0, 0, 1, 1];
@@ -543,18 +543,31 @@ async function commit(sel) {
   const o = override(sel.id);
   o.at = panel ? toPanelRelative(panel.rect, sel.abs) : sel.abs.map(r4);
 
-  // Pin the panel whenever it is not the one the design asked for. That covers
-  // two cases: a region that reached this panel through TAGS, which the next
-  // profile regeneration could otherwise re-match somewhere else entirely; and
-  // a region DRAGGED onto a different panel, where the whole point of the
-  // gesture is that it now lives there. Before this the drag could carry a
-  // region across a boundary and the fit would record only the new coordinates,
-  // measured against the old panel — artwork in the wrong place, from a fit
-  // that looked reasonable.
-  const declared = state.surface.regions.find((r) => r.id === sel.id)?.panel;
-  if (sel.panel && sel.panel !== declared) o.panel = sel.panel;
+  pinPanel(o, sel.id, sel.panel);
   setDirty(true);
   await refresh();
+}
+
+/**
+ * Record which panel a region now lives on — but only when the design disagrees.
+ *
+ * Pinning is needed in two cases: a region that reached this panel through TAGS,
+ * which the next profile regeneration could otherwise re-match somewhere else
+ * entirely; and a region moved onto a different panel, where the whole point of
+ * the gesture is that it now lives there. Without it a drag across a boundary
+ * records the new coordinates measured against the OLD panel — artwork in the
+ * wrong place, from a fit that reads perfectly well.
+ *
+ * Moved BACK, the override goes away again rather than lingering as a pin onto
+ * the panel the design already names. A fit is overrides only, and an entry that
+ * restates the design is not merely noise: it opts this car out of any later
+ * change to where the design puts that region, silently and for no reason
+ * anybody chose.
+ */
+function pinPanel(o, id, name) {
+  const declared = state.surface.regions.find((r) => r.id === id)?.panel;
+  if (name && name !== declared) o.panel = name;
+  else delete o.panel;
 }
 
 function r4(n) { return Math.round(n * 10000) / 10000; }
