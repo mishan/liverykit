@@ -44,6 +44,7 @@
     "node": ">=20.9.0"
   },
   "dependencies": {
+    "colord": "^2.10.0",
     "sharp": "^0.35.3"
   },
   "repository": {

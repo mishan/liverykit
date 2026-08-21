@@ -15,9 +15,17 @@
 // rename or remove one of those names, it has to be able to say who was relying
 // on it — which means counting the references, which is all this file does.
 //
-// No imports: the browser loads it beside `app.js` and Node imports it directly,
-// so there is one answer to "who uses this" rather than two.
+// The browser loads this file beside `app.js` and Node imports it directly, so
+// there is one answer to "who uses this" rather than two. Its one import is a
+// BARE specifier on purpose: an import map in `index.html` points it at the same
+// package Node resolves, and the server hands the browser that package's own
+// `.mjs`. No bundler, no build step, and no second copy to drift.
 // ---------------------------------------------------------------------------
+
+import { colord, extend } from 'colord';
+import namesPlugin from 'colord/plugins/names';
+
+extend([namesPlugin]);
 
 /**
  * Every region in a design, with the key a fit would address it by.
@@ -149,12 +157,13 @@ export function danglingNames(design, treatments) {
   const palette = Object.keys(design?.palette ?? {});
   const identity = design?.identity ?? {};
   return {
-    // `#00F0FF` and `rgb(...)` are values and are nobody's business. A bare word
-    // might be a CSS keyword or a palette entry that went away, and the editor
-    // cannot tell — so it is reported as what it factually is: passed through
-    // as a literal.
+    // A value the renderer can paint is nobody's business, whether it is
+    // `#00F0FF` or `rebeccapurple`. Anything else that reached `ctx.color` and
+    // is not in the palette went there as a literal and will paint nothing
+    // anybody chose — which is what `gulf-bleu` looks like after a typo, and
+    // what `accent` looks like after a rename that missed a region.
     colours: [...paletteUses(design, treatments)]
-      .filter(([name]) => !palette.includes(name) && looksLikeAName(name))
+      .filter(([name]) => !palette.includes(name) && !isAColour(name))
       .map(([name, by]) => ({ name, by })),
     // A token with no value renders as nothing at all — the region stays, and
     // the text it was part of comes out short.
@@ -165,14 +174,28 @@ export function danglingNames(design, treatments) {
 }
 
 /**
- * Is this written as a value, or as a name?
+ * Is this a colour, or a name that failed to resolve?
  *
- * Crude on purpose. `#hex`, `rgb(...)` and the handful of CSS keywords that are
- * plainly not palette entries are values and are nobody's business. Everything
- * else is reported — including `red`, which a browser understands perfectly
- * well. The alternative is a table of 148 CSS colour names kept in step with a
- * spec, to avoid one line of accurate prose.
+ * The question the whole dangling panel turns on, and it used to be answered by
+ * a regex that accepted `#`, `rgb`, `hsl` and gave up: `red` was reported as an
+ * unresolved name, `rebeccapurple` likewise, and `gulf-bleu` and `#00F0FF` were
+ * told apart by their first character. The reason given was that the honest
+ * alternative meant maintaining a table of 148 CSS colour names against a spec.
+ * It did, right up until the moment we stopped refusing to have a dependency:
+ * `colord` parses strictly to the CSS Color specification, in 8 KB with nothing
+ * underneath it.
+ *
+ * The three additions are SVG paint values rather than colours, which is why
+ * colord rightly declines them and why the renderer nevertheless accepts them.
+ * `var(--x)` is a custom property, which resolves to whatever the document says
+ * and cannot be judged from here.
  */
-export function looksLikeAName(v) {
-  return !/^(#|rgb|hsl|var\(|none$|transparent$|currentColor$)/i.test(v);
+const SVG_PAINT = new Set(['none', 'currentcolor', 'inherit']);
+
+export function isAColour(v) {
+  if (typeof v !== 'string') return false;
+  const s = v.trim();
+  if (!s) return false;
+  if (SVG_PAINT.has(s.toLowerCase()) || /^var\(/i.test(s)) return true;
+  return colord(s).isValid();
 }
