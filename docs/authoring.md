@@ -223,6 +223,19 @@ and scales to fit.
 Adding a palette entry from the colour control closes the loop: pick a colour for
 a region, name it, and it is available to everything else.
 
+The names are the risk, though, and it took building it to see how much. Both a
+palette entry and an identity token are referred to BY NAME, and both fail the
+same quiet way when the name stops resolving: `ctx.color` is `palette[name] ??
+name`, so an unknown colour is handed to the renderer as a literal and
+`fill="ghost"` is not an error to librsvg; a `{token}` interpolates through
+`tokens[k] ?? ''`, so a missing `number` renders "A. Driver #" and says nothing.
+
+So this is not only a form. Every row shows what refers to it before you touch
+it, renaming rewrites those references — regions, `colors` arrays, a surface's
+`background`, every `{token}` in every text — and a panel underneath lists the
+names the design uses and does not define. Removing that panel is how you would
+make the editor able to break a design without saying so.
+
 ## What the server needs
 
 The working-fit mechanism already solves this shape of problem, and authoring
@@ -296,8 +309,14 @@ moved out of the fit into the design, leaving `copies` to mean mirroring again.
 *The working design already travels with each render — step 1 needed it to
 preview an option change, and it is the same mechanism, so step 2 inherits it.*
 
-**3. Palette and identity.** The form, the live re-render, and naming a colour
-into the palette from the region that wanted it.
+**3. Palette and identity.** *Done.* The rows, the live re-render, and naming a
+colour into the palette from the region that wanted it. It grew one thing the
+plan did not anticipate: both are keyed by NAME, and a name that stops resolving
+fails silently in both directions — an unknown colour reaches the renderer as a
+literal, a token with no value leaves a hole in the middle of a line. So every
+row carries a count of what depends on it, renaming rewrites the references
+rather than orphaning them, and a panel lists whatever the design refers to and
+does not define.
 
 **4. Portability.** The panel-or-tags choice at placement time, and the
 second-profile check that shows what a tag selection matches on another car.
