@@ -59,6 +59,19 @@ somewhere nobody asked for and the fit still read perfectly well.
 that island `left_mid`, and only the second is a key in `profile.panels`.
 Resolve with `panelName(profile, role, name)` before looking anything up.
 
+**A livery is untrusted input.** People download each other's designs, and the
+editor renders one into the page as `innerHTML` from a local server that writes
+files — so a value that can close an attribute is a value that can run code.
+Treatments build markup by interpolation, which is what makes them nice to
+write, and 40 fields took a payload before this was fixed. `renderTexture`
+escapes every string on the way in, at the boundary rather than at the 40 call
+sites, so a treatment cannot get it wrong — including one in somebody else's
+pack. `ctx.opts.text` is the deliberate exception: it is content, its emitters
+escape it for the text node, and `radialText` draws it a character at a time so
+a pre-escaped `&quot;` would appear as five glyphs on the car.
+`test/injection.test.mjs` re-derives the field list from the packs' own
+descriptions, so a new option is covered without anybody remembering.
+
 **Fit ids are flat across the whole livery**, while `applyFit` runs once per
 surface. Any question of the form "is this id taken?" or "does this id match
 anything?" is therefore a question about all the surfaces, not the one in front
