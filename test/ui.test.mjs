@@ -400,6 +400,15 @@ test('the page and the script agree about what exists', async () => {
   assert.deepEqual(selectors.filter((s) => /^#[0-9]/.test(s)), [],
     'an id selector may not begin with a digit — querySelector throws on these');
 
+  // Ids app.js CREATES at runtime must not collide with ids the page already
+  // has. querySelector takes the first in document order, so an injected
+  // element earlier in the tree silently steals every lookup of that name from
+  // the real one — which is how a `<datalist id="palette">` in the inspector
+  // came to intercept the palette panel on the right.
+  const made = [...new Set([...app.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]))];
+  const clash = made.filter((id) => ids.includes(id));
+  assert.deepEqual(clash, [], 'app.js builds ids the static page already uses');
+
   // `hidden` is only a UA rule of `display: none`, and any id or class rule
   // setting `display` outranks it. #carview did exactly that: the canvas stayed
   // over the stage while marked hidden, ate every click meant for a panel or a
@@ -2308,4 +2317,55 @@ test('adding a colour keeps what you typed until you press Add', async () => {
   const design = JSON.parse(dom.querySelector('#designjson').textContent);
   assert.equal(design.palette['gulf-orange'], '#F5A11B');
   assert.equal(dom.querySelector('#newcolourname').value, '', 'and the row is cleared for the next one');
+});
+
+test('a one-off colour on a region can be named into the palette', async () => {
+  // The loop closing: pick a colour on a region, name it, and the rest of the
+  // design can use it — which is how a palette gets built in practice, rather
+  // than written out in advance.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: '#F5A11B',
+  };
+
+  const { dom } = await runApp({ server });
+  const inspector = dom.querySelector('#inspector');
+  const button = { dataset: { nameColour: 'color' }, onclick: null };
+  inspector.querySelector = () => null;
+  inspector.querySelectorAll = (q) => (q === '[data-name-colour]' ? [button] : []);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  assert.match(inspector.innerHTML, /data-name-colour="color"/, 'a literal colour offers the button');
+
+  globalThis.prompt = () => 'gulf-orange';
+  try {
+    await button.onclick();
+  } finally {
+    delete globalThis.prompt;
+  }
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], '#F5A11B', 'the colour joins the palette');
+  assert.equal(design.surfaces.body.regions[0].color, 'gulf-orange', 'and the region points at the name');
+  assert.match(dom.querySelector('#texture').innerHTML, /#F5A11B/i, 'the picture does not change');
+  assert.match(dom.querySelector('#palette').innerHTML, /data-palette="gulf-orange"/);
+});
+
+test('a colour that is already a palette name is not offered for naming', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-colour/,
+    'it already has a name');
 });
