@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
-import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
+import { loadProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
@@ -52,8 +52,10 @@ Options
   --fit <path>        per-car placement overrides for this design
                       (default: fits/<livery>@<car>.json, if it exists)
   --ui                open the fitting editor instead of building
-  --model <kn5>       car model for the editor's 3D view; defaults to
-                      content/cars/<car>/<the kn5 the profile was built from>
+  --model <kn5>       car model for the editor's 3D views. Searched for, if not
+                      given, under $AC_ROOT, $ASSETTOCORSA and this checkout —
+                      content/cars/<car>/ or cars/<car>/. Never shipped: the
+                      model is the car maker's.
   --port <n>          port for --ui                            (default: 7391)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
@@ -268,6 +270,27 @@ const outDir = join(values.out, folder);
 
 console.log(`${livery.name}  ->  ${profile.name ?? profile.id}\n`);
 
+/**
+ * The car model, if it can be found. Reports every path tried when it cannot.
+ *
+ * The order lives in `carModelCandidates` so it can be tested; the looking is
+ * here because only the CLI knows the checkout root and the environment.
+ */
+async function findCarModel(profile, explicit) {
+  if (explicit) {
+    const p = resolve(explicit);
+    // Named outright, so a miss is an error rather than a fallback: quietly
+    // ignoring the flag would be the worst of both.
+    await stat(p).catch(() => fail(new Error(`--model ${p} does not exist.`)));
+    return { path: p, looked: [p] };
+  }
+  const looked = carModelCandidates(profile, { root: ROOT, env: process.env });
+  for (const p of looked) {
+    if (await stat(p).then(() => true, () => false)) return { path: p, looked };
+  }
+  return { path: null, looked };
+}
+
 // --- the fitting editor -----------------------------------------------------
 //
 // Local only. It reads this machine's car models and stock skins, which the
@@ -275,13 +298,17 @@ console.log(`${livery.name}  ->  ${profile.name ?? profile.id}\n`);
 if (values.ui) {
   const { startUi } = await import('../src/ui/server.mjs');
 
-  // The profile records which kn5 it was generated from, so the usual case needs
-  // no flag. A missing model is not an error — it costs the 3D view and nothing
-  // else, which is the right trade for anyone holding a profile for a car they
-  // do not have unpacked.
-  const modelPath = values.model
-    ? resolve(values.model)
-    : join(ROOT, 'content', 'cars', profile.id, profile.calibration?.source ?? '');
+  // The profile records which kn5 it was generated from, so a person who has the
+  // car usually needs no flag. A missing model is not an error — it costs the 3D
+  // views and nothing else, which is the right trade for anyone holding a profile
+  // for a car they do not own or have not unpacked.
+  const { path: modelPath, looked } = await findCarModel(profile, values.model);
+  if (!modelPath) {
+    console.log('  no car model found, so the 3D views will be unavailable. Looked in:');
+    for (const p of looked) console.log(`    ${p}`);
+    console.log('  Point --model at the car\'s .kn5, or set AC_ROOT to your Assetto Corsa');
+    console.log('  install. The model is the game\'s, so this project never ships one.');
+  }
 
   const { url } = await startUi({
     livery,
