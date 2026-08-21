@@ -9,12 +9,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import '../src/index.mjs';
 import { resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
 import { mulberry32 } from '../src/engine/rng.mjs';
-import { eachRegion, paletteUses, tokenUses, danglingNames } from '../src/ui/uses.js';
+import { eachRegion, paletteUses, tokenUses, danglingNames, interpolates } from '../src/ui/uses.js';
 
 const core = () => resolveTreatments(['core']);
 
@@ -91,6 +92,45 @@ test('only text is scanned for tokens, because only text is interpolated', () =>
   // A brace in any other option is a literal, and reporting it would be a lie.
   const d = { surfaces: { body: { regions: [{ id: 'r', treatment: 'fill', color: '{driver}' }] } } };
   assert.deepEqual([...tokenUses(d).keys()], []);
+});
+
+test('a use is counted once per thing that depends on it, not once per mention', () => {
+  // `glitch` takes an array, and nothing stops the same palette entry appearing
+  // in it twice — a two-tone glitch that happens to want one colour on both
+  // sides is an ordinary thing to write. Counting the mentions would tell
+  // somebody about to rename `violet` that three things depend on it.
+  const d = {
+    palette: { violet: '#80f' },
+    surfaces: { body: { regions: [{ id: 'g', treatment: 'glitch', colors: ['violet', 'violet'] }] } },
+  };
+  assert.deepEqual(paletteUses(d, resolveTreatments(['core', 'synthwave'])).get('violet'), ['g']);
+
+  // Two regions naming it are still two, which is the count that matters.
+  d.surfaces.body.regions.push({ id: 'h', treatment: 'glitch', colors: ['violet'] });
+  assert.deepEqual(paletteUses(d, resolveTreatments(['core', 'synthwave'])).get('violet'), ['g', 'h']);
+
+  // And a name mentioned twice in one line of text is one region, the same way.
+  const t = { surfaces: { body: { regions: [{ id: 'r', treatment: 'text', text: '{d} / {d}' }] } } };
+  assert.deepEqual(tokenUses(t).get('d'), ['r']);
+});
+
+test('a token the renderer could never substitute is not a token', async () => {
+  // The rule `interpolates` states lives in `src/render.mjs`, and `uses.js`
+  // cannot import it — the browser loads that file directly, with no bundler. So
+  // rather than trust a second copy of `\w`, take the renderer's own pattern out
+  // of its source and check the two classify the same names the same way. If
+  // somebody widens the renderer to accept `{driver-name}`, this fails.
+  const source = await readFile(new URL('../src/render.mjs', import.meta.url), 'utf8');
+  const found = source.match(/opts\.text\.replace\((\/[^/]+\/g)/);
+  assert.ok(found, 'the interpolation in render.mjs no longer looks like a regex literal');
+  const pattern = new RegExp(found[1].slice(1, -2), 'g');
+
+  for (const name of ['driver', 'number', 'car_no', 'n7', '_x',
+    'driver-name', 'driver name', 'car.no', 'né', '', 'a+b']) {
+    const substituted = `{${name}}`.replace(pattern, () => 'VALUE') === 'VALUE';
+    assert.equal(interpolates(name), substituted,
+      `${JSON.stringify(name)}: the editor and the renderer disagree about this name`);
+  }
 });
 
 test('names the design refers to and does not define are listed', () => {
