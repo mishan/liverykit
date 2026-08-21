@@ -107,19 +107,28 @@ function draw({ region, palette = {}, background = 'black', tokens = {} }) {
  * call a longer string an injection, and comparing what the elements ARE does
  * not.
  */
-function attempts(label, render, failures) {
+function attempts(label, render, failures, unprobed) {
   let expected;
   try {
     expected = elements(render(BENIGN));
-  } catch {
-    return; // this treatment will not take this field at all; nothing to test
+  } catch (e) {
+    // NOT a quiet skip. This used to `return`, which meant a treatment that
+    // started rejecting `AAAAAA` — an enum learning its own values, a colour
+    // option validating its format — would stop being probed for injection and
+    // say nothing, in the one test whose entire job is to notice that something
+    // stopped being checked. A field that cannot be probed is a field this test
+    // is no longer defending, so it is reported and the probe is rewritten.
+    unprobed.push(`${label}: the harmless value was refused (${e.message.split('\n')[0]})`);
+    return false;
   }
   for (const payload of PAYLOADS) {
     let got;
     try {
       got = render(payload);
     } catch {
-      continue; // refusing outright is a fine answer
+      // Refusing the PAYLOAD is a fine answer, and a different one: it means
+      // nothing reached the document, which is what this test wants.
+      continue;
     }
     const found = elements(got);
     if (String(found) !== String(expected)) {
@@ -129,11 +138,13 @@ function attempts(label, render, failures) {
       failures.add(`${label}: put an event handler on an element`);
     }
   }
+  return true;
 }
 
 test('no value a livery supplies can become markup', () => {
   const treatments = resolveTreatments(['core', 'synthwave']);
   const failures = new Set();
+  const unprobed = [];
   let checked = 0;
 
   for (const [name, entry] of treatments) {
@@ -142,33 +153,35 @@ test('no value a livery supplies can become markup', () => {
     // The background and a palette colour reach markup through `ctx.color`,
     // which every treatment uses and which passes an unknown name straight
     // through — so the livery's own text arrives either way.
-    attempts(`${name}: background`, (v) =>
-      draw({ region: region({}), palette: { bg: v }, background: 'bg' }), failures);
-    attempts(`${name}: a palette colour`, (v) =>
-      draw({ region: region({ color: 'p', colors: ['p'] }), palette: { p: v } }), failures);
-    checked += 2;
+    // `checked` counts probes that actually RAN, so the guard at the bottom
+    // notices a field dropping out even if nothing else does.
+    if (attempts(`${name}: background`, (v) =>
+      draw({ region: region({}), palette: { bg: v }, background: 'bg' }), failures, unprobed)) checked += 1;
+    if (attempts(`${name}: a palette colour`, (v) =>
+      draw({ region: region({ color: 'p', colors: ['p'] }), palette: { p: v } }), failures, unprobed)) checked += 1;
 
     // And every option the pack says it takes, whatever it is called. Read from
     // the description rather than from a list here, so an option added to a
     // treatment tomorrow is covered by this test tonight.
     for (const [field, o] of Object.entries(entry.describe?.options ?? {})) {
       if (!['string', 'color', 'colors', 'enum'].includes(o.type)) continue;
-      attempts(`${name}.${field}`, (v) =>
-        draw({ region: region({ [field]: o.type === 'colors' ? [v] : v }) }), failures);
-      checked += 1;
+      if (attempts(`${name}.${field}`, (v) =>
+        draw({ region: region({ [field]: o.type === 'colors' ? [v] : v }) }), failures, unprobed)) checked += 1;
     }
   }
 
   // Identity tokens are the same problem arriving by another road: `{driver}`
   // is substituted into `text` from a block the same file supplies.
   for (const t of ['text', 'radialText']) {
-    attempts(`${t}: an identity token`, (v) =>
-      draw({ region: { id: 'r', panel: 'L', treatment: t, text: '{who}' }, tokens: { who: v } }), failures);
-    checked += 1;
+    if (attempts(`${t}: an identity token`, (v) =>
+      draw({ region: { id: 'r', panel: 'L', treatment: t, text: '{who}' }, tokens: { who: v } }),
+    failures, unprobed)) checked += 1;
   }
 
   assert.deepEqual([...failures], [],
     `${failures.size} of ${checked} fields took markup from the livery`);
+  assert.deepEqual(unprobed, [],
+    'these fields are no longer being probed for injection, so nothing is defending them');
   // A guard on the guard. If `describe` were ever renamed, every loop above
   // would quietly iterate nothing and this test would pass having checked the
   // background and nothing else.
