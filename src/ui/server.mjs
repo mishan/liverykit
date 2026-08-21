@@ -33,6 +33,8 @@ import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
+// Shared with the browser, so the two halves cannot disagree about the split.
+import { treatmentOptions } from './fields.js';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -185,7 +187,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'style.css']);
 
 /**
  * Everything the browser needs to draw the editor, computed once per request.
@@ -277,26 +279,6 @@ export function treatmentCatalogue(livery) {
   return out;
 }
 
-/**
- * The part of a region that belongs to its TREATMENT rather than its placement.
- *
- * A region is one flat object — `{ id, treatment, panel, at, color, cell }` —
- * and the structural half is fixed and small while the rest is whatever the
- * treatment reads. So the split is by exclusion: everything that is not
- * structure is an option.
- *
- * Listed here rather than derived from a treatment's description on purpose. A
- * region carrying an option nobody describes must still be visible in the
- * editor, or the one thing you cannot see is the thing already going wrong.
- */
-const STRUCTURAL = new Set([
-  'id', 'treatment', 'panel', 'tags', 'limit', 'at', 'rotate', 'safe', 'once', 'drop',
-]);
-
-export function treatmentOptions(region) {
-  return Object.fromEntries(
-    Object.entries(region).filter(([k]) => !STRUCTURAL.has(k) && !k.startsWith('__')));
-}
 
 /**
  * Regions that are two halves of one idea, and should move together.
