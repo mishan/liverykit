@@ -473,7 +473,27 @@ function rect(r, cls, extra = '') {
 
 // --- editing ----------------------------------------------------------------
 
+/** The fit's copy entry for a region the FIT created, or null for a design's own. */
+function copyEntry(id) {
+  return state.fit.copies?.[id] ?? state.fit.mirrors?.[id] ?? null;
+}
+
+/**
+ * The fit entry that holds this region's placement.
+ *
+ * Usually `regions[id]`: an override ON something the design declared. For a
+ * region the fit CREATED it is the copy entry itself, because that entry is not
+ * an override of anything — it is the whole of what that region is.
+ *
+ * Getting this wrong was invisible and then fatal. Every edit went to
+ * `regions[id]`, which applyFit does not consult for a copy, so dragging a copy
+ * appeared to do nothing and it snapped back on the next render. The entry
+ * stayed behind, and validateFit refuses an id that is both a copy and an
+ * override — so Save failed on a file the editor had written itself.
+ */
 function override(id) {
+  const copy = copyEntry(id);
+  if (copy) return copy;
   state.fit.regions[id] ??= {};
   return state.fit.regions[id];
 }
@@ -806,6 +826,14 @@ async function commit(sel) {
  * anybody chose.
  */
 function pinPanel(o, id, name) {
+  // A copy has no design behind it to fall back to: its entry IS its placement,
+  // so the panel is not an override that can be dropped. Clearing it would send
+  // the copy back to wherever its SOURCE happens to be, which is the one place
+  // a copy is least likely to want to be.
+  if (copyEntry(id)) {
+    if (name) o.panel = name;
+    return;
+  }
   const declared = state.surface.regions.find((r) => r.id === id)?.panel;
   if (name && name !== declared) o.panel = name;
   else delete o.panel;
@@ -980,20 +1008,30 @@ function drawInspector() {
   const sel = state.placed.find((p) => p.id === state.selected);
   const def = state.surface.regions.find((r) => r.id === state.selected);
   const id = state.selected;
-  const o = state.fit.regions[id] ?? {};
+  // The entry that actually holds this region's placement: for a copy that is
+  // the copy itself, not an override on a design region that does not exist.
+  const o = copyEntry(id) ?? state.fit.regions[id] ?? {};
 
   if (!sel) {
     el.className = '';
-    const why = o.drop
-      ? 'Dropped on this car by the fit.'
-      : `Nothing on this car matches ${def?.tags ? `[${esc(def.tags.join(', '))}]` : 'this region'}.`;
+    // A copy can fail to place too — a panel that went away, or a source the fit
+    // dropped. It still has to be removable, and Drop and Reset are both
+    // nonsense for it: there is no design to drop it from or reset it to, and
+    // `drop` on a copy is a file validateFit refuses to load.
+    const why = copyEntry(id)
+      ? `A copy of <code>${esc(def?.fromFit ?? '?')}</code> that could not be placed on this car.`
+      : o.drop
+        ? 'Dropped on this car by the fit.'
+        : `Nothing on this car matches ${def?.tags ? `[${esc(def.tags.join(', '))}]` : 'this region'}.`;
     el.innerHTML = `
       <div><code>${esc(id)}</code></div>
       ${derivedNote(id)}
       <p class="hint">${why} There is nothing to drag until it is placed.</p>
       <div class="row" style="margin-top:10px">
-        <button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
-        <button id="reset">Reset</button>
+        ${def?.fromFit
+          ? '<button id="delete">Delete</button>'
+          : `<button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
+             <button id="reset">Reset</button>`}
       </div>
       <p class="hint">Or click a panel on the right to place it there.</p>`;
     wireInspectorButtons(id);
@@ -1015,8 +1053,8 @@ function drawInspector() {
     <div class="row" style="margin-top:10px">
       ${def?.fromFit
         ? '<button id="delete">Delete</button>'
-        : `<button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>`}
-      <button id="reset">Reset</button>
+        : `<button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
+           <button id="reset">Reset</button>`}
     </div>
     ${def?.fromFit ? `<p class="hint">A copy of <code>${esc(def.fromFit)}</code>,
       added by this fit. Deleting removes it; there is no design behind it to
@@ -1067,10 +1105,11 @@ function deleteCopies(id) {
 
 /** Shared by both inspector states, so Restore works when nothing is drawn. */
 function wireInspectorButtons(id) {
+  const inspectorEl = $('#inspector');
   // A region the FIT created has no design behind it, so "drop" would be a
   // half-measure: it would leave an entry describing something deliberately not
   // drawn, and nothing to ever restore it to. Deleting it is the honest verb.
-  const del = $('#inspector').querySelector?.('#delete');
+  const del = inspectorEl.querySelector?.('#delete');
   if (del) {
     del.onclick = async () => {
       remember(`delete ${id}`);
@@ -1097,14 +1136,17 @@ function wireInspectorButtons(id) {
     };
   }
 
-  if ($('#inspector').querySelector?.('#drop') !== null) $('#drop').onclick = async () => {
+  if (inspectorEl.querySelector?.('#drop') !== null) $('#drop').onclick = async () => {
     remember(`${state.fit.regions[id]?.drop ? 'restore' : 'drop'} ${id}`);
     const ov = override(id);
     if (ov.drop) delete ov.drop; else ov.drop = true;
     setDirty(true);
     await refresh();
   };
-  $('#reset').onclick = async () => {
+  // Absent for a region the fit created: there is no design behind it to go back
+  // to, so Reset there was a button that did nothing at all.
+  const reset = inspectorEl.querySelector?.('#reset');
+  if (reset) reset.onclick = async () => {
     remember(`reset ${id}`);
     delete state.fit.regions[id];
     // Reset means back to the design, and the design's symmetry is part of what
@@ -1132,7 +1174,7 @@ function wireInspectorButtons(id) {
     };
   }
 
-  const inspector = $('#inspector');
+  const inspector = inspectorEl;
 
   // Break or restore the link. Recorded against BOTH ids: the switch is reached
   // from whichever half is selected, and a link broken from the left but still
