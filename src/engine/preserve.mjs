@@ -48,15 +48,33 @@ const dist = (a, b) => (Array.isArray(a) && Array.isArray(b)
  * two functions, and only one of them is testable.
  */
 export function preserveHandwork(profile, prior) {
-  const report = { roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [] };
+  const report = { roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [], name: null };
   if (!prior) return report;
 
+  preserveDisplayName(profile, prior, report);
   preserveRoleNames(profile, prior, report);
   preserveBlocks(profile, prior, report);
   preserveTextureSizes(profile, prior, report);
   preserveUnmeasuredPanels(profile, prior, report);
   preserveAliases(profile, prior, report);
   return report;
+}
+
+/**
+ * The car's display name.
+ *
+ * Nothing in a kn5 says "Abarth 500" — the name comes from `--car-name` and
+ * defaults to the empty string, so regenerating without the flag replaced a
+ * perfectly good name with nothing, and every profile that had been rebuilt
+ * shipped with `"name": ""`. That is not an error anywhere: the CLI and the
+ * editor both fall back to the id, so the car is quietly called
+ * `rss_formula_rss_4` from then on. Measurement has nothing to say here, so the
+ * prior name wins whenever this run was not given one.
+ */
+function preserveDisplayName(profile, prior, report) {
+  if (profile.name || !prior.name) return;
+  profile.name = prior.name;
+  report.name = prior.name;
 }
 
 /**
@@ -69,6 +87,14 @@ export function preserveHandwork(profile, prior) {
  * Matched on the texture FILE, the one identifier the model actually fixes. A
  * prior name is reused only if nothing in the new profile has claimed it, so
  * this can rename but never collide.
+ *
+ * Everything that REFERS to a role has to move with it, and `bind` is the one
+ * that is easy to forget because it is merged elsewhere. By the time this runs,
+ * the merged table holds automatic entries naming the fresh role and human ones
+ * naming the prior role — so rewriting `from` to `to` lands both on the same
+ * name. Skip it and a renamed role leaves bindings pointing at a role that no
+ * longer exists, which is not an error anywhere: `resolveTargets` reports the
+ * surface as unbound and the car builds stock.
  */
 function preserveRoleNames(profile, prior, report) {
   if (!prior.textures) return;
@@ -94,13 +120,30 @@ function preserveRoleNames(profile, prior, report) {
     }
     report.roles.push({ from, to });
   }
+
+  // One pass over the whole table with every rename known, rather than a pass
+  // per rename: rewriting the same entry twice is how a two-step rename lands on
+  // the wrong role, and the collision guard above only rules that out today.
+  const moved = new Map(renames);
+  if (!moved.size) return;
+  for (const entry of Object.values(profile.bind ?? {})) {
+    if (!Array.isArray(entry?.roles)) continue;
+    entry.roles = entry.roles.map((r) => moved.get(r) ?? r);
+  }
 }
 
-/** Whole blocks a model has no opinion about. Copied only if absent. */
+/**
+ * Whole blocks a model has no opinion about. Copied only if absent.
+ *
+ * Deep-copied, so the two profiles do not end up sharing the same objects. The
+ * caller still holds `prior`, and a profile whose notes are literally the same
+ * array as another profile's is a mutation waiting to travel somewhere nobody
+ * looked for it.
+ */
 function preserveBlocks(profile, prior, report) {
   for (const key of HANDWRITTEN_BLOCKS) {
     if (prior[key] === undefined || profile[key] !== undefined) continue;
-    profile[key] = prior[key];
+    profile[key] = structuredClone(prior[key]);
     report.blocks.push(key);
   }
 }
@@ -125,11 +168,15 @@ function preserveTextureSizes(profile, prior, report) {
     if (!now || !Array.isArray(was.modelSize)) continue;
     if (was.modelSize[0] !== now.width || was.modelSize[1] !== now.height) continue;
     if (was.width === now.width && was.height === now.height) continue;
-    now.modelSize = was.modelSize;
+    // Copied, not aliased. `prior` is a live object the caller still holds — the
+    // parsed JSON it read off disk — and handing the same array to both profiles
+    // means a later edit to one silently rewrites the other's record of what the
+    // model measured, which is the one number here that must not drift.
+    now.modelSize = [...was.modelSize];
     now.width = was.width;
     now.height = was.height;
     if (was.notes && !now.notes) now.notes = was.notes;
-    report.sizes.push({ role, width: was.width, height: was.height, modelSize: was.modelSize });
+    report.sizes.push({ role, width: was.width, height: was.height, modelSize: now.modelSize });
   }
 }
 
@@ -147,7 +194,7 @@ function preserveUnmeasuredPanels(profile, prior, report) {
     if (!count) continue;
     if (Object.keys(profile.panels?.[role] ?? {}).length) continue;
     if (!profile.textures?.[role]) continue;
-    (profile.panels ??= {})[role] = was;
+    (profile.panels ??= {})[role] = structuredClone(was);
     report.panels.push({ role, count });
   }
 }
@@ -196,6 +243,7 @@ function preserveAliases(profile, prior, report) {
 /** The report as lines a CLI can print, or an empty array when nothing moved. */
 export function describeHandwork(report, source) {
   const out = [];
+  if (report.name) out.push(`  kept the car name "${report.name}" from ${source} (pass --car-name to change it)`);
   if (report.roles.length) {
     out.push(`  kept ${report.roles.length} hand-chosen role name(s) from ${source}:`);
     for (const { from, to } of report.roles) out.push(`    ${from} -> ${to}`);

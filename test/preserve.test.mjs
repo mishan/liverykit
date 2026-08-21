@@ -271,3 +271,95 @@ test('regenerating with no prior profile at all is not a special case', () => {
   assert.deepEqual(describeHandwork(report, 'x'), []);
   assert.deepEqual(fresh.panels, { body: {} });
 });
+
+test('a renamed role takes its bindings with it', () => {
+  // `bind` is merged before this runs, so the table holds automatic entries
+  // naming the FRESH role and human entries naming the PRIOR one. Rename the
+  // role and leave bind alone, and the automatic entries point at a role that no
+  // longer exists — which throws nowhere: resolveTargets reports the surface as
+  // unbound and the car builds stock.
+  const prior = {
+    textures: { rimFace: { file: 'CSW_PNG.png' } },
+    bind: { rims: { roles: ['rimFace'], source: 'human' } },
+  };
+  const fresh = {
+    textures: { csw_png_png: { file: 'CSW_PNG.png' }, body: { file: 'Body.dds' } },
+    panels: { csw_png_png: {}, body: {} },
+    bind: {
+      rims: { roles: ['csw_png_png'], confidence: 0.9, source: 'auto' },
+      body: { roles: ['body'], source: 'auto' },
+      wheels: { roles: ['csw_png_png', 'body'], source: 'auto' },
+    },
+  };
+  preserveHandwork(fresh, prior);
+
+  assert.deepEqual(fresh.bind.rims.roles, ['rimFace'], 'the binding follows the rename');
+  assert.deepEqual(fresh.bind.wheels.roles, ['rimFace', 'body'], 'and so does one role among several');
+  assert.deepEqual(fresh.bind.body.roles, ['body'], 'a role that did not move is untouched');
+  for (const entry of Object.values(fresh.bind)) {
+    for (const role of entry.roles) {
+      assert.ok(fresh.textures[role], `bind names "${role}", which the profile does not have`);
+    }
+  }
+});
+
+test('the car name survives a regeneration that was not given one', () => {
+  // Nothing in a kn5 says "Abarth 500"; it comes from --car-name and defaults to
+  // the empty string. Rebuilding without the flag replaced a good name with
+  // nothing, and every consumer falls back to the id — so the car is silently
+  // called `rss_formula_rss_4` from then on, and the profile ships that way.
+  const prior = { name: 'Abarth 500', textures: {} };
+  const fresh = { name: '', textures: {} };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.name, 'Abarth 500');
+  assert.equal(report.name, 'Abarth 500');
+  assert.match(describeHandwork(report, 'cars/abarth500.json').join('\n'), /--car-name/);
+
+  // An explicit --car-name still wins: this preserves, it does not override.
+  const renamed = { name: 'Abarth 595', textures: {} };
+  assert.equal(preserveHandwork(renamed, prior).name, null);
+  assert.equal(renamed.name, 'Abarth 595');
+});
+
+test('nothing carried across is shared with the profile it came from', () => {
+  // `prior` is live — the caller's parsed JSON — so handing the same array or
+  // object to both profiles means editing one silently rewrites the other. The
+  // measured `modelSize` is the number here that must not drift.
+  const prior = {
+    textures: { rimFace: { file: 'C.png', width: 256, height: 256, modelSize: [28, 28] } },
+    panels: { driver: { suit: { rect: [0, 0, 1, 1], confidence: 'estimated' } } },
+    leaveStock: [{ file: 'Mirror.DDS', reason: 'painting it replaces what the mirror shows' }],
+    notes: ['a page of notes'],
+  };
+  const fresh = {
+    textures: { rimFace: { file: 'C.png', width: 28, height: 28 }, driver: { file: 'D.dds' } },
+    panels: { rimFace: { face: { rect: [0, 0, 1, 1] } }, driver: {} },
+  };
+  preserveHandwork(fresh, prior);
+
+  assert.notEqual(fresh.textures.rimFace.modelSize, prior.textures.rimFace.modelSize);
+  assert.notEqual(fresh.panels.driver, prior.panels.driver);
+  assert.notEqual(fresh.leaveStock, prior.leaveStock);
+  assert.notEqual(fresh.notes, prior.notes);
+
+  fresh.textures.rimFace.modelSize[0] = 999;
+  fresh.panels.driver.suit.rect[0] = 999;
+  fresh.leaveStock[0].file = 'changed';
+  assert.deepEqual(prior.textures.rimFace.modelSize, [28, 28]);
+  assert.equal(prior.panels.driver.suit.rect[0], 0);
+  assert.equal(prior.leaveStock[0].file, 'Mirror.DDS');
+});
+
+test('every shipped profile has a name a person would recognise', async () => {
+  // The regression this guards is not a crash. `name ?? id` is the fallback
+  // everywhere, so an empty name just means the tool starts calling the car
+  // `rss_formula_rss_4` — and the profile ships that way, because nothing looks.
+  const { readdir, readFile } = await import('node:fs/promises');
+  const dir = new URL('../cars/', import.meta.url);
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.json'));
+  assert.ok(files.length, 'there are profiles to check');
+  for (const f of files) {
+    const p = JSON.parse(await readFile(new URL(f, dir), 'utf8'));
+    assert.ok(p.name && p.name !== p.id, `cars/${f} has no display name (got ${JSON.stringify(p.name)})`);
+  }
+});
