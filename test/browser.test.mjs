@@ -69,6 +69,25 @@ function findBrowser() {
 }
 const BROWSER = findBrowser();
 
+/**
+ * Whether a missing browser is allowed to be a quiet skip.
+ *
+ * Locally it should be: not everyone has Firefox, and the rest of the suite is
+ * worth running without it. In CI it must not be. A skip prints nothing anyone
+ * reads, so an image that stops shipping a browser turns this whole file off and
+ * the build stays green — reporting coverage it is no longer getting. The
+ * workflow sets this, and then the absence is a failure with a name.
+ */
+const REQUIRED = !!process.env.LIVERYKIT_REQUIRE_BROWSER;
+
+test('a browser is present, where the environment says one has to be', {
+  skip: REQUIRED ? false : 'only asked where a browser is required',
+}, () => {
+  assert.ok(BROWSER,
+    'LIVERYKIT_REQUIRE_BROWSER is set and no browser is on PATH, so every test '
+    + 'in this file would have skipped and the run would have been green for nothing.');
+});
+
 test('the browser probe does not depend on a shell being installed', async () => {
   // This decides whether the rest of this file runs. `command -v` needs a shell
   // to run in, and the obvious one to name is bash — which a minimal container

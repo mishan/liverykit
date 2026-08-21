@@ -35,10 +35,33 @@ jobs:
 
       - run: npm ci
 
+      # The editor tests drive a real Firefox, which the runner image already
+      # has. Two things they need are not on it:
+      #
+      #   * xauth — `xvfb-run` shells out to it and exits immediately without
+      #     it, so the browser never starts and the only symptom is a test
+      #     waiting for a page that was never opened.
+      #   * mesa's software rasteriser — a headless runner has no GPU, and this
+      #     is the difference between the GL tests exercising the renderer and
+      #     quietly taking their own no-WebGL branch.
+      #
+      # x11-utils is for xdpyinfo, so "is there a usable display" is answered
+      # rather than inferred from a missing command.
+      - name: install a headless display and a software GL stack
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth x11-utils libgl1-mesa-dri
+
       # The unit tests deliberately avoid ImageMagick — they cover the things
       # that fail *silently* (DDS header maths, mip chain lengths, ZIP
       # integrity, UV rect validation) and none of those need the encoder.
+      #
+      # LIVERYKIT_REQUIRE_BROWSER turns "no browser, so skip" into a failure.
+      # Locally a skip is right; here it would mean the editor tests silently
+      # stopped running and nobody found out, because a skip prints a green tick.
       - run: npm test
+        env:
+          LIVERYKIT_REQUIRE_BROWSER: '1'
 
   build:
     name: build a livery end to end
