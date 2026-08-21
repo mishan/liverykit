@@ -64,8 +64,9 @@ editor renders one into the page as `innerHTML` from a local server that writes
 files — so a value that can close an attribute is a value that can run code.
 Treatments build markup by interpolation, which is what makes them nice to
 write, and 40 fields took a payload before this was fixed. `renderTexture`
-escapes every string on the way in, at the boundary rather than at the 40 call
-sites, so a treatment cannot get it wrong — including one in somebody else's
+escapes every string on the way in — `opts`, and `palette` and `tokens` too, not
+just what `ctx.color` returns — at the boundary rather than at the 40 call sites,
+so a treatment cannot get it wrong, including one in somebody else's
 pack. `ctx.opts.text` is the deliberate exception: it is content, its emitters
 escape it for the text node, and `radialText` draws it a character at a time so
 a pre-escaped `&quot;` would appear as five glyphs on the car.

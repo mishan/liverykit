@@ -438,11 +438,14 @@ registerPack(definePack('my-team', {
 node bin/liverykit.mjs my-livery --pack ./my-pack.mjs
 ```
 
-Interpolate `ctx.color(...)` and `ctx.opts.*` freely: the renderer escapes every
-string a livery supplies before your treatment sees it, so a value cannot close
-an attribute and become markup instead of content. The one exception is
-`ctx.opts.text`, which is content rather than a parameter and arrives raw —
-escape it for the text node you put it in, the way `core`'s `text` does.
+**On values from a livery.** Every string `ctx` hands you — `ctx.color(...)`,
+`ctx.opts.*`, `ctx.palette`, `ctx.tokens` — is escaped for an ATTRIBUTE before
+your treatment sees it, so interpolating one into `fill="…"` is safe: it cannot
+close the quote and become markup. `ctx.opts.text` is the single exception. It
+is content rather than a parameter, and arrives raw so that it can be escaped
+for the text node you put it in — `core`'s `text` does that with `esc`, and
+`radialText` does it a character at a time. If you put `text` anywhere other
+than between two tags, escape it yourself.
 
 Then list `'my-team'` in the livery's `packs`. `--pack` is repeatable and loads
 before the livery, so the names are registered by the time it needs them.
