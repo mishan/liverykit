@@ -47,7 +47,12 @@ export async function loadLivery(path) {
 export function validateDesign(design, source = '<inline>') {
   const err = (m) => { throw new Error(`Livery ${source}: ${m}`); };
 
-  if (typeof design !== 'object' || Array.isArray(design)) err('must be an object');
+  // `typeof null` is 'object', so null slips past the obvious guard and then
+  // throws a TypeError on the first field read — which reaches /api/design as a
+  // 500 about reading a property, rather than as the plain answer below.
+  if (design === null || typeof design !== 'object' || Array.isArray(design)) {
+    err('must be an object');
+  }
   if (design.name !== undefined && typeof design.name !== 'string') err('"name" must be a string');
   if (design.folder !== undefined && typeof design.folder !== 'string') err('"folder" must be a string');
   if (design.packs !== undefined && !Array.isArray(design.packs)) {

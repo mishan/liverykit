@@ -193,3 +193,16 @@ test('an editor opened on a module will not save the design at all', async () =>
     server.close();
   }
 });
+
+test('a design that is not an object at all says so, including null', async () => {
+  // `typeof null` is 'object', so null slipped past the obvious guard and threw
+  // a TypeError on the first field read — which a client posting null to
+  // /api/design would have seen as a 500 about reading a property.
+  for (const v of [null, undefined, [], 7, 'a design']) {
+    assert.throws(() => validateDesign(v, 'x.json'), /must be an object/, String(v));
+  }
+
+  const { designRefusal } = await import('../src/ui/server.mjs');
+  assert.match(designRefusal(null, '/x/a.json'), /must be an object/,
+    'and the refusal is the plain answer rather than a crash');
+});
