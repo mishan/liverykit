@@ -16,6 +16,7 @@
 //
 //   GET  /                 the app
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
+//   POST /api/state        the same, for a working fit the browser has not saved
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   POST /api/fit          write the fit file
@@ -345,29 +346,52 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
       })),
     });
 
-    // Regions the FIT created: a mirrored copy of one the design declared.
+    // Regions the FIT created: a copy of one that is already on this surface.
     // They belong in the list beside the others — one exists on the car, so it
     // has to be selectable, movable and removable like anything else. Marked so
     // the inspector can offer to delete it, which is the one thing that makes
     // sense for a region the design never mentioned.
+    //
+    // In PASSES, and against the regions accumulated so far, exactly as applyFit
+    // resolves them: a copy of a copy is an ordinary thing to make, and matching
+    // only against the design's own regions rendered it on the car while leaving
+    // it out of the list — drawn, and impossible to select, edit or delete.
     const surface = surfaces[surfaces.length - 1];
-    const keys = new Set(surface.regions.map((r) => r.id));
-    for (const [id, m] of Object.entries(copiesOf(fit))) {
-      if (!keys.has(m.of)) continue;
-      const src = (t.spec.regions ?? []).find((r, i) => regionKey(t.from, r, i) === m.of);
-      surface.regions.push({
-        index: surface.regions.length,
-        id,
-        derived: false,
-        fromFit: m.of,
-        treatment: src?.treatment,
-        editable: true,
-        mirror: m.of,
-        rotate: m.rotate ?? null,
-        tags: undefined,
-        panel: m.panel,
-        at: m.at ?? [0, 0, 1, 1],
-      });
+    const byId = new Map(surface.regions.map((r) => [r.id, r]));
+    const pending = new Map(Object.entries(copiesOf(fit)));
+    for (let added = 1; added > 0 && pending.size; ) {
+      added = 0;
+      for (const [id, m] of [...pending]) {
+        const src = byId.get(m.of);
+        if (!src) continue;                     // another surface's, or not placed yet
+        pending.delete(id);
+        added++;
+        // The id collides with something already here, so applyFit refused to
+        // draw it. Listing it would offer a row that selects the other region.
+        if (byId.has(id)) continue;
+        const region = {
+          index: surface.regions.length,
+          id,
+          derived: false,
+          fromFit: m.of,
+          treatment: src.treatment,
+          editable: true,
+          // NOT `m.of`. A copy and a mirrored pair are different things: the
+          // first is a second badge that moves on its own, the second is one
+          // idea with two halves that move together. The fit records only that
+          // this is a copy, so claiming a pairing here made every duplicate
+          // start following its source around after the next reload. Pairing a
+          // copy is a session-level statement, held in the editor beside the
+          // other pairings a person makes by hand.
+          mirror: null,
+          rotate: m.rotate ?? null,
+          tags: undefined,
+          panel: m.panel,
+          at: m.at ?? [0, 0, 1, 1],
+        };
+        surface.regions.push(region);
+        byId.set(id, region);
+      }
     }
   }
 
@@ -389,6 +413,23 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
 }
 
 /**
+ * Every id a fit actually reaches, across all of this car's surfaces.
+ *
+ * Cheap — applyFit resolves overrides and copies without rendering anything —
+ * and it is the only honest way to ask whether an id is stale, because the fit
+ * does not say which surface an id belongs to and applyFit only ever sees one.
+ */
+export function fitUsage(livery, profile, fit) {
+  const used = new Set();
+  for (const t of resolveTargets(profile, livery).targets) {
+    applyFit(t.spec.regions ?? [], fit, {
+      profile, role: t.role, surfaceKey: t.from, used, notes: [],
+    });
+  }
+  return used;
+}
+
+/**
  * Render one surface under a working fit, and report where every region landed.
  *
  * The second half is what makes the editor honest: it returns the ABSOLUTE
@@ -404,7 +445,13 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   const used = new Set();
   const surfaceKey = resolveTargets(profile, livery).targets.find((t) => t.role === role)?.from ?? '';
   const fitted = applyFit(spec.regions ?? [], fit, { profile, role, surfaceKey, used, notes }).regions;
-  for (const id of unusedFitIds(fit, used)) {
+
+  // Whether an id is stale is a question about the WHOLE livery, not about this
+  // surface. A fit is flat, applyFit runs once per surface, and `used` above
+  // knows only about this one — so asking it here reported every override and
+  // every copy belonging to any other surface as matching nothing. Which is a
+  // note per foreign id per surface, burying the real ones.
+  for (const id of unusedFitIds(fit, fitUsage(livery, profile, fit))) {
     notes.push({ term: id, status: 'fit-stale', text: `"${id}" matches no region in this livery` });
   }
 
@@ -541,6 +588,19 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
         return json(200, editorState({ livery, profile, fit, liveryId }));
+      }
+
+      // The same answer, for a fit that has not been saved yet.
+      //
+      // Creating or deleting a copy changes what the surface CONTAINS, and only
+      // this endpoint knows that — but the working fit lives in the browser
+      // until Save. Answering from the saved snapshot handed back a region list
+      // with the new copy missing and a deleted one still in it: the copy was
+      // rendered on the car and absent from the editor, so it could not be
+      // selected, moved or removed.
+      if (req.method === 'POST' && url.pathname === '/api/state') {
+        const { fit: working } = await body();
+        return json(200, editorState({ livery, profile, fit: working ?? fit, liveryId }));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/render') {

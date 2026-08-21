@@ -299,6 +299,22 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       used.add(id);
       used.add(m.of);
 
+      // A copy id has to be free. Ids are how everything downstream addresses a
+      // region — the editor's list, the fit's own overrides, the placement
+      // report — so two regions answering to one name is not a duplicate
+      // drawing, it is a region that cannot be selected or updated reliably.
+      // Reported and skipped, like every other thing a fit asks for and cannot
+      // have; the design's own region keeps the name, because the design is the
+      // thing that is not a per-car adjustment.
+      if (out.some((r) => r.__key === id)) {
+        notes.push({
+          term: id, status: 'fit-stale',
+          text: `fit: copied region "${id}" would take the id of a region the livery ` +
+                `already declares on ${role} — rename the copy; it was not drawn`,
+        });
+        continue;
+      }
+
       const clone = { ...src, __key: id, id };
       // An explicit panel replaces tag selection outright, the same as an
       // override does; leaving the tags on would trip the "both panel and tags"
@@ -465,7 +481,16 @@ export function mirrorRotation(rotate, flips) {
   return t;
 }
 
-/** Ids a fit mentions that the livery does not declare. */
+/**
+ * Ids a fit mentions that the livery does not declare.
+ *
+ * `used` has to have been accumulated across EVERY surface. A fit is flat — it
+ * addresses regions by id and says nothing about which texture they live on —
+ * while applyFit runs once per surface, so a set gathered from one surface knows
+ * nothing about the ids belonging to the others and would report all of them as
+ * stale. Every caller therefore makes one pass over all the surfaces first and
+ * asks this question once, at the end.
+ */
 export function unusedFitIds(fit, used) {
   return [...Object.keys(fit?.regions ?? {}), ...Object.keys(copiesOf(fit))]
     .filter((id) => !used.has(id));
