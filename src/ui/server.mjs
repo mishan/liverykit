@@ -20,6 +20,7 @@
 //   GET  /api/treatments   what each treatment takes, for the inspector
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
+//   POST /api/design       write the design, if it is data and not code
 //   POST /api/fit          write the fit file
 // ---------------------------------------------------------------------------
 
@@ -35,7 +36,7 @@ import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, 
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
 import { treatmentOptions } from './fields.js';
-import { serialisableDesign } from '../livery.mjs';
+import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -466,6 +467,45 @@ export function fitUsage(livery, profile, fit) {
 }
 
 /**
+ * Why this design may not be written, or null if it may.
+ *
+ * Everything here is a refusal, and that is the right shape for it. A fit is one
+ * car's opinion and can be regenerated in a minute; a design is the work, it is
+ * shared by every car it is pointed at, and the editor writing over a file
+ * somebody hand-wrote would be unforgivable in a way that a bad fit is not.
+ */
+export function designRefusal(design, path) {
+  if (!path) {
+    return 'This editor was not opened on a design file, so it has nothing to write to.';
+  }
+  if (!path.endsWith('.json')) {
+    // The whole reason data liveries exist. Regenerating a module would throw
+    // away its comments, and on the bundled example those are a tutorial.
+    return `${path} is code, and the editor does not write code — it would lose the `
+      + 'comments and any computation in it. Copy the design out as JSON, or keep '
+      + 'the module and let it read its regions from a .json beside it.';
+  }
+  try {
+    validateDesign(design, path);
+  } catch (e) {
+    return e.message;
+  }
+  const { lossy } = serialisableDesign(design);
+  if (lossy.length) {
+    return `This design carries code at ${lossy.join(', ')}, which JSON cannot hold. `
+      + 'Saving would drop it silently and the build would stop matching what you see.';
+  }
+  try {
+    // Ids are how a fit addresses a region. Two the same makes every existing
+    // fit for this design ambiguous, which is not a thing to find out later.
+    regionIds(design);
+  } catch (e) {
+    return e.message;
+  }
+  return null;
+}
+
+/**
  * Render one surface under a working fit, and report where every region landed.
  *
  * The second half is what makes the editor honest: it returns the ABSOLUTE
@@ -546,13 +586,14 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   return { svg: layers.base, emissive: layers.emissive, placed, notes };
 }
 
-export async function startUi({ livery, profile, fitPath, liveryId, modelPath = null, port = 7391, log = console.log }) {
+export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
   // The design's id has to be passed in rather than read off the livery object:
   // it is the module basename, which only the caller that resolved the module
   // knows. Guessing it from `livery.folder` is exactly the bug this guards.
+  let livery = openedWith;
   if (!liveryId) throw new Error('startUi needs liveryId — the name a fit knows this design by (see fitLiveryId).');
   const identity = { livery: liveryId, car: profile.id };
 
@@ -711,6 +752,19 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
         if (!g.indices.length) return json(404, { error: `no geometry uses ${tex.file}` });
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packGeometry(g));
+      }
+
+      // Writing the DESIGN, which is a bigger thing than writing a fit: a fit
+      // belongs to one pair of files and a design belongs to every car it is
+      // ever pointed at. So this refuses far more than it accepts.
+      if (req.method === 'POST' && url.pathname === '/api/design') {
+        const next = await body();
+        const refuse = designRefusal(next, liveryPath);
+        if (refuse) return json(409, { error: refuse });
+        await writeFile(liveryPath, JSON.stringify(next, null, 2) + '\n');
+        livery = next;
+        log(`  saved ${liveryPath}`);
+        return json(200, { saved: liveryPath });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/fit') {
