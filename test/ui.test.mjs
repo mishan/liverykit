@@ -230,6 +230,45 @@ test('dragging a region writes a panel-relative at into the fit', async () => {
   assert.equal(dom.querySelector('#save').disabled, false, 'and the fit is now unsaved');
 });
 
+test('a region dragged back to its declared panel drops the override', async () => {
+  // A fit is overrides only. An entry that restates what the design already says
+  // is not merely noise: it pins this car to today's design, so a later change
+  // to where the region belongs silently stops applying here.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+
+  // A design that names a panel outright, so there is a declared panel to
+  // return to. The shipped portable design selects by tag and has none.
+  const [home, away] = Object.entries(profile.panels[role])
+    .sort(([, a], [, b]) => b.rect[2] * b.rect[3] - a.rect[2] * a.rect[3])
+    .map(([n]) => n);
+  assert.ok(home && away && home !== away, 'the fixture needs two panels to move between');
+  const design = {
+    ...livery,
+    surfaces: { body: { background: 'base', regions: [
+      { id: 'badge', treatment: 'fill', color: 'accent', panel: home, at: [0.2, 0.2, 0.3, 0.3] },
+    ] } },
+  };
+
+  const fit = { livery: 'neon-grid-any', car: profile.id, regions: { badge: { panel: away, at: [0, 0, 0.3, 0.3] } } };
+  const { dom } = await runApp({
+    state: editorState({ livery: design, profile, fit, liveryId: 'neon-grid-any' }),
+    render: renderSurface({ livery: design, profile, fit, role }),
+  });
+
+  const written = () => JSON.parse(dom.querySelector('#fitjson').textContent).regions.badge;
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.equal(written().panel, away, 'the override starts out pinning the region elsewhere');
+
+  // Put it back where the design puts it. Committing that must clear the pin,
+  // not restate it.
+  dom.querySelector('#panels').onclick({ target: { dataset: { panel: home } } });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(written().panel, undefined, `the override should be gone, got ${JSON.stringify(written())}`);
+  assert.ok(Array.isArray(written().at), 'and the placement it was moved to is still recorded');
+});
+
 test('the car geometry survives the trip to the browser', async () => {
   // Packed on the server, unpacked by the viewer. Both halves are tested at once
   // because a mismatch between them is silent: the mesh still draws, just wrong.
@@ -401,7 +440,7 @@ test('the whole car packs every mesh exactly once, painted or not', async () => 
   const { wholeModelGeometry, packModel } = await import('../src/ui/server.mjs');
   const { unpackModel } = await import('../src/ui/view3d.js');
   const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const { carKn5, CAR, buildKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
   const g = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }]);
