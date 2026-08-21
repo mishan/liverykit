@@ -2062,3 +2062,61 @@ test('an edit that will not parse changes nothing, and says so', async () => {
   assert.ok(Number(spacing()) > Number(narrow) && Number(spacing()) < Number(wide),
     `clearing should fall back to the treatment's default, got ${spacing()}`);
 });
+
+test('a region can be added to the design, ordered, and taken out again', async () => {
+  // Order IS paint order — later regions draw over earlier ones — so moving a
+  // row is not a cosmetic nicety, it is the only way to say what covers what.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  const { nodes } = inspectorButtons(dom,
+    ['#delete', '#earlier', '#later', '#removeregion', '#copyregion', '#reset', '#drop']);
+
+  // The picker offers what the design's packs actually provide.
+  assert.match(dom.querySelector('#newtreatment').innerHTML, /value="fill"/);
+  assert.match(dom.querySelector('#newtreatment').innerHTML, /Halftone dissolve/);
+
+  dom.querySelector('#newtreatment').value = 'stripe';
+  await dom.querySelector('#addregion').onclick();
+
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+  let regions = design().surfaces.body.regions;
+  assert.deepEqual(regions.map((r) => r.id), ['badge', 'stripe'], 'added, and added last');
+  assert.match(dom.querySelector('#regions').innerHTML, /stripe/, 'and listed');
+
+  // Painting earlier means moving down the array, which is what the button says.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'stripe' } } });
+  await nodes.get('#earlier').onclick();
+  assert.deepEqual(design().surfaces.body.regions.map((r) => r.id), ['stripe', 'badge']);
+
+  // Removing takes the fit's opinion of it too, or every later build reports a
+  // stale id nobody can act on.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'stripe' } } });
+  await nodes.get('#removeregion').onclick();
+  regions = design().surfaces.body.regions;
+  assert.deepEqual(regions.map((r) => r.id), ['badge']);
+  assert.equal(JSON.parse(dom.querySelector('#fitjson').textContent).regions?.stripe, undefined);
+});
+
+test('an added region gets a name nothing else is using', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  const add = async (t) => {
+    dom.querySelector('#newtreatment').value = t;
+    await dom.querySelector('#addregion').onclick();
+  };
+  await add('fill');
+  await add('fill');
+  await add('fill');
+
+  const ids = JSON.parse(dom.querySelector('#designjson').textContent)
+    .surfaces.body.regions.map((r) => r.id);
+  assert.deepEqual(ids, ['badge', 'fill', 'fill-2', 'fill-3']);
+  assert.equal(new Set(ids).size, ids.length, 'ids are how a fit addresses a region');
+});

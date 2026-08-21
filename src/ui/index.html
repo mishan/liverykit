@@ -23,8 +23,11 @@
       <select id="surface"></select>
 
       <h2>Regions</h2>
-      <p class="hint">Only regions the design gave an <code>id</code> can be moved.
-        Everything else is the design's business.</p>
+      <p class="hint">Later regions paint over earlier ones. Drag a row to reorder.</p>
+      <div class="row">
+        <select id="newtreatment"><option value="">add a region…</option></select>
+        <button id="addregion" disabled>Add</button>
+      </div>
       <ul id="regions"></ul>
 
       <h2>Selected</h2>
@@ -56,7 +59,13 @@
       <ul id="panels"></ul>
 
       <h2>Fit</h2>
+      <p class="hint">Where this car wants the artwork.</p>
       <pre id="fitjson">{}</pre>
+
+      <h2>Design</h2>
+      <p class="hint">What the artwork is, on every car.</p>
+      <pre id="designjson">{}</pre>
+
       <div id="notes"></div>
     </aside>
   </main>
