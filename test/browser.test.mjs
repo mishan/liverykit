@@ -22,8 +22,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { accessSync, statSync, constants } from 'node:fs';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -51,7 +51,15 @@ function findBrowser() {
     for (const dir of dirs) {
       for (const ext of exts) {
         try {
-          accessSync(join(dir, b + ext), constants.X_OK);
+          const p = join(dir, b + ext);
+          // A DIRECTORY passes X_OK — that is what the execute bit means on a
+          // directory — so the access check alone will happily report a folder
+          // called `chromium` as a browser. spawn then fails with EACCES and
+          // the suite reports that the browser would not start, which is a
+          // maddening thing to debug from a CI log. statSync follows symlinks,
+          // so /usr/bin/firefox -> ../lib/firefox/firefox still resolves.
+          if (!statSync(p).isFile()) continue;
+          accessSync(p, constants.X_OK);
           return b;
         } catch { /* keep looking */ }
       }
@@ -61,7 +69,7 @@ function findBrowser() {
 }
 const BROWSER = findBrowser();
 
-test('the browser probe does not depend on a shell being installed', () => {
+test('the browser probe does not depend on a shell being installed', async () => {
   // This decides whether the rest of this file runs. `command -v` needs a shell
   // to run in, and the obvious one to name is bash — which a minimal container
   // may not have. Then every probe throws, every browser looks absent, and the
@@ -82,7 +90,79 @@ test('the browser probe does not depend on a shell being installed', () => {
   } finally {
     process.env.PATH = dir;
   }
+
+  // The one an access check gets wrong on its own: a DIRECTORY has the execute
+  // bit, so `access(X_OK)` says yes to a folder called `chromium`. spawn then
+  // fails with EACCES and the suite reports a browser that would not start,
+  // which from a CI log is indistinguishable from a real startup failure.
+  const decoy = await mkdtemp(join(tmpdir(), 'lk-decoy-'));
+  await mkdir(join(decoy, 'chromium'));
+  const before = process.env.PATH;
+  try {
+    process.env.PATH = decoy;
+    assert.equal(findBrowser(), null, 'a directory is not an executable');
+  } finally {
+    process.env.PATH = before;
+  }
 });
+
+/**
+ * Start a browser and keep hold of why it might not have worked.
+ *
+ * `stdio: 'ignore'` and no listeners was the original, and it made every
+ * possible failure — the binary missing, the profile unreadable, a GL stack that
+ * aborts on startup, a sandbox refusing to fork — arrive as the same sentence:
+ * "the browser never reported back". On a machine you can log into that is
+ * merely annoying. In CI it is the whole message, and there is nothing to go on.
+ *
+ * So: capture the output, notice the exit, and hold both for the assertion. Note
+ * `spawn` emits `error` on ENOENT, and an EventEmitter with no `error` listener
+ * THROWS — a missing binary would have surfaced as an uncaught exception from
+ * somewhere unrelated rather than as this test failing.
+ */
+async function launch(command, args, env = {}) {
+  const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: browserEnv(env) });
+  const state = { done: false, code: null, signal: null, error: null, output: '' };
+
+  // Bounded: a browser that fails in a loop can produce megabytes, and the tail
+  // is the part that says why.
+  const keep = (chunk) => {
+    state.output = (state.output + chunk).slice(-4000);
+  };
+  child.stdout.setEncoding('utf8'); child.stdout.on('data', keep);
+  child.stderr.setEncoding('utf8'); child.stderr.on('data', keep);
+  child.on('error', (e) => { state.error = e; state.done = true; });
+  child.on('exit', (code, signal) => { state.done = true; state.code = code; state.signal = signal; });
+
+  return {
+    get done() { return state.done; },
+    kill: () => child.kill('SIGKILL'),
+    why(waited) {
+      const how = state.error ? `could not be started: ${state.error.message}`
+        : state.done ? `exited after ${(waited / 1000).toFixed(1)}s `
+          + `(code ${state.code}, signal ${state.signal})`
+        : `was still running after ${(waited / 1000).toFixed(1)}s`;
+      const tail = state.output.trim();
+      const set = Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ');
+      return `\`${set ? set + ' ' : ''}${command} ${args.join(' ')}\` ${how}.`
+        + (tail ? `\nIts output was:\n${tail}` : '\nIt printed nothing.');
+    },
+  };
+}
+
+/**
+ * The environment a headless browser gets.
+ *
+ * Nothing forced here. An earlier version exported MOZ_X11_EGL and friends
+ * unconditionally, which is right when a display exists and is a request for an
+ * X11 EGL path that cannot exist when one does not — so on a machine with no X
+ * server at all, the settings meant to GIVE the tests a GL stack were the reason
+ * the browser never came up. The GL-specific overrides now live with the code
+ * that arranges a display.
+ */
+function browserEnv(extra = {}) {
+  return { ...process.env, ...extra };
+}
 
 /**
  * Run a script inside the real editor page and get its findings back.
@@ -130,15 +210,26 @@ async function inBrowser(driver, { fitPath, livery: liveryName = 'neon-grid-any'
   const args = BROWSER === 'firefox'
     ? ['--headless', '--window-size=1400,900', url]
     : ['--headless=new', '--disable-gpu', '--window-size=1400,900', url];
-  const child = spawn(BROWSER, args, { stdio: 'ignore' });
+  const child = await launch(BROWSER, args);
 
-  const deadline = Date.now() + 40000;
-  while (!report && Date.now() < deadline) await new Promise((r) => setTimeout(r, 200));
-  child.kill('SIGKILL');
+  // Longer than a dev box needs, because a CI runner is not a dev box: a cold
+  // browser start on two shared cores is several times slower than here, and a
+  // timeout that only fails on the slow machine is the worst kind. Overridable
+  // for anyone whose box is slower still.
+  const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 90000;
+  const deadline = Date.now() + limit;
+  // `child.done` too, so a browser that exits without loading the page fails in
+  // a second with its own error message rather than after the full timeout with
+  // none.
+  while (!report && !child.done && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  const waited = Date.now() - (deadline - limit);
+  child.kill();
   proxy.close();
   real.server.close();
 
-  assert.ok(report, 'the browser never reported back — it may have failed to start');
+  assert.ok(report, 'the browser never reported back. ' + child.why(waited));
   const failures = report.filter((l) => /^(ERROR|REJECT|THREW)/.test(l));
   assert.deepEqual(failures, [], `the page reported errors: ${failures.join(' | ')}`);
   return report;
