@@ -1158,3 +1158,69 @@ test('a hostile palette value paints a swatch and nothing else', { skip: BROWSER
   assert.ok(w < vw / 4 && h < vh / 4,
     `the swatch is ${w}x${h} in a ${vw}x${vh} viewport, which is a sheet over the page, not a swatch`);
 });
+
+test('an emissive-only treatment actually puts pixels on screen', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // `traces` draws nothing into the base layer, and the editor used to show the
+  // base alone — so the element was painted correctly by the build and invisible
+  // in the tool for looking at it. The fix flattens both layers for display,
+  // which relies on `feGaussianBlur` and `mix-blend-mode`: things librsvg does
+  // not have and a fake DOM cannot tell you about. Hence a real browser, and
+  // hence reading PIXELS rather than markup — the markup was never the question.
+  const profile = {
+    id: 'fixture', name: 'Fixture',
+    textures: { body: { file: 'b.dds', width: 256, height: 256 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { L: { rect: [0, 0, 1, 1], tags: ['left'], anisotropy: 1 } } },
+  };
+  const liveryObject = {
+    name: 'Traces', folder: 'traces', car: 'fixture', packs: ['core', 'synthwave'],
+    palette: { ink: '#000000', wire: '#00FF00' },
+    surfaces: {
+      body: {
+        background: 'ink',
+        regions: [{ id: 'wires', panel: 'L', at: [0, 0, 1, 1], treatment: 'traces', color: 'wire', lanes: 6 }],
+      },
+    },
+  };
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-emis-'));
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW no regions'); return done(); }
+      await uvTab();
+      const svg = document.querySelector('#texture svg');
+      if (!svg) { say('THREW no svg in the texture layer'); return done(); }
+
+      // Rasterise what the editor is actually displaying, and look at it.
+      const markup = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const done2 = new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error('svg would not load')); });
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+      await done2;
+
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 256, 256);
+      const px = g.getImageData(0, 0, 256, 256).data;
+
+      let lit = 0, greenest = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        // The background is pure black, so anything with green in it came from
+        // the emissive layer — either the crisp strokes or the glow around them.
+        if (px[i + 1] > 24) lit++;
+        if (px[i + 1] > greenest) greenest = px[i + 1];
+      }
+      say('lit: ' + lit);
+      say('greenest: ' + greenest);
+      done();
+    })();
+  `, { liveryObject, profile, fitPath: join(dir, 'fit.json') });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  const lit = Number(find('lit: ').slice(5));
+  const greenest = Number(find('greenest: ').slice(10));
+
+  assert.ok(lit > 200, `the traces should cover a meaningful area, got ${lit} lit pixels: ${report.join(' | ')}`);
+  assert.ok(greenest > 200, `and reach near full strength where the strokes are, got ${greenest}`);
+});
