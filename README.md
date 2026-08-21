@@ -45,12 +45,13 @@ precisely the mapping a livery needs.
 
 ## How it works
 
-Three layers, deliberately separate:
+Four layers, deliberately separate:
 
 | | what it describes | |
 |---|---|---|
 | **car profile** — `cars/*.json` | what a *car* is: its textures, and its UV islands given names and measurements | generated once per car, identical for everyone who owns it — **worth sharing** |
 | **livery** — `liveries/*.mjs` | what a *design* is: palette, identity, and which **treatment** (a function that fills a rectangle with art) goes on which named **panel** (a named UV island) | quick to write, this is the fun part |
+| **fit** — `fits/*.json` | where one design's artwork sits on one particular car | belongs to the pair, not to either half — see [below](#fitting-a-portable-design-to-one-car) |
 | **pack** — `src/packs/*.mjs` | what a *style* is: the treatments themselves | bring your own without forking |
 
 Because a livery names panels instead of coordinates:
@@ -175,6 +176,16 @@ explained inline. Then:
 node bin/liverykit.mjs my-livery
 ```
 
+### 5. Nudge it where it sits badly
+
+Coordinates are a slow way to discover you were 3% off. `--ui` opens an editor
+that shows the artwork on the texture *and* on the car, and writes what you drag
+to a [fit](#the-fitting-editor) rather than to the design:
+
+```sh
+node bin/liverykit.mjs my-livery --ui
+```
+
 ---
 
 ## Making a livery that works on more than one car
@@ -288,13 +299,80 @@ but to the pair of them:
 ```
 
 Picked up automatically as `fits/<livery>@<car>.json`, or passed with `--fit`.
-Regions need an `id` to be addressable; overrides are limited to placement
-(`panel`, `at`, `rotate`, `scale`, `safe`, `drop`) because anything more and a
-fit becomes a second livery language. A fit naming something that no longer
-exists is reported and ignored rather than fatal.
+Overrides are limited to placement (`panel`, `at`, `rotate`, `scale`, `safe`,
+`drop`) because anything more and a fit becomes a second livery language. A fit
+naming something that no longer exists is reported and ignored rather than fatal.
 
-Two honest limits remain. A portable design cannot use panel **names** in the
-design itself, only tags. And it cannot treat the roles behind one term
+Give a region an `id` if you expect to adjust it. One without an id is still
+addressable — by position, as `surfaces.body#3` or `paint.bodyRear#3` — but that
+key means "whichever region is fourth", so inserting one above it silently moves
+what the fit refers to. The editor labels those rows as addressed by position,
+and the remedy is one line in the design.
+
+### The fitting editor
+
+Dragging rectangles in a text file, rebuilding, and installing to see where the
+artwork landed is a slow way to find out you were 3% off. `--ui` opens a local
+editor instead:
+
+```sh
+node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --ui
+# fitting editor at http://127.0.0.1:7391/
+```
+
+Drag a region to move it, drag a corner to resize, click a panel outline to send
+it there. Every box you see is the rectangle the **renderer** resolved, not the
+editor's own idea of where things are, so the two cannot quietly drift apart. The
+re-render is a couple of milliseconds of JavaScript — no ImageMagick, no DDS
+encode — which is the whole reason this is worth having.
+
+Three views, because the sheet is not the question:
+
+- **UV** — the texture, with panel outlines over it.
+- **Car** — the same texture on the actual geometry. Whether a spot is flat, or
+  faces the camera, or wraps over a wheel arch, is not visible on a flat sheet.
+  You can drag on the car itself, and the artwork follows the surface.
+- **Whole car** — every painted surface at once. A stripe can meet the bodywork
+  perfectly and miss the sidepod beside it.
+
+The Car views need the car's `.kn5`. It is found automatically under
+`content/cars/<car>/` from the profile's own record of what it was built from, or
+pass `--model`. Without it the UV view still works and the tab says why.
+
+Nothing is written until **Save fit**, which writes `fits/<livery>@<car>.json`.
+Undo and redo (Ctrl/Cmd-Z, Shift-Ctrl/Cmd-Z) cover everything that changes the
+fit, including creating and deleting regions.
+
+**Symmetry.** Regions whose ids name a side — `number-left` and `number-right`,
+or `numberLeft`/`numberRight` — are treated as two halves of one idea and move
+together, mirrored rather than copied: two flanks are not always unwrapped the
+same way round, and copying the coordinates across puts the artwork at the wrong
+end of the car. You can unlink a pair, pair two regions the convention missed, or
+mirror one onto the other once.
+
+**Copies.** A fit may not add artwork, with one exception: it can say that an
+existing region *also* appears somewhere else.
+
+```jsonc
+"copies": {
+  "badge-mirror": { "of": "badge", "panel": "right_mid", "at": [0.3, 0.2, 0.2, 0.2] }
+}
+```
+
+Treatment, colours and text all come from `of`; the only new information is a
+placement, which is what a fit is for. It earns the exception because symmetry is
+a property of the *car* — a design that paints one badge is portable to a car
+with one flank worth painting and to a car with two, and the design cannot know
+which it is being run against. **Create mirrored copy** and **Duplicate** in the
+editor write these; the mirrored one measures where it should land from the
+panels' own axes.
+
+Full reasoning in [docs/fitting.md](docs/fitting.md).
+
+### Two honest limits
+
+A fit adjusts placement, so two things it cannot rescue. A portable design cannot
+use panel **names** in the design itself, only tags. And it cannot treat the roles behind one term
 differently — if `body` binds to two textures, both get the same artwork, though
 `once: true` will keep a car number on the primary one. Portable means coarser; a
 design written for one car will always look better on it.
@@ -377,6 +455,12 @@ rather type `liverykit`. `--help` is authoritative.
 <livery> --no-zip                 folder only
 <livery> --profile <path>         use a different car profile — how you port a
                                   design between cars
+<livery> --fit <path>             per-car placement overrides for this design
+                                  (default: fits/<livery>@<car>.json, if present)
+<livery> --ui                     open the fitting editor instead of building
+  --model <car>.kn5                 model for the editor's 3D views; defaults to
+                                    the one the profile was generated from
+  --port 7391                       where to serve it (loopback only)
 <livery> --pack ./my-pack.mjs     load an extra treatment pack (repeatable)
 <livery> --uvgrid                 build a calibration skin (see below)
 <livery> --uvgrid --cells 40      finer grid, for small parts
