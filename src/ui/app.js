@@ -116,6 +116,18 @@ $('#surface').innerHTML = data.surfaces
   .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
 $('#surface').onchange = () => selectSurface(+$('#surface').value);
 
+// What you can add. Straight from the packs this design loads, so a pack brought
+// in with --pack appears here without anything else knowing about it.
+$('#newtreatment').innerHTML = '<option value="">add a region…</option>' + (data.treatments ?? [])
+  .map((t) => `<option value="${esc(t.name)}">${esc(t.label)} — ${esc(t.pack)}</option>`).join('');
+$('#newtreatment').onchange = () => { $('#addregion').disabled = !$('#newtreatment').value; };
+$('#addregion').onclick = () => {
+  const t = $('#newtreatment').value;
+  // Returned, not fired and forgotten: the caller has to be able to wait for it,
+  // and a handler that hides its promise is a race nobody can see.
+  return t ? addRegion(t) : undefined;
+};
+
 // --- wiring -----------------------------------------------------------------
 //
 // Delegated, and attached exactly once. Every draw here replaces a container's
@@ -333,6 +345,9 @@ async function refresh() {
   drawRegions();
   drawInspector();
   $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
+  // Beside it, not instead of it. Seeing which file a change landed in is the
+  // whole reason the two are edited separately.
+  $('#designjson').textContent = JSON.stringify(state.design, null, 2);
   $('#notes').innerHTML = out.notes
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Derived from the stacks rather than trusted from the markup, so there is
@@ -403,6 +418,112 @@ function drawRegions() {
       <span class="id">${esc(label)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
+}
+
+// --- adding, removing and ordering the design's regions ---------------------
+
+/** The block and key the current surface lives under, e.g. ['surfaces', 'body']. */
+function surfaceHome() {
+  const from = state.surface?.from ?? '';
+  const dot = from.indexOf('.');
+  return dot < 0 ? ['surfaces', from] : [from.slice(0, dot), from.slice(dot + 1)];
+}
+
+/** Is this region one the DESIGN declares here, as opposed to one a fit made? */
+function ownRegion(id) {
+  return (designRegions() ?? []).some((r) => r.id === id);
+}
+
+/** The design's own array of regions for the surface being edited. */
+function designRegions() {
+  const [block, where] = surfaceHome();
+  const spec = state.design?.[block]?.[where];
+  if (!spec) return null;
+  spec.regions ??= [];
+  return spec.regions;
+}
+
+/** A name nothing else is using, anywhere in the design. */
+function freeRegionId(base) {
+  const taken = new Set(state.data.surfaces.flatMap((s) => s.regions.map((r) => r.id)));
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
+/**
+ * Put a new region on the surface being edited.
+ *
+ * Placed on the selected region's panel where there is one, because that is
+ * almost always where you are looking; otherwise on whatever the surface's first
+ * panel is. Tags versus a panel NAME is the portability question and it is not
+ * answered here — step four of the plan puts that choice in front of you.
+ */
+async function addRegion(treatment) {
+  const regions = designRegions();
+  if (!regions) return status('this surface is not part of the design');
+
+  const sel = state.placed.find((p) => p.id === state.selected);
+  const panel = sel?.panel ?? state.surface.panels[0]?.name;
+  const id = freeRegionId(treatment);
+
+  remember(`add ${id}`);
+  regions.push({
+    id,
+    treatment,
+    ...(panel ? { panel } : {}),
+    at: [0.25, 0.25, 0.5, 0.5],
+  });
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  status(`added ${id} — it paints last, so it goes on top`);
+}
+
+/** Take a region out of the design, with everything the fit said about it. */
+async function deleteDesignRegion(id) {
+  const regions = designRegions();
+  const i = regions?.findIndex((r) => r.id === id) ?? -1;
+  if (i < 0) return status(`${id} is not one of this design's own regions`);
+
+  remember(`delete ${id}`);
+  regions.splice(i, 1);
+  // The fit's opinion of a region that no longer exists is not worth keeping,
+  // and would be reported as stale on every build until somebody removed it.
+  delete state.fit.regions[id];
+  for (const block of [state.fit.copies, state.fit.mirrors]) {
+    for (const [k, v] of Object.entries(block ?? {})) if (v.of === id) delete block[k];
+  }
+  state.selected = null;
+  setDesignDirty();
+  setDirty(true);
+  await reloadState();
+  await refresh();
+  status(`removed ${id} from the design`);
+}
+
+/**
+ * Move a region in the array, which is the only way to change what covers what.
+ *
+ * Order IS paint order — later regions draw over earlier ones, and the emissive
+ * layer composites above all of them — so "put the stripe under the numbers" is
+ * an ordinary request that had no expression in the editor at all.
+ */
+async function moveRegion(id, by) {
+  const regions = designRegions();
+  const i = regions?.findIndex((r) => r.id === id) ?? -1;
+  if (i < 0) return;
+  const j = i + by;
+  if (j < 0 || j >= regions.length) return status(`${id} is already ${by < 0 ? 'first' : 'last'}`);
+
+  remember(`reorder ${id}`);
+  const [moved] = regions.splice(i, 1);
+  regions.splice(j, 0, moved);
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  status(`${id} now paints ${by < 0 ? 'earlier' : 'later'}`);
 }
 
 /**
@@ -779,6 +900,9 @@ async function livePreview() {
     // Cheap, and the numbers changing under the cursor is how you learn what a
     // panel-relative coordinate actually means.
     $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
+  // Beside it, not instead of it. Seeing which file a change landed in is the
+  // whole reason the two are edited separately.
+  $('#designjson').textContent = JSON.stringify(state.design, null, 2);
   } catch {
     // A dropped frame mid-drag is not worth interrupting the gesture over. The
     // release does a full render and will report anything genuinely wrong.
@@ -1074,6 +1198,13 @@ function wireOptionControls(id) {
     }
   }
 
+  for (const [sel, by] of [['#earlier', -1], ['#later', 1]]) {
+    const el = inspector.querySelector?.(sel);
+    if (el) el.onclick = () => moveRegion(id, by);
+  }
+  const remove = inspector.querySelector?.('#removeregion');
+  if (remove) remove.onclick = () => deleteDesignRegion(id);
+
   const copy = inspector.querySelector?.('#copyregion');
   if (copy) {
     copy.onclick = () => {
@@ -1264,6 +1395,11 @@ function drawInspector() {
         : `<button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
            <button id="reset">Reset</button>`}
     </div>
+    ${ownRegion(id) ? `<div class="row" style="margin-top:6px">
+      <button id="earlier">Paint earlier</button>
+      <button id="later">Paint later</button>
+      <button id="removeregion">Remove from design</button>
+    </div>` : ''}
     ${def?.fromFit ? `<p class="hint">A copy of <code>${esc(def.fromFit)}</code>,
       added by this fit. Deleting removes it; there is no design behind it to
       restore it to.</p>` : ''}`;
