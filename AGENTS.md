@@ -108,8 +108,18 @@ JSON. Revert your fix, watch the new test fail, then put it back.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, one runtime dependency (`sharp`).
-Please keep it that way. Two spaces, semicolons, single quotes.
+No build step, no transpiler, ESM throughout, two runtime dependencies (`sharp`
+and `colord`). Please keep it small — but small is the goal, not zero: `colord`
+replaced a regex that called `red` an unresolved palette name and told `#00F0FF`
+from `gulf-bleu` by its first character, which is not a wheel worth rebuilding.
+
+The browser gets `colord` through an **import map** in `src/ui/index.html`, and
+the server hands over the package's own `.mjs` from `node_modules`. So a bare
+specifier means the same package on both sides and the editor and the tests run
+the identical file. That is the pattern to copy if the browser ever needs a
+second one — not a vendored copy, and not a bundler.
+
+Two spaces, semicolons, single quotes.
 
 **Comments explain why, not what.** The prevailing style is a short prose block
 above anything with judgement in it, naming the alternative that was rejected and

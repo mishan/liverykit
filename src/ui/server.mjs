@@ -192,6 +192,26 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'style.css']);
 
 /**
+ * The one dependency the browser shares with Node, and where it comes from.
+ *
+ * `uses.js` has to answer "is this string a colour" the same way on both sides,
+ * because the dangling-names panel and the inspector's Add-to-palette button are
+ * the same judgement shown twice — and a browser regex that disagreed with the
+ * Node one would put a button next to a warning saying the opposite.
+ *
+ * colord ships its own `.mjs`, so the browser can have the very file Node
+ * imports: an import map in `index.html` points the bare specifier at these two
+ * URLs. Still no bundler, no build step, and no copy of somebody else's library
+ * checked into this repository going quietly out of date.
+ */
+const VENDOR = new Map([
+  ['/vendor/colord/index.mjs', 'colord'],
+  ['/vendor/colord/plugins/names.mjs', 'colord/plugins/names'],
+]);
+const vendorPath = (pathname) =>
+  fileURLToPath(import.meta.resolve(VENDOR.get(pathname)));
+
+/**
  * Everything the browser needs to draw the editor, computed once per request.
  *
  * Exported separately from the server because it is the only part with any
@@ -805,6 +825,25 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         res.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'max-age=86400' });
         return res.end(Buffer.from(
           'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+      }
+
+      // A dependency the browser also needs, served from `node_modules` as the
+      // package's own ESM build. No bundler and no vendored copy: colord ships
+      // `.mjs`, an import map in `index.html` points the bare specifier `colord`
+      // at these paths, and Node resolves the same specifier from the same
+      // package — so the editor and the tests agree about what a colour is
+      // because they are running the identical file.
+      //
+      // Also an allowlist, and resolved through `require.resolve` rather than by
+      // joining a path, so this stays a server that can serve four named files
+      // and not a way to read `node_modules`.
+      if (VENDOR.has(url.pathname)) {
+        const data = await readFile(vendorPath(url.pathname)).catch(() => null);
+        if (!data) {
+          return send(500, 'text/plain',
+            'colord is missing from node_modules — run `npm install`');
+        }
+        return send(200, 'text/javascript', data);
       }
 
       // Static. The path is taken from a fixed allowlist rather than joined

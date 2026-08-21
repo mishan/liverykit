@@ -1224,3 +1224,45 @@ test('an emissive-only treatment actually puts pixels on screen', { skip: BROWSE
   assert.ok(lit > 200, `the traces should cover a meaningful area, got ${lit} lit pixels: ${report.join(' | ')}`);
   assert.ok(greenest > 200, `and reach near full strength where the strokes are, got ${greenest}`);
 });
+
+test('the browser resolves colord through the import map, not a copy', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // `uses.js` writes `import { colord } from 'colord'`, which Node resolves from
+  // node_modules and the browser resolves through the import map in index.html
+  // to a file the server hands over from that same package. There is no bundler
+  // and no vendored copy, so the two sides genuinely run the identical code —
+  // but only if the map is right, the server serves it, and this Firefox
+  // supports import maps at all. None of which Node can tell me.
+  //
+  // The editor booting is itself most of the assertion: a bare specifier that
+  // fails to resolve is a module that never evaluates, so `app.js` never runs
+  // and the region list stays empty.
+  const base = (await import('../liveries/neon-grid-any.mjs')).default;
+  const livery = structuredClone({ ...base });
+  livery.palette = { ...livery.palette, plausible: 'rebeccapurple', broken: 'rebecapurple' };
+  livery.surfaces.body.regions = [
+    { id: 'a', panel: 'left_mid', at: [0.1, 0.1, 0.2, 0.2], treatment: 'fill', color: 'red' },
+    { id: 'b', panel: 'left_mid', at: [0.4, 0.1, 0.2, 0.2], treatment: 'fill', color: 'rebecapurple' },
+  ];
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('the editor never came up — colord probably did not resolve'); return done(); }
+      await settle(600);
+      const { isAColour } = await import('/uses.js');
+      say('red: ' + isAColour('red'));
+      say('typo: ' + isAColour('rebecapurple'));
+      const dangling = document.querySelector('#dangling').innerHTML;
+      say('warned about the typo: ' + /rebecapurple/.test(dangling));
+      say('warned about red: ' + /<code>red<\\/code>/.test(dangling));
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname, liveryObject: livery });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.equal(find('red: '), 'red: true', `colord did not resolve in the browser: ${report.join(' | ')}`);
+  assert.equal(find('typo: '), 'typo: false');
+  assert.equal(find('warned about the typo: '), 'warned about the typo: true',
+    'a misspelt colour name is exactly what this panel is for');
+  assert.equal(find('warned about red: '), 'warned about red: false',
+    'and a real one is not worth mentioning');
+});

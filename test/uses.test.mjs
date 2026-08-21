@@ -15,7 +15,7 @@ import '../src/index.mjs';
 import { resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
 import { mulberry32 } from '../src/engine/rng.mjs';
-import { eachRegion, paletteUses, tokenUses, danglingNames, interpolates } from '../src/ui/uses.js';
+import { eachRegion, paletteUses, tokenUses, danglingNames, interpolates, isAColour } from '../src/ui/uses.js';
 
 const core = () => resolveTreatments(['core']);
 
@@ -131,6 +131,33 @@ test('a token the renderer could never substitute is not a token', async () => {
     assert.equal(interpolates(name), substituted,
       `${JSON.stringify(name)}: the editor and the renderer disagree about this name`);
   }
+});
+
+test('a colour is told from a name by parsing it, not by its first character', () => {
+  // The cases the old regex got right, and would have gone on getting right.
+  for (const v of ['#00F0FF', '#fff', 'rgb(1, 2, 3)', 'rgba(1,2,3,.5)', 'hsl(200, 50%, 40%)']) {
+    assert.equal(isAColour(v), true, v);
+  }
+
+  // The ones it got WRONG, and the reason this dependency earns its 8 KB. Both
+  // render perfectly well, and both were reported to the user as unresolved
+  // names, because they do not begin with `#` or `rgb`.
+  for (const v of ['red', 'rebeccapurple', 'darkslategrey']) {
+    assert.equal(isAColour(v), true, `${v} is a colour and was being called a typo`);
+  }
+
+  // And the ones that matter most, which look exactly like those and are not:
+  // a palette entry renamed out from under a region, and a misspelling.
+  for (const v of ['ghost', 'gulf-blue', 'accent', 'rebecapurple', '', '   ']) {
+    assert.equal(isAColour(v), false, `${JSON.stringify(v)} names nothing that can be painted`);
+  }
+
+  // SVG paint values rather than colours: colord rightly declines them, the
+  // renderer accepts them, and this file has to agree with the renderer.
+  for (const v of ['none', 'currentColor', 'inherit', 'var(--team)']) {
+    assert.equal(isAColour(v), true, v);
+  }
+  assert.equal(isAColour(undefined), false, 'and nothing is not a colour');
 });
 
 test('names the design refers to and does not define are listed', () => {

@@ -2425,7 +2425,10 @@ test('a name the palette does not have is not offered for naming either', async 
     dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
     return {
       button: /data-name-colour/.test(dom.querySelector('#inspector').innerHTML),
-      warned: /ghost|gulf-blue/.test(dom.querySelector('#dangling').innerHTML),
+      // The panel's verdict on THIS value, not on any dangling name — the two
+      // halves being one judgement is the property under test, so asking about
+      // the wrong value would make the agreement free.
+      warned: dom.querySelector('#dangling').innerHTML.includes(`<code>${color}</code>`),
     };
   };
 
@@ -2436,12 +2439,15 @@ test('a name the palette does not have is not offered for naming either', async 
   assert.equal((await offered('#F5A11B')).button, true, 'a literal colour still offers it');
   assert.equal((await offered('rgb(1,2,3)')).button, true);
 
-  // The cost of drawing the line here rather than at "what would a browser
-  // accept": `red` is a colour and gets no button. uses.js explains why beside
-  // `looksLikeAName` — the alternative is 148 CSS colour names to maintain — and
-  // the two halves being wrong in the SAME direction is what matters, since the
-  // panel reports `red` as a literal for exactly the same reason.
-  assert.equal((await offered('red')).button, false);
+  // A named CSS colour IS a colour. This was the one case the editor used to get
+  // wrong — in the safe direction, but wrong — because the honest alternative
+  // was maintaining 148 colour names against a spec by hand. `colord` knows
+  // them, so the excuse is gone and the answer is simply right.
+  assert.equal((await offered('red')).button, true, 'a named colour is a colour');
+  assert.equal((await offered('rebeccapurple')).button, true);
+  assert.equal((await offered('rebecapurple')).button, false,
+    'and a typo of one is a dangling name, which is the distinction that matters');
+  assert.equal((await offered('red')).warned, false, 'the panel agrees, because it is the same function');
 });
 
 test('a token that could never be substituted is refused where it is typed', async () => {

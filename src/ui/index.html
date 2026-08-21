@@ -4,6 +4,20 @@
 <meta charset="utf-8">
 <title>liverykit — fit</title>
 <link rel="stylesheet" href="/style.css">
+<!--
+  So that `uses.js` can write `import { colord } from 'colord'` and have it mean
+  the same package here as it does in Node. The server hands over colord's own
+  `.mjs` from node_modules; nothing is bundled and nothing is copied into this
+  repository to go stale. Import maps must come before the first module script.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "colord": "/vendor/colord/index.mjs",
+    "colord/plugins/names": "/vendor/colord/plugins/names.mjs"
+  }
+}
+</script>
 </head>
 <body>
   <header>
