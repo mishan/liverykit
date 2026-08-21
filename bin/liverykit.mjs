@@ -8,7 +8,7 @@ import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
 import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { loadFit } from '../src/fit.mjs';
+import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
 import '../src/index.mjs'; // registers the built-in packs
@@ -248,7 +248,7 @@ const profile = await loadProfile(profilePath);
 // docs/fitting.md. It is looked up by convention so the common case needs no
 // flag, and its absence is completely normal: a car without one renders exactly
 // as the design placed things.
-const liveryName = liveryPath.split(/[\\/]/).pop().replace(/\.mjs$/, '');
+const liveryName = fitLiveryId(liveryPath);
 const fitPath = values.fit
   ? resolve(values.fit)
   : join(ROOT, 'fits', `${liveryName}@${profile.id}.json`);
@@ -275,6 +275,7 @@ if (values.ui) {
     livery,
     profile,
     fitPath,
+    liveryId: liveryName,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
   console.log(`  fitting editor at ${url}`);

@@ -38,7 +38,13 @@ const api = async (path, body) => {
 const data = await api('/api/state');
 state.data = data;
 state.fit = structuredClone(data.fit);
-state.fit.livery ??= data.livery.folder;
+// `livery.id`, not `livery.folder`. A fit is looked up at fits/<id>@<car>.json
+// and repeats the pair inside itself; `folder` is the skin directory the game
+// installs, which for this design is the same name underscored. Writing that in
+// would produce a fit whose contents disagree with its own filename, and with
+// every fit already shipped.
+state.fit.livery ??= data.livery.id;
+state.fit.car ??= data.car.id;
 state.fit.regions ??= {};
 
 $('#livery').textContent = data.livery.name;

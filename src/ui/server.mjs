@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel } from '../profile.mjs';
-import { applyFit, regionIds, unusedFitIds, validateFit, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { applyFit, regionIds, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
@@ -41,7 +41,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
  * judgement in it, and a test should be able to reach it without opening a
  * socket.
  */
-export function editorState({ livery, profile, fit }) {
+export function editorState({ livery, profile, fit, liveryId = null }) {
   const ids = regionIds(livery);
   const { targets } = resolveTargets(profile, livery);
 
@@ -76,12 +76,19 @@ export function editorState({ livery, profile, fit }) {
     });
   }
 
+  // `id` is what a fit calls this design, and it is NOT `folder`. A fit is found
+  // at fits/<id>@<car>.json and repeats the pair inside itself, so a new fit
+  // written with the skin folder name in it would disagree with every fit the
+  // CLI looks up. Where nothing told the server the module name — a test calling
+  // editorState directly — say so rather than guessing from the folder.
+  const id = liveryId ?? null;
+
   return {
-    livery: { name: livery.name, folder: livery.folder, identity: livery.identity ?? {} },
+    livery: { id, name: livery.name, folder: livery.folder, identity: livery.identity ?? {} },
     car: { id: profile.id, name: profile.name ?? profile.id },
     // Which surface a region lives on, so the browser can jump to it by id.
     regionIds: Object.fromEntries(ids),
-    fit: fit ?? { livery: null, car: profile.id, regions: {} },
+    fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
   };
 }
@@ -145,7 +152,16 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   return { svg: layers.base, emissive: layers.emissive, placed, notes };
 }
 
-export async function startUi({ livery, profile, fitPath, port = 7391, log = console.log }) {
+export async function startUi({ livery, profile, fitPath, liveryId, port = 7391, log = console.log }) {
+  // What this editor is a fit FOR. Every fit that comes in or goes out has to
+  // name this pair, or it is a fit for something else being edited by mistake.
+  //
+  // The design's id has to be passed in rather than read off the livery object:
+  // it is the module basename, which only the caller that resolved the module
+  // knows. Guessing it from `livery.folder` is exactly the bug this guards.
+  if (!liveryId) throw new Error('startUi needs liveryId — the name a fit knows this design by (see fitLiveryId).');
+  const identity = { livery: liveryId, car: profile.id };
+
   // A missing fit is the normal case — most cars have never been tuned. A fit
   // that exists and is wrong is not, and starting anyway would give an editor
   // that looks fine and fails only when you press Save, by which point you have
@@ -153,6 +169,10 @@ export async function startUi({ livery, profile, fitPath, port = 7391, log = con
   let fit = null;
   try {
     fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
+    // And it has to be a fit for THIS design on THIS car. `--fit` takes any
+    // path, and the conventional one outlives the profile it was written for,
+    // so the file being open is not by itself evidence that it belongs here.
+    checkFitIdentity(fit, { ...identity, source: fitPath });
   } catch (e) {
     if (e.code !== 'ENOENT') {
       throw new Error(`Could not load ${fitPath}: ${e.message}`);
@@ -185,7 +205,7 @@ export async function startUi({ livery, profile, fitPath, port = 7391, log = con
       const url = new URL(req.url, 'http://localhost');
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
-        return json(200, editorState({ livery, profile, fit }));
+        return json(200, editorState({ livery, profile, fit, liveryId }));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/render') {
@@ -195,6 +215,16 @@ export async function startUi({ livery, profile, fitPath, port = 7391, log = con
 
       if (req.method === 'POST' && url.pathname === '/api/fit') {
         const next = validateFit(await body(), fitPath);
+        // Save is a whole-file overwrite, so a client that has drifted — or a
+        // request typed by hand — can replace this pair's fit with another
+        // pair's. The file is named after the pair it is for; refuse to write
+        // anything that contradicts the name. A 409, not a 500: the server is
+        // fine, the submission is for something else.
+        try {
+          checkFitIdentity(next, { ...identity, source: fitPath });
+        } catch (e) {
+          return json(409, { error: e.message });
+        }
         await mkdir(dirname(fitPath), { recursive: true });
         await writeFile(fitPath, JSON.stringify(next, null, 2) + '\n');
         fit = next;

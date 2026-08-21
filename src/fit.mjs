@@ -28,6 +28,42 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { basename } from 'node:path';
+
+/**
+ * The name a fit knows a design by.
+ *
+ * A fit lives at `fits/<livery>@<car>.json` and repeats both halves of that pair
+ * inside itself, so the two have to be derived the same way or the file
+ * disagrees with its own name. This is the module basename — `neon-grid-any` —
+ * and NOT `livery.folder`, which is the skin directory the game installs
+ * (`neon_grid_any`) and is a different string on every design that has both.
+ */
+export function fitLiveryId(liveryPath) {
+  return basename(liveryPath).replace(/\.mjs$/, '');
+}
+
+/**
+ * Refuse a fit that is for some other design, or some other car.
+ *
+ * `--fit` takes an arbitrary path and the conventional one can go stale, so
+ * nothing guarantees the file loaded describes the pair being worked on. Left
+ * unchecked, the editor opens on one design's regions, resolves them against
+ * another car's panels and writes the result back over the original — silently,
+ * because each step on its own is valid.
+ */
+export function checkFitIdentity(f, { livery, car, source = '<inline>' }) {
+  const mismatch = (field, want, got) => {
+    throw new Error(
+      `Fit ${source}: "${field}" is ${JSON.stringify(got)}, but this is a fit for ` +
+      `${field} ${JSON.stringify(want)}. A fit belongs to one (design, car) pair — ` +
+      `using it for another places one design's region ids on a car that never declared them.`
+    );
+  };
+  if (livery && f.livery !== livery) mismatch('livery', livery, f.livery);
+  if (car && f.car !== car) mismatch('car', car, f.car);
+  return f;
+}
 
 /**
  * What a fit may change about a region.
