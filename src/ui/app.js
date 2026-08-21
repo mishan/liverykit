@@ -1315,10 +1315,20 @@ function optionControls(id) {
         o.values.map((x) => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('')
       }</select>`;
     } else if (o.type === 'color') {
+      // `palette-names`, not `palette`: the panel on the right already owns that
+      // id, this datalist sits inside #inspector which comes first in the
+      // document, and querySelector takes the first — so the panel would have
+      // quietly started writing its rows into a datalist.
       const names = Object.keys(state.design?.palette ?? {});
-      input = `<input list="palette" data-opt="${esc(key)}" data-kind="string"
+      const literal = has && !names.includes(v) && !/^(#|rgb|hsl)/i.test(v);
+      input = `<input list="palette-names" data-opt="${esc(key)}" data-kind="string"
         value="${has ? esc(v) : ''}"${hint}>` +
-        `<datalist id="palette">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`;
+        `<datalist id="palette-names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>` +
+        // A value that is neither a palette name nor a literal colour is the one
+        // case worth acting on: it renders as nothing anybody chose.
+        (literal ? `<button class="rot" data-name-colour="${esc(key)}">name it</button>` : '')
+        + (has && !names.includes(v) && /^(#|rgb|hsl)/i.test(v)
+          ? `<button class="rot" data-name-colour="${esc(key)}">add to palette</button>` : '');
     } else if (o.type === 'number') {
       const bounds = [o.min !== undefined ? `min="${o.min}"` : '', o.max !== undefined ? `max="${o.max}"` : '',
         o.step !== undefined ? `step="${o.step}"` : ''].join(' ');
@@ -1413,6 +1423,25 @@ function wireOptionControls(id) {
   }
   const remove = inspector.querySelector?.('#removeregion');
   if (remove) remove.onclick = () => deleteDesignRegion(id);
+
+  // Turn a one-off colour into a palette entry, and point the region at it.
+  // This is the loop closing: pick a colour on a region, name it, and everything
+  // else in the design can use it — which is how a palette gets built in
+  // practice rather than written out in advance.
+  for (const el of inspector.querySelectorAll?.('[data-name-colour]') ?? []) {
+    el.onclick = () => {
+      const key = el.dataset.nameColour;
+      const value = region[key];
+      const name = (typeof prompt === 'function' ? prompt(`Call ${value} what?`) : '')?.trim();
+      if (!name) return status('a palette entry needs a name');
+      if (state.design.palette?.[name] !== undefined) return status(`${name} is already taken`);
+      remember(`name ${value}`);
+      (state.design.palette ??= {})[name] = value;
+      region[key] = name;
+      setDesignDirty();
+      return refresh();
+    };
+  }
 
   const copy = inspector.querySelector?.('#copyregion');
   if (copy) {
