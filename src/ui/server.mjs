@@ -12,9 +12,12 @@
 // a document swap — no ImageMagick, no DDS encode, no file watching. A fitting
 // tool that re-encoded a texture per nudge would be too slow to be worth using.
 //
-// Four endpoints, no framework, no build step, no dependencies:
+// No framework and no build step. The browser's one dependency is served from
+// `node_modules` as the package's own ESM, through the two-entry VENDOR
+// allowlist below and an import map in `index.html` — see `vendorPath`.
 //
 //   GET  /                 the app
+//   GET  /vendor/colord/*  colord's own ESM, so the browser and Node agree
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
 //   POST /api/state        the same, for a working fit or design not yet saved
 //   GET  /api/treatments   what each treatment takes, for the inspector
@@ -834,9 +837,11 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // package — so the editor and the tests agree about what a colour is
       // because they are running the identical file.
       //
-      // Also an allowlist, and resolved through `require.resolve` rather than by
-      // joining a path, so this stays a server that can serve four named files
-      // and not a way to read `node_modules`.
+      // An allowlist of exactly the two paths in VENDOR, each mapped to a
+      // package specifier that `import.meta.resolve` turns into a real file.
+      // Nothing here is joined with anything from the request, so this stays a
+      // server that can hand over two named files and not one that can be
+      // talked into reading `node_modules`.
       if (VENDOR.has(url.pathname)) {
         const data = await readFile(vendorPath(url.pathname)).catch(() => null);
         if (!data) {
