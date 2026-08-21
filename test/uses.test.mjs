@@ -167,13 +167,12 @@ test('the shipped designs refer to nothing they do not define', async () => {
 
 // --- the emissive layer ------------------------------------------------------
 
-test('the editor is shown both layers, because some treatments only draw on one', async () => {
+test('the editor draws both layers, because some treatments only draw on one', async () => {
   // `traces` and `sparkles` return an empty base and draw entirely into the
   // emissive layer; `piping`, `ring`, `text` and `radialText` move there under
   // `glow: true`. The editor showed `base` alone, so all of that was painted
   // correctly by the build and invisible in every view of the tool for looking
   // at it — which is this project's oldest failure in a new costume.
-  const { previewSvg } = await import('../src/render.mjs');
   const { renderSurface } = await import('../src/ui/server.mjs');
   const { loadProfile } = await import('../src/profile.mjs');
 
@@ -192,18 +191,29 @@ test('the editor is shown both layers, because some treatments only draw on one'
   for (const name of ['piping', 'ring', 'text', 'radialText']) {
     const out = treatments.get(name).fn(rect, ctx({ text: 'HI', glow: true }));
     assert.equal(out.base, '', `${name} with glow should move entirely to emissive`);
+    // Both halves, or the assertion above is satisfied by a treatment that has
+    // stopped drawing anything at all — which is the very thing being guarded
+    // against, arriving as a passing test.
+    assert.ok(out.emissive, `${name} with glow should draw into the emissive layer`);
   }
 
-  // And what the editor is handed contains them.
+  // So a design using them is a design the base alone cannot show. `traces` is
+  // the round-capped stroke below, and nothing else in this livery draws one.
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = Object.keys(profile.textures).find((r) => profile.panels[r]?.left_mid);
   const out = renderSurface({ livery, profile, fit: null, role });
 
-  assert.ok(!/stroke-linecap="round"/.test(out.base), 'the base alone never had the traces');
-  assert.match(out.svg, /stroke-linecap="round"/, 'what the editor draws does');
+  assert.match(out.svg, /stroke-linecap="round"/, 'what the editor draws has the traces in it');
   assert.match(out.svg, /lk-glow/, 'and glows them, as the build does');
   assert.equal((out.svg.match(/<svg/g) ?? []).length, 1, 'still one document');
+
+  // ONE document, and not the pieces beside it. This response goes back on every
+  // frame of a drag, and each layer is about the size of the finished thing, so
+  // sending them along for a reader that does not exist is three times the
+  // payload for nothing. Asserted rather than left to good intentions, because
+  // adding a field is the easiest way in the world to make a drag stutter.
+  assert.deepEqual(Object.keys(out).sort(), ['notes', 'placed', 'svg']);
 });
 
 test('the preview glow follows the design and the texture size', async () => {
