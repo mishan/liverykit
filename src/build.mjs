@@ -90,7 +90,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   let firstPng = null;
   const written = [];
 
-  for (const { role, spec, primary } of targets) {
+  for (const { from, role, spec, primary } of targets) {
     const tex = texture(profile, role);
     // Regions that matched no panel are collected here and reported with
     // everything else at the end, rather than one line at a time mid-build.
@@ -111,7 +111,12 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // while a car number belongs on the car once, not once per texture.
       regions: flat ? [] : applyFit(
         (spec.regions ?? []).filter((r) => !(r.once && !primary)),
-        fit, { profile, role, used: fitUsed, notes },
+        // `surfaceKey` is not optional here, whatever the default says. A region
+        // the design gave no id is addressed by POSITION, and the key is made
+        // from the surface it sits on: the editor writes `body#0`, so a build
+        // that computed `#0` matched none of them. The editor's own output then
+        // adjusted nothing, and said so only as a stale-id note at the end.
+        fit, { profile, role, surfaceKey: from, used: fitUsed, notes },
       ).regions,
       background: spec.background,
       treatments,

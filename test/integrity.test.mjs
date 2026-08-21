@@ -1456,6 +1456,52 @@ test('the editor is told the profile\'s panel name, not the livery\'s', async ()
   assert.deepEqual(placed.abs, [0.3, 0.2, 0.2, 0.4]);
 });
 
+test('the editor and the build agree on what a region without an id is called', async () => {
+  // A region the design gave no id is addressed by POSITION, and the key is made
+  // from the surface it sits on. The editor passed the surface and the build did
+  // not, so the editor wrote `body#0` into a fit and the build looked for `#0`.
+  // Every adjustment made to an unnamed region — which is 95 of the 95 regions
+  // in the bundled neon-grid — did nothing, and said so only as a stale-id note
+  // buried at the end of the build.
+  const { applyFit } = await import('../src/fit.mjs');
+  const { buildSkin } = await import('../src/build.mjs');
+
+  const profile = {
+    id: 'c', name: 'C',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { L: { rect: [0, 0, 0.5, 1] }, R: { rect: [0.5, 0, 0.5, 1] } } },
+  };
+  const livery = {
+    name: 'L', folder: 'l', car: 'c', palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: { body: { background: 'ink', regions: [
+      { panel: 'L', at: [0, 0, 1, 1], treatment: 'fill', color: 'accent' },
+    ] } },
+  };
+  const fit = { livery: 'l', car: 'c', regions: { 'body#0': { panel: 'R' } } };
+
+  // What the editor calls it.
+  const key = applyFit(livery.surfaces.body.regions, null,
+    { profile, role: 'body', surfaceKey: 'body' }).regions[0].__key;
+  assert.equal(key, 'body#0');
+
+  // And the build has to reach the same region by that name. buildSkin needs an
+  // encoder, so this checks the one thing that decides it: whether the fit was
+  // used up, or left over and reported stale.
+  const used = new Set();
+  const notes = [];
+  const out = applyFit(livery.surfaces.body.regions, fit,
+    { profile, role: 'body', surfaceKey: 'body', used, notes }).regions;
+  assert.equal(out[0].panel, 'R', 'the override applied');
+  assert.ok(used.has('body#0'), 'and the fit id was consumed rather than left dangling');
+  assert.equal(typeof buildSkin, 'function');
+
+  // The source of truth for what the build passes: it must name the surface.
+  const src = await readFile(new URL('../src/build.mjs', import.meta.url), 'utf8');
+  assert.match(src, /surfaceKey:\s*from/,
+    'buildSkin must pass the surface key, or unnamed regions are addressed differently here');
+});
+
 test('a stale fit reaches the editor as a note rather than a crash', async () => {
   const { renderSurface } = await import('../src/ui/server.mjs');
   const { loadProfile, binding } = await import('../src/profile.mjs');
