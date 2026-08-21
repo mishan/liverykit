@@ -202,11 +202,21 @@ test('the editor draws both layers, because some treatments only draw on one', a
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = Object.keys(profile.textures).find((r) => profile.panels[r]?.left_mid);
+  // Named rather than assumed. Without this the fixture drifting would surface
+  // as a throw from deep inside renderSurface about something else entirely.
+  assert.ok(role, 'no texture in the abarth500 profile has a left_mid panel any more');
   const out = renderSurface({ livery, profile, fit: null, role });
 
   assert.match(out.svg, /stroke-linecap="round"/, 'what the editor draws has the traces in it');
   assert.match(out.svg, /lk-glow/, 'and glows them, as the build does');
   assert.equal((out.svg.match(/<svg/g) ?? []).length, 1, 'still one document');
+
+  // Referred to three times and written once. The emissive layer of a glowing
+  // design is most of the document, this goes back on every frame of a drag, and
+  // three copies of it would also mean three copies of any `id` a treatment
+  // emits — where every `url(#...)` silently resolves to the first.
+  assert.equal((out.svg.match(/id="lk-emissive"/g) ?? []).length, 1);
+  assert.equal((out.svg.match(/href="#lk-emissive"/g) ?? []).length, 3);
 
   // ONE document, and not the pieces beside it. This response goes back on every
   // frame of a drag, and each layer is about the size of the finished thing, so
@@ -234,8 +244,15 @@ test('the preview glow follows the design and the texture size', async () => {
   assert.match(previewSvg(layers(true, 4096), { glowSigma: 14 }), /stdDeviation="28"/);
   assert.match(previewSvg(layers(true, 2048), { glowSigma: 4 }), /stdDeviation="4"/);
 
-  // Two screened passes then a crisp one, matching composeLayers.
+  // Two screened passes then a crisp one, matching composeLayers — and the layer
+  // itself written ONCE and referred to three times. Copying it out would mean
+  // three times the markup on every frame of a drag, and three copies of any
+  // `id` a treatment emits, where each `url(#...)` resolves to the first: the
+  // crisp pass would silently take the blurred pass's paint.
   const svg = previewSvg(layers(true, 2048));
-  assert.equal((svg.match(/<circle\/>/g) ?? []).length, 3);
+  assert.equal((svg.match(/<circle\/>/g) ?? []).length, 1, 'the layer is written once');
+  assert.equal((svg.match(/href="#lk-emissive"/g) ?? []).length, 3, 'and drawn three times');
   assert.equal((svg.match(/mix-blend-mode:screen/g) ?? []).length, 2);
+  assert.ok(svg.indexOf('id="lk-emissive"') < svg.indexOf('href="#lk-emissive"'),
+    'defined before it is used');
 });
