@@ -1742,3 +1742,56 @@ test('the editor caps how much it will read from a request', async () => {
     server.close();
   }
 });
+
+test('the vendor route serves two named files and cannot be walked out of', async () => {
+  // The editor needs colord in the browser, and gets it from `node_modules` as
+  // the package's own ESM rather than as a vendored copy — which means the
+  // fitting server now has a route whose job is to read out of `node_modules`.
+  // That is worth a test rather than a comment: the whole file is built around
+  // never joining a request path with a directory, and this is the one place
+  // somebody would be tempted to.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-vendor-'));
+  const { server } = await startUi({
+    livery, profile, fitPath: join(dir, 'absent.json'),
+    liveryId: 'neon-grid-any', port: 0, log: () => {},
+  });
+  const at = (p) => `http://127.0.0.1:${server.address().port}${p}`;
+
+  try {
+    const ok = await fetch(at('/vendor/colord/index.mjs'));
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('content-type'), 'text/javascript');
+    const body = await ok.text();
+    assert.match(body, /export/, 'and it is a module, not a 404 page with a 200 on it');
+
+    const names = await fetch(at('/vendor/colord/plugins/names.mjs'));
+    assert.equal(names.status, 200);
+
+    // Everything else under the prefix, including the things a path-joining
+    // server would hand over. `fetch` normalises `..` before it sends, so the
+    // last two arrive already resolved — which is the point: there is no
+    // spelling of a traversal that reaches the allowlist, because the allowlist
+    // is compared whole rather than joined.
+    for (const p of [
+      '/vendor/colord/package.json',
+      '/vendor/colord/index.js',
+      '/vendor/sharp/package.json',
+      '/vendor/colord/../../package.json',
+      '/vendor/colord/index.mjs/../../../package.json',
+      '/vendor/',
+    ]) {
+      const res = await fetch(at(p));
+      assert.equal(res.status, 404, `${p} should not be served`);
+    }
+  } finally {
+    server.close();
+  }
+});
