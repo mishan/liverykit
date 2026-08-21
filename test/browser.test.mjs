@@ -1266,3 +1266,43 @@ test('the browser resolves colord through the import map, not a copy', { skip: B
   assert.equal(find('warned about red: '), 'warned about red: false',
     'and a real one is not worth mentioning');
 });
+
+test('a livery cannot run code in the editor', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The one that made this branch urgent. Treatments build markup by
+  // interpolation, so a palette value that closes the attribute becomes
+  // STRUCTURE — and the editor sets the finished document as `innerHTML`, where
+  // an inserted <script> is inert but an event handler on an inserted element
+  // is not. This exact payload reported PWNED before the fix.
+  //
+  // Worth doing in a browser rather than by reading markup: whether an injected
+  // handler fires is a fact about a browser's parser, and the markup assertions
+  // in test/injection.test.mjs are only as good as my idea of what is dangerous.
+  const base = (await import('../liveries/neon-grid-any.mjs')).default;
+  const livery = structuredClone({ ...base });
+  livery.palette = { ...livery.palette,
+    base: 'x"/><image href="data:image/gif;base64,BROKEN" onerror="window.__PWNED = 1"/><rect fill="black' };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('the editor never came up'); return done(); }
+      await uvTab();
+      await settle(1200);
+      const tex = document.querySelector('#texture').innerHTML;
+      say('ran: ' + (window.__PWNED ? 'YES' : 'no'));
+      say('injected an element: ' + /<image/i.test(tex));
+      // The value is still THERE, as the text of an attribute, which is the
+      // point: escaping changed what it can do and not what it says.
+      say('value survived: ' + /onerror/.test(tex));
+      say('still drew the car: ' + (document.querySelectorAll('#texture path, #texture rect').length > 10));
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname, liveryObject: livery });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.equal(find('ran: '), 'ran: no', `the payload executed: ${report.join(' | ')}`);
+  assert.equal(find('injected an element: '), 'injected an element: false');
+  assert.equal(find('value survived: '), 'value survived: true',
+    'the escaping should neuter the value, not silently eat it');
+  assert.equal(find('still drew the car: '), 'still drew the car: true',
+    'and the rest of the livery still renders');
+});
