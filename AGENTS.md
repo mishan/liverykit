@@ -116,6 +116,56 @@ above anything with judgement in it, naming the alternative that was rejected an
 the failure that motivated the choice — usually a real one, in the past tense.
 Match it. A comment restating the code is worse than none.
 
+## Assetto Corsa things that will bite you
+
+The format's own hazards, and the reason "nothing may fail silently" above is a
+rule rather than a preference. Every one of these produces a file that installs,
+loads, and is wrong, with no error anywhere. Most of the guards in `src/engine/`
+exist because of a specific line below, so check here before deciding one of them
+is over-cautious.
+
+- **Some mod cars ship an encrypted kn5.** Geometry, materials and UV layout read
+  normally, but every embedded texture is a 1x1 placeholder with the real ones in
+  a Custom Shaders Patch blob appended to the file. liverykit detects this, uses
+  the geometry, and takes texture sizes from the car's skin folders — so pass
+  `--skins`. It does not decrypt anything and is not going to: that is the
+  author's artwork, protected on purpose. For textures no stock skin overrides,
+  `--assume-size 2048` paints them at a size you choose, recorded in the profile
+  as `"sizeFrom": "assumed"` so it is never mistaken for a measurement.
+- **Which way a car faces is read from its wheels, not its mesh names.** AC
+  requires `WHEEL_LF`/`RF`/`LR`/`RR` on every car for the physics, so the axes
+  are exact. Mesh names were inconclusive on 91 of 235 cars and wrong on two. The
+  profile records the resulting track width and wheelbase, which are worth a
+  glance against a spec sheet — they are the only numbers in there you can check
+  independently.
+- **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
+  nothing, so glow is done at the raster stage instead. Don't put filters in
+  generated SVG.
+- **ImageMagick picks the DXT variant from alpha presence**, not from your
+  `dds:compression` define. Ask for dxt5 on an image without alpha and you get
+  DXT1.
+- **`dds:mipmaps=0` means zero mipmaps** — the opposite of texconv's `-m 0`.
+  Chain length is `log2(max(w,h)) + 1`; note the `max`, so a 2048×512 texture
+  needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
+- **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
+  them and exits 0. liverykit refuses these outright.
+- **Not every texture is a DDS.** Models bind `.png` textures too — on the
+  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
+  vertices. Those are written as PNG; forcing a DDS would produce a filename
+  that matches nothing.
+- **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The
+  classic cause of "why is my car white" with other tools.
+- **A filename that matches nothing overrides nothing.** No error anywhere; you
+  just get the stock car.
+- **Case collisions.** `Suit_DIFF.dds` and `SUIT_DIFF.dds` coexist on ext4 and
+  are *one file* on NTFS, where the second to extract wins. Ship one spelling.
+- **librsvg does no text reflow or auto-shrink.** The `text` treatment estimates
+  advance width and scales down to fit.
+- **`<textPath>` support in librsvg is inconsistent.** `radialText` places glyphs
+  individually instead.
+- **The emissive layer always composites above the base**, so decoration lands on
+  top of lettering unless you exclude it — `sparkles` takes `avoid` rects.
+
 ## Git
 
 Work on a branch. Do not prefix branch names with `claude/`, and do not add

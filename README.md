@@ -106,6 +106,35 @@ Text rendering needs a font the renderer can find. The examples use DejaVu Sans;
 on Windows or macOS, change `render.font` in your livery to something installed
 locally.
 
+### You supply the game's files
+
+This repository contains no car models, textures or skins, and never will: they
+belong to the people who made the cars. What it ships are **profiles** —
+measurements about a car, a few hundred lines of JSON each — which is why the two
+bundled examples build without you owning anything.
+
+Anything that has to read a car reads it from *your* installation:
+
+| | needs |
+|---|---|
+| building a livery on a bundled profile | nothing |
+| `--from-kn5`, `--explain` | the car's `.kn5`, path given explicitly |
+| `--ui`, the 3D views | the car's `.kn5`, found or given |
+| `--scan`, `--skins` | a `skins/` folder from the car |
+
+Tell it where your install is once and the rest follows:
+
+```sh
+export AC_ROOT="$HOME/.steam/steam/steamapps/common/assettocorsa"
+# Windows: C:\Program Files (x86)\Steam\steamapps\common\assettocorsa
+```
+
+`--ui` searches `$AC_ROOT`, then `$ASSETTOCORSA`, then this checkout under
+`content/cars/<car>/` or `cars/<car>/` — so unpacking a car into the repo works
+too, and both paths are gitignored. If it finds nothing it says so and lists
+every path it tried; the UV editor still works without a model, and only the Car
+tabs are unavailable.
+
 *Developed and tested on Linux. The output is Windows-bound either way, since
 that's where the game runs.*
 
@@ -119,13 +148,14 @@ that's where the game runs.*
 `rss_formula_rss_4`, and so on.
 
 ```sh
-node bin/liverykit.mjs --from-kn5 <AC>/content/cars/<carId>/<carId>.kn5 \
-                       --skins    <AC>/content/cars/<carId>/skins \
+node bin/liverykit.mjs --from-kn5 "$AC_ROOT/content/cars/<carId>/<carId>.kn5" \
+                       --skins    "$AC_ROOT/content/cars/<carId>/skins" \
                        --car-id   <carId> --out cars/
 ```
 
-`<AC>` is your install: on Windows usually
-`C:\Program Files (x86)\Steam\steamapps\common\assettocorsa`.
+Both paths are into *your* Assetto Corsa install — see
+[You supply the game's files](#you-supply-the-games-files). Nothing here is
+found for you: `--from-kn5` and `--explain` take a path and read exactly it.
 
 `--skins` matters. The textures inside a kn5 are the model's own low-resolution
 defaults — often 512×512 where the skins ship 2048×2048 — so real sizes are
@@ -262,6 +292,10 @@ The proposal is right about 98% of the time, which is very good and is not the
 same as trustworthy without looking, so confirm it:
 
 ```sh
+# --explain takes a path; it never goes looking. Either from your install:
+node bin/liverykit.mjs --explain "$AC_ROOT/content/cars/abarth500/abarth500.kn5" \
+                       --skins   "$AC_ROOT/content/cars/abarth500/skins"
+# or from a car unpacked into this checkout, which .gitignore already expects:
 node bin/liverykit.mjs --explain cars/abarth500/abarth500.kn5 --skins cars/abarth500/skins
 ```
 
@@ -335,9 +369,10 @@ Three views, because the sheet is not the question:
 - **Whole car** — every painted surface at once. A stripe can meet the bodywork
   perfectly and miss the sidepod beside it.
 
-The Car views need the car's `.kn5`. It is found automatically under
-`content/cars/<car>/` from the profile's own record of what it was built from, or
-pass `--model`. Without it the UV view still works and the tab says why.
+The Car views need the car's `.kn5`, which is yours and not shipped here — see
+[You supply the game's files](#you-supply-the-games-files). The profile records
+which model it was generated from, so setting `AC_ROOT` is usually enough; `--model`
+overrides it. Without one the UV view still works and the tab says why.
 
 Nothing is written until **Save fit**, which writes `fits/<livery>@<car>.json`.
 Undo and redo (Ctrl/Cmd-Z, Shift-Ctrl/Cmd-Z) cover everything that changes the
@@ -524,59 +559,13 @@ Full procedure in [docs/calibration.md](docs/calibration.md).
 
 ---
 
-## Assetto Corsa things that will bite you
-
-All of these fail silently.
-
-- **Some mod cars ship an encrypted kn5.** Geometry, materials and UV layout read
-  normally, but every embedded texture is a 1x1 placeholder with the real ones in
-  a Custom Shaders Patch blob appended to the file. liverykit detects this, uses
-  the geometry, and takes texture sizes from the car's skin folders — so pass
-  `--skins`. It does not decrypt anything and is not going to: that is the
-  author's artwork, protected on purpose. For textures no stock skin overrides,
-  `--assume-size 2048` paints them at a size you choose, recorded in the profile
-  as `"sizeFrom": "assumed"` so it is never mistaken for a measurement.
-- **Which way a car faces is read from its wheels, not its mesh names.** AC
-  requires `WHEEL_LF`/`RF`/`LR`/`RR` on every car for the physics, so the axes
-  are exact. Mesh names were inconclusive on 91 of 235 cars and wrong on two. The
-  profile records the resulting track width and wheelbase, which are worth a
-  glance against a spec sheet — they are the only numbers in there you can check
-  independently.
-- **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
-  nothing, so glow is done at the raster stage instead. Don't put filters in
-  generated SVG.
-- **ImageMagick picks the DXT variant from alpha presence**, not from your
-  `dds:compression` define. Ask for dxt5 on an image without alpha and you get
-  DXT1.
-- **`dds:mipmaps=0` means zero mipmaps** — the opposite of texconv's `-m 0`.
-  Chain length is `log2(max(w,h)) + 1`; note the `max`, so a 2048×512 texture
-  needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
-- **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
-  them and exits 0. liverykit refuses these outright.
-- **Not every texture is a DDS.** Models bind `.png` textures too — on the
-  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
-  vertices. Those are written as PNG; forcing a DDS would produce a filename
-  that matches nothing.
-- **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The
-  classic cause of "why is my car white" with other tools.
-- **A filename that matches nothing overrides nothing.** No error anywhere; you
-  just get the stock car.
-- **Case collisions.** `Suit_DIFF.dds` and `SUIT_DIFF.dds` coexist on ext4 and
-  are *one file* on NTFS, where the second to extract wins. Ship one spelling.
-- **librsvg does no text reflow or auto-shrink.** The `text` treatment estimates
-  advance width and scales down to fit.
-- **`<textPath>` support in librsvg is inconsistent.** `radialText` places glyphs
-  individually instead.
-- **The emissive layer always composites above the base**, so decoration lands on
-  top of lettering unless you exclude it — `sparkles` takes `avoid` rects.
-
----
-
 ## Contributing
 
 Car profiles are the most valuable thing to contribute: one command produces one,
 and it's identical for everyone who owns that car. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md), and [AGENTS.md](AGENTS.md) for how the code
+is arranged and the Assetto Corsa behaviours it is defending against — every one
+of which produces a file that installs cleanly and is wrong.
 
 The kn5 reader is reverse-engineered from a format with no public specification.
 It validates by consuming the file to its exact final byte, so a wrong layout
