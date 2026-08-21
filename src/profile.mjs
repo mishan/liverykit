@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { VOCABULARY } from './engine/classify.mjs';
 
 export async function loadProfile(path) {
@@ -314,6 +315,33 @@ export function texture(profile, role) {
     );
   }
   return t;
+}
+
+/**
+ * Where this car's `.kn5` might be, in the order worth trying.
+ *
+ * A model belongs to whoever made the car, so this project ships none and never
+ * will — which leaves the person to supply one, and makes "the 3D view is
+ * broken" and "you have not said where your game is" look identical unless the
+ * tool lists what it tried. Hence a list rather than a single guess.
+ *
+ * `AC_ROOT`, or `ASSETTOCORSA` which some tools already set, points at the game
+ * install. Failing that a car unpacked into the checkout works, under either the
+ * game's own `content/cars/<id>/` layout or the flatter `cars/<id>/` that
+ * --from-kn5 tends to be pointed at. Both are gitignored.
+ *
+ * Pure, and separate from the looking, so the ORDER can be tested without a
+ * filesystem: it is the part that decides whose copy of a car you get.
+ */
+export function carModelCandidates(profile, { root, env = {} } = {}) {
+  const file = profile?.calibration?.source;
+  if (!file) return [];
+  const id = profile.id;
+  const installs = [env.AC_ROOT, env.ASSETTOCORSA, root].filter(Boolean);
+  return [
+    ...installs.map((r) => join(r, 'content', 'cars', id, file)),
+    ...(root ? [join(root, 'cars', id, file)] : []),
+  ];
 }
 
 /**

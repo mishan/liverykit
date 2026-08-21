@@ -1502,6 +1502,36 @@ test('the editor and the build agree on what a region without an id is called', 
     'buildSkin must pass the surface key, or unnamed regions are addressed differently here');
 });
 
+test('a car model is looked for where a person would actually have one', async () => {
+  // This project ships no .kn5 and never will — a model belongs to whoever made
+  // the car. So the editor's 3D views depend entirely on the person supplying
+  // one, and "the 3D view is broken" and "you have not said where your game is"
+  // look identical unless the tool goes looking in the right places and lists
+  // what it tried. The default used to be a single path inside the checkout,
+  // which works only if you unpack a car into the repo.
+  const { carModelCandidates } = await import('../src/profile.mjs');
+  const profile = { id: 'abarth500', calibration: { source: 'abarth500.kn5' } };
+
+  const env = { AC_ROOT: '/games/ac', ASSETTOCORSA: '/other/ac' };
+  assert.deepEqual(carModelCandidates(profile, { root: '/repo', env }), [
+    '/games/ac/content/cars/abarth500/abarth500.kn5',
+    '/other/ac/content/cars/abarth500/abarth500.kn5',
+    '/repo/content/cars/abarth500/abarth500.kn5',
+    '/repo/cars/abarth500/abarth500.kn5',
+  ], 'the game install is asked first, then the checkout, in both layouts');
+
+  // No environment: the checkout still works, which is the arrangement for
+  // anyone unpacking a car they do not want to keep.
+  assert.deepEqual(carModelCandidates(profile, { root: '/repo' }), [
+    '/repo/content/cars/abarth500/abarth500.kn5',
+    '/repo/cars/abarth500/abarth500.kn5',
+  ]);
+
+  // A profile that does not record what it was built from cannot be guessed at,
+  // and saying so beats offering a path with `undefined` in it.
+  assert.deepEqual(carModelCandidates({ id: 'x' }, { root: '/repo' }), []);
+});
+
 test('a stale fit reaches the editor as a note rather than a crash', async () => {
   const { renderSurface } = await import('../src/ui/server.mjs');
   const { loadProfile, binding } = await import('../src/profile.mjs');
