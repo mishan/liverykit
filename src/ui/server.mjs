@@ -586,10 +586,14 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   // The BOTH-layers document, not just the base. Several treatments draw nothing
   // into the base at all, so returning it alone made them invisible in every
   // view of the editor while the build painted them correctly.
+  //
+  // Flattened here and sent as ONE field. Each layer is about the size of the
+  // finished document, and this response goes back on every frame of a drag —
+  // `livePreview` fires from pointermove — so carrying the two alongside it
+  // would roughly triple the payload to serve a reader that does not exist.
+  // Anything that later needs them apart should ask for them.
   return {
     svg: previewSvg(layers, { glowSigma: livery.render?.glowSigma ?? 14 }),
-    base: layers.base,
-    emissive: layers.emissive,
     placed,
     notes,
   };
