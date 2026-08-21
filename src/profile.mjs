@@ -268,7 +268,7 @@ export function resolveTargets(profile, livery) {
       // ships in nearly every road-car skin and on several of those cars is
       // bound to no mesh anywhere. This cannot be settled without the other
       // model, so it is flagged rather than guessed at.
-      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {  // eslint-disable-line
+      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {
         notes.push({
           term, status: 'unverified',
           text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
