@@ -1647,28 +1647,34 @@ async function mirrorCopy(id) {
 }
 
 /**
- * Duplicate a region in place, nudged clear of the original.
+ * Duplicate a region into the DESIGN, nudged clear of the original.
  *
- * The same mechanism as a mirrored copy — a copy is a copy, and mirroring is
- * only how the placement was arrived at. It is NOT paired with its source: two
- * badges on the same panel are two things, and linking them would make every
- * edit move both, which is the opposite of why anyone duplicates something.
+ * This used to write a fit `copy`, and it was the one place the fit/design line
+ * was crossed for convenience rather than for a reason. A MIRRORED copy earns
+ * its place there: it says *this car has two flanks*, which is a fact about the
+ * car, and a design cannot know it. A duplicate says *I want two badges*, which
+ * is a fact about the design and true of every car it is pointed at. It only
+ * ever lived in the fit because the mechanism was already there.
  *
- * Offset rather than placed exactly on top. A duplicate hidden under its
- * original looks like the button did nothing, and the way to find out otherwise
- * is to drag the one you can see and discover a second underneath.
+ * Now that a design can gain a region, it goes where it belongs. `copies` means
+ * mirroring again.
+ *
+ * Offset rather than placed exactly on top, and offset the other way when there
+ * is no room: a duplicate hidden under its original looks like the button did
+ * nothing, and the way to find out otherwise is to drag the one you can see.
  */
 async function duplicateRegion(id) {
   const sel = state.placed.find((p) => p.id === id);
   if (!sel) return status('nothing placed to duplicate');
-  const here = state.surface.panels.find((p) => p.name === sel.panel);
+  const source = (designRegions() ?? []).find((r) => r.id === id);
+  if (!source) {
+    // A fit-created region has no design behind it to copy. Duplicating one
+    // would have to invent what it IS, which is the thing a fit may not do.
+    return status(`${id} was made by the fit, so there is no design region to duplicate`);
+  }
 
+  const here = state.surface.panels.find((p) => p.name === sel.panel);
   const at = here ? toPanelRelative(here.rect, sel.abs) : [...sel.abs];
-  // Down and right where there is room, up and left where there is not. A
-  // region already against the far edge clamps straight back to where it
-  // started, so a fixed positive step put the duplicate exactly underneath its
-  // original — which looks precisely like the button doing nothing, and the way
-  // to discover otherwise is to drag the one you can see.
   const step = 0.06;
   const nudge = (v, size) => {
     const room = 1 - size;
@@ -1677,17 +1683,24 @@ async function duplicateRegion(id) {
   };
   const nudged = [nudge(at[0], at[2]), nudge(at[1], at[3]), at[2], at[3]];
   const stacked = nudged[0] === at[0] && nudged[1] === at[1];
-  const rotate = resolvedRotation(id);
-  const copyId = await addCopy(id, 'copy', {
+
+  const copyId = freeRegionId(`${id}-copy`);
+  remember(`duplicate ${id}`);
+  // A copy of the design region, so it carries the treatment and its options.
+  // `panel` and `at` are where this one goes; everything else is what it is.
+  designRegions().push({
+    ...structuredClone(source),
+    id: copyId,
     ...(sel.panel ? { panel: sel.panel } : {}),
     at: nudged,
-    ...(rotate !== undefined ? { rotate } : {}),
   });
+  setDesignDirty();
+  await reloadState();
   await refresh();
   selectRegion(copyId);
   status(stacked
-    ? `duplicated as ${copyId}, exactly on top — it fills its panel, so there is nowhere to offset it`
-    : `duplicated as ${copyId}`);
+    ? `duplicated as ${copyId} in the design, exactly on top — it fills its panel`
+    : `duplicated as ${copyId} in the design`);
 }
 
 /**
