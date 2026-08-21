@@ -52,7 +52,17 @@ function fakeDom() {
   };
 }
 
-async function runApp({ state, render }) {
+/**
+ * Boot app.js against a fake DOM.
+ *
+ * Two ways to answer its requests. `state` and `render` are fixed objects, which
+ * is enough for anything that only reads. `server` — `{ livery, profile }` — runs
+ * the real editorState and renderSurface against whatever fit the app POSTS,
+ * which is the only way to test the SET of regions changing: creating or
+ * deleting a copy shows up nowhere until the server is asked again, and asked
+ * with the working fit rather than the saved one.
+ */
+async function runApp({ state, render, server = null }) {
   const dom = fakeDom();
   const calls = [];
   const g = globalThis;
@@ -72,9 +82,15 @@ async function runApp({ state, render }) {
     emit: (t, ev) => (listeners.get(t) ?? []).slice().forEach((fn) => fn(ev)),
   };
   g.fetch = async (path, init) => {
-    calls.push({ path, method: init?.method ?? 'GET' });
-    const body = path === '/api/state' ? state : render;
-    return { ok: true, status: 200, json: async () => body };
+    const sent = init?.body ? JSON.parse(init.body) : null;
+    calls.push({ path, method: init?.method ?? 'GET', body: sent });
+    const answer = () => {
+      if (!server) return path === '/api/state' ? state : render;
+      const fit = sent?.fit ?? server.fit ?? null;
+      if (path === '/api/state') return editorState({ ...server, fit, liveryId: 'test' });
+      return renderSurface({ ...server, fit, role: sent?.role ?? server.role });
+    };
+    return { ok: true, status: 200, json: async () => answer() };
   };
 
   // Cache-busted so each test gets a fresh evaluation; a module that throws on
@@ -1153,7 +1169,7 @@ test('a pair can be declared, mirrored once, and severed', async () => {
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
 
@@ -1228,7 +1244,7 @@ test('mirror now does not quietly re-link a pair somebody separated', async () =
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
   surface.panels = [
@@ -1332,7 +1348,7 @@ test('creating a mirrored copy writes it into the fit and lists it', async () =>
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
   const L = { name: 'L', rect: [0, 0, 0.2, 0.2], tags: [], anisotropy: 1,
@@ -1375,7 +1391,7 @@ test('duplicating a region offsets it and leaves it unpaired', async () => {
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
   const L = { name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
@@ -1439,7 +1455,7 @@ test('undo steps back through several actions, and redo forward again', async ()
   const role = binding(profile, 'body').roles[0];
 
   const { dom } = await runApp({
-    state: editorState({ livery, profile, fit }),
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
     render: renderSurface({ livery, profile, fit, role }),
   });
 
@@ -1491,7 +1507,7 @@ test('undo restores regions a copy created, and removes ones it did not', async 
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
   surface.panels = [{ name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
@@ -1533,7 +1549,7 @@ test('a drag is one undo step, not one per pointer event', async () => {
   const role = binding(profile, 'body').roles[0];
 
   const { dom, window: win } = await runApp({
-    state: editorState({ livery, profile, fit }),
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
     render: renderSurface({ livery, profile, fit, role }),
   });
 
@@ -1553,4 +1569,179 @@ test('a drag is one undo step, not one per pointer event', async () => {
   await dom.querySelector('#undo').onclick();
   assert.deepEqual(at(), before, 'ONE undo returns to before the whole gesture');
   assert.equal(dom.querySelector('#undo').disabled, true, 'and there is nothing behind it');
+});
+
+// --- copies, end to end -----------------------------------------------------
+//
+// The tests above check that a copy is WRITTEN into the fit. That is half the
+// story: a copy that renders on the car and is missing from the region list is
+// worse than one that was never made, because it is there, it is wrong, and
+// there is no way to select it to say so. So these drive the real editorState
+// and renderSurface, answered from the working fit exactly as the server does.
+
+/** A two-panel car and a design with one badge on the left of it. */
+function copyFixture() {
+  const axis = (u, v) => ({ uAxis: u, vAxis: v });
+  const profile = {
+    id: 'fixture',
+    name: 'Fixture',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: {
+      body: {
+        L: { rect: [0, 0, 0.4, 0.4], tags: ['left'], mirrorOf: 'R', ...axis([-0.2, 0, -0.98], [0, -1, 0]) },
+        R: { rect: [0.5, 0, 0.4, 0.4], tags: ['right'], mirrorOf: 'L', ...axis([-0.2, 0, 0.98], [0, -1, 0]) },
+      },
+    },
+  };
+  const livery = {
+    name: 'Fixture', folder: 'fixture', car: 'fixture',
+    palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: {
+      body: {
+        background: 'ink',
+        regions: [{ id: 'badge', panel: 'L', at: [0.1, 0.1, 0.3, 0.3], treatment: 'fill', color: 'accent' }],
+      },
+    },
+  };
+  return { livery, profile, role: 'body' };
+}
+
+/** Give the fake inspector the buttons app.js looks for, and hand them back. */
+function inspectorButtons(dom, names) {
+  const inspector = dom.querySelector('#inspector');
+  const nodes = new Map(names.map((n) => [n, { onclick: null, onchange: null, value: '' }]));
+  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
+  inspector.querySelectorAll = () => [];
+  return nodes;
+}
+
+test('a created copy is listed, selectable and deletable', async () => {
+  // The region list came from the SAVED fit, so a copy made in the editor was
+  // rendered on the car and absent from the list: not selectable, not movable,
+  // not deletable, and still written to the file on Save.
+  const server = copyFixture();
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#mirrorcreate').onclick();
+
+  const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
+  assert.ok(fit().copies?.['badge-mirror'], `no copy written: ${JSON.stringify(fit())}`);
+  assert.match(dom.querySelector('#regions').innerHTML, /badge-mirror/,
+    'the copy has to appear in the region list, or it cannot be worked on at all');
+
+  // And it can be selected, which is the thing the stale reload made impossible.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-mirror' } } });
+  assert.match(dom.querySelector('#regions').innerHTML, /class="sel[^"]*"[^>]*data-id="badge-mirror"/,
+    `the copy should be the selected row: ${dom.querySelector('#regions').innerHTML}`);
+  assert.match(dom.querySelector('#inspector').innerHTML, /Delete/,
+    'a region the design never mentioned can only be deleted, so it must offer that');
+
+  await buttons.get('#delete').onclick();
+  assert.equal(fit().copies?.['badge-mirror'], undefined, 'delete removes it from the fit');
+  assert.doesNotMatch(dom.querySelector('#regions').innerHTML, /badge-mirror/,
+    'and from the list, without a save in between');
+});
+
+test('a copy of a copy is listed too, and deleting the root takes both', async () => {
+  // applyFit resolves copy-of-copy in passes, so A -> B -> C is a real shape.
+  // The region list resolved one pass against the design's own regions, so C
+  // rendered and never appeared; and delete removed only direct children, so C
+  // survived its own source and was saved naming something that had gone.
+  const server = copyFixture();
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
+  const regions = () => dom.querySelector('#regions').innerHTML;
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#duplicate').onclick();
+  assert.match(regions(), /badge-copy/, 'the first copy is listed');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
+  await buttons.get('#duplicate').onclick();
+  assert.ok(fit().copies['badge-copy-copy'], `no copy of the copy: ${JSON.stringify(fit().copies)}`);
+  assert.match(regions(), /badge-copy-copy/, 'and so is the copy of the copy');
+
+  // Three deep, so deleting the middle one has both a child and a grandchild to
+  // account for. Two levels would not tell a transitive walk from a single pass.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy-copy' } } });
+  await buttons.get('#duplicate').onclick();
+  assert.deepEqual(Object.keys(fit().copies).sort(),
+    ['badge-copy', 'badge-copy-copy', 'badge-copy-copy-copy']);
+
+  // Delete the middle one. Everything descended from it has to go: a copy naming
+  // a region that no longer exists is saved that way and draws nothing.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
+  await buttons.get('#delete').onclick();
+  assert.deepEqual(Object.keys(fit().copies ?? {}), [],
+    'deleting a copy takes everything descended from it, not just its children');
+  assert.doesNotMatch(regions(), /badge-copy/);
+});
+
+test('a duplicate is offset even when there is no room on the positive side', async () => {
+  // The nudge was positive-only and clamped, so a region against the far edge
+  // produced a copy at exactly the original's coordinates — which looks like the
+  // button doing nothing, and the way to find out otherwise is to drag the one
+  // you can see and discover a second underneath.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.surfaces.body.regions[0].at = [0.7, 0.7, 0.3, 0.3];   // hard against the corner
+
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#duplicate').onclick();
+
+  const copy = JSON.parse(dom.querySelector('#fitjson').textContent).copies['badge-copy'];
+  assert.notDeepEqual(copy.at.slice(0, 2), [0.7, 0.7], 'the copy must be visibly clear of its source');
+  assert.ok(copy.at[0] >= 0 && copy.at[1] >= 0, `and still inside its panel: ${copy.at}`);
+});
+
+test('a copy may not take the id of a region the livery declares', async () => {
+  // Ids are how everything downstream addresses a region. Two answering to one
+  // name is not a duplicate drawing, it is a region that cannot be selected or
+  // updated reliably — so the design keeps the name and the copy is reported.
+  const { applyFit } = await import('../src/fit.mjs');
+  const profile = { panels: { body: { L: { rect: [0, 0, 0.4, 0.4] } } } };
+  const notes = [];
+  const { regions } = applyFit(
+    [{ id: 'badge', panel: 'L', treatment: 'fill' }, { id: 'crest', panel: 'L', treatment: 'fill' }],
+    { livery: 'x', car: 'y', copies: { crest: { of: 'badge', panel: 'L' } } },
+    { profile, role: 'body', surfaceKey: 'paint.body', notes },
+  );
+  assert.deepEqual(regions.map((r) => r.__key), ['badge', 'crest']);
+  assert.equal(regions.filter((r) => r.__key === 'crest').length, 1, 'one region answers to "crest"');
+  assert.equal(regions.find((r) => r.__key === 'crest').treatment, 'fill');
+  assert.equal(notes.length, 1);
+  assert.match(notes[0].text, /already declares/);
+});
+
+test('an id belonging to another surface is not reported as stale', async () => {
+  // A fit is flat and applyFit runs once per surface, so a set of used ids
+  // gathered from one surface knows nothing about the others. Asked per surface,
+  // every override and every copy belonging to anywhere else was reported as
+  // matching no region — one note per foreign id per surface, burying the real
+  // ones.
+  const { fitUsage } = await import('../src/ui/server.mjs');
+  const { unusedFitIds } = await import('../src/fit.mjs');
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+
+  assert.deepEqual(unusedFitIds(fit, fitUsage(livery, profile, fit)), [],
+    'the shipped fit reaches every id it names, on one surface or another');
+
+  // Rendering any single surface must say the same thing.
+  for (const role of ['skinbase_default', 'rims']) {
+    const out = renderSurface({ livery, profile, fit, role });
+    assert.deepEqual(out.notes.filter((n) => n.status === 'fit-stale'), [],
+      `${role} reported another surface's ids as stale: ${JSON.stringify(out.notes)}`);
+  }
+
+  // And an id that really does match nothing anywhere is still reported.
+  const bogus = { ...fit, regions: { ...fit.regions, 'no-such-region': { drop: true } } };
+  assert.deepEqual(unusedFitIds(bogus, fitUsage(livery, profile, bogus)), ['no-such-region']);
 });

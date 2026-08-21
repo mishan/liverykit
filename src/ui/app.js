@@ -261,15 +261,21 @@ async function selectSurface(i) {
 }
 
 /**
- * Re-read what the surface contains.
+ * Re-read what the surface contains, under the fit being worked on.
  *
- * Only needed when the set of regions changes, which is exactly once: creating
- * a mirrored copy. Everything else in this editor moves regions around, and
- * `/api/render` already reports where they landed.
+ * Needed when the set of regions changes: creating a copy, deleting one, or
+ * undoing either. Everything else moves regions around, and `/api/render`
+ * already reports where they landed.
+ *
+ * POSTED with the working fit rather than GET. The saved snapshot is a different
+ * fit — nothing here is written to disk until Save — so asking for it returned a
+ * region list without the copy just made, and with the one just deleted still in
+ * it. The copy would render on the car and be missing from the list: visible,
+ * unselectable, undeletable.
  */
 async function reloadState() {
   const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
-  state.data = await api('/api/state');
+  state.data = await api('/api/state', { fit: state.fit });
   state.surface = state.data.surfaces[i < 0 ? 0 : i];
   drawPanels();
 }
@@ -900,8 +906,13 @@ function rotationChoices(id, def, o) {
 function mirrorControl(id) {
   const other = partnerOf(id);
   const linked = other && !state.unlinked.has(id) && !state.unlinked.has(other);
+  // Only regions that are free to be paired. A pairing is two-way and each half
+  // holds one partner, so offering a region that already has one would overwrite
+  // its side of that pair and leave the abandoned third region still pointing
+  // back — after which the two halves disagree about who their partner is, and
+  // an edit propagates one way and not the other.
   const candidates = state.surface.regions
-    .filter((r) => r.id !== id && r.id !== other)
+    .filter((r) => r.id !== id && r.id !== other && !partnerOf(r.id))
     .map((r) => `<option value="${esc(r.id)}">${esc(r.id)}</option>`).join('');
 
   // "Mirror now" is a one-shot copy across, so it has nothing to do when the
@@ -1029,6 +1040,31 @@ function derivedNote(id) {
     refers to.</p>`;
 }
 
+/**
+ * Remove a copied region and everything descended from it. Returns the ids.
+ *
+ * Both spellings of the block, because a fit written before `copies` existed
+ * says `mirrors` and both still load — so looking in one of them deletes half
+ * of what was asked for.
+ */
+function deleteCopies(id) {
+  const blocks = [state.fit.copies, state.fit.mirrors];
+  const gone = new Set([id]);
+  for (const block of blocks) delete block?.[id];
+  // Breadth-first rather than one pass: a copy of a copy of the deleted region
+  // is descended from it too, and one pass only reaches the children.
+  for (const dead of gone) {
+    for (const block of blocks) {
+      for (const [k, v] of Object.entries(block ?? {})) {
+        if (v.of !== dead || gone.has(k)) continue;
+        gone.add(k);                       // the loop picks this up: Set iteration is live
+        delete block[k];
+      }
+    }
+  }
+  return gone;
+}
+
 /** Shared by both inspector states, so Restore works when nothing is drawn. */
 function wireInspectorButtons(id) {
   // A region the FIT created has no design behind it, so "drop" would be a
@@ -1038,20 +1074,20 @@ function wireInspectorButtons(id) {
   if (del) {
     del.onclick = async () => {
       remember(`delete ${id}`);
-      delete state.fit.copies?.[id];
-      delete state.fit.mirrors?.[id];
-      // Anything that was a copy OF this one goes too, or it would resolve
-      // against nothing and vanish silently on the next build.
-      for (const block of [state.fit.copies, state.fit.mirrors]) {
-        for (const [k, v] of Object.entries(block ?? {})) if (v.of === id) delete block[k];
+      // Everything descended from it, not merely its direct copies. applyFit
+      // resolves copy-of-copy in passes, so A -> B -> C is a real shape; taking
+      // out A and B leaves C naming something that no longer exists, which is
+      // saved into the fit and quietly draws nothing on the next build.
+      const gone = deleteCopies(id);
+      // And the session's opinions about them, which would otherwise outlive
+      // them and attach themselves to the next region to take the name.
+      for (const dead of gone) {
+        const twin = state.paired.get(dead);
+        state.paired.delete(dead);
+        if (twin) state.paired.delete(twin);
+        state.unlinked.delete(dead);
+        state.severed.delete(dead);
       }
-      // And the session's opinions about it, which would otherwise outlive it
-      // and attach themselves to the next region to take the name.
-      const twin = state.paired.get(id);
-      state.paired.delete(id);
-      if (twin) state.paired.delete(twin);
-      state.unlinked.delete(id);
-      state.severed.delete(id);
 
       state.selected = null;
       setDirty(true);
@@ -1223,12 +1259,19 @@ async function duplicateRegion(id) {
   const here = state.surface.panels.find((p) => p.name === sel.panel);
 
   const at = here ? toPanelRelative(here.rect, sel.abs) : [...sel.abs];
+  // Down and right where there is room, up and left where there is not. A
+  // region already against the far edge clamps straight back to where it
+  // started, so a fixed positive step put the duplicate exactly underneath its
+  // original — which looks precisely like the button doing nothing, and the way
+  // to discover otherwise is to drag the one you can see.
   const step = 0.06;
-  const nudged = [
-    Math.min(Math.max(0, at[0] + step), 1 - at[2]),
-    Math.min(Math.max(0, at[1] + step), 1 - at[3]),
-    at[2], at[3],
-  ];
+  const nudge = (v, size) => {
+    const room = 1 - size;
+    if (room <= 0) return v;                       // fills the panel; nowhere to go
+    return v + step <= room ? v + step : Math.max(0, v - step);
+  };
+  const nudged = [nudge(at[0], at[2]), nudge(at[1], at[3]), at[2], at[3]];
+  const stacked = nudged[0] === at[0] && nudged[1] === at[1];
   const own = state.fit.regions[id] ?? {};
   const copyId = await addCopy(id, 'copy', {
     ...(sel.panel ? { panel: sel.panel } : {}),
@@ -1237,17 +1280,29 @@ async function duplicateRegion(id) {
   });
   await refresh();
   selectRegion(copyId);
-  status(`duplicated as ${copyId}`);
+  status(stacked
+    ? `duplicated as ${copyId}, exactly on top — it fills its panel, so there is nowhere to offset it`
+    : `duplicated as ${copyId}`);
 }
 
 /** Write a copy into the fit and re-read what the surface now contains. */
 async function addCopy(id, suffix, placement) {
+  // Every id a fit could collide with, not merely this surface's. Fit ids are
+  // FLAT across the livery — that is how a fit addresses a region without
+  // knowing which texture it lives on — so a name free here can already belong
+  // to a region on the suit, or to a copy in either spelling of the block. Only
+  // checking this surface produced an entry that overwrote one of those, and the
+  // region it replaced simply stopped being drawn.
+  const taken = new Set([
+    ...state.data.surfaces.flatMap((s) => s.regions.map((r) => r.id)),
+    ...Object.keys(state.fit.copies ?? {}),
+    ...Object.keys(state.fit.mirrors ?? {}),
+  ]);
+
   // Named after the source so the fit reads as what it is, and numbered on
   // collision because duplicating twice is an ordinary thing to do.
   let copyId = `${id}-${suffix}`;
-  for (let n = 2; state.surface.regions.some((r) => r.id === copyId); n++) {
-    copyId = `${id}-${suffix}-${n}`;
-  }
+  for (let n = 2; taken.has(copyId); n++) copyId = `${id}-${suffix}-${n}`;
   state.fit.copies ??= {};
   state.fit.copies[copyId] = { of: id, ...placement };
   setDirty(true);
