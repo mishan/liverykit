@@ -324,7 +324,18 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
       }
 
       if (req.method === 'GET' && url.pathname === '/api/model') {
+        // The query string is the one input here that a client can get wrong, so
+        // it is answered as a client error. Letting `texture()` throw would turn
+        // a missing or misspelt role into a 500 — a stack trace in the log and a
+        // "the server crashed" in the browser, for a typo.
         const role = url.searchParams.get('role');
+        if (!role) return json(400, { error: '/api/model needs a ?role=<texture role>' });
+        if (!profile.textures?.[role]) {
+          return json(404, {
+            error: `car "${profile.id}" has no texture role "${role}". ` +
+                   `Known roles: ${Object.keys(profile.textures ?? {}).join(', ')}`,
+          });
+        }
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const tex = texture(profile, role);

@@ -21,25 +21,68 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { accessSync, constants } from 'node:fs';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { startUi } from '../src/ui/server.mjs';
 import { loadProfile } from '../src/profile.mjs';
 import '../src/index.mjs';
 
+/**
+ * The first browser on PATH, or null.
+ *
+ * PATH is walked here rather than asking a shell, because this decides whether
+ * the suite runs or silently skips. `command -v` needs a shell to run in, and
+ * the obvious one to name is bash — which a minimal container may well not have,
+ * so every probe throws, every browser looks absent, and the tests that exist to
+ * catch "the editor looks fine and is unusable" quietly stop running. A skip
+ * that is wrong is worse than a failure, because nothing reports it.
+ */
 function findBrowser() {
+  const dirs = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
+  // On Windows the executable is firefox.exe; elsewhere the name is the name.
+  const exts = process.platform === 'win32'
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';')
+    : [''];
   for (const b of ['firefox', 'chromium', 'chromium-browser', 'google-chrome']) {
-    try {
-      execFileSync('command', ['-v', b], { shell: '/bin/bash', stdio: 'pipe' });
-      return b;
-    } catch { /* keep looking */ }
+    for (const dir of dirs) {
+      for (const ext of exts) {
+        try {
+          accessSync(join(dir, b + ext), constants.X_OK);
+          return b;
+        } catch { /* keep looking */ }
+      }
+    }
   }
   return null;
 }
 const BROWSER = findBrowser();
+
+test('the browser probe does not depend on a shell being installed', () => {
+  // This decides whether the rest of this file runs. `command -v` needs a shell
+  // to run in, and the obvious one to name is bash — which a minimal container
+  // may not have. Then every probe throws, every browser looks absent, and the
+  // tests that catch "the editor looks fine and is unusable" quietly stop
+  // running. A wrong skip is worse than a failure, because nothing reports it.
+  const path = process.env.PATH;
+  try {
+    process.env.PATH = '';
+    assert.equal(findBrowser(), null, 'nothing on an empty PATH');
+  } finally {
+    process.env.PATH = path;
+  }
+  // And a directory that certainly holds no browser is not mistaken for one.
+  const dir = process.env.PATH;
+  try {
+    process.env.PATH = join(tmpdir(), 'lk-definitely-not-a-bin-dir');
+    assert.equal(findBrowser(), null);
+  } finally {
+    process.env.PATH = dir;
+  }
+});
 
 /**
  * Run a script inside the real editor page and get its findings back.
