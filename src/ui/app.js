@@ -449,15 +449,43 @@ function drawPalette() {
   const uses = paletteUses(state.design, state.treatments);
   el.innerHTML = Object.entries(state.design?.palette ?? {}).map(([name, value]) => {
     const by = uses.get(name) ?? [];
+    // NO style attribute here. `esc` escapes HTML, and a style attribute is not
+    // HTML — it is a list of declarations separated by semicolons, and a palette
+    // value of `red;position:fixed;inset:0;z-index:9` would have survived `esc`
+    // intact and become a page-sized invisible sheet over the editor that
+    // swallows every click. That is not hypothetical here: the duplicate `id`
+    // this project already fixed did exactly that, by accident, and the test
+    // written for it is upstairs. A `background:url(https://…)` would also have
+    // reached the network from a tool that binds to 127.0.0.1 on purpose.
+    //
+    // A livery is a file people SHARE, so its values are not this editor's to
+    // trust. The swatch is filled in below through the CSSOM instead.
     return `<div class="named${by.length ? '' : ' unused'}">
-      <span class="swatch" style="background:${esc(value)}"></span>
+      <span class="swatch" data-swatch="${esc(name)}"></span>
       <input data-palette="${esc(name)}" data-part="name" value="${esc(name)}">
       <input data-palette="${esc(name)}" data-part="value" value="${esc(value)}">
       <span class="uses" title="${esc(by.length ? by.join(', ') : 'nothing refers to this')}"
         >${by.length || '—'}</span>
     </div>`;
   }).join('');
+  paintSwatches(el);
   wirePalette();
+}
+
+/**
+ * Fill the swatches in through the CSSOM, which parses one value or none.
+ *
+ * `style.backgroundColor = v` accepts a colour and DROPS anything else on the
+ * floor — a second declaration, a `url()`, a stray brace — because the setter
+ * parses `v` as a single `<color>` rather than pasting it into the document.
+ * Assigning it is the whole guarantee; the swatch simply stays empty for a value
+ * that is not a colour, which is also the honest thing to show.
+ */
+function paintSwatches(el) {
+  for (const sw of el.querySelectorAll?.('[data-swatch]') ?? []) {
+    sw.style.backgroundColor = '';
+    sw.style.backgroundColor = state.design?.palette?.[sw.dataset.swatch] ?? '';
+  }
 }
 
 function drawIdentity() {

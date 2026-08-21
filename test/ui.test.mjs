@@ -2370,6 +2370,40 @@ test('a colour that is already a palette name is not offered for naming', async 
     'it already has a name');
 });
 
+test('a palette value never reaches the page as CSS', async () => {
+  // A livery is a file people SHARE, so its values are not the editor's to
+  // trust. `esc` escapes HTML, and a style attribute is not HTML — it is
+  // semicolon-separated declarations, so `red;position:fixed;inset:0` would have
+  // gone through `esc` untouched and come out the other side as a page-sized
+  // invisible sheet over the editor that swallows every click. This project has
+  // already had that bug once, from a duplicate id, and wrote a test about it.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  const hostile = 'red;position:fixed;inset:0;z-index:9999';
+  server.livery.palette = { ink: '#101014', trap: hostile };
+
+  const { dom } = await runApp({ server });
+  const el = dom.querySelector('#palette');
+  assert.match(el.innerHTML, /data-swatch="trap"/, 'the swatch is drawn');
+  assert.doesNotMatch(el.innerHTML, /style=/, 'and the panel emits no style attribute at all');
+  // The value is still in the markup — inside an input's `value`, where it
+  // belongs and where `esc` is the right and sufficient tool. That is the field
+  // you edit to fix it.
+  assert.match(el.innerHTML, /value="red;position:fixed/);
+
+  // And the colour is applied through the CSSOM, whose setter parses one
+  // `<color>` and drops anything else — so the hostile value paints nothing
+  // rather than laying a sheet over the page.
+  const swatches = ['ink', 'trap'].map((n) => ({ dataset: { swatch: n }, style: {} }));
+  el.querySelectorAll = (q) => (q === '[data-swatch]' ? swatches : []);
+  dom.querySelector('#surface').value = '0';
+  await dom.querySelector('#surface').onchange();
+  assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real colour is set');
+  assert.equal(swatches[1].style.backgroundColor, hostile,
+    'and the hostile one is handed to the parser, not to the document');
+});
+
 test('a name the palette does not have is not offered for naming either', async () => {
   // The button writes `palette[chosen] = value`, so it is only ever right when
   // the value is a COLOUR. Offered on `ghost` — a palette entry that went away,
