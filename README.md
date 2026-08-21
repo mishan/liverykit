@@ -402,7 +402,9 @@ which it is being run against. **Create mirrored copy** and **Duplicate** in the
 editor write these; the mirrored one measures where it should land from the
 panels' own axes.
 
-Full reasoning in [docs/fitting.md](docs/fitting.md).
+Full reasoning in [docs/fitting.md](docs/fitting.md). Turning the editor into
+something that can create design elements rather than only move them is
+planned in [docs/authoring.md](docs/authoring.md).
 
 ### Two honest limits
 
