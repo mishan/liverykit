@@ -27,7 +27,8 @@ const state = {
   selected: null,    // region id
   fit: null,         // working copy, saved only on demand
   placed: [],        // where each region actually landed, from the server
-  dirty: false,
+  dirty: false,        // the fit has unsaved changes
+  designDirty: false,  // and the design, tracked apart — see updateSaveButtons
   svg: '',           // the last render, reused as the 3D texture
   viewer: null,      // created lazily; a UV-only session never touches WebGL
   view: 'uv',
@@ -174,7 +175,21 @@ $('#tab-all').onclick = () => showView('all');
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
   setDirty(false);
-  status('saved');
+  status('saved the fit');
+};
+
+// Separate from Save fit, and separate on purpose. One says where this car wants
+// the artwork; the other says what the artwork IS, for every car. A single
+// button would have to guess which you meant.
+$('#savedesign').onclick = async () => {
+  try {
+    const out = await api('/api/design', state.design);
+    state.designDirty = false;
+    updateSaveButtons();
+    status(`saved the design to ${out.saved.split('/').pop()}`);
+  } catch (e) {
+    status(`design not saved: ${e.message}`);
+  }
 };
 
 // --- undo -------------------------------------------------------------------
@@ -1040,7 +1055,7 @@ function wireOptionControls(id) {
   const change = async (key, value) => {
     remember(`${key} on ${id}`);
     if (value === undefined) delete region[key]; else region[key] = value;
-    setDirty(true);
+    setDesignDirty();
     await refresh();
   };
 
@@ -1805,8 +1820,27 @@ async function paintCar() {
 
 function setDirty(v) {
   state.dirty = v;
-  $('#save').disabled = !v;
-  $('#status').className = v ? 'status dirty' : 'status';
+  updateSaveButtons();
+  $('#status').className = v || state.designDirty ? 'status dirty' : 'status';
+}
+
+/**
+ * Two buttons, each enabled only by its own kind of change.
+ *
+ * A design edit does not make the fit unsaved and a drag does not make the
+ * design unsaved, so one dirty flag would light both and every save would write
+ * a file nobody had touched.
+ */
+function updateSaveButtons() {
+  const save = $('#save'); if (save) save.disabled = !state.dirty;
+  const design = $('#savedesign'); if (design) design.disabled = !state.designDirty;
+}
+
+/** Mark the DESIGN changed — what a region is, rather than where it sits. */
+function setDesignDirty() {
+  state.designDirty = true;
+  updateSaveButtons();
+  $('#status').className = 'status dirty';
 }
 function status(msg) {
   $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg;

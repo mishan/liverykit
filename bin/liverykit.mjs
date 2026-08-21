@@ -320,6 +320,7 @@ if (values.ui) {
     profile,
     fitPath,
     liveryId: liveryName,
+    liveryPath,
     modelPath,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
