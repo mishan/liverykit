@@ -16,9 +16,11 @@
 //
 //   GET  /                 the app
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
-//   POST /api/state        the same, for a working fit the browser has not saved
+//   POST /api/state        the same, for a working fit or design not yet saved
+//   GET  /api/treatments   what each treatment takes, for the inspector
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
+//   POST /api/design       write the design, if it is data and not code
 //   POST /api/fit          write the fit file
 // ---------------------------------------------------------------------------
 
@@ -32,6 +34,9 @@ import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
+// Shared with the browser, so the two halves cannot disagree about the split.
+import { treatmentOptions } from './fields.js';
+import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -184,7 +189,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'style.css']);
 
 /**
  * Everything the browser needs to draw the editor, computed once per request.
@@ -232,6 +237,24 @@ function matchCase(sample, word) {
   if (sample[0] === sample[0].toUpperCase()) return word[0].toUpperCase() + word.slice(1);
   return word;
 }
+
+/** Every treatment a design can reach, with whatever describes it. */
+export function treatmentCatalogue(livery) {
+  const out = [];
+  for (const [name, entry] of resolveTreatments(livery.packs ?? ['core'])) {
+    out.push({
+      name,
+      pack: entry.pack,
+      label: entry.describe?.label ?? name,
+      summary: entry.describe?.summary ?? null,
+      // Null rather than {} where a pack said nothing, so the editor can tell
+      // "no options" from "nobody wrote it down" and offer JSON for the second.
+      options: entry.describe?.options ?? null,
+    });
+  }
+  return out;
+}
+
 
 /**
  * Regions that are two halves of one idea, and should move together.
@@ -343,6 +366,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         // and the other `left_mid`.
         panel: r.panel ? panelName(profile, t.role, r.panel) : undefined,
         at: r.at ?? [0, 0, 1, 1],
+        // Everything else the region says — `color`, `cell`, `text` — which is
+        // the treatment's business rather than the placement's. Sent so the
+        // inspector can show what this region actually asks for; which of these
+        // mean anything is answered by the treatment's own description.
+        options: treatmentOptions(r),
       })),
     });
 
@@ -402,8 +430,17 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
   // editorState directly — say so rather than guessing from the folder.
   const id = liveryId ?? null;
 
+  const { design, lossy } = serialisableDesign(livery);
+
   return {
     livery: { id, name: livery.name, folder: livery.folder, identity: livery.identity ?? {} },
+    // The design as data, so the editor can change a treatment's options and see
+    // the result. Nothing writes this yet — it is the working copy, exactly as
+    // the working fit is. `lossy` is non-empty only for a design carrying code,
+    // which cannot be edited this way and must not pretend otherwise.
+    design,
+    lossy,
+    treatments: treatmentCatalogue(livery),
     car: { id: profile.id, name: profile.name ?? profile.id },
     // Which surface a region lives on, so the browser can jump to it by id.
     regionIds: Object.fromEntries(ids),
@@ -427,6 +464,45 @@ export function fitUsage(livery, profile, fit) {
     });
   }
   return used;
+}
+
+/**
+ * Why this design may not be written, or null if it may.
+ *
+ * Everything here is a refusal, and that is the right shape for it. A fit is one
+ * car's opinion and can be regenerated in a minute; a design is the work, it is
+ * shared by every car it is pointed at, and the editor writing over a file
+ * somebody hand-wrote would be unforgivable in a way that a bad fit is not.
+ */
+export function designRefusal(design, path) {
+  if (!path) {
+    return 'This editor was not opened on a design file, so it has nothing to write to.';
+  }
+  if (!path.endsWith('.json')) {
+    // The whole reason data liveries exist. Regenerating a module would throw
+    // away its comments, and on the bundled example those are a tutorial.
+    return `${path} is code, and the editor does not write code — it would lose the `
+      + 'comments and any computation in it. Copy the design out as JSON, or keep '
+      + 'the module and let it read its regions from a .json beside it.';
+  }
+  try {
+    validateDesign(design, path);
+  } catch (e) {
+    return e.message;
+  }
+  const { lossy } = serialisableDesign(design);
+  if (lossy.length) {
+    return `This design carries code at ${lossy.join(', ')}, which JSON cannot hold. `
+      + 'Saving would drop it silently and the build would stop matching what you see.';
+  }
+  try {
+    // Ids are how a fit addresses a region. Two the same makes every existing
+    // fit for this design ambiguous, which is not a thing to find out later.
+    regionIds(design);
+  } catch (e) {
+    return e.message;
+  }
+  return null;
 }
 
 /**
@@ -510,13 +586,14 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   return { svg: layers.base, emissive: layers.emissive, placed, notes };
 }
 
-export async function startUi({ livery, profile, fitPath, liveryId, modelPath = null, port = 7391, log = console.log }) {
+export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
   // The design's id has to be passed in rather than read off the livery object:
   // it is the module basename, which only the caller that resolved the module
   // knows. Guessing it from `livery.folder` is exactly the bug this guards.
+  let livery = openedWith;
   if (!liveryId) throw new Error('startUi needs liveryId — the name a fit knows this design by (see fitLiveryId).');
   const identity = { livery: liveryId, car: profile.id };
 
@@ -597,6 +674,13 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
         return json(200, editorState({ livery, profile, fit, liveryId }));
       }
 
+      // What each treatment takes, so the inspector can offer a control rather
+      // than a text box. Separate from /api/state because it depends only on
+      // which packs the design loads, and never changes while the editor is up.
+      if (req.method === 'GET' && url.pathname === '/api/treatments') {
+        return json(200, { treatments: treatmentCatalogue(livery) });
+      }
+
       // The same answer, for a fit that has not been saved yet.
       //
       // Creating or deleting a copy changes what the surface CONTAINS, and only
@@ -606,24 +690,32 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
       // rendered on the car and absent from the editor, so it could not be
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
-        const { fit: working } = await body();
-        return json(200, editorState({ livery, profile, fit: working ?? fit, liveryId }));
+        const { fit: working, design } = await body();
+        return json(200, editorState({
+          livery: design ?? livery, profile, fit: working ?? fit, liveryId,
+        }));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/render') {
-        const { fit: working, role, seed } = await body();
-        return json(200, renderSurface({ livery, profile, fit: working, role, seed }));
+        // A working DESIGN travels the same way a working fit does, and for the
+        // same reason: it lives in the browser until somebody saves it, and the
+        // render has to be of what is being edited rather than of what is on
+        // disk. Nothing here writes it.
+        const { fit: working, design, role, seed } = await body();
+        return json(200, renderSurface({
+          livery: design ?? livery, profile, fit: working, role, seed,
+        }));
       }
 
       // Every painted surface at once, on the whole car. Rendered fresh because
       // the fit is the thing being judged; the geometry beside it is fetched
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
-        const { fit: working, seed } = await body();
-        const state = editorState({ livery, profile, fit: working });
+        const { fit: working, design, seed } = await body();
+        const state = editorState({ livery: design ?? livery, profile, fit: working });
         const surfaces = [];
         for (const s of state.surfaces) {
-          const out = renderSurface({ livery, profile, fit: working, role: s.role, seed });
+          const out = renderSurface({ livery: design ?? livery, profile, fit: working, role: s.role, seed });
           surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
         }
         return json(200, { surfaces });
@@ -660,6 +752,19 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
         if (!g.indices.length) return json(404, { error: `no geometry uses ${tex.file}` });
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packGeometry(g));
+      }
+
+      // Writing the DESIGN, which is a bigger thing than writing a fit: a fit
+      // belongs to one pair of files and a design belongs to every car it is
+      // ever pointed at. So this refuses far more than it accepts.
+      if (req.method === 'POST' && url.pathname === '/api/design') {
+        const next = await body();
+        const refuse = designRefusal(next, liveryPath);
+        if (refuse) return json(409, { error: refuse });
+        await writeFile(liveryPath, JSON.stringify(next, null, 2) + '\n');
+        livery = next;
+        log(`  saved ${liveryPath}`);
+        return json(200, { saved: liveryPath });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/fit') {

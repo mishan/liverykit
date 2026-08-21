@@ -40,7 +40,11 @@ import { basename } from 'node:path';
  * (`neon_grid_any`) and is a different string on every design that has both.
  */
 export function fitLiveryId(liveryPath) {
-  return basename(liveryPath).replace(/\.mjs$/, '');
+  // Both extensions. A design may now be data rather than code, and stripping
+  // only `.mjs` would give `my-livery.json` a fit called
+  // `my-livery.json@abarth500.json` — which loads, and disagrees with every
+  // other fit about how the pair is named.
+  return basename(liveryPath).replace(/\.(mjs|json)$/, '');
 }
 
 /**
@@ -140,11 +144,17 @@ export function validateFit(f, source = '<inline>') {
 /**
  * The regions a fit adds, from either spelling.
  *
- * `mirrors` was the first name, before duplicating a region without mirroring
- * it turned out to be the same feature: a copy that takes its artwork from
- * another region and states a placement. A mirrored copy is one whose placement
- * was computed by reflecting; that is a fact about how the number was arrived
- * at, not about what the entry means. Both spellings load, `copies` is written.
+ * `mirrors` was the first name, and on reflection the better one. The block was
+ * widened to `copies` when duplicating a region turned out to use the same
+ * mechanism — but a mechanism in common is not a meaning in common. A mirrored
+ * copy says *this car has two flanks*, which is a fact about the car and one a
+ * portable design cannot know; a duplicate says *I want two badges*, which is a
+ * fact about the design and true of every car it is pointed at. The second only
+ * ever lived here because the first had already built the machinery.
+ *
+ * Duplicating now writes the design, so what remains is mirroring. Both
+ * spellings still load — a fit written before this is not wrong, just wordier
+ * than it needs to be — and `copies` is still what gets written.
  */
 export function copiesOf(fit) {
   return { ...(fit?.mirrors ?? {}), ...(fit?.copies ?? {}) };

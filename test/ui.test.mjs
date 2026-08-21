@@ -87,8 +87,12 @@ async function runApp({ state, render, server = null }) {
     const answer = () => {
       if (!server) return path === '/api/state' ? state : render;
       const fit = sent?.fit ?? server.fit ?? null;
-      if (path === '/api/state') return editorState({ ...server, fit, liveryId: 'test' });
-      return renderSurface({ ...server, fit, role: sent?.role ?? server.role });
+      // The working DESIGN is honoured exactly as the real server honours it. A
+      // harness that ignored it would render from the file on disk and report
+      // that every option control does nothing — or worse, that one works.
+      const livery = sent?.design ?? server.livery;
+      if (path === '/api/state') return editorState({ ...server, livery, fit, liveryId: 'test' });
+      return renderSurface({ ...server, livery, fit, role: sent?.role ?? server.role });
     };
     return { ok: true, status: 200, json: async () => answer() };
   };
@@ -1386,48 +1390,44 @@ test('creating a mirrored copy writes it into the fit and lists it', async () =>
     'and at the mirrored position, using the measured flip');
 });
 
-test('duplicating a region offsets it and leaves it unpaired', async () => {
-  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
-  const role = binding(profile, 'body').roles[0];
-
-  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
-  const render = renderSurface({ livery, profile, fit: null, role });
-  const surface = state.surfaces.find((x) => x.role === role);
-  const L = { name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
-    uAxis: [1, 0, 0], vAxis: [0, -1, 0] };
-  surface.panels = [L];
-  surface.regions = [{ ...surface.regions[0], id: 'badge', panel: 'L', mirror: null }];
-  render.placed = [{ ...render.placed[0], id: 'badge', panel: 'L', abs: [0.04, 0.04, 0.08, 0.08] }];
-
-  const { dom } = await runApp({ state, render });
-  const inspector = dom.querySelector('#inspector');
-  const nodes = new Map();
-  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
-  inspector.querySelectorAll = () => [];
-  const dup = { onclick: null };
-  for (const sel of ['#mirrorcreate', '#mirrornow', '#unpair', '#mirror', '#pairwith']) {
-    nodes.set(sel, { onclick: null, onchange: null, value: '' });
-  }
-  nodes.set('#duplicate', dup);
+test('duplicating a region writes it into the design, unpaired', async () => {
+  // A duplicate used to be written into the FIT, which was the one place the
+  // fit/design line was crossed for convenience rather than for a reason. A
+  // mirrored copy says "this car has two flanks", which a design cannot know; a
+  // duplicate says "I want two badges", which is true of every car.
+  const server = copyFixture();
+  const { dom } = await runApp({ server });
+  const { nodes: buttons } = inspectorButtons(dom,
+    ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-  await dup.onclick();
+  await buttons.get('#duplicate').onclick();
 
   const fit = JSON.parse(dom.querySelector('#fitjson').textContent);
-  const copy = fit.copies?.['badge-copy'];
-  assert.ok(copy, `no duplicate was written: ${JSON.stringify(fit)}`);
-  assert.equal(copy.of, 'badge', 'it takes its artwork from the original');
+  assert.deepEqual(fit.copies ?? {}, {}, 'nothing about this belongs to one car');
+
+  const regions = JSON.parse(dom.querySelector('#designjson').textContent).surfaces.body.regions;
+  const copy = regions.find((r) => r.id === 'badge-copy');
+  const source = regions.find((r) => r.id === 'badge');
+  assert.ok(copy, `no duplicate in the design: ${JSON.stringify(regions)}`);
+  assert.equal(copy.treatment, source.treatment, 'it carries the artwork, not a reference to it');
+  assert.equal(copy.color, source.color);
   assert.equal(copy.panel, 'L', 'and stays on the same panel');
 
   // OFFSET, not stacked. A duplicate hidden under its original looks exactly
   // like the button did nothing, and the way to discover otherwise is to drag
   // the one you can see and find a second underneath.
-  const at = [0.1, 0.1, 0.2, 0.2];               // the source, panel-relative
-  assert.notDeepEqual(copy.at, at, 'a duplicate must not sit exactly on top');
-  assert.ok(copy.at[0] > at[0] && copy.at[1] > at[1], `offset: ${copy.at}`);
+  assert.notDeepEqual(copy.at, source.at, 'a duplicate must not sit exactly on top');
+  assert.ok(copy.at[0] > source.at[0] && copy.at[1] > source.at[1], `offset: ${copy.at}`);
   assert.ok(copy.at.every((n) => n >= 0 && n <= 1), `still panel-relative: ${copy.at}`);
-  assert.deepEqual(copy.at.slice(2), at.slice(2), 'and keeps its size');
+  assert.deepEqual(copy.at.slice(2), source.at.slice(2), 'and keeps its size');
+
+  // Not paired with its source: two badges on one panel are two things, and
+  // linking them would make every edit move both.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
+  const inspector = dom.querySelector('#inspector').innerHTML;
+  assert.match(inspector, /data-linked="false"/);
+  assert.match(inspector, /not paired/, 'two badges on one panel are two things');
 });
 
 test('both spellings of a copy block load, and copies wins', async () => {
@@ -1499,44 +1499,30 @@ test('undo steps back through several actions, and redo forward again', async ()
   assert.equal(rot(), 0);
 });
 
-test('undo restores regions a copy created, and removes ones it did not', async () => {
+test('undo restores regions an edit created, and removes ones it did not', async () => {
   // Undo has to cope with the SET of regions changing, not just their
-  // placements. Undoing a duplicate removes one; undoing a delete brings one
-  // back. Both go through the server, because the region list is its answer.
-  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
-  const role = binding(profile, 'body').roles[0];
+  // placements. Undoing a duplicate removes one; redo brings it back. It has to
+  // reach the DESIGN as well as the fit now, because that is where a duplicate
+  // lands — a stack that restored half the editor would be worse than none.
+  const server = copyFixture();
+  const { dom } = await runApp({ server });
+  const { nodes: buttons } = inspectorButtons(dom,
+    ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
-  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
-  const render = renderSurface({ livery, profile, fit: null, role });
-  const surface = state.surfaces.find((x) => x.role === role);
-  surface.panels = [{ name: 'L', rect: [0, 0, 0.4, 0.4], tags: [], anisotropy: 1,
-    uAxis: [1, 0, 0], vAxis: [0, -1, 0] }];
-  surface.regions = [{ ...surface.regions[0], id: 'badge', panel: 'L', mirror: null }];
-  render.placed = [{ ...render.placed[0], id: 'badge', panel: 'L', abs: [0.04, 0.04, 0.08, 0.08] }];
+  const ids = () => JSON.parse(dom.querySelector('#designjson').textContent)
+    .surfaces.body.regions.map((r) => r.id);
 
-  const { dom } = await runApp({ state, render });
-  const inspector = dom.querySelector('#inspector');
-  const nodes = new Map();
-  inspector.querySelector = (sel) => nodes.get(sel) ?? null;
-  inspector.querySelectorAll = () => [];
-  for (const sel of ['#mirrorcreate', '#mirrornow', '#unpair', '#mirror', '#pairwith', '#delete']) {
-    nodes.set(sel, { onclick: null, onchange: null, value: '' });
-  }
-  const dup = { onclick: null };
-  nodes.set('#duplicate', dup);
-
-  const copies = () => Object.keys(JSON.parse(dom.querySelector('#fitjson').textContent).copies ?? {});
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-
-  await dup.onclick();
-  assert.deepEqual(copies(), ['badge-copy'], 'the duplicate exists');
+  await buttons.get('#duplicate').onclick();
+  assert.deepEqual(ids(), ['badge', 'badge-copy'], 'the duplicate exists');
 
   await dom.querySelector('#undo').onclick();
-  assert.deepEqual(copies(), [], 'undo removed the region it created');
+  assert.deepEqual(ids(), ['badge'], 'undo removed the region it created');
+  assert.doesNotMatch(dom.querySelector('#regions').innerHTML, /badge-copy/,
+    'and the list came back in step with it');
 
   await dom.querySelector('#redo').onclick();
-  assert.deepEqual(copies(), ['badge-copy'], 'and redo brought it back');
+  assert.deepEqual(ids(), ['badge', 'badge-copy'], 'and redo brought it back');
 });
 
 test('a drag is one undo step, not one per pointer event', async () => {
@@ -1608,12 +1594,17 @@ function copyFixture() {
 }
 
 /** Give the fake inspector the buttons app.js looks for, and hand them back. */
-function inspectorButtons(dom, names) {
+function inspectorButtons(dom, names, opts = []) {
   const inspector = dom.querySelector('#inspector');
   const nodes = new Map(names.map((n) => [n, { onclick: null, onchange: null, value: '' }]));
+  // Option controls are found with querySelectorAll('[data-opt]'), so they are
+  // handed back keyed by the option they edit.
+  const fields = new Map(opts.map(([key, kind]) => [key, {
+    dataset: { opt: key, kind }, value: '', onclick: null, onchange: null,
+  }]));
   inspector.querySelector = (sel) => nodes.get(sel) ?? null;
-  inspector.querySelectorAll = () => [];
-  return nodes;
+  inspector.querySelectorAll = (sel) => (sel === '[data-opt]' ? [...fields.values()] : []);
+  return { nodes, fields };
 }
 
 test('editing a copy goes into the copy, not into an override of nothing', async () => {
@@ -1625,23 +1616,25 @@ test('editing a copy goes into the copy, not into an override of nothing', async
   const { validateFit } = await import('../src/fit.mjs');
   const server = copyFixture();
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith', '#reset', '#drop']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith', '#reset', '#drop']);
   const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
 
+  // A MIRRORED copy, which is what the fit's `copies` block is for now that a
+  // duplicate goes into the design.
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-  await buttons.get('#duplicate').onclick();
+  await buttons.get('#mirrorcreate').onclick();
 
-  const before = structuredClone(fit().copies['badge-copy']);
-  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
-  dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
+  const before = structuredClone(fit().copies['badge-mirror']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-mirror' } } });
+  dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'L' } } });
   await new Promise((r) => setTimeout(r, 20));
 
   const after = fit();
-  assert.equal(after.regions['badge-copy'], undefined,
+  assert.equal(after.regions['badge-mirror'], undefined,
     'a copy must not gain an override entry — validateFit refuses a file with both');
-  assert.equal(after.copies['badge-copy'].panel, 'R', 'the move is recorded in the copy itself');
-  assert.notDeepEqual(after.copies['badge-copy'], before, 'and it actually changed');
-  assert.equal(after.copies['badge-copy'].of, 'badge', 'still a copy of the same region');
+  assert.equal(after.copies['badge-mirror'].panel, 'L', 'the move is recorded in the copy itself');
+  assert.notDeepEqual(after.copies['badge-mirror'], before, 'and it actually changed');
+  assert.equal(after.copies['badge-mirror'].of, 'badge', 'still a copy of the same region');
 
   // The whole point: the file the editor just wrote has to be loadable.
   assert.doesNotThrow(() => validateFit(after), 'Save must not reject the editor\'s own output');
@@ -1650,7 +1643,7 @@ test('editing a copy goes into the copy, not into an override of nothing', async
   const { applyFit } = await import('../src/fit.mjs');
   const out = applyFit(server.livery.surfaces.body.regions, after,
     { profile: server.profile, role: 'body', surfaceKey: 'body', notes: [] }).regions;
-  assert.equal(out.find((r) => r.__key === 'badge-copy').panel, 'R',
+  assert.equal(out.find((r) => r.__key === 'badge-mirror').panel, 'L',
     'the renderer agrees with what the editor recorded');
 });
 
@@ -1666,7 +1659,7 @@ test('a copy that cannot be placed can still be deleted', async () => {
     copies: { 'badge-gone': { of: 'badge', panel: 'no_such_panel' } },
   };
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#delete', '#drop', '#reset', '#mirrorcreate', '#duplicate', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#delete', '#drop', '#reset', '#mirrorcreate', '#duplicate', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
   assert.match(dom.querySelector('#regions').innerHTML, /badge-gone/, 'it is listed');
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-gone' } } });
@@ -1723,7 +1716,7 @@ test('a mirrored copy turns the rotation the design gave the source', async () =
   server.livery.surfaces.body.regions[0].rotate = 30;
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
 
@@ -1742,7 +1735,7 @@ test('a mirror whose target panel is missing is reported, not thrown', async () 
   server.profile.panels.body.L.mirrorOf = 'no_such_panel';
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
 
@@ -1757,7 +1750,7 @@ test('a created copy is listed, selectable and deletable', async () => {
   // not deletable, and still written to the file on Save.
   const server = copyFixture();
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
@@ -1781,31 +1774,36 @@ test('a created copy is listed, selectable and deletable', async () => {
 });
 
 test('a copy of a copy is listed too, and deleting the root takes both', async () => {
-  // applyFit resolves copy-of-copy in passes, so A -> B -> C is a real shape.
-  // The region list resolved one pass against the design's own regions, so C
-  // rendered and never appeared; and delete removed only direct children, so C
-  // survived its own source and was saved naming something that had gone.
+  // applyFit resolves copy-of-copy in passes, so A -> B -> C is a real shape a
+  // hand-written fit can have. The region list resolved one pass against the
+  // design's own regions, so the third link rendered and never appeared; and
+  // delete removed only direct children, leaving grandchildren naming a region
+  // that no longer existed, saved that way and drawing nothing.
+  //
+  // Seeded rather than built through the UI: duplicating now writes the DESIGN,
+  // so the only copies a fit still holds are mirrors, and a chain of them is not
+  // something the editor offers to make. The shape still has to load and behave.
   const server = copyFixture();
+  server.fit = {
+    livery: 'l', car: 'fixture',
+    copies: {
+      'badge-copy': { of: 'badge', panel: 'L', at: [0.4, 0.4, 0.2, 0.2] },
+      'badge-copy-copy': { of: 'badge-copy', panel: 'L', at: [0.6, 0.6, 0.2, 0.2] },
+      'badge-copy-copy-copy': { of: 'badge-copy-copy', panel: 'L', at: [0.7, 0.7, 0.2, 0.2] },
+    },
+  };
+
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom,
+    ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
   const regions = () => dom.querySelector('#regions').innerHTML;
 
-  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-  await buttons.get('#duplicate').onclick();
-  assert.match(regions(), /badge-copy/, 'the first copy is listed');
-
-  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
-  await buttons.get('#duplicate').onclick();
-  assert.ok(fit().copies['badge-copy-copy'], `no copy of the copy: ${JSON.stringify(fit().copies)}`);
-  assert.match(regions(), /badge-copy-copy/, 'and so is the copy of the copy');
-
-  // Three deep, so deleting the middle one has both a child and a grandchild to
-  // account for. Two levels would not tell a transitive walk from a single pass.
-  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy-copy' } } });
-  await buttons.get('#duplicate').onclick();
-  assert.deepEqual(Object.keys(fit().copies).sort(),
-    ['badge-copy', 'badge-copy-copy', 'badge-copy-copy-copy']);
+  // Every link is listed, including the third, which is the one a single pass
+  // rendered without ever showing.
+  for (const id of ['badge-copy', 'badge-copy-copy', 'badge-copy-copy-copy']) {
+    assert.match(regions(), new RegExp(id), `${id} should be listed`);
+  }
 
   // Delete the middle one. Everything descended from it has to go: a copy naming
   // a region that no longer exists is saved that way and draws nothing.
@@ -1826,11 +1824,13 @@ test('a duplicate is offset even when there is no room on the positive side', as
   server.livery.surfaces.body.regions[0].at = [0.7, 0.7, 0.3, 0.3];   // hard against the corner
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#duplicate').onclick();
 
-  const copy = JSON.parse(dom.querySelector('#fitjson').textContent).copies['badge-copy'];
+  const copy = JSON.parse(dom.querySelector('#designjson').textContent)
+    .surfaces.body.regions.find((r) => r.id === 'badge-copy');
+  assert.ok(copy, 'the duplicate goes into the design');
   assert.notDeepEqual(copy.at.slice(0, 2), [0.7, 0.7], 'the copy must be visibly clear of its source');
   assert.ok(copy.at[0] >= 0 && copy.at[1] >= 0, `and still inside its panel: ${copy.at}`);
 });
@@ -1879,4 +1879,264 @@ test('an id belonging to another surface is not reported as stale', async () => 
   // And an id that really does match nothing anywhere is still reported.
   const bogus = { ...fit, regions: { ...fit.regions, 'no-such-region': { drop: true } } };
   assert.deepEqual(unusedFitIds(bogus, fitUsage(livery, profile, bogus)), ['no-such-region']);
+});
+
+// --- the design's own options ----------------------------------------------
+
+test('the editor offers a control for what a treatment actually takes', async () => {
+  // Before this the inspector could move a region and say nothing about what it
+  // was. `text` takes nine options and the only way to learn that was to read
+  // the pack.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const html = dom.querySelector('#inspector').innerHTML;
+  assert.match(html, /Letter spacing/, 'a described option is labelled, not left as a key');
+  assert.match(html, /data-opt="tracking"/);
+  assert.match(html, /placeholder="0\.08"/, "the code's default is offered as a hint, not written in");
+  assert.match(html, /Copy region as JSON/);
+  // Options the region does not set must not acquire a value just by appearing.
+  assert.doesNotMatch(html, /data-opt="tracking"[^>]*value="0\.08"/);
+});
+
+test('changing an option changes the design and the picture, and nothing else', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string'], ['tracking', 'number']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const svgBefore = dom.querySelector('#texture').innerHTML;
+  fields.get('text').value = 'GOODBYE';
+  await fields.get('text').onchange();
+
+  assert.notEqual(dom.querySelector('#texture').innerHTML, svgBefore,
+    'the render has to come back changed, or the control is decorative');
+  assert.match(dom.querySelector('#texture').innerHTML, /GOODBYE/);
+
+  // The DESIGN changed. The fit did not: this is not an adjustment for one car.
+  assert.deepEqual(JSON.parse(dom.querySelector('#fitjson').textContent).regions ?? {}, {},
+    'editing what a region IS must not write a per-car override');
+
+  // Clearing a control removes the key rather than writing an empty value, so a
+  // design says only what somebody chose.
+  fields.get('tracking').value = '0.3';
+  await fields.get('tracking').onchange();
+  fields.get('tracking').value = '';
+  await fields.get('tracking').onchange();
+  assert.match(dom.querySelector('#texture').innerHTML, /GOODBYE/, 'still rendering');
+});
+
+test('a livery carrying code is not offered as data to edit', async () => {
+  // JSON.stringify drops a function without a word, so a procedural design
+  // edited this way would show one thing and build another. Refusing is the
+  // same rule as everywhere else here, one level up.
+  const { serialisableDesign } = await import('../src/livery.mjs');
+  const { design, lossy } = serialisableDesign({
+    name: 'L', palette: { ink: '#000' },
+    surfaces: { body: { regions: [{ id: 'a', treatment: 'fill' }] } },
+    render: { font: () => 'DejaVu Sans' },
+  });
+  assert.deepEqual(lossy, ['render.font']);
+  assert.equal(design.render.font, undefined);
+
+  // And the shipped designs are clean, which is what makes step one usable.
+  for (const name of ['neon-grid', 'neon-grid-any']) {
+    const livery = (await import(`../liveries/${name}.mjs`)).default;
+    assert.deepEqual(serialisableDesign(livery).lossy, [], `${name} should round-trip`);
+  }
+});
+
+test('the two halves agree on which fields belong to a treatment', async () => {
+  // The server decides what to send as a region's options and the inspector
+  // decides which to offer a control for. Two lists would drift, and the symptom
+  // is a control that edits a field nobody reads. There is one list.
+  const { treatmentOptions, STRUCTURAL } = await import('../src/ui/fields.js');
+  const server = await readFile(new URL('../src/ui/server.mjs', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
+  for (const [name, src] of [['server.mjs', server], ['app.js', app]]) {
+    assert.match(src, /from '\.\/fields\.js'/, `${name} must take the split from one place`);
+  }
+
+  // `__key` is stamped onto rendered regions by applyFit so everything
+  // downstream can name one. It is bookkeeping, and an editable control for it
+  // would write a field the renderer ignores.
+  const region = { id: 'a', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'cyan', __key: 'a' };
+  assert.deepEqual(treatmentOptions(region), { color: 'cyan' });
+  assert.ok(STRUCTURAL.has('panel') && !STRUCTURAL.has('color'));
+  assert.ok(!STRUCTURAL.has('scale'), 'both text treatments read scale as an option');
+});
+
+test('a treatment no pack provides is called out, not called undocumented', async () => {
+  // Two different situations that had one message. A pack that shipped no
+  // description still paints; a treatment name no pack provides does not paint
+  // at all — renderTexture throws on it.
+  //
+  // Which is why this fixture DROPS the region on this car: a dropped region is
+  // never handed to the renderer, so the surface still draws and the inspector
+  // is reachable. Undropping it is exactly what a person would try next, and the
+  // note is what tells them why they should not.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'sparkles',  // synthwave, not loaded
+  };
+  server.fit = { livery: 'l', car: 'fixture', regions: { badge: { drop: true } } };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete', '#drop', '#reset']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const html = dom.querySelector('#inspector').innerHTML;
+  assert.match(html, /cannot be painted at all/, 'say what is actually wrong');
+  assert.match(html, /sparkles/);
+  assert.doesNotMatch(html, /Nothing describes this treatment/,
+    'that message is for a pack that shipped no description, which is a different thing');
+});
+
+test('an edit that will not parse changes nothing, and says so', async () => {
+  // Returning undefined for unparseable input made `change` delete the key, so
+  // typing over an existing value erased it the moment the intermediate text
+  // stopped parsing — and the only sign was the artwork changing mid-keystroke.
+  //
+  // Checked through the RENDER rather than through the working design, which is
+  // the honest place: `letter-spacing` is `size * tracking`, so losing the
+  // option is visible in the SVG exactly as it would be on the car.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', tracking: 0.4,
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['tracking', 'number']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const spacing = () => /letter-spacing="([\d.]+)"/.exec(dom.querySelector('#texture').innerHTML)?.[1];
+  const wide = spacing();
+  assert.ok(wide, 'the text should be rendered with a letter-spacing to watch');
+
+  // Mid-thought: a minus sign on its own is not a number yet.
+  fields.get('tracking').value = '-';
+  await fields.get('tracking').onchange();
+  assert.equal(spacing(), wide, 'an unparseable edit must leave the value alone');
+  assert.match(dom.querySelector('#status').textContent, /not a number/);
+
+  // A real one does change it.
+  fields.get('tracking').value = '0.05';
+  await fields.get('tracking').onchange();
+  const narrow = spacing();
+  assert.notEqual(narrow, wide, 'a valid edit still gets through');
+
+  // And cleared means "no opinion" — back to the treatment's own default of
+  // 0.08, which is wider than the 0.05 just set and narrower than the 0.4 before.
+  fields.get('tracking').value = '';
+  await fields.get('tracking').onchange();
+  assert.ok(Number(spacing()) > Number(narrow) && Number(spacing()) < Number(wide),
+    `clearing should fall back to the treatment's default, got ${spacing()}`);
+});
+
+test('a region can be added to the design, ordered, and taken out again', async () => {
+  // Order IS paint order — later regions draw over earlier ones — so moving a
+  // row is not a cosmetic nicety, it is the only way to say what covers what.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  const { nodes } = inspectorButtons(dom,
+    ['#delete', '#earlier', '#later', '#removeregion', '#copyregion', '#reset', '#drop']);
+
+  // The picker offers what the design's packs actually provide.
+  assert.match(dom.querySelector('#newtreatment').innerHTML, /value="fill"/);
+  assert.match(dom.querySelector('#newtreatment').innerHTML, /Halftone dissolve/);
+
+  dom.querySelector('#newtreatment').value = 'stripe';
+  await dom.querySelector('#addregion').onclick();
+
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+  let regions = design().surfaces.body.regions;
+  assert.deepEqual(regions.map((r) => r.id), ['badge', 'stripe'], 'added, and added last');
+  assert.match(dom.querySelector('#regions').innerHTML, /stripe/, 'and listed');
+
+  // Painting earlier means moving down the array, which is what the button says.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'stripe' } } });
+  await nodes.get('#earlier').onclick();
+  assert.deepEqual(design().surfaces.body.regions.map((r) => r.id), ['stripe', 'badge']);
+
+  // Removing takes the fit's opinion of it too, or every later build reports a
+  // stale id nobody can act on.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'stripe' } } });
+  await nodes.get('#removeregion').onclick();
+  regions = design().surfaces.body.regions;
+  assert.deepEqual(regions.map((r) => r.id), ['badge']);
+  assert.equal(JSON.parse(dom.querySelector('#fitjson').textContent).regions?.stripe, undefined);
+});
+
+test('an added region gets a name nothing else is using', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  const add = async (t) => {
+    dom.querySelector('#newtreatment').value = t;
+    await dom.querySelector('#addregion').onclick();
+  };
+  await add('fill');
+  await add('fill');
+  await add('fill');
+
+  const ids = JSON.parse(dom.querySelector('#designjson').textContent)
+    .surfaces.body.regions.map((r) => r.id);
+  assert.deepEqual(ids, ['badge', 'fill', 'fill-2', 'fill-3']);
+  assert.equal(new Set(ids).size, ids.length, 'ids are how a fit addresses a region');
+});
+
+test('the status line says which of the two files is unsaved', async () => {
+  // Two files and two buttons now. "unsaved" that does not say which leaves you
+  // to work it out from which button is enabled, in the far corner of the
+  // header, while dragging.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: 'HI',
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/, 'nothing changed yet');
+
+  // A DESIGN change alone still has to be reported, which the fit's own dirty
+  // flag knew nothing about.
+  fields.get('text').value = 'BYE';
+  await fields.get('text').onchange();
+  assert.match(dom.querySelector('#status').textContent, /design unsaved/);
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /fit and design/);
+
+  // And a fit change on top names both.
+  dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(dom.querySelector('#status').textContent, /fit and design unsaved/);
 });
