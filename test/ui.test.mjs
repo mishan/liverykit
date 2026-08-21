@@ -1970,3 +1970,95 @@ test('a livery carrying code is not offered as data to edit', async () => {
     assert.deepEqual(serialisableDesign(livery).lossy, [], `${name} should round-trip`);
   }
 });
+
+test('the two halves agree on which fields belong to a treatment', async () => {
+  // The server decides what to send as a region's options and the inspector
+  // decides which to offer a control for. Two lists would drift, and the symptom
+  // is a control that edits a field nobody reads. There is one list.
+  const { treatmentOptions, STRUCTURAL } = await import('../src/ui/fields.js');
+  const server = await readFile(new URL('../src/ui/server.mjs', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
+  for (const [name, src] of [['server.mjs', server], ['app.js', app]]) {
+    assert.match(src, /from '\.\/fields\.js'/, `${name} must take the split from one place`);
+  }
+
+  // `__key` is stamped onto rendered regions by applyFit so everything
+  // downstream can name one. It is bookkeeping, and an editable control for it
+  // would write a field the renderer ignores.
+  const region = { id: 'a', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'cyan', __key: 'a' };
+  assert.deepEqual(treatmentOptions(region), { color: 'cyan' });
+  assert.ok(STRUCTURAL.has('panel') && !STRUCTURAL.has('color'));
+  assert.ok(!STRUCTURAL.has('scale'), 'both text treatments read scale as an option');
+});
+
+test('a treatment no pack provides is called out, not called undocumented', async () => {
+  // Two different situations that had one message. A pack that shipped no
+  // description still paints; a treatment name no pack provides does not paint
+  // at all — renderTexture throws on it.
+  //
+  // Which is why this fixture DROPS the region on this car: a dropped region is
+  // never handed to the renderer, so the surface still draws and the inspector
+  // is reachable. Undropping it is exactly what a person would try next, and the
+  // note is what tells them why they should not.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'sparkles',  // synthwave, not loaded
+  };
+  server.fit = { livery: 'l', car: 'fixture', regions: { badge: { drop: true } } };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete', '#drop', '#reset']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const html = dom.querySelector('#inspector').innerHTML;
+  assert.match(html, /cannot be painted at all/, 'say what is actually wrong');
+  assert.match(html, /sparkles/);
+  assert.doesNotMatch(html, /Nothing describes this treatment/,
+    'that message is for a pack that shipped no description, which is a different thing');
+});
+
+test('an edit that will not parse changes nothing, and says so', async () => {
+  // Returning undefined for unparseable input made `change` delete the key, so
+  // typing over an existing value erased it the moment the intermediate text
+  // stopped parsing — and the only sign was the artwork changing mid-keystroke.
+  //
+  // Checked through the RENDER rather than through the working design, which is
+  // the honest place: `letter-spacing` is `size * tracking`, so losing the
+  // option is visible in the SVG exactly as it would be on the car.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', tracking: 0.4,
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['tracking', 'number']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const spacing = () => /letter-spacing="([\d.]+)"/.exec(dom.querySelector('#texture').innerHTML)?.[1];
+  const wide = spacing();
+  assert.ok(wide, 'the text should be rendered with a letter-spacing to watch');
+
+  // Mid-thought: a minus sign on its own is not a number yet.
+  fields.get('tracking').value = '-';
+  await fields.get('tracking').onchange();
+  assert.equal(spacing(), wide, 'an unparseable edit must leave the value alone');
+  assert.match(dom.querySelector('#status').textContent, /not a number/);
+
+  // A real one does change it.
+  fields.get('tracking').value = '0.05';
+  await fields.get('tracking').onchange();
+  const narrow = spacing();
+  assert.notEqual(narrow, wide, 'a valid edit still gets through');
+
+  // And cleared means "no opinion" — back to the treatment's own default of
+  // 0.08, which is wider than the 0.05 just set and narrower than the 0.4 before.
+  fields.get('tracking').value = '';
+  await fields.get('tracking').onchange();
+  assert.ok(Number(spacing()) > Number(narrow) && Number(spacing()) < Number(wide),
+    `clearing should fall back to the treatment's default, got ${spacing()}`);
+});

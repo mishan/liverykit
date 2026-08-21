@@ -15,6 +15,8 @@
 // Relative, so the same specifier resolves in the browser (served alongside
 // app.js) and in Node, where the tests import this module directly.
 import { createViewer, unpack, unpackModel } from './view3d.js';
+// The same split the server makes, from the same file, so the two cannot drift.
+import { treatmentOptions } from './fields.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -943,7 +945,12 @@ function optionControls(id) {
   if (!region) return '';
   const t = state.treatments.get(region.treatment);
   const described = t?.options ?? null;
-  const extra = Object.keys(treatmentOptionsOf(region))
+  // Two very different situations, and one message for both would be a lie.
+  // A pack that described nothing still paints; a treatment name no pack
+  // provides does not paint at all — renderTexture throws on it — so the design
+  // is broken now rather than merely undocumented.
+  const missingTreatment = region.treatment !== undefined && !t;
+  const extra = Object.keys(treatmentOptions(region))
     .filter((k) => !described || !(k in described));
 
   const rows = Object.entries(described ?? {}).map(([key, o]) => {
@@ -984,28 +991,45 @@ function optionControls(id) {
 
   return `<h3>${esc(t?.label ?? region.treatment ?? 'region')}</h3>
     ${t?.summary ? `<p class="hint">${esc(t.summary)}</p>` : ''}
-    ${described === null && region.treatment
-      ? `<p class="hint">Nothing describes this treatment, so its options are shown as raw values.</p>` : ''}
+    ${missingTreatment
+      ? `<p class="note">No pack loaded by this design provides a treatment called
+          <code>${esc(region.treatment)}</code>, so this region cannot be painted at all.
+          Add its pack to <code>packs</code>, or change the treatment.</p>`
+      : described === null && region.treatment
+        ? `<p class="hint">Nothing describes this treatment, so its options are shown as raw values.</p>`
+        : ''}
     ${rows}${unknown}
     <div class="row" style="margin-top:8px"><button id="copyregion">Copy region as JSON</button></div>
     <p class="hint">These change the DESIGN, on every car. Nothing is saved yet — copy the
       JSON into your livery.</p>`;
 }
 
-/** Mirror of the server's split: what is the treatment's rather than the placement's. */
-function treatmentOptionsOf(region) {
-  const structural = new Set(['id', 'treatment', 'panel', 'tags', 'limit', 'at', 'rotate', 'safe', 'once', 'drop']);
-  return Object.fromEntries(Object.entries(region).filter(([k]) => !structural.has(k)));
-}
 
-/** Parse what an input gives back, by the kind the control declared. */
+/**
+ * Parse what an input gives back, by the kind the control declared.
+ *
+ * Three outcomes, not two, and the distinction matters. An EMPTY field means
+ * "no opinion" and removes the key, which is how you get back to the treatment's
+ * own default. Something unparseable means the person is mid-thought — half a
+ * JSON array, a minus sign on its own — and must change nothing at all.
+ *
+ * Collapsing those two was quietly destructive: typing over an existing value
+ * erased it the moment the intermediate text stopped parsing, and the only way
+ * to notice was that the artwork changed while you were still typing.
+ */
 function readControl(el) {
   const kind = el.dataset.kind;
   const raw = el.value ?? '';
-  if (raw === '') return undefined;               // cleared: back to the code's default
-  if (kind === 'number') { const n = Number(raw); return Number.isFinite(n) ? n : undefined; }
-  if (kind === 'json') { try { return JSON.parse(raw); } catch { return undefined; } }
-  return raw;
+  if (raw.trim() === '') return { ok: true, value: undefined };
+  if (kind === 'number') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? { ok: true, value: n } : { ok: false, why: 'not a number' };
+  }
+  if (kind === 'json') {
+    try { return { ok: true, value: JSON.parse(raw) }; }
+    catch (e) { return { ok: false, why: e.message }; }
+  }
+  return { ok: true, value: raw };
 }
 
 function wireOptionControls(id) {
@@ -1025,7 +1049,13 @@ function wireOptionControls(id) {
     if (el.dataset.kind === 'boolean') {
       el.onclick = () => change(key, region[key] ? undefined : true);
     } else {
-      el.onchange = () => change(key, readControl(el));
+      el.onchange = () => {
+        const read = readControl(el);
+        // A no-op, and said out loud. Silently keeping the old value would look
+        // exactly like the edit having been accepted.
+        if (!read.ok) return status(`${key}: ${read.why} — left as it was`);
+        return change(key, read.value);
+      };
     }
   }
 
@@ -1190,8 +1220,13 @@ function drawInspector() {
           : `<button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
              <button id="reset">Reset</button>`}
       </div>
-      <p class="hint">Or click a panel on the right to place it there.</p>`;
+      <p class="hint">Or click a panel on the right to place it there.</p>
+      ${optionControls(id)}`;
     wireInspectorButtons(id);
+    // The options too. A region with no placement is exactly where you might
+    // need them: its treatment may be why it is not on the car, and the
+    // inspector already exists to work hardest when there is nothing on screen.
+    wireOptionControls(id);
     return;
   }
   el.className = '';
