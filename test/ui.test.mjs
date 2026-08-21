@@ -1616,6 +1616,69 @@ function inspectorButtons(dom, names) {
   return nodes;
 }
 
+test('editing a copy goes into the copy, not into an override of nothing', async () => {
+  // Every edit went to fit.regions[id]. applyFit does not consult that for a
+  // copy — the placement lives in the copies entry — so the drag appeared to do
+  // nothing and snapped back on the next render. Worse, the entry stayed behind,
+  // and validateFit refuses an id that is both a copy and an override: Save then
+  // failed on a file the editor had written itself.
+  const { validateFit } = await import('../src/fit.mjs');
+  const server = copyFixture();
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith', '#reset', '#drop']);
+  const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#duplicate').onclick();
+
+  const before = structuredClone(fit().copies['badge-copy']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-copy' } } });
+  dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
+  await new Promise((r) => setTimeout(r, 20));
+
+  const after = fit();
+  assert.equal(after.regions['badge-copy'], undefined,
+    'a copy must not gain an override entry — validateFit refuses a file with both');
+  assert.equal(after.copies['badge-copy'].panel, 'R', 'the move is recorded in the copy itself');
+  assert.notDeepEqual(after.copies['badge-copy'], before, 'and it actually changed');
+  assert.equal(after.copies['badge-copy'].of, 'badge', 'still a copy of the same region');
+
+  // The whole point: the file the editor just wrote has to be loadable.
+  assert.doesNotThrow(() => validateFit(after), 'Save must not reject the editor\'s own output');
+
+  // And the placement survives the round trip rather than snapping back.
+  const { applyFit } = await import('../src/fit.mjs');
+  const out = applyFit(server.livery.surfaces.body.regions, after,
+    { profile: server.profile, role: 'body', surfaceKey: 'body', notes: [] }).regions;
+  assert.equal(out.find((r) => r.__key === 'badge-copy').panel, 'R',
+    'the renderer agrees with what the editor recorded');
+});
+
+test('a copy that cannot be placed can still be deleted', async () => {
+  // A copy whose panel went away is listed but has no placement, which used to
+  // take the inspector's no-placement path — Drop and Reset only. Drop writes
+  // `drop` into the copy entry, which validateFit refuses outright, and Reset
+  // deletes an override that was never there. So the one thing that made sense
+  // was the one thing not offered.
+  const server = copyFixture();
+  server.fit = {
+    livery: 'l', car: 'fixture',
+    copies: { 'badge-gone': { of: 'badge', panel: 'no_such_panel' } },
+  };
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#delete', '#drop', '#reset', '#mirrorcreate', '#duplicate', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+
+  assert.match(dom.querySelector('#regions').innerHTML, /badge-gone/, 'it is listed');
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-gone' } } });
+  const html = dom.querySelector('#inspector').innerHTML;
+  assert.match(html, /Delete/, 'an unplaceable copy has to be removable');
+  assert.doesNotMatch(html, /Drop on this car/, 'dropping a copy writes a fit that will not load');
+  assert.doesNotMatch(html, /Reset/, 'and there is no design behind it to reset to');
+
+  await buttons.get('#delete').onclick();
+  assert.equal(JSON.parse(dom.querySelector('#fitjson').textContent).copies?.['badge-gone'], undefined);
+});
+
 test('a created copy is listed, selectable and deletable', async () => {
   // The region list came from the SAVED fit, so a copy made in the editor was
   // rendered on the car and absent from the list: not selectable, not movable,
