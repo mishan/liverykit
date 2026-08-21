@@ -87,8 +87,12 @@ async function runApp({ state, render, server = null }) {
     const answer = () => {
       if (!server) return path === '/api/state' ? state : render;
       const fit = sent?.fit ?? server.fit ?? null;
-      if (path === '/api/state') return editorState({ ...server, fit, liveryId: 'test' });
-      return renderSurface({ ...server, fit, role: sent?.role ?? server.role });
+      // The working DESIGN is honoured exactly as the real server honours it. A
+      // harness that ignored it would render from the file on disk and report
+      // that every option control does nothing — or worse, that one works.
+      const livery = sent?.design ?? server.livery;
+      if (path === '/api/state') return editorState({ ...server, livery, fit, liveryId: 'test' });
+      return renderSurface({ ...server, livery, fit, role: sent?.role ?? server.role });
     };
     return { ok: true, status: 200, json: async () => answer() };
   };
@@ -1608,12 +1612,17 @@ function copyFixture() {
 }
 
 /** Give the fake inspector the buttons app.js looks for, and hand them back. */
-function inspectorButtons(dom, names) {
+function inspectorButtons(dom, names, opts = []) {
   const inspector = dom.querySelector('#inspector');
   const nodes = new Map(names.map((n) => [n, { onclick: null, onchange: null, value: '' }]));
+  // Option controls are found with querySelectorAll('[data-opt]'), so they are
+  // handed back keyed by the option they edit.
+  const fields = new Map(opts.map(([key, kind]) => [key, {
+    dataset: { opt: key, kind }, value: '', onclick: null, onchange: null,
+  }]));
   inspector.querySelector = (sel) => nodes.get(sel) ?? null;
-  inspector.querySelectorAll = () => [];
-  return nodes;
+  inspector.querySelectorAll = (sel) => (sel === '[data-opt]' ? [...fields.values()] : []);
+  return { nodes, fields };
 }
 
 test('editing a copy goes into the copy, not into an override of nothing', async () => {
@@ -1625,7 +1634,7 @@ test('editing a copy goes into the copy, not into an override of nothing', async
   const { validateFit } = await import('../src/fit.mjs');
   const server = copyFixture();
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith', '#reset', '#drop']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith', '#reset', '#drop']);
   const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
@@ -1666,7 +1675,7 @@ test('a copy that cannot be placed can still be deleted', async () => {
     copies: { 'badge-gone': { of: 'badge', panel: 'no_such_panel' } },
   };
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#delete', '#drop', '#reset', '#mirrorcreate', '#duplicate', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#delete', '#drop', '#reset', '#mirrorcreate', '#duplicate', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
   assert.match(dom.querySelector('#regions').innerHTML, /badge-gone/, 'it is listed');
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge-gone' } } });
@@ -1723,7 +1732,7 @@ test('a mirrored copy turns the rotation the design gave the source', async () =
   server.livery.surfaces.body.regions[0].rotate = 30;
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
 
@@ -1742,7 +1751,7 @@ test('a mirror whose target panel is missing is reported, not thrown', async () 
   server.profile.panels.body.L.mirrorOf = 'no_such_panel';
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
 
@@ -1757,7 +1766,7 @@ test('a created copy is listed, selectable and deletable', async () => {
   // not deletable, and still written to the file on Save.
   const server = copyFixture();
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#mirrorcreate').onclick();
@@ -1787,7 +1796,7 @@ test('a copy of a copy is listed too, and deleting the root takes both', async (
   // survived its own source and was saved naming something that had gone.
   const server = copyFixture();
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   const fit = () => JSON.parse(dom.querySelector('#fitjson').textContent);
   const regions = () => dom.querySelector('#regions').innerHTML;
 
@@ -1826,7 +1835,7 @@ test('a duplicate is offset even when there is no room on the positive side', as
   server.livery.surfaces.body.regions[0].at = [0.7, 0.7, 0.3, 0.3];   // hard against the corner
 
   const { dom } = await runApp({ server });
-  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  const { nodes: buttons } = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   await buttons.get('#duplicate').onclick();
 
@@ -1879,4 +1888,85 @@ test('an id belonging to another surface is not reported as stale', async () => 
   // And an id that really does match nothing anywhere is still reported.
   const bogus = { ...fit, regions: { ...fit.regions, 'no-such-region': { drop: true } } };
   assert.deepEqual(unusedFitIds(bogus, fitUsage(livery, profile, bogus)), ['no-such-region']);
+});
+
+// --- the design's own options ----------------------------------------------
+
+test('the editor offers a control for what a treatment actually takes', async () => {
+  // Before this the inspector could move a region and say nothing about what it
+  // was. `text` takes nine options and the only way to learn that was to read
+  // the pack.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const html = dom.querySelector('#inspector').innerHTML;
+  assert.match(html, /Letter spacing/, 'a described option is labelled, not left as a key');
+  assert.match(html, /data-opt="tracking"/);
+  assert.match(html, /placeholder="0\.08"/, "the code's default is offered as a hint, not written in");
+  assert.match(html, /Copy region as JSON/);
+  // Options the region does not set must not acquire a value just by appearing.
+  assert.doesNotMatch(html, /data-opt="tracking"[^>]*value="0\.08"/);
+});
+
+test('changing an option changes the design and the picture, and nothing else', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string'], ['tracking', 'number']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  const svgBefore = dom.querySelector('#texture').innerHTML;
+  fields.get('text').value = 'GOODBYE';
+  await fields.get('text').onchange();
+
+  assert.notEqual(dom.querySelector('#texture').innerHTML, svgBefore,
+    'the render has to come back changed, or the control is decorative');
+  assert.match(dom.querySelector('#texture').innerHTML, /GOODBYE/);
+
+  // The DESIGN changed. The fit did not: this is not an adjustment for one car.
+  assert.deepEqual(JSON.parse(dom.querySelector('#fitjson').textContent).regions ?? {}, {},
+    'editing what a region IS must not write a per-car override');
+
+  // Clearing a control removes the key rather than writing an empty value, so a
+  // design says only what somebody chose.
+  fields.get('tracking').value = '0.3';
+  await fields.get('tracking').onchange();
+  fields.get('tracking').value = '';
+  await fields.get('tracking').onchange();
+  assert.match(dom.querySelector('#texture').innerHTML, /GOODBYE/, 'still rendering');
+});
+
+test('a livery carrying code is not offered as data to edit', async () => {
+  // JSON.stringify drops a function without a word, so a procedural design
+  // edited this way would show one thing and build another. Refusing is the
+  // same rule as everywhere else here, one level up.
+  const { serialisableDesign } = await import('../src/ui/server.mjs');
+  const { design, lossy } = serialisableDesign({
+    name: 'L', palette: { ink: '#000' },
+    surfaces: { body: { regions: [{ id: 'a', treatment: 'fill' }] } },
+    render: { font: () => 'DejaVu Sans' },
+  });
+  assert.deepEqual(lossy, ['render.font']);
+  assert.equal(design.render.font, undefined);
+
+  // And the shipped designs are clean, which is what makes step one usable.
+  for (const name of ['neon-grid', 'neon-grid-any']) {
+    const livery = (await import(`../liveries/${name}.mjs`)).default;
+    assert.deepEqual(serialisableDesign(livery).lossy, [], `${name} should round-trip`);
+  }
 });
