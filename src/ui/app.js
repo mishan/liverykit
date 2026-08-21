@@ -17,6 +17,7 @@
 import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
+import { paletteUses, tokenUses, danglingNames, eachRegion } from './uses.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -179,6 +180,8 @@ window.addEventListener('keydown', (e) => {
   e.preventDefault();
   if (e.shiftKey) redo(); else undo();
 });
+
+wireAdders();
 
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
@@ -348,6 +351,9 @@ async function refresh() {
   // Beside it, not instead of it. Seeing which file a change landed in is the
   // whole reason the two are edited separately.
   $('#designjson').textContent = JSON.stringify(state.design, null, 2);
+  drawPalette();
+  drawIdentity();
+  drawDangling();
   $('#notes').innerHTML = out.notes
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Derived from the stacks rather than trusted from the markup, so there is
@@ -418,6 +424,206 @@ function drawRegions() {
       <span class="id">${esc(label)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
+}
+
+// --- palette and identity ---------------------------------------------------
+//
+// Both are design-level, both are small, and both are keyed by NAME — which is
+// why they are worth editing here rather than in a text file. Changing `accent`
+// re-renders every region that mentions it in about two milliseconds, so you
+// find out what a colour does to a car by changing it and looking, rather than
+// by imagining.
+//
+// The names are also the risk. A region refers to a palette entry by name and
+// `ctx.color` passes an unknown one straight through to the renderer; a `{token}`
+// with no value interpolates to nothing. Neither reports anything. So every row
+// carries a count of what depends on it, and renaming rewrites the references
+// rather than leaving them pointing at something that is gone.
+
+function drawPalette() {
+  const el = $('#palette');
+  if (!el) return;
+  if (state.lossy.length) { el.innerHTML = '<p class="hint">This livery contains code.</p>'; return; }
+
+  const uses = paletteUses(state.design, state.treatments);
+  el.innerHTML = Object.entries(state.design?.palette ?? {}).map(([name, value]) => {
+    const by = uses.get(name) ?? [];
+    return `<div class="named${by.length ? '' : ' unused'}">
+      <span class="swatch" style="background:${esc(value)}"></span>
+      <input data-palette="${esc(name)}" data-part="name" value="${esc(name)}">
+      <input data-palette="${esc(name)}" data-part="value" value="${esc(value)}">
+      <span class="uses" title="${esc(by.length ? by.join(', ') : 'nothing refers to this')}"
+        >${by.length || '—'}</span>
+    </div>`;
+  }).join('');
+  wirePalette();
+}
+
+function drawIdentity() {
+  const el = $('#identity');
+  if (!el) return;
+  if (state.lossy.length) { el.innerHTML = ''; return; }
+
+  const uses = tokenUses(state.design);
+  el.innerHTML = Object.entries(state.design?.identity ?? {}).map(([token, value]) => {
+    const by = uses.get(token) ?? [];
+    return `<div class="named${by.length ? '' : ' unused'}">
+      <span></span>
+      <input data-token="${esc(token)}" data-part="name" value="${esc(token)}">
+      <input data-token="${esc(token)}" data-part="value" value="${esc(value)}">
+      <span class="uses" title="${esc(by.length ? by.join(', ') : 'no text mentions this')}"
+        >${by.length || '—'}</span>
+    </div>`;
+  }).join('');
+  wireIdentity();
+}
+
+/**
+ * Names the design uses and does not define.
+ *
+ * The reason this panel is worth having. Both failures are invisible in the
+ * render: an unknown colour reaches librsvg as a literal, and a token with no
+ * value leaves a hole in the middle of a line of text.
+ */
+function drawDangling() {
+  const el = $('#dangling');
+  if (!el) return;
+  if (state.lossy.length) { el.innerHTML = ''; return; }
+
+  const { colours, tokens } = danglingNames(state.design, state.treatments);
+  el.innerHTML = [
+    ...tokens.map((t) => `<div class="note">Nothing gives <code>${esc(t.token)}</code> a value, so
+      ${esc(t.by.join(', '))} ${t.by.length > 1 ? 'render' : 'renders'} with a hole where it should be.</div>`),
+    ...colours.map((c) => `<div class="note"><code>${esc(c.name)}</code> is not in the palette, so it goes
+      to the renderer as a literal colour — used by ${esc(c.by.join(', '))}.</div>`),
+  ].join('');
+}
+
+function wirePalette() {
+  const el = $('#palette');
+  for (const input of el.querySelectorAll?.('[data-palette]') ?? []) {
+    input.onchange = () => {
+      const was = input.dataset.palette;
+      const value = input.value ?? '';
+      if (input.dataset.part === 'value') {
+        // An empty colour is not "no opinion", it is a region painted with the
+        // empty string. Nothing to fall back to, so nothing happens.
+        if (!value.trim()) return status(`${was} needs a colour — left as it was`);
+        remember(`recolour ${was}`);
+        state.design.palette[was] = value.trim();
+      } else {
+        const now = value.trim();
+        if (!now || now === was) return drawPalette();
+        if (state.design.palette[now] !== undefined) return status(`there is already a colour called ${now}`);
+        remember(`rename ${was}`);
+        renamePalette(was, now);
+      }
+      return afterDesignEdit();
+    };
+  }
+}
+
+/** Wired once: the Add row is static, so it keeps whatever you have typed. */
+function wireAdders() {
+  {
+    const add = $('#addcolour');
+    add.onclick = () => {
+      const name = ($('#newcolourname').value ?? '').trim();
+      const value = ($('#newcolourvalue').value ?? '').trim();
+      if (!name || !value) return status('a colour needs both a name and a value');
+      if (state.design.palette?.[name] !== undefined) return status(`${name} is already taken`);
+      remember(`add ${name}`);
+      (state.design.palette ??= {})[name] = value;
+      $('#newcolourname').value = '';
+      $('#newcolourvalue').value = '';
+      return afterDesignEdit();
+    };
+  }
+  {
+    const add = $('#addtoken');
+    add.onclick = () => {
+      const token = ($('#newtokenname').value ?? '').trim();
+      if (!token) return status('a token needs a name');
+      if (state.design.identity?.[token] !== undefined) return status(`${token} is already taken`);
+      remember(`add ${token}`);
+      (state.design.identity ??= {})[token] = $('#newtokenvalue').value ?? '';
+      $('#newtokenname').value = '';
+      $('#newtokenvalue').value = '';
+      return afterDesignEdit();
+    };
+  }
+}
+
+/**
+ * Rename a colour, and every reference to it.
+ *
+ * The references are known — that is what `paletteUses` is for — so leaving them
+ * pointing at a name that no longer exists would be choosing to break something
+ * this code can see. A renamed entry with nothing updated renders as a literal
+ * colour called `accent`, and says nothing about it.
+ *
+ * Key order is kept rather than moving the entry to the end. A palette is read
+ * by people, and reshuffling it on a rename is a diff nobody asked for.
+ */
+function renamePalette(was, now) {
+  const count = (paletteUses(state.design, state.treatments).get(was) ?? []).length;
+  state.design.palette = Object.fromEntries(
+    Object.entries(state.design.palette).map(([k, v]) => [k === was ? now : k, v]));
+
+  for (const block of ['paint', 'surfaces']) {
+    for (const spec of Object.values(state.design[block] ?? {})) {
+      if (spec.background === was) spec.background = now;
+    }
+  }
+  for (const { region } of eachRegion(state.design)) {
+    for (const [key, v] of Object.entries(region)) {
+      if (!holdsAColour(region, key)) continue;
+      if (v === was) region[key] = now;
+      else if (Array.isArray(v)) region[key] = v.map((x) => (x === was ? now : x));
+    }
+  }
+  status(`renamed ${was} to ${now}, and the ${count} reference(s) to it`);
+}
+
+/** Would this option hold a colour? Ask the treatment; fall back to convention. */
+function holdsAColour(region, key) {
+  const described = state.treatments.get(region.treatment)?.options;
+  if (described) return described[key]?.type === 'color' || described[key]?.type === 'colors';
+  return key === 'color' || key === 'colors';
+}
+
+function wireIdentity() {
+  const el = $('#identity');
+  for (const input of el.querySelectorAll?.('[data-token]') ?? []) {
+    input.onchange = () => {
+      const was = input.dataset.token;
+      if (input.dataset.part === 'value') {
+        // An empty value is allowed and is not the same as absent: `country: ''`
+        // is how the shipped designs say "this car has no country on it". The
+        // dangling panel reports it either way, because both render as nothing.
+        remember(`set ${was}`);
+        state.design.identity[was] = input.value ?? '';
+      } else {
+        const now = (input.value ?? '').trim();
+        if (!now || now === was) return drawIdentity();
+        if (state.design.identity[now] !== undefined) return status(`${now} is already taken`);
+        remember(`rename ${was}`);
+        state.design.identity = Object.fromEntries(
+          Object.entries(state.design.identity).map(([k, v]) => [k === was ? now : k, v]));
+        // A token is referred to inside text, as `{was}`, so its references get
+        // rewritten exactly as a colour's do.
+        for (const { region } of eachRegion(state.design)) {
+          if (typeof region.text === 'string') region.text = region.text.split(`{${was}}`).join(`{${now}}`);
+        }
+      }
+      return afterDesignEdit();
+    };
+  }
+}
+
+async function afterDesignEdit() {
+  setDesignDirty();
+  await refresh();
 }
 
 // --- adding, removing and ordering the design's regions ---------------------
@@ -903,6 +1109,9 @@ async function livePreview() {
   // Beside it, not instead of it. Seeing which file a change landed in is the
   // whole reason the two are edited separately.
   $('#designjson').textContent = JSON.stringify(state.design, null, 2);
+  drawPalette();
+  drawIdentity();
+  drawDangling();
   } catch {
     // A dropped frame mid-drag is not worth interrupting the gesture over. The
     // release does a full render and will report anything genuinely wrong.
