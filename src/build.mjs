@@ -13,7 +13,7 @@ import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs'
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
-import { applyFit, regionIds, unusedFitIds } from './fit.mjs';
+import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
@@ -87,6 +87,11 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     );
   }
 
+  // Every id a fit could address across the whole livery, computed once. Fit ids
+  // are flat while this loop runs once per surface, so "is this name taken?" is
+  // not a question any single pass can answer.
+  const reserved = allRegionKeys(targets);
+
   let firstPng = null;
   const written = [];
 
@@ -116,7 +121,10 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
         // from the surface it sits on: the editor writes `body#0`, so a build
         // that computed `#0` matched none of them. The editor's own output then
         // adjusted nothing, and said so only as a stale-id note at the end.
-        fit, { profile, role, surfaceKey: from, used: fitUsed, notes },
+        //
+        // `reserved` is every key the livery declares anywhere, so a copy cannot
+        // take a name belonging to a region on another surface.
+        fit, { profile, role, surfaceKey: from, used: fitUsed, notes, reserved },
       ).regions,
       background: spec.background,
       treatments,
