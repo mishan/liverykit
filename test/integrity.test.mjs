@@ -1618,6 +1618,32 @@ test('a fit knows a design by its module name, not its skin folder', async () =>
   assert.notEqual(livery.folder, 'neon-grid-any', 'the skin folder is the underscored name, and is not this');
 });
 
+test('a bad ?role on /api/model is a client error, not a crash', async () => {
+  // texture() throws on an unknown role, which through the generic handler comes
+  // back as a 500: a stack trace in the log and "the server crashed" in the
+  // browser, for what is a typo in a query string.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server } = await startUi({
+    livery, profile, fitPath: '/nonexistent/fit.json', liveryId: 'neon-grid-any',
+    port: 0, log: () => {},
+  });
+  try {
+    const at = `http://127.0.0.1:${server.address().port}`;
+    const missing = await fetch(`${at}/api/model`);
+    assert.equal(missing.status, 400, 'no role at all');
+    assert.match((await missing.json()).error, /needs a \?role/);
+
+    const unknown = await fetch(`${at}/api/model?role=no_such_role`);
+    assert.equal(unknown.status, 404, 'a role this car does not have');
+    assert.match((await unknown.json()).error, /Known roles:/);
+  } finally {
+    server.close();
+  }
+});
+
 test('the editor caps how much it will read from a request', async () => {
   // Loopback or not, an unbounded read grows the process until it dies. A fit is
   // a few kilobytes of JSON.
