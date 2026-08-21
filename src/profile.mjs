@@ -317,6 +317,19 @@ export function texture(profile, role) {
 }
 
 /**
+ * The profile's OWN name for a panel, following an alias if that is what it is.
+ *
+ * A livery may say `flankLeft` where the profile calls the island `left_mid`,
+ * and both are correct — that is what an alias block is for. But only one of
+ * them is a key in `profile.panels`, so anything that looks a panel up by name
+ * has to agree on which. Two names for one thing is exactly the shape of bug
+ * that renders correctly and then fails somewhere that only had the other one.
+ */
+export function panelName(profile, role, name) {
+  return profile?.aliases?.[role]?.[name] ?? name;
+}
+
+/**
  * The named panel within a texture role, with its metadata.
  *
  * `aliases` let a profile carry friendly names alongside generated ones. A

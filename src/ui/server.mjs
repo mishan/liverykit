@@ -26,7 +26,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { renderTexture } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
 import { applyFit, regionIds, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
@@ -70,7 +70,12 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         treatment: r.treatment,
         editable: r.id !== undefined,
         tags: r.tags,
-        panel: r.panel,
+        // Resolved through the aliases, the same as the placement is, so the
+        // two can be compared. The editor asks "is this region still on the
+        // panel the design named?" to decide whether an override is needed at
+        // all, and that question is meaningless if one side says `flankLeft`
+        // and the other `left_mid`.
+        panel: r.panel ? panelName(profile, t.role, r.panel) : undefined,
         at: r.at ?? [0, 0, 1, 1],
       })),
     });
@@ -142,7 +147,15 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
       const p = r.panel ? findPanel(profile, role, r.panel) : null;
       return {
         id: r.id,
-        panel: r.panel ?? null,
+        // The PROFILE's name for the panel, not the livery's. A design is free
+        // to say `flankLeft` where the profile calls the island `left_mid`, and
+        // only the second is a key in `profile.panels` — which is what the panel
+        // list, the overlay and every lookup in the browser are keyed by. Send
+        // the livery's spelling and those lookups quietly find nothing, so a
+        // drag falls back to absolute coordinates and writes them into a field
+        // that means panel-relative. The artwork then moves somewhere nobody
+        // asked for, from a fit that reads perfectly well.
+        panel: r.panel ? panelName(profile, role, r.panel) : null,
         // Absolute texture fractions, which is what the overlay draws in.
         abs: p ? toAbsolute(p.rect, r.at) : (r.at ?? [0, 0, 1, 1]),
         anisotropy: p?.anisotropy ?? 1,
