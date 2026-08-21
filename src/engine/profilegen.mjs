@@ -17,7 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
-import { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './islands.mjs';
+import { findIslands, nameIslands, findMirrorPairs, findAdjacency, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
@@ -317,6 +317,11 @@ export async function profileFromKn5(path, {
 
   const panels = {};
   const adjacencyOut = {};
+  // Measured once, from the whole car, and handed to every role. Naming is a
+  // claim about where something sits on the CAR; deriving the extent per texture
+  // makes it a claim about where it sits on that sheet, which is very nearly
+  // no claim at all. See nameIslands.
+  const bounds = carBounds(model);
   for (const [texName, role] of roleOf) {
     const share = (coverage.get(texName) ?? 0) / totalCoverage;
     if (share < minCoverage) { panels[role] = {}; continue; }
@@ -327,7 +332,7 @@ export async function profileFromKn5(path, {
     const islands = findIslands(model, meshes, { minVertices });
     const total = islands.reduce((s, i) => s + i.uvArea, 0) || 1;
     const keep = islands.filter((i) => i.uvArea / total >= minPanelArea);
-    nameIslands(keep, axes);
+    nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
     // Every mesh occludes, not just the painted ones — a wheel hides bodywork
@@ -350,7 +355,19 @@ export async function profileFromKn5(path, {
         confidence: 'measured',
         source: { mesh: i.mesh, vertices: i.vertexCount },
         centroid3d: [r3(i.centroid.x), r3(i.centroid.y), r3(i.centroid.z)],
+        // Which way +u and +v travel across the car. Needed to mirror a
+        // placement onto the opposite flank: `mirrorOf` is measured from
+        // geometry and says nothing about how each island was laid out, and
+        // two panels that are mirror images in 3D are very often unwrapped the
+        // same way round in UV — or very often not.
+        uAxis: i.uAxis ?? undefined,
+        vAxis: i.vAxis ?? undefined,
       };
+      // How far this island is rotated from upright, so artwork can read level
+      // on a panel the unwrapper laid sideways. Omitted for near-horizontal
+      // panels, where "up" has no meaning on the surface and any answer would be
+      // rounding error.
+      if (i.textRotation !== null && i.textRotation !== undefined) p.textRotation = i.textRotation;
       if (i.safe) p.safe = i.safe;
       if (i.visibleFraction !== undefined) p.visible = i.visibleFraction;
       if (i.cockpitFraction !== undefined) p.visibleFromCockpit = i.cockpitFraction;

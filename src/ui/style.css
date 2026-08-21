@@ -1,0 +1,153 @@
+/* Dark, because you are looking at a dark car texture for an hour and a white
+   page beside it is exhausting. No framework: the whole tool is three files. */
+:root {
+  --bg: #0e1116;
+  --panel: #161b23;
+  --line: #263041;
+  --ink: #d8dee9;
+  --muted: #7d8899;
+  --accent: #00f0ff;
+  --hot: #ff2d95;
+  --warn: #ffb454;
+}
+* { box-sizing: border-box; }
+
+/* The `hidden` attribute is only a UA rule of `display: none`, and ANY id or
+   class rule setting `display` outranks it. `#carview { display: block }` did
+   exactly that: the canvas stayed on top of the stage while marked hidden,
+   swallowing every click meant for a panel outline or a drag box, and turning
+   solid black the moment WebGL cleared it — so the UV view "went blank and
+   stayed blank" while the tabs themselves worked perfectly.
+   This wins on specificity so `hidden` means hidden. */
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  height: 100vh; display: flex; flex-direction: column;
+}
+header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+h1 { font-size: 14px; font-weight: 600; margin: 0; }
+h1 .on { color: var(--muted); font-weight: 400; }
+h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--muted); margin: 18px 0 6px; font-weight: 600;
+}
+h2:first-child { margin-top: 0; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); font-weight: 400; }
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
+code { font-family: ui-monospace, monospace; color: var(--accent); }
+
+main { flex: 1; display: grid; grid-template-columns: 280px 1fr 300px; min-height: 0; }
+aside {
+  padding: 14px; overflow-y: auto; background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+#right { border-right: 0; border-left: 1px solid var(--line); }
+
+button, select {
+  font: inherit; color: var(--ink); background: #1e2632;
+  border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
+}
+button:not(:disabled):hover { border-color: var(--accent); cursor: pointer; }
+button:disabled { opacity: 0.45; }
+select { width: 100%; }
+
+ul { list-style: none; margin: 0; padding: 0; }
+li {
+  padding: 5px 8px; border-radius: 4px; cursor: pointer;
+  display: flex; align-items: baseline; gap: 6px;
+}
+li:hover { background: #1e2632; }
+li.sel { background: #1e2632; box-shadow: inset 2px 0 0 var(--accent); }
+li.off { opacity: 0.4; }
+li .id { font-family: ui-monospace, monospace; }
+li .meta { color: var(--muted); font-size: 11px; margin-left: auto; }
+li.locked { cursor: default; opacity: 0.5; }
+li.derived .id { color: var(--muted); }
+
+#canvas { display: flex; flex-direction: column; align-items: center; padding: 14px; min-width: 0; }
+/* An explicit size, not `flex: 1` plus `aspect-ratio`. Both children are
+   absolutely positioned, so the stage has no intrinsic width, and inside a
+   centring flex container that collapses to zero — leaving a page that renders
+   but shows nothing, which reads as an unfinished mockup rather than a bug. */
+#stage {
+  position: relative;
+  width: min(100%, calc(100vh - 150px));
+  aspect-ratio: 1;
+  border: 1px solid var(--line); background: #05070a;
+}
+/* #carview, NOT #car: the header's car-name span already owns that id, and this
+   rule applied to it made an absolutely-positioned, viewport-sized, invisible
+   box sitting over the whole page and swallowing every click. */
+#texture, #overlay, #carview { position: absolute; inset: 0; width: 100%; height: 100%; }
+#carview { display: block; touch-action: none; cursor: grab; }
+#carview:active { cursor: grabbing; }
+.tabs { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; align-self: flex-start; }
+.tab { padding: 3px 12px; }
+.tab.on { border-color: var(--accent); color: var(--accent); }
+#texture svg { width: 100%; height: 100%; display: block; }
+/* The texture is a backdrop; every click belongs to the overlay above it. */
+#texture { pointer-events: none; }
+
+.panelrect { fill: transparent; stroke: #ffffff22; stroke-width: 1; cursor: pointer; pointer-events: all; }
+.panelrect:hover { stroke: var(--accent); stroke-width: 2; }
+.panelrect.host { stroke: var(--accent); stroke-dasharray: 6 4; stroke-width: 2; }
+/* Clickable: a faint fill is still a hit target, and selecting a region by
+   clicking it on the canvas is the obvious gesture. */
+.ghost { fill: #ff2d9510; stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 3 3; cursor: pointer; }
+.ghost:hover { fill: #ff2d9530; stroke-width: 2.5; }
+.box { fill: #00f0ff14; stroke: var(--accent); stroke-width: 2; cursor: move; }
+.handle { fill: var(--accent); cursor: nwse-resize; }
+
+#inspector.empty { color: var(--muted); }
+#inspector label { display: block; margin: 8px 0 2px; color: var(--muted); font-size: 11px; }
+#inspector .row { display: flex; gap: 6px; align-items: center; }
+#inspector input[type=number] {
+  width: 100%; font: inherit; font-family: ui-monospace, monospace;
+  background: #1e2632; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 4px; padding: 3px 6px;
+}
+pre {
+  background: #05070a; border: 1px solid var(--line); border-radius: 5px;
+  padding: 8px; font-size: 11px; overflow-x: auto; max-height: 260px;
+  font-family: ui-monospace, monospace; color: var(--muted);
+}
+.status { color: var(--muted); font-size: 12px; }
+.status.dirty { color: var(--warn); }
+.note { color: var(--warn); font-size: 12px; margin-top: 6px; }
+
+/* A section heading in the panel list. Not clickable, and it must not look it:
+   the list is 66 names on some cars and unreadable without them. */
+li.head {
+  color: var(--muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.09em; margin-top: 10px; padding: 2px 8px; cursor: default;
+}
+li.head:first-child { margin-top: 0; }
+li.head:hover { background: none; }
+
+/* A panel being HOVERED in the list, shown on the sheet. Distinct from .host,
+   which means the selected region actually lives there — looking at a panel and
+   having a region on it are different facts and should not share a colour. */
+.panelrect.hot { stroke: var(--warn); stroke-width: 3; fill: #ffb45418; }
+
+/* Rotation choices. Small, because there are five of them and they sit inside
+   a 300px column next to everything else about the region. */
+button.rot { padding: 4px 8px; font-size: 12px; }
+button.rot.on { border-color: var(--accent); color: var(--accent); background: #12313a; }
+
+/* The mirror link. Amber when broken, because an asymmetry someone chose is
+   worth noticing on the way past, and an asymmetry nobody chose is a bug. */
+#mirror[data-linked="false"] { border-color: var(--warn); color: var(--warn); }
+
+/* The pairing picker sits in a 300px column with everything else about a
+   region, so it gets the same compact treatment as the rotation buttons. */
+#pairwith { font-size: 12px; padding: 4px 6px; }
+#mirrornow, #unpair { padding: 4px 8px; font-size: 12px; }
+
+/* Disabled controls stay in place rather than vanishing, so they need to read
+   as unavailable rather than as missing. */
+#inspector button:disabled, #inspector select:disabled { opacity: 0.4; cursor: default; }

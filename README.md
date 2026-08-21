@@ -45,12 +45,13 @@ precisely the mapping a livery needs.
 
 ## How it works
 
-Three layers, deliberately separate:
+Four layers, deliberately separate:
 
 | | what it describes | |
 |---|---|---|
 | **car profile** — `cars/*.json` | what a *car* is: its textures, and its UV islands given names and measurements | generated once per car, identical for everyone who owns it — **worth sharing** |
 | **livery** — `liveries/*.mjs` | what a *design* is: palette, identity, and which **treatment** (a function that fills a rectangle with art) goes on which named **panel** (a named UV island) | quick to write, this is the fun part |
+| **fit** — `fits/*.json` | where one design's artwork sits on one particular car | belongs to the pair, not to either half — see [below](#fitting-a-portable-design-to-one-car) |
 | **pack** — `src/packs/*.mjs` | what a *style* is: the treatments themselves | bring your own without forking |
 
 Because a livery names panels instead of coordinates:
@@ -105,6 +106,35 @@ Text rendering needs a font the renderer can find. The examples use DejaVu Sans;
 on Windows or macOS, change `render.font` in your livery to something installed
 locally.
 
+### You supply the game's files
+
+This repository contains no car models, textures or skins, and never will: they
+belong to the people who made the cars. What it ships are **profiles** —
+measurements about a car, a few hundred lines of JSON each — which is why the two
+bundled examples build without you owning anything.
+
+Anything that has to read a car reads it from *your* installation:
+
+| | needs |
+|---|---|
+| building a livery on a bundled profile | nothing |
+| `--from-kn5`, `--explain` | the car's `.kn5`, path given explicitly |
+| `--ui`, the 3D views | the car's `.kn5`, found or given |
+| `--scan`, `--skins` | a `skins/` folder from the car |
+
+Tell it where your install is once and the rest follows:
+
+```sh
+export AC_ROOT="$HOME/.steam/steam/steamapps/common/assettocorsa"
+# Windows: C:\Program Files (x86)\Steam\steamapps\common\assettocorsa
+```
+
+`--ui` searches `$AC_ROOT`, then `$ASSETTOCORSA`, then this checkout under
+`content/cars/<car>/` or `cars/<car>/` — so unpacking a car into the repo works
+too, and both paths are gitignored. If it finds nothing it says so and lists
+every path it tried; the UV editor still works without a model, and only the Car
+tabs are unavailable.
+
 *Developed and tested on Linux. The output is Windows-bound either way, since
 that's where the game runs.*
 
@@ -118,13 +148,14 @@ that's where the game runs.*
 `rss_formula_rss_4`, and so on.
 
 ```sh
-node bin/liverykit.mjs --from-kn5 <AC>/content/cars/<carId>/<carId>.kn5 \
-                       --skins    <AC>/content/cars/<carId>/skins \
+node bin/liverykit.mjs --from-kn5 "$AC_ROOT/content/cars/<carId>/<carId>.kn5" \
+                       --skins    "$AC_ROOT/content/cars/<carId>/skins" \
                        --car-id   <carId> --out cars/
 ```
 
-`<AC>` is your install: on Windows usually
-`C:\Program Files (x86)\Steam\steamapps\common\assettocorsa`.
+Both paths are into *your* Assetto Corsa install — see
+[You supply the game's files](#you-supply-the-games-files). Nothing here is
+found for you: `--from-kn5` and `--explain` take a path and read exactly it.
 
 `--skins` matters. The textures inside a kn5 are the model's own low-resolution
 defaults — often 512×512 where the skins ship 2048×2048 — so real sizes are
@@ -175,6 +206,16 @@ explained inline. Then:
 node bin/liverykit.mjs my-livery
 ```
 
+### 5. Nudge it where it sits badly
+
+Coordinates are a slow way to discover you were 3% off. `--ui` opens an editor
+that shows the artwork on the texture *and* on the car, and writes what you drag
+to a [fit](#the-fitting-editor) rather than to the design:
+
+```sh
+node bin/liverykit.mjs my-livery --ui
+```
+
 ---
 
 ## Making a livery that works on more than one car
@@ -212,6 +253,14 @@ surfaces: {
 }
 ```
 
+Panels also carry a measured **`textRotation`**: how far the unwrapper laid the
+panel from upright. A road car routinely turns a door sideways to pack its
+texture sheet — the Abarth's doors measure 270° and 90°, the Formula 4's flanks
+0° — so text placed without compensating reads vertically down the door. Write
+`rotate: 'auto'` and artwork follows the panel. Near-horizontal panels like a
+roof have no meaningful "up" and are left alone rather than turned by a number
+derived from rounding error.
+
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
 trackside), `cockpit` (readable from the driver's seat), `mirrored`, and
@@ -243,6 +292,10 @@ The proposal is right about 98% of the time, which is very good and is not the
 same as trustworthy without looking, so confirm it:
 
 ```sh
+# --explain takes a path; it never goes looking. Either from your install:
+node bin/liverykit.mjs --explain "$AC_ROOT/content/cars/abarth500/abarth500.kn5" \
+                       --skins   "$AC_ROOT/content/cars/abarth500/skins"
+# or from a car unpacked into this checkout, which .gitignore already expects:
 node bin/liverykit.mjs --explain cars/abarth500/abarth500.kn5 --skins cars/abarth500/skins
 ```
 
@@ -258,10 +311,106 @@ Change the entry to `"source": "human"` once you agree. Regenerating the profile
 preserves everything marked `human` and replaces everything marked `auto`, the
 same way `aliases` are preserved.
 
-Two honest limits. A portable design cannot use panel **names**, only tags. And
-it cannot treat the roles behind one term differently — if `body` binds to two
-textures, both get the same artwork. Portable means coarser; a design written for
-one car will always look better on it.
+### Fitting a portable design to one car
+
+A portable design places its artwork on the largest visible panel of the right
+side. That is the best a measurement can do — nothing in the tool knows which
+PART of a panel is flat, or whether the middle of it wraps over a wheel arch.
+
+A **fit** records the adjustment, and belongs to neither the design nor the car
+but to the pair of them:
+
+```jsonc
+// fits/neon-grid-any@abarth500.json
+{
+  "livery": "neon-grid-any",
+  "car": "abarth500",
+  "regions": {
+    "number-left": { "panel": "left_mid", "at": [0.24, 0.18, 0.52, 0.52] },
+    "driver-left": { "drop": true }
+  }
+}
+```
+
+Picked up automatically as `fits/<livery>@<car>.json`, or passed with `--fit`.
+Overrides are limited to placement (`panel`, `at`, `rotate`, `scale`, `safe`,
+`drop`) because anything more and a fit becomes a second livery language. A fit
+naming something that no longer exists is reported and ignored rather than fatal.
+
+Give a region an `id` if you expect to adjust it. One without an id is still
+addressable — by position, as `surfaces.body#3` or `paint.bodyRear#3` — but that
+key means "whichever region is fourth", so inserting one above it silently moves
+what the fit refers to. The editor labels those rows as addressed by position,
+and the remedy is one line in the design.
+
+### The fitting editor
+
+Dragging rectangles in a text file, rebuilding, and installing to see where the
+artwork landed is a slow way to find out you were 3% off. `--ui` opens a local
+editor instead:
+
+```sh
+node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --ui
+# fitting editor at http://127.0.0.1:7391/
+```
+
+Drag a region to move it, drag a corner to resize, click a panel outline to send
+it there. Every box you see is the rectangle the **renderer** resolved, not the
+editor's own idea of where things are, so the two cannot quietly drift apart. The
+re-render is a couple of milliseconds of JavaScript — no ImageMagick, no DDS
+encode — which is the whole reason this is worth having.
+
+Three views, because the sheet is not the question:
+
+- **UV** — the texture, with panel outlines over it.
+- **Car** — the same texture on the actual geometry. Whether a spot is flat, or
+  faces the camera, or wraps over a wheel arch, is not visible on a flat sheet.
+  You can drag on the car itself, and the artwork follows the surface.
+- **Whole car** — every painted surface at once. A stripe can meet the bodywork
+  perfectly and miss the sidepod beside it.
+
+The Car views need the car's `.kn5`, which is yours and not shipped here — see
+[You supply the game's files](#you-supply-the-games-files). The profile records
+which model it was generated from, so setting `AC_ROOT` is usually enough; `--model`
+overrides it. Without one the UV view still works and the tab says why.
+
+Nothing is written until **Save fit**, which writes `fits/<livery>@<car>.json`.
+Undo and redo (Ctrl/Cmd-Z, Shift-Ctrl/Cmd-Z) cover everything that changes the
+fit, including creating and deleting regions.
+
+**Symmetry.** Regions whose ids name a side — `number-left` and `number-right`,
+or `numberLeft`/`numberRight` — are treated as two halves of one idea and move
+together, mirrored rather than copied: two flanks are not always unwrapped the
+same way round, and copying the coordinates across puts the artwork at the wrong
+end of the car. You can unlink a pair, pair two regions the convention missed, or
+mirror one onto the other once.
+
+**Copies.** A fit may not add artwork, with one exception: it can say that an
+existing region *also* appears somewhere else.
+
+```jsonc
+"copies": {
+  "badge-mirror": { "of": "badge", "panel": "right_mid", "at": [0.3, 0.2, 0.2, 0.2] }
+}
+```
+
+Treatment, colours and text all come from `of`; the only new information is a
+placement, which is what a fit is for. It earns the exception because symmetry is
+a property of the *car* — a design that paints one badge is portable to a car
+with one flank worth painting and to a car with two, and the design cannot know
+which it is being run against. **Create mirrored copy** and **Duplicate** in the
+editor write these; the mirrored one measures where it should land from the
+panels' own axes.
+
+Full reasoning in [docs/fitting.md](docs/fitting.md).
+
+### Two honest limits
+
+A fit adjusts placement, so two things it cannot rescue. A portable design cannot
+use panel **names** in the design itself, only tags. And it cannot treat the roles behind one term
+differently — if `body` binds to two textures, both get the same artwork, though
+`once: true` will keep a car number on the primary one. Portable means coarser; a
+design written for one car will always look better on it.
 
 ---
 
@@ -341,6 +490,12 @@ rather type `liverykit`. `--help` is authoritative.
 <livery> --no-zip                 folder only
 <livery> --profile <path>         use a different car profile — how you port a
                                   design between cars
+<livery> --fit <path>             per-car placement overrides for this design
+                                  (default: fits/<livery>@<car>.json, if present)
+<livery> --ui                     open the fitting editor instead of building
+  --model <car>.kn5                 model for the editor's 3D views; defaults to
+                                    the one the profile was generated from
+  --port 7391                       where to serve it (loopback only)
 <livery> --pack ./my-pack.mjs     load an extra treatment pack (repeatable)
 <livery> --uvgrid                 build a calibration skin (see below)
 <livery> --uvgrid --cells 40      finer grid, for small parts
@@ -404,59 +559,13 @@ Full procedure in [docs/calibration.md](docs/calibration.md).
 
 ---
 
-## Assetto Corsa things that will bite you
-
-All of these fail silently.
-
-- **Some mod cars ship an encrypted kn5.** Geometry, materials and UV layout read
-  normally, but every embedded texture is a 1x1 placeholder with the real ones in
-  a Custom Shaders Patch blob appended to the file. liverykit detects this, uses
-  the geometry, and takes texture sizes from the car's skin folders — so pass
-  `--skins`. It does not decrypt anything and is not going to: that is the
-  author's artwork, protected on purpose. For textures no stock skin overrides,
-  `--assume-size 2048` paints them at a size you choose, recorded in the profile
-  as `"sizeFrom": "assumed"` so it is never mistaken for a measurement.
-- **Which way a car faces is read from its wheels, not its mesh names.** AC
-  requires `WHEEL_LF`/`RF`/`LR`/`RR` on every car for the physics, so the axes
-  are exact. Mesh names were inconclusive on 91 of 235 cars and wrong on two. The
-  profile records the resulting track width and wheelbase, which are worth a
-  glance against a spec sheet — they are the only numbers in there you can check
-  independently.
-- **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
-  nothing, so glow is done at the raster stage instead. Don't put filters in
-  generated SVG.
-- **ImageMagick picks the DXT variant from alpha presence**, not from your
-  `dds:compression` define. Ask for dxt5 on an image without alpha and you get
-  DXT1.
-- **`dds:mipmaps=0` means zero mipmaps** — the opposite of texconv's `-m 0`.
-  Chain length is `log2(max(w,h)) + 1`; note the `max`, so a 2048×512 texture
-  needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
-- **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
-  them and exits 0. liverykit refuses these outright.
-- **Not every texture is a DDS.** Models bind `.png` textures too — on the
-  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
-  vertices. Those are written as PNG; forcing a DDS would produce a filename
-  that matches nothing.
-- **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The
-  classic cause of "why is my car white" with other tools.
-- **A filename that matches nothing overrides nothing.** No error anywhere; you
-  just get the stock car.
-- **Case collisions.** `Suit_DIFF.dds` and `SUIT_DIFF.dds` coexist on ext4 and
-  are *one file* on NTFS, where the second to extract wins. Ship one spelling.
-- **librsvg does no text reflow or auto-shrink.** The `text` treatment estimates
-  advance width and scales down to fit.
-- **`<textPath>` support in librsvg is inconsistent.** `radialText` places glyphs
-  individually instead.
-- **The emissive layer always composites above the base**, so decoration lands on
-  top of lettering unless you exclude it — `sparkles` takes `avoid` rects.
-
----
-
 ## Contributing
 
 Car profiles are the most valuable thing to contribute: one command produces one,
 and it's identical for everyone who owns that car. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+[CONTRIBUTING.md](CONTRIBUTING.md), and [AGENTS.md](AGENTS.md) for how the code
+is arranged and the Assetto Corsa behaviours it is defending against — every one
+of which produces a file that installs cleanly and is wrong.
 
 The kn5 reader is reverse-engineered from a format with no public specification.
 It validates by consuming the file to its exact final byte, so a wrong layout

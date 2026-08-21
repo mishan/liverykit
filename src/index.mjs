@@ -29,7 +29,8 @@ export { scanSkins, classify, formatScan, formatProfile, guessRole } from './eng
 // Reading the car's 3D model — the authoritative source for everything a car
 // profile describes.
 export { parseKn5, parseKn5Buffer, vertex, triangles, meshesUsingTexture, axisHints } from './engine/kn5.mjs';
-export { findIslands, nameIslands, findMirrorPairs, findAdjacency } from './engine/islands.mjs';
+export { findIslands, nameIslands, findMirrorPairs, findAdjacency, carBounds } from './engine/islands.mjs';
+export { preserveHandwork, describeHandwork } from './engine/preserve.mjs';
 export { profileFromKn5 } from './engine/profilegen.mjs';
 export { uvGridSvg, probeSvg, makeProbes, gridShape } from './engine/uvgrid.mjs';
 export { mulberry32, seedFrom, lerp, clamp, r2 } from './engine/rng.mjs';

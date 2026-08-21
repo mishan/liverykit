@@ -92,7 +92,24 @@ function measure(model, mesh, verts, tris) {
   // their lengths is how much wider than tall a square of texture lands on the
   // bodywork. That is the number artwork has to pre-compensate for, and
   // eyeballing it off a render is exactly as unreliable as it sounds.
+  //
+  // The SAME tangents answer a second question the project hit later: which way
+  // is up in this panel. An unwrapper is free to rotate an island, and a road car
+  // routinely lays a door sideways to pack the sheet. Text placed on it then
+  // reads vertically, which looks exactly like a bug and is in fact the texture
+  // being honest about its own layout.
+  //
+  // dP/dv is the direction "down the image" travels in 3D. On an upright panel
+  // that is world-down; on a sideways one it runs along the car. Averaging it,
+  // area-weighted, and comparing against the panel's own plane gives the
+  // rotation artwork has to undo.
   let aniso = 0, wsum = 0, uvArea = 0, area3d = 0;
+  let bx = 0, by = 0, bz = 0, nx = 0, ny = 0, nz = 0;
+  // The tangent's DIRECTION, not just its length. The length alone gives
+  // anisotropy; the direction says which way along the car "rightwards on the
+  // sheet" actually points, and that is the only thing that can tell you
+  // whether a mirrored pair of panels was unwrapped the same way round.
+  let tx = 0, ty = 0, tz = 0;
   for (const [a, b, c] of tris) {
     const p0 = vertex(model, mesh, a), p1 = vertex(model, mesh, b), p2 = vertex(model, mesh, c);
     const du1 = p1.u - p0.u, dv1 = p1.v - p0.v;
@@ -113,6 +130,13 @@ function measure(model, mesh, verts, tris) {
     const w = Math.abs(det);
     aniso += (lt / lb) * w;
     wsum += w;
+
+    // Area-weighted so a few stray triangles at a panel's edge cannot outvote
+    // the flat middle of it.
+    bx += (B[0] / lb) * w; by += (B[1] / lb) * w; bz += (B[2] / lb) * w;
+    if (lt > 1e-9) { tx += (T[0] / lt) * w; ty += (T[1] / lt) * w; tz += (T[2] / lt) * w; }
+    const fn = cross(e1, e2), fl = len(fn) || 1;
+    nx += (fn[0] / fl) * w; ny += (fn[1] / fl) * w; nz += (fn[2] / fl) * w;
   }
 
   // UVs are not confined to 0..1. A tiling texture — rubber, carbon weave,
@@ -123,8 +147,18 @@ function measure(model, mesh, verts, tris) {
   const tiled = u0 < -0.001 || v0 < -0.001 || u1 > 1.001 || v1 > 1.001;
   const cu0 = clamp01(u0), cv0 = clamp01(v0), cu1 = clamp01(u1), cv1 = clamp01(v1);
 
+  const upright = textRotation([bx, by, bz], [nx, ny, nz]);
+
+  // Unit world directions for +u and +v on this island, rounded because three
+  // decimals is far more than a sign comparison needs and a profile is read by
+  // people.
+  const unit = (v) => { const l = Math.hypot(...v); return l < 1e-9 ? null : v.map((n) => Math.round((n / l) * 1000) / 1000); };
+
   return {
     mesh: mesh.name,
+    uAxis: unit([tx, ty, tz]),
+    vAxis: unit([bx, by, bz]),
+    textRotation: upright,
     vertices: verts,
     vertexCount: n,
     tiled,
@@ -140,10 +174,71 @@ function measure(model, mesh, verts, tris) {
   };
 }
 
+/**
+ * How far this island is rotated away from upright, in degrees, snapped to 90.
+ *
+ * `down` is dP/dv — the direction moving down the image travels across the car.
+ * `normal` is the island's average face normal. Projecting world-up onto the
+ * island's own plane gives its idea of up; the angle between that and `down`
+ * is the rotation an unwrapper applied, and therefore the rotation artwork has
+ * to undo to read level.
+ *
+ * Returns 0 for a panel that is already upright, and null when the answer is
+ * meaningless — a horizontal panel like a roof or bonnet, where "up" projected
+ * onto the surface is a vanishing vector and any rotation is as good as any
+ * other. Null is the honest answer there, and callers should leave such a panel
+ * alone rather than rotate it by a number derived from rounding error.
+ */
+function textRotation(down, normal) {
+  const nl = len(normal);
+  if (nl < 1e-9) return null;
+  const n = [normal[0] / nl, normal[1] / nl, normal[2] / nl];
+
+  // World up projected onto the island's plane. On a near-horizontal surface
+  // this collapses, which is exactly when the question has no answer.
+  const dot = n[1];
+  const up = [-n[0] * dot, 1 - n[1] * dot, -n[2] * dot];
+  const ul = len(up);
+  if (ul < 0.25) return null;
+  const u = [up[0] / ul, up[1] / ul, up[2] / ul];
+
+  const dl = len(down);
+  if (dl < 1e-9) return null;
+  const d = [down[0] / dl, down[1] / dl, down[2] / dl];
+
+  // Right-handed in-plane basis, so the angle has a consistent sign.
+  const right = cross(u, n);
+  const angle = Math.atan2(dot2(d, right), -dot2(d, u)) * 180 / Math.PI;
+  return ((Math.round(angle / 90) * 90) % 360 + 360) % 360;
+}
+
+const dot2 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const len = (a) => Math.hypot(a[0], a[1], a[2]);
 const round = (n) => Math.round(n * 10000) / 10000;
 const clamp01 = (n) => Math.min(1, Math.max(0, n));
+
+/**
+ * The car's own extent, sampled from every mesh in the model.
+ *
+ * Needed because names like `nose` and `tail` are claims about a position on the
+ * CAR, and the only way to make such a claim is to measure the car. Sampled with
+ * a stride: bounds converge almost immediately, and a full pass over a few
+ * hundred thousand vertices to move a bound by a millimetre is not worth it.
+ */
+export function carBounds(model) {
+  let xMax = 0, zMin = Infinity, zMax = -Infinity;
+  for (const mesh of model.meshes ?? []) {
+    const step = Math.max(1, Math.floor(mesh.vertexCount / 400));
+    for (let i = 0; i < mesh.vertexCount; i += step) {
+      const v = vertex(model, mesh, i);
+      xMax = Math.max(xMax, Math.abs(v.x));
+      zMin = Math.min(zMin, v.z); zMax = Math.max(zMax, v.z);
+    }
+  }
+  if (!Number.isFinite(zMin) || !Number.isFinite(zMax)) return null;
+  return { zMin, zMax, halfWidth: xMax || 1 };
+}
 
 /**
  * Systematic geometric names: side_section_level.
@@ -153,12 +248,28 @@ const clamp01 = (n) => Math.min(1, Math.max(0, n));
  * the same thing on all of them, which is what makes a livery portable. Rename
  * to taste in the profile — the geometry is the measurement, the name is a
  * convenience.
+ *
+ * `bounds` is the CAR's extent and matters far more than it looks. This
+ * originally normalised each island's position against the extent of the other
+ * islands ON THE SAME TEXTURE, which is only the car's extent when that texture
+ * happens to cover the whole car. For anything smaller the five bands collapse
+ * onto whatever that one sheet spans, and the frontmost thing on it is called
+ * `nose` no matter where on the car it actually sits. A tyre sheet holds four
+ * wheels, so the front pair were `*_nose` and the rear pair `*_tail`; a steering
+ * wheel 30 cm across got a nose, a middle and a tail of its own. Measured over
+ * two profiles, every single name on `interior`, `belts` and `steeringWheel` was
+ * wrong in this way, and 239 of 416 panels on one car.
+ *
+ * Omitting `bounds` falls back to the islands' own extent, which is correct only
+ * when the islands are the whole car. Callers that have a model should pass
+ * `carBounds(model)`.
  */
-export function nameIslands(islands, axes) {
+export function nameIslands(islands, axes, bounds = null) {
   const xs = islands.map((i) => i.centroid.x);
   const zs = islands.map((i) => i.centroid.z);
-  const zMin = Math.min(...zs), zMax = Math.max(...zs);
-  const halfWidth = Math.max(...xs.map(Math.abs)) || 1;
+  const zMin = bounds ? bounds.zMin : Math.min(...zs);
+  const zMax = bounds ? bounds.zMax : Math.max(...zs);
+  const halfWidth = (bounds ? bounds.halfWidth : Math.max(...xs.map(Math.abs))) || 1;
 
   const counts = new Map();
   for (const isl of islands) {

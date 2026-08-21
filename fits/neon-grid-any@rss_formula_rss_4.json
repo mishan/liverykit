@@ -1,0 +1,17 @@
+{
+  "livery": "neon-grid-any",
+  "car": "rss_formula_rss_4",
+  "notes": [
+    "An open-wheeler needs much less adjusting than a road car, because its",
+    "unwrap is already organised the way a livery thinks: each flank separate,",
+    "generous sponsor space, nothing mirrored. The portable design lands the",
+    "number and the team name on the same panel here, left_mid, where they stack",
+    "without colliding — so the only change is to give the number more of it.",
+    "The driver strip stays. On this car it targets left_mid_lower_2, which is",
+    "small but flat and sits where a real F4 carries the driver's name."
+  ],
+  "regions": {
+    "number-left": { "at": [0.30, 0.10, 0.40, 0.44] },
+    "number-right": { "at": [0.30, 0.10, 0.40, 0.44] }
+  }
+}

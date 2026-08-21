@@ -95,6 +95,50 @@ export default {
 
         { treatment: 'stripe', at: [0, 0.47, 1, 0.022], color: 'hot', glow: true },
         { treatment: 'scanlines', opacity: 0.12 },
+
+        // --- identity ---------------------------------------------------
+        //
+        // Text is the one thing that cannot be sprayed across every matching
+        // panel: a pattern wants all of them, a number wants exactly one, and
+        // it wants the one with room for it. `limit: 1` takes the largest
+        // match, so this lands on the Abarth's rear quarter (14.8% of the
+        // texture) and on the formula car's flank without either being named.
+        //
+        // The three `at` rects do not overlap, which matters because they do
+        // not always land on separate panels: on the RSS4 the number and the
+        // team name both resolve to `left_mid`, and they stack instead of
+        // colliding. Placement within a panel is the one thing a portable
+        // design still has to guess at — nothing here knows which part of a
+        // panel is flat — so these sit centred and clear of the edges.
+        //
+        // `once` keeps identity on the term's PRIMARY texture. `body` on the
+        // RSS4 covers two chassis textures, and without this the car wears its
+        // number twice.
+        //
+        // The `id`s are how a FIT adjusts these for one particular car without
+        // touching the design — see docs/fitting.md and fits/. Only regions
+        // somebody might want to move need one.
+        //
+        // `rotate: 'auto'` follows the panel's own orientation. An unwrapper is
+        // free to lay a door sideways to pack the sheet, and a road car
+        // routinely does: the Abarth's doors measure 270 and 90 degrees against
+        // the formula car's 0. Without this the team name reads vertically down
+        // the door, which looks like a bug and is really the texture being
+        // honest about its layout.
+        { id: 'driver-left', treatment: 'text', tags: ['left', 'mid', 'upper', 'visible'], limit: 1, once: true,
+          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
+        { id: 'driver-right', treatment: 'text', tags: ['right', 'mid', 'upper', 'visible'], limit: 1, once: true,
+          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
+
+        { id: 'number-left', treatment: 'text', tags: ['left', 'visible'], limit: 1, once: true,
+          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
+        { id: 'number-right', treatment: 'text', tags: ['right', 'visible'], limit: 1, once: true,
+          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
+
+        { id: 'team-left', treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
+          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
+        { id: 'team-right', treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
+          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
       ],
     },
 
