@@ -21,8 +21,16 @@ one exception — a copy, which invents no artwork and states only a placement �
 and the exception was argued for at length because symmetry is a property of the
 car rather than of the design.
 
+A **duplicate** is a harder case, and on reflection the wrong one. `mirrors` was
+the first name for that block and it was the better one: a mirrored copy says
+*this car has two flanks*, which is a fact about the car. A duplicate says *I
+want two badges*, which is a fact about the design, and it slipped in only
+because the mechanism was already there. Once a design can gain a region — step
+2 — Duplicate should write one, and `copies` should narrow back to mirroring.
+Until then it stays where it is rather than being removed and unavailable.
+
 A new element with its own treatment, its own colours and its own text is not
-that. It is design. It belongs to every car the livery is pointed at, not to the
+that either. It is design. It belongs to every car the livery is pointed at, not to the
 pair, and putting it in a fit would mean the design looked different depending on
 which car you built it for, with no file saying so.
 
@@ -275,15 +283,20 @@ tool should not argue.
 
 Four steps, each of which is worth having on its own.
 
-**1. Treatments describe themselves.** Optional schema metadata, exposed through
-`GET /api/treatments`, plus the drift test. The inspector gains real controls for
-the region already selected, previewing live, and a *Copy as JSON* button. No
-file format decided, nothing written, and the fiddliest part of authoring — "what
-does `pitch` do?" — is answered.
+**1. Treatments describe themselves.** *Done.* Optional metadata on
+`definePack`, exposed through `GET /api/treatments`, plus the drift test that
+measures what each treatment reads rather than trusting the description. The
+inspector has real controls for the selected region, previewing live, and a
+*Copy as JSON* button. No file format decided, nothing written, and the fiddliest
+part of authoring — "what does `dot` do?" — is answered.
 
 **2. Data liveries.** `liveries/*.json` loads; a module may import its regions
-from JSON; a working design travels with each render; **Save design**. Add,
-delete, reorder, edit. This is the step that makes it an authoring tool.
+from JSON; **Save design**. Add, delete, reorder, edit. This is the step that
+makes it an authoring tool, and the step where Duplicate moves out of the fit
+and into the design, leaving `copies` to mean mirroring again.
+
+*The working design already travels with each render — step 1 needed it to
+preview an option change, and it is the same mechanism, so step 2 inherits it.*
 
 **3. Palette and identity.** The form, the live re-render, and naming a colour
 into the palette from the region that wanted it.

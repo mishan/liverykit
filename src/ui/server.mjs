@@ -16,7 +16,8 @@
 //
 //   GET  /                 the app
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
-//   POST /api/state        the same, for a working fit the browser has not saved
+//   POST /api/state        the same, for a working fit or design not yet saved
+//   GET  /api/treatments   what each treatment takes, for the inspector
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   POST /api/fit          write the fit file
@@ -234,6 +235,70 @@ function matchCase(sample, word) {
 }
 
 /**
+ * The livery as data, and an honest account of anything that could not come.
+ *
+ * A livery is an ES module, but everything the editor needs from it is plain:
+ * palette, identity, and regions naming a treatment by string. Both shipped
+ * designs round-trip through JSON unchanged.
+ *
+ * A PROCEDURAL design does not. Regions built in a loop survive — they are
+ * ordinary objects by the time anyone sees them — but a function anywhere in the
+ * object does not, and JSON.stringify drops one without a word. That is the
+ * exact shape of failure this project exists to refuse, so the paths are
+ * collected and reported; a caller that finds `lossy` non-empty must not offer
+ * to author, because what it would show is not what the build would paint.
+ */
+export function serialisableDesign(livery) {
+  const lossy = [];
+  const walk = (v, path) => {
+    if (typeof v === 'function') { lossy.push(path); return undefined; }
+    if (v === null || typeof v !== 'object') return v;
+    if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`));
+    return Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [k, walk(x, path ? `${path}.${k}` : k)]));
+  };
+  return { design: walk(livery, ''), lossy };
+}
+
+/** Every treatment a design can reach, with whatever describes it. */
+export function treatmentCatalogue(livery) {
+  const out = [];
+  for (const [name, entry] of resolveTreatments(livery.packs ?? ['core'])) {
+    out.push({
+      name,
+      pack: entry.pack,
+      label: entry.describe?.label ?? name,
+      summary: entry.describe?.summary ?? null,
+      // Null rather than {} where a pack said nothing, so the editor can tell
+      // "no options" from "nobody wrote it down" and offer JSON for the second.
+      options: entry.describe?.options ?? null,
+    });
+  }
+  return out;
+}
+
+/**
+ * The part of a region that belongs to its TREATMENT rather than its placement.
+ *
+ * A region is one flat object — `{ id, treatment, panel, at, color, cell }` —
+ * and the structural half is fixed and small while the rest is whatever the
+ * treatment reads. So the split is by exclusion: everything that is not
+ * structure is an option.
+ *
+ * Listed here rather than derived from a treatment's description on purpose. A
+ * region carrying an option nobody describes must still be visible in the
+ * editor, or the one thing you cannot see is the thing already going wrong.
+ */
+const STRUCTURAL = new Set([
+  'id', 'treatment', 'panel', 'tags', 'limit', 'at', 'rotate', 'safe', 'once', 'drop',
+]);
+
+export function treatmentOptions(region) {
+  return Object.fromEntries(
+    Object.entries(region).filter(([k]) => !STRUCTURAL.has(k) && !k.startsWith('__')));
+}
+
+/**
  * Regions that are two halves of one idea, and should move together.
  *
  * Both halves have to exist, and if both name a panel outright those panels have
@@ -343,6 +408,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         // and the other `left_mid`.
         panel: r.panel ? panelName(profile, t.role, r.panel) : undefined,
         at: r.at ?? [0, 0, 1, 1],
+        // Everything else the region says — `color`, `cell`, `text` — which is
+        // the treatment's business rather than the placement's. Sent so the
+        // inspector can show what this region actually asks for; which of these
+        // mean anything is answered by the treatment's own description.
+        options: treatmentOptions(r),
       })),
     });
 
@@ -402,8 +472,17 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
   // editorState directly — say so rather than guessing from the folder.
   const id = liveryId ?? null;
 
+  const { design, lossy } = serialisableDesign(livery);
+
   return {
     livery: { id, name: livery.name, folder: livery.folder, identity: livery.identity ?? {} },
+    // The design as data, so the editor can change a treatment's options and see
+    // the result. Nothing writes this yet — it is the working copy, exactly as
+    // the working fit is. `lossy` is non-empty only for a design carrying code,
+    // which cannot be edited this way and must not pretend otherwise.
+    design,
+    lossy,
+    treatments: treatmentCatalogue(livery),
     car: { id: profile.id, name: profile.name ?? profile.id },
     // Which surface a region lives on, so the browser can jump to it by id.
     regionIds: Object.fromEntries(ids),
@@ -597,6 +676,13 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
         return json(200, editorState({ livery, profile, fit, liveryId }));
       }
 
+      // What each treatment takes, so the inspector can offer a control rather
+      // than a text box. Separate from /api/state because it depends only on
+      // which packs the design loads, and never changes while the editor is up.
+      if (req.method === 'GET' && url.pathname === '/api/treatments') {
+        return json(200, { treatments: treatmentCatalogue(livery) });
+      }
+
       // The same answer, for a fit that has not been saved yet.
       //
       // Creating or deleting a copy changes what the surface CONTAINS, and only
@@ -606,24 +692,32 @@ export async function startUi({ livery, profile, fitPath, liveryId, modelPath = 
       // rendered on the car and absent from the editor, so it could not be
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
-        const { fit: working } = await body();
-        return json(200, editorState({ livery, profile, fit: working ?? fit, liveryId }));
+        const { fit: working, design } = await body();
+        return json(200, editorState({
+          livery: design ?? livery, profile, fit: working ?? fit, liveryId,
+        }));
       }
 
       if (req.method === 'POST' && url.pathname === '/api/render') {
-        const { fit: working, role, seed } = await body();
-        return json(200, renderSurface({ livery, profile, fit: working, role, seed }));
+        // A working DESIGN travels the same way a working fit does, and for the
+        // same reason: it lives in the browser until somebody saves it, and the
+        // render has to be of what is being edited rather than of what is on
+        // disk. Nothing here writes it.
+        const { fit: working, design, role, seed } = await body();
+        return json(200, renderSurface({
+          livery: design ?? livery, profile, fit: working, role, seed,
+        }));
       }
 
       // Every painted surface at once, on the whole car. Rendered fresh because
       // the fit is the thing being judged; the geometry beside it is fetched
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
-        const { fit: working, seed } = await body();
-        const state = editorState({ livery, profile, fit: working });
+        const { fit: working, design, seed } = await body();
+        const state = editorState({ livery: design ?? livery, profile, fit: working });
         const surfaces = [];
         for (const s of state.surfaces) {
-          const out = renderSurface({ livery, profile, fit: working, role: s.role, seed });
+          const out = renderSurface({ livery: design ?? livery, profile, fit: working, role: s.role, seed });
           surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
         }
         return json(200, { surfaces });

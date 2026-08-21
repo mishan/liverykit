@@ -87,6 +87,14 @@ state.fit.livery ??= data.livery.id;
 state.fit.car ??= data.car.id;
 state.fit.regions ??= {};
 
+// The working DESIGN, beside the working fit and for the same reason: it lives
+// here until somebody saves it, and nothing in step one of authoring saves it.
+// `lossy` is non-empty only for a livery carrying code, which cannot be edited
+// as data — the editor says so rather than showing edits that would not build.
+state.design = structuredClone(data.design);
+state.lossy = data.lossy ?? [];
+state.treatments = new Map((data.treatments ?? []).map((t) => [t.name, t]));
+
 // Which code is actually running. Not decoration: several rounds of debugging
 // this editor were spent unable to distinguish "the fix did not work" from "the
 // browser or the server is running something older".
@@ -173,6 +181,10 @@ $('#save').onclick = async () => {
 function snapshot() {
   return {
     fit: structuredClone(state.fit),
+    // The working design too, now that an option change is an action. Undo has
+    // always meant "put everything back", and a stack that restored half the
+    // editor would be worse than none.
+    design: structuredClone(state.design),
     paired: [...state.paired],
     unlinked: [...state.unlinked],
     severed: [...state.severed],
@@ -182,6 +194,7 @@ function snapshot() {
 
 function restore(snap) {
   state.fit = structuredClone(snap.fit);
+  state.design = structuredClone(snap.design);
   state.paired = new Map(snap.paired);
   state.unlinked = new Set(snap.unlinked);
   state.severed = new Set(snap.severed);
@@ -275,7 +288,7 @@ async function selectSurface(i) {
  */
 async function reloadState() {
   const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
-  state.data = await api('/api/state', { fit: state.fit });
+  state.data = await api('/api/state', { fit: state.fit, design: state.design });
   state.surface = state.data.surfaces[i < 0 ? 0 : i];
   drawPanels();
 }
@@ -285,7 +298,7 @@ async function refresh() {
   const t0 = performance.now();
   let out;
   try {
-    out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+    out = await api('/api/render', { fit: state.fit, design: state.design, role: state.surface.role });
   } catch (e) {
     // A failed render must not leave the editor frozen with no explanation. It
     // used to reject into nothing: the page kept its last drawing and quietly
@@ -739,7 +752,7 @@ async function livePreview() {
   if (previewing) { previewPending = true; return; }
   previewing = true;
   try {
-    const out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+    const out = await api('/api/render', { fit: state.fit, design: state.design, role: state.surface.role });
     state.svg = out.svg;
     // `placed` too: a drag that crosses onto another panel changes where the
     // MIRRORED half landed, and its highlight is drawn from this.
@@ -889,6 +902,141 @@ export function mirrorRotation(rotate, flips) {
   if (flips.u) return (360 - t) % 360;
   if (flips.v) return (540 - t) % 360;
   return t;
+}
+
+// --- the design's own options ----------------------------------------------
+//
+// Everything above this line edits a FIT: where a region sits on one car. These
+// edit the DESIGN: what the region is, on every car. Nothing here writes to
+// disk — the working design goes with each render and is offered as JSON to
+// paste, which is as far as step one of authoring goes on purpose.
+
+/** The region the working design holds under this key, or null. */
+function designRegion(id) {
+  for (const block of [state.design?.paint, state.design?.surfaces]) {
+    for (const [where, spec] of Object.entries(block ?? {})) {
+      const prefix = block === state.design?.paint ? 'paint' : 'surfaces';
+      const regions = spec.regions ?? [];
+      for (const [i, r] of regions.entries()) {
+        if ((r.id ?? `${prefix}.${where}#${i}`) === id) return r;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * One control per described option.
+ *
+ * A described option gets its own kind of input; an option the region carries
+ * that nobody described still appears, as text, because the one thing you must
+ * not hide is the thing already there and unexplained. `hint` is the code's own
+ * default in prose and is shown as a placeholder — never written into the
+ * design, so a design says only what somebody chose.
+ */
+function optionControls(id) {
+  if (state.lossy.length) {
+    return `<p class="note">This livery contains code (${esc(state.lossy.slice(0, 3).join(', '))}),
+      so its options cannot be edited here — what you saw would not be what it builds.</p>`;
+  }
+  const region = designRegion(id);
+  if (!region) return '';
+  const t = state.treatments.get(region.treatment);
+  const described = t?.options ?? null;
+  const extra = Object.keys(treatmentOptionsOf(region))
+    .filter((k) => !described || !(k in described));
+
+  const rows = Object.entries(described ?? {}).map(([key, o]) => {
+    const v = region[key];
+    const has = v !== undefined;
+    const label = esc(o.label ?? key);
+    const hint = o.hint ? ` placeholder="${esc(o.hint)}"` : '';
+    let input;
+    if (o.type === 'boolean') {
+      input = `<button class="rot${v ? ' on' : ''}" data-opt="${esc(key)}" data-kind="boolean"
+        >${v ? 'on' : has ? 'off' : esc(o.hint ?? 'off')}</button>`;
+    } else if (o.type === 'enum') {
+      input = `<select data-opt="${esc(key)}" data-kind="enum"><option value=""></option>${
+        o.values.map((x) => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('')
+      }</select>`;
+    } else if (o.type === 'color') {
+      const names = Object.keys(state.design?.palette ?? {});
+      input = `<input list="palette" data-opt="${esc(key)}" data-kind="string"
+        value="${has ? esc(v) : ''}"${hint}>` +
+        `<datalist id="palette">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`;
+    } else if (o.type === 'number') {
+      const bounds = [o.min !== undefined ? `min="${o.min}"` : '', o.max !== undefined ? `max="${o.max}"` : '',
+        o.step !== undefined ? `step="${o.step}"` : ''].join(' ');
+      input = `<input type="number" ${bounds} data-opt="${esc(key)}" data-kind="number"
+        value="${has ? esc(v) : ''}"${hint}>`;
+    } else {
+      // string, colors, rects: text, and JSON for the two that are not strings.
+      const kind = o.type === 'string' ? 'string' : 'json';
+      const shown = !has ? '' : kind === 'json' ? JSON.stringify(v) : v;
+      input = `<input data-opt="${esc(key)}" data-kind="${kind}" value="${esc(shown)}"${hint}>`;
+    }
+    return `<label class="opt">${label}</label><div class="opt">${input}</div>`;
+  }).join('');
+
+  const unknown = extra.map((k) => `<label class="opt">${esc(k)}</label>
+    <div class="opt"><input data-opt="${esc(k)}" data-kind="json"
+      value="${esc(JSON.stringify(region[k]))}"></div>`).join('');
+
+  return `<h3>${esc(t?.label ?? region.treatment ?? 'region')}</h3>
+    ${t?.summary ? `<p class="hint">${esc(t.summary)}</p>` : ''}
+    ${described === null && region.treatment
+      ? `<p class="hint">Nothing describes this treatment, so its options are shown as raw values.</p>` : ''}
+    ${rows}${unknown}
+    <div class="row" style="margin-top:8px"><button id="copyregion">Copy region as JSON</button></div>
+    <p class="hint">These change the DESIGN, on every car. Nothing is saved yet — copy the
+      JSON into your livery.</p>`;
+}
+
+/** Mirror of the server's split: what is the treatment's rather than the placement's. */
+function treatmentOptionsOf(region) {
+  const structural = new Set(['id', 'treatment', 'panel', 'tags', 'limit', 'at', 'rotate', 'safe', 'once', 'drop']);
+  return Object.fromEntries(Object.entries(region).filter(([k]) => !structural.has(k)));
+}
+
+/** Parse what an input gives back, by the kind the control declared. */
+function readControl(el) {
+  const kind = el.dataset.kind;
+  const raw = el.value ?? '';
+  if (raw === '') return undefined;               // cleared: back to the code's default
+  if (kind === 'number') { const n = Number(raw); return Number.isFinite(n) ? n : undefined; }
+  if (kind === 'json') { try { return JSON.parse(raw); } catch { return undefined; } }
+  return raw;
+}
+
+function wireOptionControls(id) {
+  const inspector = $('#inspector');
+  const region = designRegion(id);
+  if (!region) return;
+
+  const change = async (key, value) => {
+    remember(`${key} on ${id}`);
+    if (value === undefined) delete region[key]; else region[key] = value;
+    setDirty(true);
+    await refresh();
+  };
+
+  for (const el of inspector.querySelectorAll?.('[data-opt]') ?? []) {
+    const key = el.dataset.opt;
+    if (el.dataset.kind === 'boolean') {
+      el.onclick = () => change(key, region[key] ? undefined : true);
+    } else {
+      el.onchange = () => change(key, readControl(el));
+    }
+  }
+
+  const copy = inspector.querySelector?.('#copyregion');
+  if (copy) {
+    copy.onclick = () => {
+      const text = JSON.stringify(region, null, 2);
+      navigator.clipboard?.writeText?.(text);
+      status(`copied ${id} as JSON`);
+    };
+  }
 }
 
 /**
@@ -1059,6 +1207,7 @@ function drawInspector() {
     <label>rotation</label>
     <div class="row">${rotationChoices(id, def, o)}</div>
     ${mirrorControl(id)}
+    ${optionControls(id)}
     <div class="row" style="margin-top:10px">
       ${def?.fromFit
         ? '<button id="delete">Delete</button>'
@@ -1070,6 +1219,7 @@ function drawInspector() {
       restore it to.</p>` : ''}`;
 
   wireInspectorButtons(sel.id);
+  wireOptionControls(sel.id);
 }
 
 /**
