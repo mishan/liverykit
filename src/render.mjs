@@ -153,12 +153,29 @@ export function previewSvg({ base, emissive, hasEmissive, width, height }, { glo
   // same amount relative to the car rather than by the same number of pixels.
   const sigma = r2(glowSigma * (Math.max(width, height) / 2048));
   const body = (doc) => doc.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
-  const glow = `<g filter="url(#lk-glow)" style="mix-blend-mode:screen">${body(emissive)}</g>`;
+
+  // The emissive layer appears three times, and is WRITTEN once. Two reasons,
+  // and the second is the one that would have hurt.
+  //
+  // It is sent on every frame of a drag, and the emissive layer of a design
+  // built around glow is most of the document — copying it out three times
+  // meant three times the markup to serialise, ship and parse for a picture
+  // that has one layer's worth of content in it.
+  //
+  // And repeating markup repeats any `id` inside it. No treatment emits one
+  // today, but a gradient or a clip path is the obvious next thing a treatment
+  // would want, and three copies of `id="g1"` in one document is a duplicate id
+  // — every `url(#g1)` resolves to the first copy, inside the blurred pass, so
+  // the crisp layer on top would quietly take the blurred one's paint. Defining
+  // it once and referring to it is not an optimisation of that; it is the only
+  // version that stays correct.
+  const glow = '<use href="#lk-emissive" filter="url(#lk-glow)" style="mix-blend-mode:screen"/>';
 
   return base.replace(/<\/svg>$/,
     `<defs><filter id="lk-glow" x="-25%" y="-25%" width="150%" height="150%">` +
-    `<feGaussianBlur stdDeviation="${sigma}"/></filter></defs>` +
+    `<feGaussianBlur stdDeviation="${sigma}"/></filter>` +
+    `<g id="lk-emissive">${body(emissive)}</g></defs>` +
     // Twice, then crisp on top: composeLayers screens the blur in two passes
     // because one is not enough to lift a thin line off a dark base.
-    glow + glow + `<g>${body(emissive)}</g></svg>`);
+    glow + glow + '<use href="#lk-emissive"/></svg>');
 }
