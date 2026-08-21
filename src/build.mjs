@@ -20,7 +20,12 @@ const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 // Note statuses that mean "this surface was NOT painted", as opposed to the ones
 // that mean "it was painted and here is a caveat". Only the first group belongs
 // under a heading that says nothing was painted.
-const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match', 'fit-stale']);
+//
+// `fit-stale` belongs to the second group. A fit override that cannot be applied
+// leaves the region exactly where the livery put it, so the surface still gets
+// painted; filing it under "asked for and not painted" would report artwork that
+// is on the car as absent from it.
+const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
 
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {

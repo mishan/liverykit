@@ -872,7 +872,9 @@ test('the build report separates what was not painted from what merely warrants 
   for (const status of ['absent', 'unbound', 'unencodable', 'no-match']) {
     assert.equal(isMissingNote({ status }), true, status);
   }
-  for (const status of ['unconfirmed', 'unverified']) {
+  // `fit-stale` is the one that reads like a failure and isn't: the override was
+  // refused, so the region stayed where the livery put it — painted, with a note.
+  for (const status of ['unconfirmed', 'unverified', 'fit-stale']) {
     assert.equal(isMissingNote({ status }), false, status);
   }
 
