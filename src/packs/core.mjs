@@ -14,6 +14,20 @@ import { r2 } from '../engine/rng.mjs';
 export const rect = (r, color) =>
   `<rect x="${r2(r.x)}" y="${r2(r.y)}" width="${r2(r.w)}" height="${r2(r.h)}" fill="${color}"/>`;
 
+/**
+ * Escape for a TEXT NODE, which is a different job from escaping an attribute.
+ *
+ * `renderTexture` hands treatments every other value already safe to drop into
+ * an attribute. `text` is the exception, and stays raw, because it is the only
+ * option that is CONTENT rather than a parameter: it goes between the tags
+ * rather than inside them, and `radialText` renders it one character at a time
+ * around a circle. Pre-escaping it would spell `&quot;` out in five glyphs on
+ * the side of the car.
+ *
+ * So the emitter escapes it, here and in `motifs.mjs`. `test/injection.test.mjs`
+ * pushes markup through this field too, so a treatment that ever puts `text`
+ * into an attribute instead is caught there rather than trusted not to.
+ */
 export const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
 
 const treatments = {
