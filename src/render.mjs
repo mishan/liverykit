@@ -92,6 +92,11 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   const { width, height } = tex;
 
   const color = makeColorResolver(palette);
+  // Once, not per region: the palette and the identity block are the same for
+  // every region on the surface, and a design with 200 of them would otherwise
+  // walk both 200 times to arrive at the same answer.
+  const safePalette = safeDeep(palette ?? {});
+  const safeTokens = safeDeep(tokens ?? {});
   const base = [`<rect width="${width}" height="${height}" fill="${color(background ?? 'black')}"/>`];
   const emissive = [];
 
@@ -180,7 +185,15 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       ? { ...r, x: cx - r.h / 2, y: cy - r.w / 2, w: r.h, h: r.w }
       : r;
 
-    const out = entry.fn(drawn, { palette, color, rng, font, opts, width, height, tokens });
+    // `palette` and `tokens` go over escaped too, not raw. No treatment in
+    // either shipped pack reads them — they all go through `ctx.color` — which
+    // is exactly why handing them over unescaped was worth closing rather than
+    // documenting: the trap would have been sprung by the first pack author to
+    // write `fill="${c.palette.accent}"`, reasonably, having been told the
+    // values they are given are safe. A rule with an unmarked exception in it
+    // is not a rule anybody can follow.
+    const out = entry.fn(drawn,
+      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
     if (out.base) base.push(spin(out.base));

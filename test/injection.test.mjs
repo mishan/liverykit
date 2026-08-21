@@ -28,7 +28,7 @@ import assert from 'node:assert/strict';
 import '../src/index.mjs';
 import { resolveTreatments } from '../src/registry.mjs';
 import { renderTexture, safe } from '../src/render.mjs';
-import { mulberry32 } from '../src/engine/rng.mjs';
+import { mulberry32, r2 } from '../src/engine/rng.mjs';
 
 const PROFILE = {
   id: 'c',
@@ -229,4 +229,52 @@ test('text keeps its own characters, because it is content and not a parameter',
     palette: { white: '#fff' },
   });
   assert.equal((round.match(/<text/g) ?? []).length, 3, 'three characters, three glyphs — not seven');
+});
+
+test('every value a treatment is handed is safe to interpolate', async () => {
+  // The twelve shipped treatments all reach colours through `ctx.color`, so the
+  // test above would pass even if `ctx.palette` and `ctx.tokens` went over raw
+  // — which they did. Nothing was exploitable through them today; the first
+  // pack author to write `fill="${c.palette.accent}"`, reasonably, having been
+  // told their values are safe, would have made it so.
+  //
+  // So this probes the CONTRACT rather than the current callers: a treatment
+  // that interpolates every field of `ctx` into an attribute, which is the most
+  // hostile thing a well-meaning pack can do.
+  const { definePack, registerPack, resolveTreatments: resolve } = await import('../src/registry.mjs');
+  registerPack(definePack('probe', {
+    everything: (r, c) => ({
+      base: `<rect x="${r2(r.x)}" y="${r2(r.y)}" width="10" height="10"`
+        + ` fill="${c.palette.accent}"`
+        + ` stroke="${c.color('accent')}"`
+        + ` font-family="${c.font}"`
+        + ` data-token="${c.tokens.driver}"`
+        + ` data-opt="${c.opts.label}"/>`,
+      emissive: '',
+    }),
+  }), { overwrite: true });
+
+  const nasty = 'A"/><image href="q" onerror="X()"/><rect fill="A';
+  const out = renderTexture({
+    profile: PROFILE,
+    role: 'body',
+    regions: [{ id: 'r', panel: 'L', treatment: 'everything', label: nasty }],
+    background: 'black',
+    treatments: resolve(['probe']),
+    palette: { accent: nasty },
+    rng: mulberry32(1),
+    font: 'sans',
+    tokens: { driver: nasty },
+  });
+
+  assert.deepEqual(elements(out.base), ['rect', 'svg'],
+    'a treatment reading ctx directly must not be able to add an element');
+  assert.doesNotMatch(attributeNames(out.base), /\son\w+\s*=/,
+    'nor an event handler');
+
+  // And the values are still THERE, which is the difference between escaping
+  // and filtering: the design says what it said, it just cannot restructure the
+  // document by saying it.
+  assert.match(out.base, /data-token="A&quot;/);
+  assert.match(out.base, /fill="A&quot;/);
 });
