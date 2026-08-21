@@ -207,3 +207,28 @@ A panel with no `mirrorOf` straddles the centreline — a nose, an engine cover 
 so it is its own mirror, and the copy lands on the same panel with its position
 reflected within it. Which axis the centreline cuts is measured too, since an
 island the unwrapper packed sideways has that role fall to `v`.
+
+### Rotation across a mirror
+
+Rotation is decided by both axes, not just one. With `su = -1` when the two
+panels' u axes run opposite and `+1` when they agree, and the artwork's up
+direction written as `up(t) = (sin t, -cos t)`, the twin must satisfy
+`up(f) = diag(su, sv) up(t)`:
+
+| flips | twin rotation |
+|---|---|
+| neither | `t` |
+| both | `t + 180` |
+| u only | `-t` |
+| v only | `180 - t` |
+
+Only the first two preserve handedness. The other two are reflections, so no
+rotation makes the twin a true mirror image — the artwork itself would have to
+be flipped. That is the right outcome for text, which should READ on both
+flanks rather than be reversed on one, and it is why this matches the up
+direction rather than the whole frame.
+
+This was originally written as "only the v axis matters", which is correct at
+0 degrees and wrong at every other angle. It survived until a driver name
+rotated 270 on the Abarth — u reversed, v not — was copied across unchanged and
+came out upside down, 270 where the answer is 90.

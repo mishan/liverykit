@@ -850,7 +850,11 @@ export function mirrorAt(at, flips) {
 
 export function mirrorRotation(rotate, flips) {
   if (typeof rotate !== 'number' || !Number.isFinite(rotate)) return rotate;
-  return flips.v ? (((rotate + 180) % 360) + 360) % 360 : rotate;
+  const t = (((rotate % 360) + 360) % 360);
+  if (flips.u && flips.v) return (t + 180) % 360;
+  if (flips.u) return (360 - t) % 360;
+  if (flips.v) return (540 - t) % 360;
+  return t;
 }
 
 /**
