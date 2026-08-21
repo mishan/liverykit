@@ -151,3 +151,12 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
 /* Disabled controls stay in place rather than vanishing, so they need to read
    as unavailable rather than as missing. */
 #inspector button:disabled, #inspector select:disabled { opacity: 0.4; cursor: default; }
+
+/* --- palette and identity ------------------------------------------------ */
+
+.named { display: grid; grid-template-columns: 14px 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 4px; }
+.named input { min-width: 0; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--line); }
+/* A count, not a badge: it is there to be read before you rename something. */
+.uses { color: var(--muted); font-size: 11px; min-width: 3.5em; text-align: right; }
+.unused { opacity: 0.55; }

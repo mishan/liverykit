@@ -1594,6 +1594,25 @@ function copyFixture() {
 }
 
 /** Give the fake inspector the buttons app.js looks for, and hand them back. */
+/**
+ * Rows inside a redrawn panel, keyed the way app.js finds them.
+ *
+ * The rows have to exist BEFORE the panel is wired, because wiring walks
+ * `querySelectorAll` — so they are registered and then a real render is forced
+ * through the app's own path rather than by calling anything private.
+ */
+async function panelRows(dom, sel, attr, rows) {
+  const el = dom.querySelector(sel);
+  const fields = new Map(rows.map(([name, part]) => [`${name}:${part}`,
+    { dataset: { [attr]: name, part }, value: '', onchange: null }]));
+  el.querySelectorAll = (q) => (q === `[data-${attr}]` ? [...fields.values()] : []);
+  el.rowFor = (name, part) => fields.get(`${name}:${part}`);
+  // A real <select> always has a value; the fake one has to be told.
+  dom.querySelector('#surface').value = '0';
+  await dom.querySelector('#surface').onchange();
+  return el;
+}
+
 function inspectorButtons(dom, names, opts = []) {
   const inspector = dom.querySelector('#inspector');
   const nodes = new Map(names.map((n) => [n, { onclick: null, onchange: null, value: '' }]));
@@ -2139,4 +2158,154 @@ test('the status line says which of the two files is unsaved', async () => {
   dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
   await new Promise((r) => setTimeout(r, 20));
   assert.match(dom.querySelector('#status').textContent, /fit and design unsaved/);
+});
+
+// --- palette and identity ---------------------------------------------------
+
+test('a palette row shows how many things depend on it before you touch it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF', spare: '#ff0000' };
+  server.livery.surfaces.body.background = 'ink';
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const html = dom.querySelector('#palette').innerHTML;
+
+  assert.match(html, /data-palette="accent"/);
+  assert.match(html, /title="badge"/, 'and says which regions, not merely how many');
+  assert.match(html, /title="surfaces\.body background"/, 'a background counts as a reference');
+  // A colour nothing refers to is dimmed rather than hidden: it is a candidate
+  // for removal, not a mistake.
+  assert.match(html, /class="named unused"[\s\S]*data-palette="spare"/);
+});
+
+test('changing a colour repaints everything that names it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'value']]);
+  assert.match(dom.querySelector('#texture').innerHTML, /#00F0FF/i);
+
+  const value = palette.rowFor('accent', 'value');
+  value.value = '#FF00FF';
+  await value.onchange();
+
+  assert.match(dom.querySelector('#texture').innerHTML, /#FF00FF/i, 'the render follows the palette');
+  assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).palette.accent, '#FF00FF');
+  assert.match(dom.querySelector('#status').textContent, /design unsaved/,
+    'a colour is design, not a per-car adjustment');
+  assert.deepEqual(JSON.parse(dom.querySelector('#fitjson').textContent).regions ?? {}, {});
+});
+
+test('renaming a colour takes its references with it', async () => {
+  // The references are known, so leaving them pointing at a name that is gone
+  // would be choosing to break something the code can see — and it would render
+  // as a literal colour called `accent`, silently.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.background = 'accent';
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'name']]);
+  const name = palette.rowFor('accent', 'name');
+  name.value = 'gulf-blue';
+  await name.onchange();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(Object.keys(design.palette), ['ink', 'gulf-blue'], 'and keeps its place in the file');
+  assert.equal(design.surfaces.body.regions[0].color, 'gulf-blue');
+  assert.equal(design.surfaces.body.background, 'gulf-blue');
+  assert.match(dom.querySelector('#texture').innerHTML, /#00F0FF/i, 'the picture does not change');
+  assert.doesNotMatch(dom.querySelector('#dangling').innerHTML, /gulf-blue/,
+    'nothing is left dangling');
+});
+
+test('a name the design uses and does not define is reported, since nothing else will', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: '{driver} #{number}', color: 'ghost',
+  };
+
+  const { dom } = await runApp({ server });
+  const dangling = dom.querySelector('#dangling').innerHTML;
+
+  // The token renders as nothing at all, mid-sentence.
+  assert.match(dangling, /Nothing gives <code>number<\/code> a value/);
+  assert.match(dangling, /name renders with a hole/);
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver #</,
+    'which is exactly what the render does, silently');
+
+  // The colour goes to the renderer as a literal, which is right for `#hex` and
+  // wrong in a way nothing reports for a palette entry that went away.
+  assert.match(dangling, /<code>ghost<\/code> is not in the palette/);
+
+  // Giving it a value clears the warning.
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'value']]);
+  const driver = identity.rowFor('driver', 'value');
+  driver.value = 'M. Nasledov';
+  await driver.onchange();
+  assert.match(dom.querySelector('#texture').innerHTML, /M\. Nasledov/);
+});
+
+test('renaming a token rewrites the text that interpolates it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: '{driver} / {driver}',
+  };
+
+  const { dom } = await runApp({ server });
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'name']]);
+  const name = identity.rowFor('driver', 'name');
+  name.value = 'pilot';
+  await name.onchange();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(Object.keys(design.identity), ['pilot']);
+  assert.equal(design.surfaces.body.regions[0].text, '{pilot} / {pilot}', 'every mention, not the first');
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver \/ A\. Driver</,
+    'and the render is unchanged, which is the point of a rename');
+  assert.equal(dom.querySelector('#dangling').innerHTML, '');
+});
+
+test('adding a colour keeps what you typed until you press Add', async () => {
+  // The add row is static furniture. Rebuilding it inside the redrawn panel
+  // would clear the field under the cursor on every render.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  dom.querySelector('#newcolourname').value = 'gulf-orange';
+  dom.querySelector('#newcolourvalue').value = '#F5A11B';
+
+  // A render in between, as any edit would cause.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.equal(dom.querySelector('#newcolourname').value, 'gulf-orange', 'still there');
+
+  await dom.querySelector('#addcolour').onclick();
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], '#F5A11B');
+  assert.equal(dom.querySelector('#newcolourname').value, '', 'and the row is cleared for the next one');
 });
