@@ -17,7 +17,7 @@
 import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
-import { paletteUses, tokenUses, danglingNames, eachRegion } from './uses.js';
+import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates } from './uses.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -354,6 +354,7 @@ async function refresh() {
   drawPalette();
   drawIdentity();
   drawDangling();
+  drawAdders();
   $('#notes').innerHTML = out.notes
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Derived from the stacks rather than trusted from the markup, so there is
@@ -462,7 +463,9 @@ function drawPalette() {
 function drawIdentity() {
   const el = $('#identity');
   if (!el) return;
-  if (state.lossy.length) { el.innerHTML = ''; return; }
+  // Said here as well as in the palette, because the row of disabled inputs
+  // below this panel needs a reason standing next to it.
+  if (state.lossy.length) { el.innerHTML = '<p class="hint">This livery contains code.</p>'; return; }
 
   const uses = tokenUses(state.design);
   el.innerHTML = Object.entries(state.design?.identity ?? {}).map(([token, value]) => {
@@ -523,11 +526,40 @@ function wirePalette() {
   }
 }
 
+/**
+ * The two Add rows, which sit OUTSIDE the panels they add to.
+ *
+ * That is deliberate — a row rebuilt on every redraw loses what you were part
+ * way through typing — and it is also the reason they need their own handling of
+ * a code-backed livery. `drawPalette` and `drawIdentity` empty themselves when
+ * `state.lossy` is non-empty, because a design the editor cannot save is a design
+ * it must not appear to be editing. The Add rows are not inside either panel, so
+ * they survived that and stayed live: the editor said in one breath that this
+ * livery could not be edited and in the next offered a button that edited it.
+ *
+ * `drawAdders` closes that, and the handlers refuse as well. The disabled
+ * attribute is what a person sees; the check is what actually holds, since a
+ * redraw is the only thing keeping the two in step.
+ */
+function drawAdders() {
+  const off = state.lossy.length > 0;
+  // Written out rather than looped over a list of names, so that every selector
+  // here is a literal. "The page and the script agree about what exists" reads
+  // the literal selectors out of this file and checks them against the page; one
+  // assembled from a variable would be invisible to it, and a typo in it would
+  // leave a control that silently never gets disabled.
+  for (const el of [$('#newcolourname'), $('#newcolourvalue'), $('#addcolour'),
+    $('#newtokenname'), $('#newtokenvalue'), $('#addtoken')]) {
+    if (el) el.disabled = off;
+  }
+}
+
 /** Wired once: the Add row is static, so it keeps whatever you have typed. */
 function wireAdders() {
   {
     const add = $('#addcolour');
     add.onclick = () => {
+      if (state.lossy.length) return status(CANNOT_EDIT);
       const name = ($('#newcolourname').value ?? '').trim();
       const value = ($('#newcolourvalue').value ?? '').trim();
       if (!name || !value) return status('a colour needs both a name and a value');
@@ -542,8 +574,10 @@ function wireAdders() {
   {
     const add = $('#addtoken');
     add.onclick = () => {
+      if (state.lossy.length) return status(CANNOT_EDIT);
       const token = ($('#newtokenname').value ?? '').trim();
       if (!token) return status('a token needs a name');
+      if (!interpolates(token)) return status(badTokenName(token));
       if (state.design.identity?.[token] !== undefined) return status(`${token} is already taken`);
       remember(`add ${token}`);
       (state.design.identity ??= {})[token] = $('#newtokenvalue').value ?? '';
@@ -552,6 +586,14 @@ function wireAdders() {
       return afterDesignEdit();
     };
   }
+}
+
+const CANNOT_EDIT = 'this livery contains code, so the editor cannot change it';
+
+/** Said the same way wherever a token is named, because it is the same rule. */
+function badTokenName(token) {
+  return `${token} could never be used: text interpolates {name} for letters, `
+    + 'digits and underscores only, so this one would print its own braces.';
 }
 
 /**
@@ -606,6 +648,10 @@ function wireIdentity() {
       } else {
         const now = (input.value ?? '').trim();
         if (!now || now === was) return drawIdentity();
+        // Renaming to an uninterpolatable name is worse than creating one,
+        // because the rewrite below would carry every working `{was}` over to a
+        // `{now}` that prints itself. The panel goes back to what it was.
+        if (!interpolates(now)) { status(badTokenName(now)); return drawIdentity(); }
         if (state.design.identity[now] !== undefined) return status(`${now} is already taken`);
         remember(`rename ${was}`);
         state.design.identity = Object.fromEntries(
@@ -1112,6 +1158,7 @@ async function livePreview() {
   drawPalette();
   drawIdentity();
   drawDangling();
+  drawAdders();
   } catch {
     // A dropped frame mid-drag is not worth interrupting the gesture over. The
     // release does a full render and will report anything genuinely wrong.

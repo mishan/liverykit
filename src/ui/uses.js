@@ -75,7 +75,12 @@ export function paletteUses(design, treatments) {
   const add = (name, by) => {
     if (typeof name !== 'string') return;
     if (!uses.has(name)) uses.set(name, []);
-    uses.get(name).push(by);
+    // Once per thing that depends on the name, not once per mention of it. A
+    // region may name `accent` in `color` and twice more in `colors`, and it is
+    // still one region — counting mentions would tell somebody about to rename
+    // it that four things depend on it when one does. `tokenUses` counts the
+    // same way, and the two panels sit next to each other.
+    if (!uses.get(name).includes(by)) uses.get(name).push(by);
   };
 
   for (const block of ['paint', 'surfaces']) {
@@ -91,6 +96,25 @@ export function paletteUses(design, treatments) {
     }
   }
   return uses;
+}
+
+/**
+ * Could a token by this name ever be substituted?
+ *
+ * `renderTexture` interpolates `opts.text` through `/\{(\w+)\}/g`, so a token
+ * called `driver-name` is unreachable: `{driver-name}` does not match, the brace
+ * survives into the SVG, and the design renders the literal text `{driver-name}`
+ * across the door. Nothing anywhere reports that — not the renderer, which sees
+ * ordinary text, and not the dangling panel, which would list the token as
+ * defined and used and be wrong on both counts.
+ *
+ * So the editor refuses the name at the point it is typed, which is the only
+ * moment anybody can still cheaply pick a different one. `test/uses.test.mjs`
+ * takes the pattern out of `src/render.mjs` and checks the two agree, because
+ * this file cannot import it — the browser loads it directly.
+ */
+export function interpolates(token) {
+  return /^\w+$/.test(token);
 }
 
 /**

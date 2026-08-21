@@ -2369,3 +2369,81 @@ test('a colour that is already a palette name is not offered for naming', async 
   assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-colour/,
     'it already has a name');
 });
+
+test('a token that could never be substituted is refused where it is typed', async () => {
+  // `renderTexture` interpolates `{name}` for `\w+` and nothing else, so a token
+  // called `driver-name` is unreachable: the braces survive into the SVG and the
+  // car is painted with the literal text `{driver-name}`. Nothing reports it —
+  // the renderer sees ordinary text, and the dangling panel would call the token
+  // defined and used, which is wrong twice.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: '{driver}',
+  };
+
+  const { dom } = await runApp({ server });
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+
+  dom.querySelector('#newtokenname').value = 'driver-name';
+  dom.querySelector('#newtokenvalue').value = 'A. Driver';
+  await dom.querySelector('#addtoken').onclick();
+  assert.deepEqual(Object.keys(design().identity), ['driver'], 'the token was not created');
+  assert.match(dom.querySelector('#status').textContent, /could never be used/);
+  assert.equal(dom.querySelector('#newtokenname').value, 'driver-name',
+    'and what was typed is still there to be corrected');
+
+  // Renaming into one is the worse case, because the rewrite below it would
+  // carry a working `{driver}` over to a `{driver-name}` that prints itself.
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'name']]);
+  const row = identity.rowFor('driver', 'name');
+  row.value = 'driver-name';
+  await row.onchange();
+  assert.deepEqual(Object.keys(design().identity), ['driver'], 'the rename did not happen');
+  assert.equal(design().surfaces.body.regions[0].text, '{driver}', 'and the text still resolves');
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver</);
+
+  // A name that CAN interpolate goes through, so this is a rule and not a wall.
+  row.value = 'driver_name';
+  await row.onchange();
+  assert.deepEqual(Object.keys(design().identity), ['driver_name']);
+  assert.equal(design().surfaces.body.regions[0].text, '{driver_name}');
+});
+
+test('a livery the editor cannot save does not offer to add to it', async () => {
+  // The panels go dark for a design carrying code, because showing edits that
+  // could never be written back is the failure this whole step is organised
+  // against. The Add rows sit OUTSIDE those panels — deliberately, so they keep
+  // what you are typing — which is exactly how they stayed live after the panels
+  // above them had given up.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.render = { font: () => 'DejaVu Sans' };
+
+  const { dom } = await runApp({ server });
+  for (const id of ['#newcolourname', '#newcolourvalue', '#addcolour',
+    '#newtokenname', '#newtokenvalue', '#addtoken']) {
+    assert.equal(dom.querySelector(id).disabled, true, `${id} should be disabled`);
+  }
+  assert.match(dom.querySelector('#palette').innerHTML, /contains code/);
+  assert.match(dom.querySelector('#identity').innerHTML, /contains code/,
+    'the disabled row needs a reason standing next to it');
+
+  // The attribute is what a person sees; the handler is what actually holds.
+  dom.querySelector('#newcolourname').value = 'gulf-orange';
+  dom.querySelector('#newcolourvalue').value = '#F5A11B';
+  await dom.querySelector('#addcolour').onclick();
+  dom.querySelector('#newtokenname').value = 'number';
+  await dom.querySelector('#addtoken').onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], undefined, 'nothing was added to the palette');
+  assert.equal(design.identity.number, undefined, 'nor to the identity');
+  assert.match(dom.querySelector('#status').textContent, /contains code/);
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/,
+    'and nothing was marked as needing saving');
+});
