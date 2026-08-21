@@ -1602,7 +1602,6 @@ function copyFixture() {
   return { livery, profile, role: 'body' };
 }
 
-/** Give the fake inspector the buttons app.js looks for, and hand them back. */
 /**
  * Rows inside a redrawn panel, keyed the way app.js finds them.
  *
@@ -1622,6 +1621,7 @@ async function panelRows(dom, sel, attr, rows) {
   return el;
 }
 
+/** Give the fake inspector the buttons app.js looks for, and hand them back. */
 function inspectorButtons(dom, names, opts = []) {
   const inspector = dom.querySelector('#inspector');
   const nodes = new Map(names.map((n) => [n, { onclick: null, onchange: null, value: '' }]));
@@ -2368,6 +2368,46 @@ test('a colour that is already a palette name is not offered for naming', async 
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-colour/,
     'it already has a name');
+});
+
+test('a name the palette does not have is not offered for naming either', async () => {
+  // The button writes `palette[chosen] = value`, so it is only ever right when
+  // the value is a COLOUR. Offered on `ghost` — a palette entry that went away,
+  // or a typo — it would write `palette.spooky = 'ghost'` and point the region
+  // at `spooky`. The region still reaches librsvg as `fill="ghost"` and still
+  // paints nothing anybody chose; the only thing that changes is that the
+  // dangling panel goes quiet, because `spooky` is a palette entry now. That
+  // trades a true warning for a false silence.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014' };
+  const region = { id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill' };
+
+  const offered = async (color) => {
+    server.livery.surfaces.body.regions[0] = { ...region, color };
+    const { dom } = await runApp({ server });
+    inspectorButtons(dom, ['#delete']);
+    dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+    return {
+      button: /data-name-colour/.test(dom.querySelector('#inspector').innerHTML),
+      warned: /ghost|gulf-blue/.test(dom.querySelector('#dangling').innerHTML),
+    };
+  };
+
+  const ghost = await offered('ghost');
+  assert.equal(ghost.button, false, 'a bare word is a broken reference, not a colour to name');
+  assert.equal(ghost.warned, true, 'and the panel says so, which is the thing worth keeping');
+
+  assert.equal((await offered('#F5A11B')).button, true, 'a literal colour still offers it');
+  assert.equal((await offered('rgb(1,2,3)')).button, true);
+
+  // The cost of drawing the line here rather than at "what would a browser
+  // accept": `red` is a colour and gets no button. uses.js explains why beside
+  // `looksLikeAName` — the alternative is 148 CSS colour names to maintain — and
+  // the two halves being wrong in the SAME direction is what matters, since the
+  // panel reports `red` as a literal for exactly the same reason.
+  assert.equal((await offered('red')).button, false);
 });
 
 test('a token that could never be substituted is refused where it is typed', async () => {
