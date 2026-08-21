@@ -1472,6 +1472,48 @@ test('the editor reports where regions actually landed, not where it thinks they
   assert.equal(out.placed.find((p) => p.id === 'driver-left'), undefined);
 });
 
+test('the editor is told the profile\'s panel name, not the livery\'s', async () => {
+  // A design may say `flankLeft` where the profile calls the island `left_mid`,
+  // and both are right — that is what an alias block is for. But only `left_mid`
+  // is a key in profile.panels, which is what the panel list and every lookup in
+  // the browser are keyed by. Reporting the livery's spelling made those lookups
+  // find nothing, and a drag then fell back to ABSOLUTE coordinates and wrote
+  // them into `at`, which means panel-relative. The artwork moved somewhere
+  // nobody asked for, from a fit that reads perfectly well.
+  const { renderSurface, editorState } = await import('../src/ui/server.mjs');
+
+  const profile = {
+    id: 'c', name: 'C',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { left_mid: { rect: [0.1, 0.2, 0.4, 0.4], tags: ['left'] } } },
+    aliases: { body: { flankLeft: 'left_mid' } },
+  };
+  const livery = {
+    name: 'L', folder: 'l', car: 'c', palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: { body: { background: 'ink', regions: [
+      { id: 'badge', panel: 'flankLeft', at: [0.5, 0, 0.5, 1], treatment: 'fill', color: 'accent' },
+    ] } },
+  };
+
+  const state = editorState({ livery, profile, fit: null, liveryId: 'l' });
+  const names = state.surfaces[0].panels.map((p) => p.name);
+  assert.deepEqual(names, ['left_mid'], 'the panel list is keyed by the profile');
+
+  const placed = renderSurface({ livery, profile, fit: null, role: 'body' }).placed
+    .find((p) => p.id === 'badge');
+  assert.equal(placed.panel, 'left_mid', 'the placement names the panel the list contains');
+  assert.ok(names.includes(placed.panel), 'so the browser can find it');
+
+  // And the DECLARED panel resolves the same way, or "is this still where the
+  // design put it?" compares two spellings of one island and always says no.
+  assert.equal(state.surfaces[0].regions[0].panel, 'left_mid');
+
+  // The rectangle is still measured against that panel: `at` is the right half
+  // of a panel starting at x=0.1 and 0.4 wide.
+  assert.deepEqual(placed.abs, [0.3, 0.2, 0.2, 0.4]);
+});
+
 test('a stale fit reaches the editor as a note rather than a crash', async () => {
   const { renderSurface } = await import('../src/ui/server.mjs');
   const { loadProfile, binding } = await import('../src/profile.mjs');
