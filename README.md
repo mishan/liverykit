@@ -438,6 +438,15 @@ registerPack(definePack('my-team', {
 node bin/liverykit.mjs my-livery --pack ./my-pack.mjs
 ```
 
+**On values from a livery.** Every string `ctx` hands you — `ctx.color(...)`,
+`ctx.opts.*`, `ctx.palette`, `ctx.tokens` — is escaped for an ATTRIBUTE before
+your treatment sees it, so interpolating one into `fill="…"` is safe: it cannot
+close the quote and become markup. `ctx.opts.text` is the single exception. It
+is content rather than a parameter, and arrives raw so that it can be escaped
+for the text node you put it in — `core`'s `text` does that with `esc`, and
+`radialText` does it a character at a time. If you put `text` anywhere other
+than between two tags, escape it yourself.
+
 Then list `'my-team'` in the livery's `packs`. `--pack` is repeatable and loads
 before the livery, so the names are registered by the time it needs them.
 [`src/packs/synthwave.mjs`](src/packs/synthwave.mjs) is the worked example;

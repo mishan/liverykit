@@ -121,9 +121,18 @@ test('a token the renderer could never substitute is not a token', async () => {
   // of its source and check the two classify the same names the same way. If
   // somebody widens the renderer to accept `{driver-name}`, this fails.
   const source = await readFile(new URL('../src/render.mjs', import.meta.url), 'utf8');
-  const found = source.match(/opts\.text\.replace\((\/[^/]+\/g)/);
-  assert.ok(found, 'the interpolation in render.mjs no longer looks like a regex literal');
-  const pattern = new RegExp(found[1].slice(1, -2), 'g');
+  // Whitespace-tolerant, because reformatting the declaration is not a change to
+  // the RULE and should not fail a test about the rule. What it still insists on
+  // is an inline literal on one line, which is the only shape that can be lifted
+  // out of the source at all — a TOKEN built at runtime would leave this check
+  // with nothing to compare, and it has already been silently unhooked once.
+  const found = source.match(/^\s*export\s+const\s+TOKEN\s*=\s*\/(.+)\/(\w*)\s*;/m);
+  assert.ok(found, 'render.mjs no longer declares TOKEN as an inline regex literal on one line');
+  const [, body, flags] = found;
+  // Not decoration: without `g`, `replace` substitutes the FIRST token in a
+  // string and leaves the rest as braces on the car.
+  assert.ok(flags.includes('g'), `TOKEN must be global, and its flags are "${flags}"`);
+  const pattern = new RegExp(body, flags);
 
   for (const name of ['driver', 'number', 'car_no', 'n7', '_x',
     'driver-name', 'driver name', 'car.no', 'né', '', 'a+b']) {

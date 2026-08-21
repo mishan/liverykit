@@ -12,15 +12,78 @@
 import { resolveRect, texture, expandRegions } from './profile.mjs';
 import { r2 } from './engine/rng.mjs';
 
+const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
+
+/**
+ * What an identity token looks like inside a region's `text`.
+ *
+ * Named rather than written inline where it is used, because the editor has to
+ * know the same rule — a token called `driver-name` can never be substituted, so
+ * `{driver-name}` would be painted on the door as itself — and `src/ui/uses.js`
+ * cannot import from here, since the browser loads that file directly. The test
+ * lifts this constant out of the source and checks the two agree, so this has to
+ * stay findable: a regex spelled out at the call site was, until moving the call
+ * one line hid it and the check quietly stopped comparing anything.
+ */
+export const TOKEN = /\{(\w+)\}/g;
+
+/**
+ * A value from a livery, made safe to put in a document.
+ *
+ * A treatment builds markup by interpolation — `fill="${color}"` — which is the
+ * whole reason the pack API is pleasant to write against, and it means every
+ * value a livery supplies is one quotation mark away from being STRUCTURE rather
+ * than content. A palette entry of
+ *
+ *   x"/><image href="q" onerror="…"/><rect fill="x
+ *
+ * closed the attribute, closed the element, and added two of its own. In the
+ * editor — which sets the finished document as `innerHTML` — the handler ran. A
+ * livery is a file people download from each other, and the editor is served by
+ * a local server that writes files, so that was a real way to lose.
+ *
+ * Escaped HERE, on the way in, rather than at each of the 39 places a value
+ * reaches markup. Those places are spread across two shipped packs and every
+ * pack anybody writes later, `--pack ./my-pack.mjs` included, and a rule that
+ * needs remembering at 39 sites is a rule that will be missed at one. Doing it
+ * at the boundary means a treatment cannot get this wrong, including one written
+ * by somebody who never read this comment.
+ *
+ * The five entities are resolved by any XML parser back to the characters they
+ * stand for, and identically in an attribute and in a text node — so this
+ * changes what a value can DO and not what it means. A colour with a quote in it
+ * was never a colour.
+ */
+export function safe(v) {
+  return String(v).replace(/[&<>"']/g, (c) => ENTITY[c]);
+}
+
+/** The same, through a livery's options: strings only, so numbers stay numbers. */
+function safeDeep(v) {
+  if (typeof v === 'string') return safe(v);
+  if (Array.isArray(v)) return v.map(safeDeep);
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, safeDeep(x)]));
+  }
+  // Numbers and booleans through untouched: `cell` is arithmetic, and a
+  // treatment multiplying by a string would be a strange way to find that out.
+  return v;
+}
+
 /**
  * Resolve a colour reference. Palette keys win over raw values, so a livery can
  * say `color: 'accent'` and stay renamable, while `color: '#FF00E5'` still works
  * for one-offs.
+ *
+ * The result is escaped, because every caller interpolates it into an attribute
+ * — that is what a colour resolver is FOR — and `palette[name] ?? name` passes
+ * an unknown name straight through, so the livery's own text reaches the
+ * document either way.
  */
 export function makeColorResolver(palette) {
   return (nameOrValue) => {
-    if (typeof nameOrValue !== 'string') return String(nameOrValue);
-    return palette[nameOrValue] ?? nameOrValue;
+    if (typeof nameOrValue !== 'string') return safe(String(nameOrValue));
+    return safe(palette[nameOrValue] ?? nameOrValue);
   };
 }
 
@@ -29,6 +92,11 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   const { width, height } = tex;
 
   const color = makeColorResolver(palette);
+  // Once, not per region: the palette and the identity block are the same for
+  // every region on the surface, and a design with 200 of them would otherwise
+  // walk both 200 times to arrive at the same answer.
+  const safePalette = safeDeep(palette ?? {});
+  const safeTokens = safeDeep(tokens ?? {});
   const base = [`<rect width="${width}" height="${height}" fill="${color(background ?? 'black')}"/>`];
   const emissive = [];
 
@@ -58,9 +126,22 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       anisotropy: frac.anisotropy,
     };
 
-    const opts = { ...region };
-    if (typeof opts.text === 'string') {
-      opts.text = opts.text.replace(/\{(\w+)\}/g, (_, k) => tokens[k] ?? '');
+    // Everything a livery said, made safe to interpolate into an attribute —
+    // EXCEPT `text`, which is the one option that is content rather than a
+    // parameter. It goes between the tags rather than inside them, where a
+    // different escaping applies, and `radialText` renders it one character at
+    // a time around a circle: pre-escaping would spell `&quot;` out in five
+    // glyphs on the side of the car. Its two emitters escape it for the text
+    // node they put it in, and `test/injection.test.mjs` pushes markup through
+    // this field as well, so a treatment that ever puts `text` in an attribute
+    // instead is caught rather than trusted.
+    const opts = safeDeep({ ...region, text: undefined });
+    if (typeof region.text === 'string') {
+      opts.text = region.text.replace(TOKEN, (_, k) => tokens[k] ?? '');
+    } else if (region.text !== undefined) {
+      opts.text = region.text;
+    } else {
+      delete opts.text;
     }
 
     // `rotate` turns a treatment through a quarter turn (or any angle) about the
@@ -104,7 +185,15 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       ? { ...r, x: cx - r.h / 2, y: cy - r.w / 2, w: r.h, h: r.w }
       : r;
 
-    const out = entry.fn(drawn, { palette, color, rng, font, opts, width, height, tokens });
+    // `palette` and `tokens` go over escaped too, not raw. No treatment in
+    // either shipped pack reads them — they all go through `ctx.color` — which
+    // is exactly why handing them over unescaped was worth closing rather than
+    // documenting: the trap would have been sprung by the first pack author to
+    // write `fill="${c.palette.accent}"`, reasonably, having been told the
+    // values they are given are safe. A rule with an unmarked exception in it
+    // is not a rule anybody can follow.
+    const out = entry.fn(drawn,
+      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
     if (out.base) base.push(spin(out.base));
