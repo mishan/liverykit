@@ -16,7 +16,7 @@ export const rect = (r, color) =>
 
 export const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
 
-export default definePack('core', {
+const treatments = {
   fill: (r, c) => ({ base: rect(r, c.color(c.opts.color ?? 'pink')), emissive: '' }),
 
   /**
@@ -116,5 +116,96 @@ export default definePack('core', {
     const g = `<g transform="translate(${r2(tx)},${r2(r.y + r.h * 0.78)}) scale(${r2(ax)},1)">${inner}</g>`;
 
     return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+};
+
+/**
+ * What each treatment takes. See `definePack` — this is metadata for tools, the
+ * build never reads it, and `hint` is the code's own default written out for a
+ * person rather than repeated as a value that could drift from it.
+ */
+export default definePack('core', treatments, {
+  fill: {
+    label: 'Fill',
+    summary: 'A flat rectangle of one colour.',
+    options: {
+      color: { type: 'color', hint: 'pink' },
+    },
+  },
+
+  stripe: {
+    label: 'Stripe',
+    summary: 'A fill you meant to be thin. Separate so that glow can default the other way.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  scanlines: {
+    label: 'Scanlines',
+    summary: 'Horizontal rules across the region, CRT-fashion.',
+    options: {
+      color: { type: 'color', hint: '#000' },
+      pitch: { type: 'number', min: 1, step: 1, hint: 'the region height over 90', label: 'Pitch (px)' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.1' },
+    },
+  },
+
+  halftone: {
+    label: 'Halftone dissolve',
+    summary: 'A field of dots that thins out across the region, for a soft edge.',
+    options: {
+      color: { type: 'color', hint: 'black' },
+      cell: { type: 'number', min: 2, step: 1, hint: 'the region height over 22', label: 'Cell (px)' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
+      // Worth spelling out: at the default the dots nearly touch, which is what
+      // a dissolve edge wants and reads as near-solid for an even field.
+      dot: { type: 'number', min: 0.05, max: 0.5, step: 0.01, hint: '0.42 — try 0.18 for texture rather than colour', label: 'Dot size' },
+      start: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.05', label: 'Dissolve from' },
+      end: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.85', label: 'Dissolve to' },
+    },
+  },
+
+  piping: {
+    label: 'Piping',
+    summary: 'Parallel lines running across the region.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      count: { type: 'number', min: 1, step: 1, hint: '4' },
+      width: { type: 'number', min: 0.5, step: 0.5, hint: '1.2% of the region height, at least 2px', label: 'Line width (px)' },
+      spacing: { type: 'number', min: 0, max: 1, step: 0.01, hint: 'evenly spread across the region' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  ring: {
+    label: 'Ring',
+    summary: 'A circle centred in the region. Radius and width are fractions of its shorter side.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      radius: { type: 'number', min: 0, max: 0.5, step: 0.01, hint: '0.4' },
+      width: { type: 'number', min: 0.001, max: 0.5, step: 0.005, hint: '0.03' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
+      dash: { type: 'string', hint: 'solid', label: 'Dash pattern' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  text: {
+    label: 'Text',
+    summary: 'A line of text, scaled to fit and pre-narrowed for the panel\'s anisotropy.',
+    options: {
+      text: { type: 'string', hint: 'empty', label: 'Text' },
+      color: { type: 'color', hint: 'white' },
+      scale: { type: 'number', min: 0.05, max: 2, step: 0.05, hint: '0.7 of the region height' },
+      tracking: { type: 'number', min: -0.1, max: 1, step: 0.01, hint: '0.08', label: 'Letter spacing' },
+      weight: { type: 'number', min: 100, max: 900, step: 100, hint: '700' },
+      anchor: { type: 'enum', values: ['start', 'middle', 'end'], hint: 'middle' },
+      fit: { type: 'boolean', hint: 'true — shrink to fit the region' },
+      aspect: { type: 'number', min: 0.2, max: 3, step: 0.05, hint: "the panel's own anisotropy" },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
   },
 });
