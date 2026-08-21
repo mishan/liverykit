@@ -173,6 +173,6 @@ export function danglingNames(design, treatments) {
  * well. The alternative is a table of 148 CSS colour names kept in step with a
  * spec, to avoid one line of accurate prose.
  */
-function looksLikeAName(v) {
+export function looksLikeAName(v) {
   return !/^(#|rgb|hsl|var\(|none$|transparent$|currentColor$)/i.test(v);
 }

@@ -17,7 +17,7 @@
 import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
-import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates } from './uses.js';
+import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, looksLikeAName } from './uses.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -1367,15 +1367,23 @@ function optionControls(id) {
       // document, and querySelector takes the first — so the panel would have
       // quietly started writing its rows into a datalist.
       const names = Object.keys(state.design?.palette ?? {});
-      const literal = has && !names.includes(v) && !/^(#|rgb|hsl)/i.test(v);
+      // ONE button, and only for a value. There were two, and the second was
+      // backwards: it offered to "name" a bare word like `ghost`, which would
+      // write `palette.spooky = 'ghost'` and point the region at `spooky`. The
+      // region still reaches librsvg as `fill="ghost"`, still paints nothing
+      // anybody chose — and the dangling panel stops saying so, because `spooky`
+      // is a palette entry now. A warning traded for nothing, which is worse
+      // than the warning.
+      //
+      // The test is the dangling panel's own, imported rather than restated, so
+      // the button appears exactly where that panel has nothing to say. It costs
+      // `red` its button; `uses.js` explains beside `looksLikeAName` why it will
+      // not keep a table of 148 CSS colour names in order to know better.
+      const nameable = has && typeof v === 'string' && !names.includes(v) && !looksLikeAName(v);
       input = `<input list="palette-names" data-opt="${esc(key)}" data-kind="string"
         value="${has ? esc(v) : ''}"${hint}>` +
         `<datalist id="palette-names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>` +
-        // A value that is neither a palette name nor a literal colour is the one
-        // case worth acting on: it renders as nothing anybody chose.
-        (literal ? `<button class="rot" data-name-colour="${esc(key)}">name it</button>` : '')
-        + (has && !names.includes(v) && /^(#|rgb|hsl)/i.test(v)
-          ? `<button class="rot" data-name-colour="${esc(key)}">add to palette</button>` : '');
+        (nameable ? `<button class="rot" data-name-colour="${esc(key)}">name it</button>` : '');
     } else if (o.type === 'number') {
       const bounds = [o.min !== undefined ? `min="${o.min}"` : '', o.max !== undefined ? `max="${o.max}"` : '',
         o.step !== undefined ? `step="${o.step}"` : ''].join(' ');
