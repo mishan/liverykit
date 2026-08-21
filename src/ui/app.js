@@ -17,7 +17,7 @@
 import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
-import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, looksLikeAName } from './uses.js';
+import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColour } from './uses.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -1404,10 +1404,10 @@ function optionControls(id) {
       // than the warning.
       //
       // The test is the dangling panel's own, imported rather than restated, so
-      // the button appears exactly where that panel has nothing to say. It costs
-      // `red` its button; `uses.js` explains beside `looksLikeAName` why it will
-      // not keep a table of 148 CSS colour names in order to know better.
-      const nameable = has && typeof v === 'string' && !names.includes(v) && !looksLikeAName(v);
+      // the button appears exactly where that panel has nothing to say — one
+      // judgement shown twice, rather than two regexes free to drift until they
+      // give opposite advice about the same value in the same window.
+      const nameable = has && typeof v === 'string' && !names.includes(v) && isAColour(v);
       input = `<input list="palette-names" data-opt="${esc(key)}" data-kind="string"
         value="${has ? esc(v) : ''}"${hint}>` +
         `<datalist id="palette-names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>` +

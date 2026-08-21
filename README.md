@@ -98,8 +98,9 @@ npm install
 ```
 
 Node 20.9 or newer — that is what sharp's prebuilt binaries require, so it is
-the real floor rather than a preference. One npm dependency (`sharp`, which ships prebuilt binaries, so there's
-no build toolchain), plus **ImageMagick on your PATH** — it's called as a
+the real floor rather than a preference. Two npm dependencies — `sharp`, which
+ships prebuilt binaries so there's no build toolchain, and `colord`, which is 8 KB
+and has none of its own — plus **ImageMagick on your PATH** — it's called as a
 subprocess and works with either `magick` (IM7) or `convert` (IM6).
 
 Text rendering needs a font the renderer can find. The examples use DejaVu Sans;
