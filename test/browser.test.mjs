@@ -1103,3 +1103,58 @@ test('the artwork follows the pointer, without waiting for the release', { skip:
     'the fit should already reflect the drag while the button is still down');
   assert.ok(mid.every((n) => n >= 0 && n <= 1), `at must stay panel-relative mid-drag: ${mid}`);
 });
+
+test('a hostile palette value paints a swatch and nothing else', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // A livery is a file people share, and its palette values used to be pasted
+  // into a `style` attribute. `esc` escapes HTML; a style attribute is not HTML
+  // but a list of declarations, so `red;position:fixed;inset:0` went through it
+  // untouched and became a page-sized invisible sheet over the editor. This
+  // project has already had that exact bug once — from a duplicate id — and the
+  // fake DOM could not see it either time, because it renders no CSS.
+  //
+  // So: a real browser, real layout, and the question a person would ask, which
+  // is whether anything is lying on top of the editor.
+  const base = (await import('../liveries/neon-grid-any.mjs')).default;
+  const livery = structuredClone({ ...base });
+  livery.palette = { ...livery.palette, trap: 'red;position:fixed;inset:0;z-index:9999' };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('the editor never came up'); return done(); }
+      await settle(400);
+      const swatch = (n) => document.querySelector('[data-swatch="' + n + '"]');
+      say('real swatch: ' + getComputedStyle(swatch('ink')).backgroundColor);
+      say('trap swatch: ' + getComputedStyle(swatch('trap')).backgroundColor);
+      say('trap position: ' + getComputedStyle(swatch('trap')).position);
+
+      // The measurement that matters: how big is it. An inset:0 sheet is the
+      // size of the viewport; a swatch is the size of a swatch.
+      const box = swatch('trap').getBoundingClientRect();
+      say('trap size: ' + Math.round(box.width) + 'x' + Math.round(box.height));
+      say('viewport: ' + innerWidth + 'x' + innerHeight);
+
+      // And nothing from the palette is what a click in the middle of the
+      // editor lands on. The overlay legitimately covers the texture, so the
+      // question is not "what is on top" but "is a SWATCH on top".
+      const tex = document.querySelector('#texture');
+      const r = tex.getBoundingClientRect();
+      const hit = document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2));
+      say('hit is a swatch: ' + !!hit?.closest?.('[data-swatch]'));
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname, liveryObject: livery });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.match(find('real swatch: '), /rgb\(18, 32, 58\)|rgb\(\d+, \d+, \d+\)/,
+    `an ordinary palette colour must still show: ${report.join(' | ')}`);
+  assert.equal(find('trap swatch: '), 'trap swatch: rgba(0, 0, 0, 0)',
+    'the CSSOM parses one colour or none, so a value carrying declarations paints nothing');
+  assert.equal(find('trap position: '), 'trap position: static',
+    'and above all does not position itself');
+  assert.equal(find('hit is a swatch: '), 'hit is a swatch: false',
+    'nothing from the palette was laid over the editor');
+  const [w, h] = find('trap size: ').slice('trap size: '.length).split('x').map(Number);
+  const [vw, vh] = find('viewport: ').slice('viewport: '.length).split('x').map(Number);
+  assert.ok(w < vw / 4 && h < vh / 4,
+    `the swatch is ${w}x${h} in a ${vw}x${vh} viewport, which is a sheet over the page, not a swatch`);
+});
