@@ -345,6 +345,24 @@ async function inBrowser(driver, {
   return report;
 }
 
+/**
+ * Did this run get a GL stack, and is it allowed not to have?
+ *
+ * A headless box with no GL is a fact about the box rather than a failure of the
+ * code, so locally these tests check what they can without it and stop. In CI it
+ * IS a failure: arranging xvfb and a software rasteriser is the whole point, and
+ * "absent" there means the arrangement broke and every renderer test went green
+ * without touching a shader. Exactly the silence LIVERYKIT_REQUIRE_BROWSER
+ * exists to break.
+ */
+function withoutGl(report) {
+  if (!report.includes('webgl: absent')) return false;
+  assert.ok(!REQUIRED,
+    'WebGL was absent and LIVERYKIT_REQUIRE_BROWSER is set, so these tests would '
+    + `have passed without exercising the renderer at all: ${report.join(' | ')}`);
+  return true;
+}
+
 /** Shared preamble: wait for the app, then interact by hit-testing. */
 const PRELUDE = `
 const out = []; const say = (m) => out.push(String(m));
@@ -587,7 +605,7 @@ test('the selected region reaches the car as a highlight', { skip: BROWSER ? fal
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
-  if (find('webgl: ') === 'webgl: absent') {
+  if (withoutGl(report)) {
     // A headless box with no GL is a fact about the box, not a failure of the
     // code. Everything up to the upload was still exercised.
     assert.match(find('note: '), /triangles|no 3D view/, report.join(' | '));
@@ -669,7 +687,7 @@ test('the whole-car view puts every painted surface on the model at once', { ski
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
 
-  if (find('webgl: ') === 'webgl: absent') {
+  if (withoutGl(report)) {
     // No driver. The editor must fall back to UV and stay WORKABLE — the canvas
     // out of the way and the overlay reachable again. A dead stage with a
     // hidden canvas still on top of it is this editor's oldest failure.
@@ -785,7 +803,7 @@ test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no 
   // for the wrong reason and nobody would know.
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   t.diagnostic(`WebGL ${find('webgl: ').slice('webgl: '.length) || 'unknown'}`);
-  if (find('webgl: ') === 'webgl: absent') {
+  if (withoutGl(report)) {
     // No GL driver in this browser. Everything up to the pick was still run,
     // and the editor must not have died on the way.
     assert.match(find('note: '), /no 3D view/, report.join(' | '));
