@@ -9,6 +9,7 @@ import { loadProfile, doNotPaint, mergeBindings, binding, carModelCandidates } f
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
+import { loadLivery } from '../src/livery.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
@@ -235,8 +236,7 @@ for (const p of values.pack) {
 }
 
 const liveryPath = await resolveLivery(liveryArg);
-const livery = (await import(pathToFileURL(liveryPath).href)).default;
-if (!livery) throw new Error(`${liveryArg} has no default export`);
+const livery = await loadLivery(liveryPath);
 // A PORTABLE livery deliberately has no `car`: it is written against the shared
 // vocabulary rather than against one model, and the profile is chosen at build
 // time. It still needs one of the two.
@@ -320,6 +320,7 @@ if (values.ui) {
     profile,
     fitPath,
     liveryId: liveryName,
+    liveryPath,
     modelPath,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
@@ -389,12 +390,15 @@ if (!values['no-zip']) {
  * shipped livery and fail with a confusing import error.
  */
 async function resolveLivery(arg) {
-  const looksLikePath = /[\\/]/.test(arg) || arg.endsWith('.mjs') || arg.endsWith('.js');
+  const looksLikePath = /[\\/]/.test(arg)
+    || arg.endsWith('.mjs') || arg.endsWith('.js') || arg.endsWith('.json');
   const candidates = looksLikePath
     ? [resolve(arg)]
     : [
         join(ROOT, 'liveries', `${arg}.mjs`),
+        join(ROOT, 'liveries', `${arg}.json`),
         join(ROOT, 'liveries', `${arg}.local.mjs`),
+        join(ROOT, 'liveries', `${arg}.local.json`),
         join(ROOT, 'liveries', arg),
         resolve(arg),
       ];

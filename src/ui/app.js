@@ -15,6 +15,8 @@
 // Relative, so the same specifier resolves in the browser (served alongside
 // app.js) and in Node, where the tests import this module directly.
 import { createViewer, unpack, unpackModel } from './view3d.js';
+// The same split the server makes, from the same file, so the two cannot drift.
+import { treatmentOptions } from './fields.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -25,7 +27,8 @@ const state = {
   selected: null,    // region id
   fit: null,         // working copy, saved only on demand
   placed: [],        // where each region actually landed, from the server
-  dirty: false,
+  dirty: false,        // the fit has unsaved changes
+  designDirty: false,  // and the design, tracked apart — see updateSaveButtons
   svg: '',           // the last render, reused as the 3D texture
   viewer: null,      // created lazily; a UV-only session never touches WebGL
   view: 'uv',
@@ -87,6 +90,14 @@ state.fit.livery ??= data.livery.id;
 state.fit.car ??= data.car.id;
 state.fit.regions ??= {};
 
+// The working DESIGN, beside the working fit and for the same reason: it lives
+// here until somebody saves it, and nothing in step one of authoring saves it.
+// `lossy` is non-empty only for a livery carrying code, which cannot be edited
+// as data — the editor says so rather than showing edits that would not build.
+state.design = structuredClone(data.design);
+state.lossy = data.lossy ?? [];
+state.treatments = new Map((data.treatments ?? []).map((t) => [t.name, t]));
+
 // Which code is actually running. Not decoration: several rounds of debugging
 // this editor were spent unable to distinguish "the fix did not work" from "the
 // browser or the server is running something older".
@@ -104,6 +115,18 @@ $('#car').textContent = data.car.name;
 $('#surface').innerHTML = data.surfaces
   .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
 $('#surface').onchange = () => selectSurface(+$('#surface').value);
+
+// What you can add. Straight from the packs this design loads, so a pack brought
+// in with --pack appears here without anything else knowing about it.
+$('#newtreatment').innerHTML = '<option value="">add a region…</option>' + (data.treatments ?? [])
+  .map((t) => `<option value="${esc(t.name)}">${esc(t.label)} — ${esc(t.pack)}</option>`).join('');
+$('#newtreatment').onchange = () => { $('#addregion').disabled = !$('#newtreatment').value; };
+$('#addregion').onclick = () => {
+  const t = $('#newtreatment').value;
+  // Returned, not fired and forgotten: the caller has to be able to wait for it,
+  // and a handler that hides its promise is a race nobody can see.
+  return t ? addRegion(t) : undefined;
+};
 
 // --- wiring -----------------------------------------------------------------
 //
@@ -164,7 +187,21 @@ $('#tab-all').onclick = () => showView('all');
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
   setDirty(false);
-  status('saved');
+  status('saved the fit');
+};
+
+// Separate from Save fit, and separate on purpose. One says where this car wants
+// the artwork; the other says what the artwork IS, for every car. A single
+// button would have to guess which you meant.
+$('#savedesign').onclick = async () => {
+  try {
+    const out = await api('/api/design', state.design);
+    state.designDirty = false;
+    updateSaveButtons();
+    status(`saved the design to ${out.saved.split('/').pop()}`);
+  } catch (e) {
+    status(`design not saved: ${e.message}`);
+  }
 };
 
 // --- undo -------------------------------------------------------------------
@@ -173,6 +210,10 @@ $('#save').onclick = async () => {
 function snapshot() {
   return {
     fit: structuredClone(state.fit),
+    // The working design too, now that an option change is an action. Undo has
+    // always meant "put everything back", and a stack that restored half the
+    // editor would be worse than none.
+    design: structuredClone(state.design),
     paired: [...state.paired],
     unlinked: [...state.unlinked],
     severed: [...state.severed],
@@ -182,6 +223,7 @@ function snapshot() {
 
 function restore(snap) {
   state.fit = structuredClone(snap.fit);
+  state.design = structuredClone(snap.design);
   state.paired = new Map(snap.paired);
   state.unlinked = new Set(snap.unlinked);
   state.severed = new Set(snap.severed);
@@ -275,7 +317,7 @@ async function selectSurface(i) {
  */
 async function reloadState() {
   const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
-  state.data = await api('/api/state', { fit: state.fit });
+  state.data = await api('/api/state', { fit: state.fit, design: state.design });
   state.surface = state.data.surfaces[i < 0 ? 0 : i];
   drawPanels();
 }
@@ -285,7 +327,7 @@ async function refresh() {
   const t0 = performance.now();
   let out;
   try {
-    out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+    out = await api('/api/render', { fit: state.fit, design: state.design, role: state.surface.role });
   } catch (e) {
     // A failed render must not leave the editor frozen with no explanation. It
     // used to reject into nothing: the page kept its last drawing and quietly
@@ -303,6 +345,9 @@ async function refresh() {
   drawRegions();
   drawInspector();
   $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
+  // Beside it, not instead of it. Seeing which file a change landed in is the
+  // whole reason the two are edited separately.
+  $('#designjson').textContent = JSON.stringify(state.design, null, 2);
   $('#notes').innerHTML = out.notes
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Derived from the stacks rather than trusted from the markup, so there is
@@ -373,6 +418,112 @@ function drawRegions() {
       <span class="id">${esc(label)}</span>
       <span class="meta">${esc(meta)}</span></li>`;
   }).join('');
+}
+
+// --- adding, removing and ordering the design's regions ---------------------
+
+/** The block and key the current surface lives under, e.g. ['surfaces', 'body']. */
+function surfaceHome() {
+  const from = state.surface?.from ?? '';
+  const dot = from.indexOf('.');
+  return dot < 0 ? ['surfaces', from] : [from.slice(0, dot), from.slice(dot + 1)];
+}
+
+/** Is this region one the DESIGN declares here, as opposed to one a fit made? */
+function ownRegion(id) {
+  return (designRegions() ?? []).some((r) => r.id === id);
+}
+
+/** The design's own array of regions for the surface being edited. */
+function designRegions() {
+  const [block, where] = surfaceHome();
+  const spec = state.design?.[block]?.[where];
+  if (!spec) return null;
+  spec.regions ??= [];
+  return spec.regions;
+}
+
+/** A name nothing else is using, anywhere in the design. */
+function freeRegionId(base) {
+  const taken = new Set(state.data.surfaces.flatMap((s) => s.regions.map((r) => r.id)));
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
+/**
+ * Put a new region on the surface being edited.
+ *
+ * Placed on the selected region's panel where there is one, because that is
+ * almost always where you are looking; otherwise on whatever the surface's first
+ * panel is. Tags versus a panel NAME is the portability question and it is not
+ * answered here — step four of the plan puts that choice in front of you.
+ */
+async function addRegion(treatment) {
+  const regions = designRegions();
+  if (!regions) return status('this surface is not part of the design');
+
+  const sel = state.placed.find((p) => p.id === state.selected);
+  const panel = sel?.panel ?? state.surface.panels[0]?.name;
+  const id = freeRegionId(treatment);
+
+  remember(`add ${id}`);
+  regions.push({
+    id,
+    treatment,
+    ...(panel ? { panel } : {}),
+    at: [0.25, 0.25, 0.5, 0.5],
+  });
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  status(`added ${id} — it paints last, so it goes on top`);
+}
+
+/** Take a region out of the design, with everything the fit said about it. */
+async function deleteDesignRegion(id) {
+  const regions = designRegions();
+  const i = regions?.findIndex((r) => r.id === id) ?? -1;
+  if (i < 0) return status(`${id} is not one of this design's own regions`);
+
+  remember(`delete ${id}`);
+  regions.splice(i, 1);
+  // The fit's opinion of a region that no longer exists is not worth keeping,
+  // and would be reported as stale on every build until somebody removed it.
+  delete state.fit.regions[id];
+  for (const block of [state.fit.copies, state.fit.mirrors]) {
+    for (const [k, v] of Object.entries(block ?? {})) if (v.of === id) delete block[k];
+  }
+  state.selected = null;
+  setDesignDirty();
+  setDirty(true);
+  await reloadState();
+  await refresh();
+  status(`removed ${id} from the design`);
+}
+
+/**
+ * Move a region in the array, which is the only way to change what covers what.
+ *
+ * Order IS paint order — later regions draw over earlier ones, and the emissive
+ * layer composites above all of them — so "put the stripe under the numbers" is
+ * an ordinary request that had no expression in the editor at all.
+ */
+async function moveRegion(id, by) {
+  const regions = designRegions();
+  const i = regions?.findIndex((r) => r.id === id) ?? -1;
+  if (i < 0) return;
+  const j = i + by;
+  if (j < 0 || j >= regions.length) return status(`${id} is already ${by < 0 ? 'first' : 'last'}`);
+
+  remember(`reorder ${id}`);
+  const [moved] = regions.splice(i, 1);
+  regions.splice(j, 0, moved);
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  status(`${id} now paints ${by < 0 ? 'earlier' : 'later'}`);
 }
 
 /**
@@ -739,7 +890,7 @@ async function livePreview() {
   if (previewing) { previewPending = true; return; }
   previewing = true;
   try {
-    const out = await api('/api/render', { fit: state.fit, role: state.surface.role });
+    const out = await api('/api/render', { fit: state.fit, design: state.design, role: state.surface.role });
     state.svg = out.svg;
     // `placed` too: a drag that crosses onto another panel changes where the
     // MIRRORED half landed, and its highlight is drawn from this.
@@ -749,6 +900,9 @@ async function livePreview() {
     // Cheap, and the numbers changing under the cursor is how you learn what a
     // panel-relative coordinate actually means.
     $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
+  // Beside it, not instead of it. Seeing which file a change landed in is the
+  // whole reason the two are edited separately.
+  $('#designjson').textContent = JSON.stringify(state.design, null, 2);
   } catch {
     // A dropped frame mid-drag is not worth interrupting the gesture over. The
     // release does a full render and will report anything genuinely wrong.
@@ -889,6 +1043,176 @@ export function mirrorRotation(rotate, flips) {
   if (flips.u) return (360 - t) % 360;
   if (flips.v) return (540 - t) % 360;
   return t;
+}
+
+// --- the design's own options ----------------------------------------------
+//
+// Everything above this line edits a FIT: where a region sits on one car. These
+// edit the DESIGN: what the region is, on every car. Nothing here writes to
+// disk — the working design goes with each render and is offered as JSON to
+// paste, which is as far as step one of authoring goes on purpose.
+
+/** The region the working design holds under this key, or null. */
+function designRegion(id) {
+  for (const block of [state.design?.paint, state.design?.surfaces]) {
+    for (const [where, spec] of Object.entries(block ?? {})) {
+      const prefix = block === state.design?.paint ? 'paint' : 'surfaces';
+      const regions = spec.regions ?? [];
+      for (const [i, r] of regions.entries()) {
+        if ((r.id ?? `${prefix}.${where}#${i}`) === id) return r;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * One control per described option.
+ *
+ * A described option gets its own kind of input; an option the region carries
+ * that nobody described still appears, as text, because the one thing you must
+ * not hide is the thing already there and unexplained. `hint` is the code's own
+ * default in prose and is shown as a placeholder — never written into the
+ * design, so a design says only what somebody chose.
+ */
+function optionControls(id) {
+  if (state.lossy.length) {
+    return `<p class="note">This livery contains code (${esc(state.lossy.slice(0, 3).join(', '))}),
+      so its options cannot be edited here — what you saw would not be what it builds.</p>`;
+  }
+  const region = designRegion(id);
+  if (!region) return '';
+  const t = state.treatments.get(region.treatment);
+  const described = t?.options ?? null;
+  // Two very different situations, and one message for both would be a lie.
+  // A pack that described nothing still paints; a treatment name no pack
+  // provides does not paint at all — renderTexture throws on it — so the design
+  // is broken now rather than merely undocumented.
+  const missingTreatment = region.treatment !== undefined && !t;
+  const extra = Object.keys(treatmentOptions(region))
+    .filter((k) => !described || !(k in described));
+
+  const rows = Object.entries(described ?? {}).map(([key, o]) => {
+    const v = region[key];
+    const has = v !== undefined;
+    const label = esc(o.label ?? key);
+    const hint = o.hint ? ` placeholder="${esc(o.hint)}"` : '';
+    let input;
+    if (o.type === 'boolean') {
+      input = `<button class="rot${v ? ' on' : ''}" data-opt="${esc(key)}" data-kind="boolean"
+        >${v ? 'on' : has ? 'off' : esc(o.hint ?? 'off')}</button>`;
+    } else if (o.type === 'enum') {
+      input = `<select data-opt="${esc(key)}" data-kind="enum"><option value=""></option>${
+        o.values.map((x) => `<option value="${esc(x)}"${x === v ? ' selected' : ''}>${esc(x)}</option>`).join('')
+      }</select>`;
+    } else if (o.type === 'color') {
+      const names = Object.keys(state.design?.palette ?? {});
+      input = `<input list="palette" data-opt="${esc(key)}" data-kind="string"
+        value="${has ? esc(v) : ''}"${hint}>` +
+        `<datalist id="palette">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`;
+    } else if (o.type === 'number') {
+      const bounds = [o.min !== undefined ? `min="${o.min}"` : '', o.max !== undefined ? `max="${o.max}"` : '',
+        o.step !== undefined ? `step="${o.step}"` : ''].join(' ');
+      input = `<input type="number" ${bounds} data-opt="${esc(key)}" data-kind="number"
+        value="${has ? esc(v) : ''}"${hint}>`;
+    } else {
+      // string, colors, rects: text, and JSON for the two that are not strings.
+      const kind = o.type === 'string' ? 'string' : 'json';
+      const shown = !has ? '' : kind === 'json' ? JSON.stringify(v) : v;
+      input = `<input data-opt="${esc(key)}" data-kind="${kind}" value="${esc(shown)}"${hint}>`;
+    }
+    return `<label class="opt">${label}</label><div class="opt">${input}</div>`;
+  }).join('');
+
+  const unknown = extra.map((k) => `<label class="opt">${esc(k)}</label>
+    <div class="opt"><input data-opt="${esc(k)}" data-kind="json"
+      value="${esc(JSON.stringify(region[k]))}"></div>`).join('');
+
+  return `<h3>${esc(t?.label ?? region.treatment ?? 'region')}</h3>
+    ${t?.summary ? `<p class="hint">${esc(t.summary)}</p>` : ''}
+    ${missingTreatment
+      ? `<p class="note">No pack loaded by this design provides a treatment called
+          <code>${esc(region.treatment)}</code>, so this region cannot be painted at all.
+          Add its pack to <code>packs</code>, or change the treatment.</p>`
+      : described === null && region.treatment
+        ? `<p class="hint">Nothing describes this treatment, so its options are shown as raw values.</p>`
+        : ''}
+    ${rows}${unknown}
+    <div class="row" style="margin-top:8px"><button id="copyregion">Copy region as JSON</button></div>
+    <p class="hint">These change the DESIGN, on every car. Nothing is saved yet — copy the
+      JSON into your livery.</p>`;
+}
+
+
+/**
+ * Parse what an input gives back, by the kind the control declared.
+ *
+ * Three outcomes, not two, and the distinction matters. An EMPTY field means
+ * "no opinion" and removes the key, which is how you get back to the treatment's
+ * own default. Something unparseable means the person is mid-thought — half a
+ * JSON array, a minus sign on its own — and must change nothing at all.
+ *
+ * Collapsing those two was quietly destructive: typing over an existing value
+ * erased it the moment the intermediate text stopped parsing, and the only way
+ * to notice was that the artwork changed while you were still typing.
+ */
+function readControl(el) {
+  const kind = el.dataset.kind;
+  const raw = el.value ?? '';
+  if (raw.trim() === '') return { ok: true, value: undefined };
+  if (kind === 'number') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? { ok: true, value: n } : { ok: false, why: 'not a number' };
+  }
+  if (kind === 'json') {
+    try { return { ok: true, value: JSON.parse(raw) }; }
+    catch (e) { return { ok: false, why: e.message }; }
+  }
+  return { ok: true, value: raw };
+}
+
+function wireOptionControls(id) {
+  const inspector = $('#inspector');
+  const region = designRegion(id);
+  if (!region) return;
+
+  const change = async (key, value) => {
+    remember(`${key} on ${id}`);
+    if (value === undefined) delete region[key]; else region[key] = value;
+    setDesignDirty();
+    await refresh();
+  };
+
+  for (const el of inspector.querySelectorAll?.('[data-opt]') ?? []) {
+    const key = el.dataset.opt;
+    if (el.dataset.kind === 'boolean') {
+      el.onclick = () => change(key, region[key] ? undefined : true);
+    } else {
+      el.onchange = () => {
+        const read = readControl(el);
+        // A no-op, and said out loud. Silently keeping the old value would look
+        // exactly like the edit having been accepted.
+        if (!read.ok) return status(`${key}: ${read.why} — left as it was`);
+        return change(key, read.value);
+      };
+    }
+  }
+
+  for (const [sel, by] of [['#earlier', -1], ['#later', 1]]) {
+    const el = inspector.querySelector?.(sel);
+    if (el) el.onclick = () => moveRegion(id, by);
+  }
+  const remove = inspector.querySelector?.('#removeregion');
+  if (remove) remove.onclick = () => deleteDesignRegion(id);
+
+  const copy = inspector.querySelector?.('#copyregion');
+  if (copy) {
+    copy.onclick = () => {
+      const text = JSON.stringify(region, null, 2);
+      navigator.clipboard?.writeText?.(text);
+      status(`copied ${id} as JSON`);
+    };
+  }
 }
 
 /**
@@ -1042,8 +1366,13 @@ function drawInspector() {
           : `<button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
              <button id="reset">Reset</button>`}
       </div>
-      <p class="hint">Or click a panel on the right to place it there.</p>`;
+      <p class="hint">Or click a panel on the right to place it there.</p>
+      ${optionControls(id)}`;
     wireInspectorButtons(id);
+    // The options too. A region with no placement is exactly where you might
+    // need them: its treatment may be why it is not on the car, and the
+    // inspector already exists to work hardest when there is nothing on screen.
+    wireOptionControls(id);
     return;
   }
   el.className = '';
@@ -1059,17 +1388,24 @@ function drawInspector() {
     <label>rotation</label>
     <div class="row">${rotationChoices(id, def, o)}</div>
     ${mirrorControl(id)}
+    ${optionControls(id)}
     <div class="row" style="margin-top:10px">
       ${def?.fromFit
         ? '<button id="delete">Delete</button>'
         : `<button id="drop">${o.drop ? 'Restore' : 'Drop on this car'}</button>
            <button id="reset">Reset</button>`}
     </div>
+    ${ownRegion(id) ? `<div class="row" style="margin-top:6px">
+      <button id="earlier">Paint earlier</button>
+      <button id="later">Paint later</button>
+      <button id="removeregion">Remove from design</button>
+    </div>` : ''}
     ${def?.fromFit ? `<p class="hint">A copy of <code>${esc(def.fromFit)}</code>,
       added by this fit. Deleting removes it; there is no design behind it to
       restore it to.</p>` : ''}`;
 
   wireInspectorButtons(sel.id);
+  wireOptionControls(sel.id);
 }
 
 /**
@@ -1311,28 +1647,34 @@ async function mirrorCopy(id) {
 }
 
 /**
- * Duplicate a region in place, nudged clear of the original.
+ * Duplicate a region into the DESIGN, nudged clear of the original.
  *
- * The same mechanism as a mirrored copy — a copy is a copy, and mirroring is
- * only how the placement was arrived at. It is NOT paired with its source: two
- * badges on the same panel are two things, and linking them would make every
- * edit move both, which is the opposite of why anyone duplicates something.
+ * This used to write a fit `copy`, and it was the one place the fit/design line
+ * was crossed for convenience rather than for a reason. A MIRRORED copy earns
+ * its place there: it says *this car has two flanks*, which is a fact about the
+ * car, and a design cannot know it. A duplicate says *I want two badges*, which
+ * is a fact about the design and true of every car it is pointed at. It only
+ * ever lived in the fit because the mechanism was already there.
  *
- * Offset rather than placed exactly on top. A duplicate hidden under its
- * original looks like the button did nothing, and the way to find out otherwise
- * is to drag the one you can see and discover a second underneath.
+ * Now that a design can gain a region, it goes where it belongs. `copies` means
+ * mirroring again.
+ *
+ * Offset rather than placed exactly on top, and offset the other way when there
+ * is no room: a duplicate hidden under its original looks like the button did
+ * nothing, and the way to find out otherwise is to drag the one you can see.
  */
 async function duplicateRegion(id) {
   const sel = state.placed.find((p) => p.id === id);
   if (!sel) return status('nothing placed to duplicate');
-  const here = state.surface.panels.find((p) => p.name === sel.panel);
+  const source = (designRegions() ?? []).find((r) => r.id === id);
+  if (!source) {
+    // A fit-created region has no design behind it to copy. Duplicating one
+    // would have to invent what it IS, which is the thing a fit may not do.
+    return status(`${id} was made by the fit, so there is no design region to duplicate`);
+  }
 
+  const here = state.surface.panels.find((p) => p.name === sel.panel);
   const at = here ? toPanelRelative(here.rect, sel.abs) : [...sel.abs];
-  // Down and right where there is room, up and left where there is not. A
-  // region already against the far edge clamps straight back to where it
-  // started, so a fixed positive step put the duplicate exactly underneath its
-  // original — which looks precisely like the button doing nothing, and the way
-  // to discover otherwise is to drag the one you can see.
   const step = 0.06;
   const nudge = (v, size) => {
     const room = 1 - size;
@@ -1341,17 +1683,24 @@ async function duplicateRegion(id) {
   };
   const nudged = [nudge(at[0], at[2]), nudge(at[1], at[3]), at[2], at[3]];
   const stacked = nudged[0] === at[0] && nudged[1] === at[1];
-  const rotate = resolvedRotation(id);
-  const copyId = await addCopy(id, 'copy', {
+
+  const copyId = freeRegionId(`${id}-copy`);
+  remember(`duplicate ${id}`);
+  // A copy of the design region, so it carries the treatment and its options.
+  // `panel` and `at` are where this one goes; everything else is what it is.
+  designRegions().push({
+    ...structuredClone(source),
+    id: copyId,
     ...(sel.panel ? { panel: sel.panel } : {}),
     at: nudged,
-    ...(rotate !== undefined ? { rotate } : {}),
   });
+  setDesignDirty();
+  await reloadState();
   await refresh();
   selectRegion(copyId);
   status(stacked
-    ? `duplicated as ${copyId}, exactly on top — it fills its panel, so there is nowhere to offset it`
-    : `duplicated as ${copyId}`);
+    ? `duplicated as ${copyId} in the design, exactly on top — it fills its panel`
+    : `duplicated as ${copyId} in the design`);
 }
 
 /**
@@ -1620,11 +1969,34 @@ async function paintCar() {
 
 function setDirty(v) {
   state.dirty = v;
-  $('#save').disabled = !v;
-  $('#status').className = v ? 'status dirty' : 'status';
+  updateSaveButtons();
+  $('#status').className = v || state.designDirty ? 'status dirty' : 'status';
+}
+
+/**
+ * Two buttons, each enabled only by its own kind of change.
+ *
+ * A design edit does not make the fit unsaved and a drag does not make the
+ * design unsaved, so one dirty flag would light both and every save would write
+ * a file nobody had touched.
+ */
+function updateSaveButtons() {
+  const save = $('#save'); if (save) save.disabled = !state.dirty;
+  const design = $('#savedesign'); if (design) design.disabled = !state.designDirty;
+}
+
+/** Mark the DESIGN changed — what a region is, rather than where it sits. */
+function setDesignDirty() {
+  state.designDirty = true;
+  updateSaveButtons();
+  $('#status').className = 'status dirty';
 }
 function status(msg) {
-  $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg;
+  // WHICH is unsaved, not merely that something is. There are two files and two
+  // buttons now, and "unsaved" that does not say which one leaves you to work it
+  // out from which button is enabled — in the far corner, while dragging.
+  const unsaved = [state.dirty && 'fit', state.designDirty && 'design'].filter(Boolean);
+  $('#status').textContent = unsaved.length ? `${msg} — ${unsaved.join(' and ')} unsaved` : msg;
   // Also under the canvas, where the eyes already are. A hint in the far corner
   // of the header is a hint nobody reads while dragging.
   $('#canvashint').textContent = msg;

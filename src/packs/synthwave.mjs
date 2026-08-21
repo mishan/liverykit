@@ -14,7 +14,7 @@ import { definePack } from '../registry.mjs';
 import { traceRouter, horizonGrid, glitchBands, sparkleField, radialText } from '../motifs.mjs';
 import { r2 } from '../engine/rng.mjs';
 
-export default definePack('synthwave', {
+const treatments = {
   /** PCB-style routing: horizontal runs, 45-degree turns, vias at the corners. */
   traces: (r, c) => {
     const { traces, vias } = traceRouter(c.rng, {
@@ -98,5 +98,73 @@ export default definePack('synthwave', {
       flip: c.opts.flip ?? false,
     });
     return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+};
+
+/** See `definePack`: tool metadata, never read by the build, defaults as hints. */
+export default definePack('synthwave', treatments, {
+  traces: {
+    label: 'Circuit traces',
+    summary: 'PCB-style routing with 45-degree turns and vias. Always emissive.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      lanes: { type: 'number', min: 1, step: 1, hint: '9' },
+      turnChance: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.65', label: 'Turn chance' },
+      width: { type: 'number', min: 0.5, step: 0.5, hint: '1.1% of the region height, at least 2px', label: 'Stroke (px)' },
+    },
+  },
+
+  grid: {
+    label: 'Horizon grid',
+    summary: 'A perspective grid converging on a vanishing point.',
+    options: {
+      color: { type: 'color', hint: 'pink' },
+      horizon: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.4 down the region' },
+      vp: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.5 across', label: 'Vanishing point' },
+      cols: { type: 'number', min: 1, step: 1, hint: '14' },
+      rows: { type: 'number', min: 1, step: 1, hint: '9' },
+      width: { type: 'number', min: 0.5, step: 0.5, hint: '0.4% of the region height, at least 1.5px', label: 'Stroke (px)' },
+      emissive: { type: 'boolean', hint: 'false — draw it in the base layer' },
+    },
+  },
+
+  glitch: {
+    label: 'Glitch bands',
+    summary: 'Horizontal displaced bands in a few colours.',
+    options: {
+      count: { type: 'number', min: 1, step: 1, hint: '7' },
+      colors: { type: 'colors', hint: 'violet, cyan, white' },
+    },
+  },
+
+  sparkles: {
+    label: 'Sparkles',
+    summary: 'Four-point sparkles placed by rejection sampling. Always emissive.',
+    options: {
+      color: { type: 'color', hint: 'white' },
+      n: { type: 'number', min: 1, step: 1, hint: '12', label: 'Count' },
+      minR: { type: 'number', min: 0, step: 0.5, hint: '1.5% of the region height', label: 'Smallest (px)' },
+      maxR: { type: 'number', min: 0, step: 0.5, hint: '7% of the region height', label: 'Largest (px)' },
+      // The emissive layer always composites above the base, so without this
+      // sparkles land on top of lettering drawn by an entirely different region.
+      // Hence fractions of the WHOLE TEXTURE rather than of this region.
+      avoid: { type: 'rects', hint: 'nothing', label: 'Keep clear of', of: 'texture' },
+    },
+  },
+
+  radialText: {
+    label: 'Radial text',
+    summary: 'Text around an arc, for tyre sidewalls and helmet bands.',
+    options: {
+      text: { type: 'string', hint: 'empty', label: 'Text' },
+      color: { type: 'color', hint: 'white' },
+      radius: { type: 'number', min: 0, max: 0.5, step: 0.01, hint: '0.4 of the shorter side' },
+      startAngle: { type: 'number', min: -360, max: 360, step: 15, hint: '-90, which is the top' },
+      scale: { type: 'number', min: 0.01, max: 0.5, step: 0.01, hint: '0.06 of the shorter side' },
+      tracking: { type: 'number', min: 0, max: 3, step: 0.05, hint: '0.75', label: 'Letter spacing' },
+      weight: { type: 'number', min: 100, max: 900, step: 100, hint: '700' },
+      flip: { type: 'boolean', hint: 'false — set for text on the lower half of an arc' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
   },
 });
