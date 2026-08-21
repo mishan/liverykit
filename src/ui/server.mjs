@@ -189,7 +189,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'style.css']);
 
 /**
  * Everything the browser needs to draw the editor, computed once per request.
