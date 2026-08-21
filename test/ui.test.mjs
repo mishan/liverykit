@@ -2111,3 +2111,32 @@ test('an added region gets a name nothing else is using', async () => {
   assert.deepEqual(ids, ['badge', 'fill', 'fill-2', 'fill-3']);
   assert.equal(new Set(ids).size, ids.length, 'ids are how a fit addresses a region');
 });
+
+test('the status line says which of the two files is unsaved', async () => {
+  // Two files and two buttons now. "unsaved" that does not say which leaves you
+  // to work it out from which button is enabled, in the far corner of the
+  // header, while dragging.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: 'HI',
+  };
+
+  const { dom } = await runApp({ server });
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/, 'nothing changed yet');
+
+  // A DESIGN change alone still has to be reported, which the fit's own dirty
+  // flag knew nothing about.
+  fields.get('text').value = 'BYE';
+  await fields.get('text').onchange();
+  assert.match(dom.querySelector('#status').textContent, /design unsaved/);
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /fit and design/);
+
+  // And a fit change on top names both.
+  dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(dom.querySelector('#status').textContent, /fit and design unsaved/);
+});

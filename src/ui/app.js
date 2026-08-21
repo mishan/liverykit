@@ -1992,7 +1992,11 @@ function setDesignDirty() {
   $('#status').className = 'status dirty';
 }
 function status(msg) {
-  $('#status').textContent = state.dirty ? `${msg} — unsaved` : msg;
+  // WHICH is unsaved, not merely that something is. There are two files and two
+  // buttons now, and "unsaved" that does not say which one leaves you to work it
+  // out from which button is enabled — in the far corner, while dragging.
+  const unsaved = [state.dirty && 'fit', state.designDirty && 'design'].filter(Boolean);
+  $('#status').textContent = unsaved.length ? `${msg} — ${unsaved.join(' and ')} unsaved` : msg;
   // Also under the canvas, where the eyes already are. A hint in the far corner
   // of the header is a hint nobody reads while dragging.
   $('#canvashint').textContent = msg;
