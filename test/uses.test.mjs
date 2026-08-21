@@ -164,3 +164,68 @@ test('the shipped designs refer to nothing they do not define', async () => {
     assert.deepEqual(dangling.tokens, [], `${name} tokens`);
   }
 });
+
+// --- the emissive layer ------------------------------------------------------
+
+test('the editor is shown both layers, because some treatments only draw on one', async () => {
+  // `traces` and `sparkles` return an empty base and draw entirely into the
+  // emissive layer; `piping`, `ring`, `text` and `radialText` move there under
+  // `glow: true`. The editor showed `base` alone, so all of that was painted
+  // correctly by the build and invisible in every view of the tool for looking
+  // at it — which is this project's oldest failure in a new costume.
+  const { previewSvg } = await import('../src/render.mjs');
+  const { renderSurface } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+
+  const emissiveOnly = new Set(['traces', 'sparkles']);
+  const rect = { x: 10, y: 10, w: 200, h: 100, anisotropy: 1 };
+  const treatments = resolveTreatments(['core', 'synthwave']);
+  const ctx = (opts) => ({ palette: { cyan: '#0ff' }, color: (v) => v, rng: mulberry32(1),
+    font: 'sans', opts, width: 1024, height: 1024, tokens: {} });
+
+  // The premise, measured rather than assumed.
+  for (const name of emissiveOnly) {
+    const out = treatments.get(name).fn(rect, ctx({}));
+    assert.equal(out.base, '', `${name} should draw nothing into the base`);
+    assert.ok(out.emissive, `${name} should draw into the emissive layer`);
+  }
+  for (const name of ['piping', 'ring', 'text', 'radialText']) {
+    const out = treatments.get(name).fn(rect, ctx({ text: 'HI', glow: true }));
+    assert.equal(out.base, '', `${name} with glow should move entirely to emissive`);
+  }
+
+  // And what the editor is handed contains them.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = Object.keys(profile.textures).find((r) => profile.panels[r]?.left_mid);
+  const out = renderSurface({ livery, profile, fit: null, role });
+
+  assert.ok(!/stroke-linecap="round"/.test(out.base), 'the base alone never had the traces');
+  assert.match(out.svg, /stroke-linecap="round"/, 'what the editor draws does');
+  assert.match(out.svg, /lk-glow/, 'and glows them, as the build does');
+  assert.equal((out.svg.match(/<svg/g) ?? []).length, 1, 'still one document');
+});
+
+test('the preview glow follows the design and the texture size', async () => {
+  const { previewSvg } = await import('../src/render.mjs');
+  const layers = (hasEmissive, width) => ({
+    base: `<svg width="${width}" height="${width}"><rect/></svg>`,
+    emissive: '<svg><circle/></svg>',
+    hasEmissive, width, height: width,
+  });
+
+  // Nothing emissive, nothing added: the base is returned untouched, so a design
+  // without glow renders exactly what it did before.
+  assert.equal(previewSvg(layers(false, 2048)), layers(false, 2048).base);
+
+  // The build scales the blur with the texture, so that a 4K render glows the
+  // same amount relative to the car rather than the same number of pixels.
+  assert.match(previewSvg(layers(true, 2048), { glowSigma: 14 }), /stdDeviation="14"/);
+  assert.match(previewSvg(layers(true, 4096), { glowSigma: 14 }), /stdDeviation="28"/);
+  assert.match(previewSvg(layers(true, 2048), { glowSigma: 4 }), /stdDeviation="4"/);
+
+  // Two screened passes then a crisp one, matching composeLayers.
+  const svg = previewSvg(layers(true, 2048));
+  assert.equal((svg.match(/<circle\/>/g) ?? []).length, 3);
+  assert.equal((svg.match(/mix-blend-mode:screen/g) ?? []).length, 2);
+});

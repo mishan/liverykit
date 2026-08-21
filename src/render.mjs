@@ -126,3 +126,39 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     alpha: tex.alpha ?? false,
   };
 }
+
+/**
+ * The two layers flattened into one document, for looking at.
+ *
+ * The build never needs this: `composeLayers` rasterises the layers separately
+ * and does the glow with a real blur, because librsvg ignores SVG `<filter>`
+ * entirely. But the EDITOR only ever showed `base`, and several treatments draw
+ * nothing there at all — `traces` and `sparkles` are emissive-only always, and
+ * `piping`, `ring`, `text` and `radialText` move there entirely under
+ * `glow: true`. Those elements were being painted correctly and were invisible
+ * in every view of the editor, which is this project's oldest failure wearing
+ * the newest possible costume: the artwork is on the car, and the tool for
+ * looking at the car says there is nothing there.
+ *
+ * A browser is not librsvg and does support filters, so the preview can do what
+ * the build does — blurred emissive screened on twice, then the crisp emissive
+ * over the top. It is an approximation of a raster blur rather than the same
+ * arithmetic, and it is a preview; being a few percent off is not the failure
+ * mode that matters here, and being absent is.
+ */
+export function previewSvg({ base, emissive, hasEmissive, width, height }, { glowSigma = 14 } = {}) {
+  if (!hasEmissive) return base;
+
+  // The same scaling the build applies, so a 4K render and a 2K one glow by the
+  // same amount relative to the car rather than by the same number of pixels.
+  const sigma = r2(glowSigma * (Math.max(width, height) / 2048));
+  const body = (doc) => doc.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
+  const glow = `<g filter="url(#lk-glow)" style="mix-blend-mode:screen">${body(emissive)}</g>`;
+
+  return base.replace(/<\/svg>$/,
+    `<defs><filter id="lk-glow" x="-25%" y="-25%" width="150%" height="150%">` +
+    `<feGaussianBlur stdDeviation="${sigma}"/></filter></defs>` +
+    // Twice, then crisp on top: composeLayers screens the blur in two passes
+    // because one is not enough to lift a thin line off a dark base.
+    glow + glow + `<g>${body(emissive)}</g></svg>`);
+}
