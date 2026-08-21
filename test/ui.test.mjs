@@ -400,6 +400,15 @@ test('the page and the script agree about what exists', async () => {
   assert.deepEqual(selectors.filter((s) => /^#[0-9]/.test(s)), [],
     'an id selector may not begin with a digit — querySelector throws on these');
 
+  // Ids app.js CREATES at runtime must not collide with ids the page already
+  // has. querySelector takes the first in document order, so an injected
+  // element earlier in the tree silently steals every lookup of that name from
+  // the real one — which is how a `<datalist id="palette">` in the inspector
+  // came to intercept the palette panel on the right.
+  const made = [...new Set([...app.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]))];
+  const clash = made.filter((id) => ids.includes(id));
+  assert.deepEqual(clash, [], 'app.js builds ids the static page already uses');
+
   // `hidden` is only a UA rule of `display: none`, and any id or class rule
   // setting `display` outranks it. #carview did exactly that: the canvas stayed
   // over the stage while marked hidden, ate every click meant for a panel or a
@@ -1593,6 +1602,25 @@ function copyFixture() {
   return { livery, profile, role: 'body' };
 }
 
+/**
+ * Rows inside a redrawn panel, keyed the way app.js finds them.
+ *
+ * The rows have to exist BEFORE the panel is wired, because wiring walks
+ * `querySelectorAll` — so they are registered and then a real render is forced
+ * through the app's own path rather than by calling anything private.
+ */
+async function panelRows(dom, sel, attr, rows) {
+  const el = dom.querySelector(sel);
+  const fields = new Map(rows.map(([name, part]) => [`${name}:${part}`,
+    { dataset: { [attr]: name, part }, value: '', onchange: null }]));
+  el.querySelectorAll = (q) => (q === `[data-${attr}]` ? [...fields.values()] : []);
+  el.rowFor = (name, part) => fields.get(`${name}:${part}`);
+  // A real <select> always has a value; the fake one has to be told.
+  dom.querySelector('#surface').value = '0';
+  await dom.querySelector('#surface').onchange();
+  return el;
+}
+
 /** Give the fake inspector the buttons app.js looks for, and hand them back. */
 function inspectorButtons(dom, names, opts = []) {
   const inspector = dom.querySelector('#inspector');
@@ -2139,4 +2167,357 @@ test('the status line says which of the two files is unsaved', async () => {
   dom.querySelector('#panels').onclick({ target: { dataset: { panel: 'R' } } });
   await new Promise((r) => setTimeout(r, 20));
   assert.match(dom.querySelector('#status').textContent, /fit and design unsaved/);
+});
+
+// --- palette and identity ---------------------------------------------------
+
+test('a palette row shows how many things depend on it before you touch it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF', spare: '#ff0000' };
+  server.livery.surfaces.body.background = 'ink';
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const html = dom.querySelector('#palette').innerHTML;
+
+  assert.match(html, /data-palette="accent"/);
+  assert.match(html, /title="badge"/, 'and says which regions, not merely how many');
+  assert.match(html, /title="surfaces\.body background"/, 'a background counts as a reference');
+  // A colour nothing refers to is dimmed rather than hidden: it is a candidate
+  // for removal, not a mistake.
+  assert.match(html, /class="named unused"[\s\S]*data-palette="spare"/);
+});
+
+test('changing a colour repaints everything that names it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'value']]);
+  assert.match(dom.querySelector('#texture').innerHTML, /#00F0FF/i);
+
+  const value = palette.rowFor('accent', 'value');
+  value.value = '#FF00FF';
+  await value.onchange();
+
+  assert.match(dom.querySelector('#texture').innerHTML, /#FF00FF/i, 'the render follows the palette');
+  assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).palette.accent, '#FF00FF');
+  assert.match(dom.querySelector('#status').textContent, /design unsaved/,
+    'a colour is design, not a per-car adjustment');
+  assert.deepEqual(JSON.parse(dom.querySelector('#fitjson').textContent).regions ?? {}, {});
+});
+
+test('renaming a colour takes its references with it', async () => {
+  // The references are known, so leaving them pointing at a name that is gone
+  // would be choosing to break something the code can see — and it would render
+  // as a literal colour called `accent`, silently.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.background = 'accent';
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'name']]);
+  const name = palette.rowFor('accent', 'name');
+  name.value = 'gulf-blue';
+  await name.onchange();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(Object.keys(design.palette), ['ink', 'gulf-blue'], 'and keeps its place in the file');
+  assert.equal(design.surfaces.body.regions[0].color, 'gulf-blue');
+  assert.equal(design.surfaces.body.background, 'gulf-blue');
+  assert.match(dom.querySelector('#texture').innerHTML, /#00F0FF/i, 'the picture does not change');
+  assert.doesNotMatch(dom.querySelector('#dangling').innerHTML, /gulf-blue/,
+    'nothing is left dangling');
+});
+
+test('a name the design uses and does not define is reported, since nothing else will', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3],
+    treatment: 'text', text: '{driver} #{number}', color: 'ghost',
+  };
+
+  const { dom } = await runApp({ server });
+  const dangling = dom.querySelector('#dangling').innerHTML;
+
+  // The token renders as nothing at all, mid-sentence.
+  assert.match(dangling, /Nothing gives <code>number<\/code> a value/);
+  assert.match(dangling, /name renders with a hole/);
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver #</,
+    'which is exactly what the render does, silently');
+
+  // The colour goes to the renderer as a literal, which is right for `#hex` and
+  // wrong in a way nothing reports for a palette entry that went away.
+  assert.match(dangling, /<code>ghost<\/code> is not in the palette/);
+
+  // Giving it a value clears the warning.
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'value']]);
+  const driver = identity.rowFor('driver', 'value');
+  driver.value = 'M. Nasledov';
+  await driver.onchange();
+  assert.match(dom.querySelector('#texture').innerHTML, /M\. Nasledov/);
+});
+
+test('renaming a token rewrites the text that interpolates it', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: '{driver} / {driver}',
+  };
+
+  const { dom } = await runApp({ server });
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'name']]);
+  const name = identity.rowFor('driver', 'name');
+  name.value = 'pilot';
+  await name.onchange();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(Object.keys(design.identity), ['pilot']);
+  assert.equal(design.surfaces.body.regions[0].text, '{pilot} / {pilot}', 'every mention, not the first');
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver \/ A\. Driver</,
+    'and the render is unchanged, which is the point of a rename');
+  assert.equal(dom.querySelector('#dangling').innerHTML, '');
+});
+
+test('adding a colour keeps what you typed until you press Add', async () => {
+  // The add row is static furniture. Rebuilding it inside the redrawn panel
+  // would clear the field under the cursor on every render.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  dom.querySelector('#newcolourname').value = 'gulf-orange';
+  dom.querySelector('#newcolourvalue').value = '#F5A11B';
+
+  // A render in between, as any edit would cause.
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.equal(dom.querySelector('#newcolourname').value, 'gulf-orange', 'still there');
+
+  await dom.querySelector('#addcolour').onclick();
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], '#F5A11B');
+  assert.equal(dom.querySelector('#newcolourname').value, '', 'and the row is cleared for the next one');
+});
+
+test('a one-off colour on a region can be named into the palette', async () => {
+  // The loop closing: pick a colour on a region, name it, and the rest of the
+  // design can use it — which is how a palette gets built in practice, rather
+  // than written out in advance.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: '#F5A11B',
+  };
+
+  const { dom } = await runApp({ server });
+  const inspector = dom.querySelector('#inspector');
+  const button = { dataset: { nameColour: 'color' }, onclick: null };
+  inspector.querySelector = () => null;
+  inspector.querySelectorAll = (q) => (q === '[data-name-colour]' ? [button] : []);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+
+  assert.match(inspector.innerHTML, /data-name-colour="color"/, 'a literal colour offers the button');
+
+  globalThis.prompt = () => 'gulf-orange';
+  try {
+    await button.onclick();
+  } finally {
+    delete globalThis.prompt;
+  }
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], '#F5A11B', 'the colour joins the palette');
+  assert.equal(design.surfaces.body.regions[0].color, 'gulf-orange', 'and the region points at the name');
+  assert.match(dom.querySelector('#texture').innerHTML, /#F5A11B/i, 'the picture does not change');
+  assert.match(dom.querySelector('#palette').innerHTML, /data-palette="gulf-orange"/);
+});
+
+test('a colour that is already a palette name is not offered for naming', async () => {
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-colour/,
+    'it already has a name');
+});
+
+test('a palette value never reaches the page as CSS', async () => {
+  // A livery is a file people SHARE, so its values are not the editor's to
+  // trust. `esc` escapes HTML, and a style attribute is not HTML — it is
+  // semicolon-separated declarations, so `red;position:fixed;inset:0` would have
+  // gone through `esc` untouched and come out the other side as a page-sized
+  // invisible sheet over the editor that swallows every click. This project has
+  // already had that bug once, from a duplicate id, and wrote a test about it.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  const hostile = 'red;position:fixed;inset:0;z-index:9999';
+  server.livery.palette = { ink: '#101014', trap: hostile };
+
+  const { dom } = await runApp({ server });
+  const el = dom.querySelector('#palette');
+  assert.match(el.innerHTML, /data-swatch="trap"/, 'the swatch is drawn');
+  assert.doesNotMatch(el.innerHTML, /style=/, 'and the panel emits no style attribute at all');
+  // The value is still in the markup — inside an input's `value`, where it
+  // belongs and where `esc` is the right and sufficient tool. That is the field
+  // you edit to fix it.
+  assert.match(el.innerHTML, /value="red;position:fixed/);
+
+  // And the colour is applied through the CSSOM, whose setter parses one
+  // `<color>` and drops anything else — so the hostile value paints nothing
+  // rather than laying a sheet over the page.
+  const swatches = ['ink', 'trap'].map((n) => ({ dataset: { swatch: n }, style: {} }));
+  el.querySelectorAll = (q) => (q === '[data-swatch]' ? swatches : []);
+  dom.querySelector('#surface').value = '0';
+  await dom.querySelector('#surface').onchange();
+  assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real colour is set');
+  assert.equal(swatches[1].style.backgroundColor, hostile,
+    'and the hostile one is handed to the parser, not to the document');
+});
+
+test('a name the palette does not have is not offered for naming either', async () => {
+  // The button writes `palette[chosen] = value`, so it is only ever right when
+  // the value is a COLOUR. Offered on `ghost` — a palette entry that went away,
+  // or a typo — it would write `palette.spooky = 'ghost'` and point the region
+  // at `spooky`. The region still reaches librsvg as `fill="ghost"` and still
+  // paints nothing anybody chose; the only thing that changes is that the
+  // dangling panel goes quiet, because `spooky` is a palette entry now. That
+  // trades a true warning for a false silence.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014' };
+  const region = { id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'fill' };
+
+  const offered = async (color) => {
+    server.livery.surfaces.body.regions[0] = { ...region, color };
+    const { dom } = await runApp({ server });
+    inspectorButtons(dom, ['#delete']);
+    dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+    return {
+      button: /data-name-colour/.test(dom.querySelector('#inspector').innerHTML),
+      warned: /ghost|gulf-blue/.test(dom.querySelector('#dangling').innerHTML),
+    };
+  };
+
+  const ghost = await offered('ghost');
+  assert.equal(ghost.button, false, 'a bare word is a broken reference, not a colour to name');
+  assert.equal(ghost.warned, true, 'and the panel says so, which is the thing worth keeping');
+
+  assert.equal((await offered('#F5A11B')).button, true, 'a literal colour still offers it');
+  assert.equal((await offered('rgb(1,2,3)')).button, true);
+
+  // The cost of drawing the line here rather than at "what would a browser
+  // accept": `red` is a colour and gets no button. uses.js explains why beside
+  // `looksLikeAName` — the alternative is 148 CSS colour names to maintain — and
+  // the two halves being wrong in the SAME direction is what matters, since the
+  // panel reports `red` as a literal for exactly the same reason.
+  assert.equal((await offered('red')).button, false);
+});
+
+test('a token that could never be substituted is refused where it is typed', async () => {
+  // `renderTexture` interpolates `{name}` for `\w+` and nothing else, so a token
+  // called `driver-name` is unreachable: the braces survive into the SVG and the
+  // car is painted with the literal text `{driver-name}`. Nothing reports it —
+  // the renderer sees ordinary text, and the dangling panel would call the token
+  // defined and used, which is wrong twice.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'name', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: '{driver}',
+  };
+
+  const { dom } = await runApp({ server });
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+
+  dom.querySelector('#newtokenname').value = 'driver-name';
+  dom.querySelector('#newtokenvalue').value = 'A. Driver';
+  await dom.querySelector('#addtoken').onclick();
+  assert.deepEqual(Object.keys(design().identity), ['driver'], 'the token was not created');
+  assert.match(dom.querySelector('#status').textContent, /could never be used/);
+  assert.equal(dom.querySelector('#newtokenname').value, 'driver-name',
+    'and what was typed is still there to be corrected');
+
+  // Renaming into one is the worse case, because the rewrite below it would
+  // carry a working `{driver}` over to a `{driver-name}` that prints itself.
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'name']]);
+  const row = identity.rowFor('driver', 'name');
+  row.value = 'driver-name';
+  await row.onchange();
+  assert.deepEqual(Object.keys(design().identity), ['driver'], 'the rename did not happen');
+  assert.equal(design().surfaces.body.regions[0].text, '{driver}', 'and the text still resolves');
+  assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver</);
+
+  // A name that CAN interpolate goes through, so this is a rule and not a wall.
+  row.value = 'driver_name';
+  await row.onchange();
+  assert.deepEqual(Object.keys(design().identity), ['driver_name']);
+  assert.equal(design().surfaces.body.regions[0].text, '{driver_name}');
+});
+
+test('a livery the editor cannot save does not offer to add to it', async () => {
+  // The panels go dark for a design carrying code, because showing edits that
+  // could never be written back is the failure this whole step is organised
+  // against. The Add rows sit OUTSIDE those panels — deliberately, so they keep
+  // what you are typing — which is exactly how they stayed live after the panels
+  // above them had given up.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.render = { font: () => 'DejaVu Sans' };
+
+  const { dom } = await runApp({ server });
+  for (const id of ['#newcolourname', '#newcolourvalue', '#addcolour',
+    '#newtokenname', '#newtokenvalue', '#addtoken']) {
+    assert.equal(dom.querySelector(id).disabled, true, `${id} should be disabled`);
+  }
+  assert.match(dom.querySelector('#palette').innerHTML, /contains code/);
+  assert.match(dom.querySelector('#identity').innerHTML, /contains code/,
+    'the disabled row needs a reason standing next to it');
+
+  // The attribute is what a person sees; the handler is what actually holds.
+  dom.querySelector('#newcolourname').value = 'gulf-orange';
+  dom.querySelector('#newcolourvalue').value = '#F5A11B';
+  await dom.querySelector('#addcolour').onclick();
+  dom.querySelector('#newtokenname').value = 'number';
+  await dom.querySelector('#addtoken').onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.equal(design.palette['gulf-orange'], undefined, 'nothing was added to the palette');
+  assert.equal(design.identity.number, undefined, 'nor to the identity');
+  assert.match(dom.querySelector('#status').textContent, /contains code/);
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/,
+    'and nothing was marked as needing saving');
 });

@@ -30,7 +30,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
-import { renderTexture } from '../render.mjs';
+import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
@@ -189,7 +189,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'style.css']);
 
 /**
  * Everything the browser needs to draw the editor, computed once per request.
@@ -583,7 +583,20 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
       };
     });
 
-  return { svg: layers.base, emissive: layers.emissive, placed, notes };
+  // The BOTH-layers document, not just the base. Several treatments draw nothing
+  // into the base at all, so returning it alone made them invisible in every
+  // view of the editor while the build painted them correctly.
+  //
+  // Flattened here and sent as ONE field. Each layer is about the size of the
+  // finished document, and this response goes back on every frame of a drag —
+  // `livePreview` fires from pointermove — so carrying the two alongside it
+  // would roughly triple the payload to serve a reader that does not exist.
+  // Anything that later needs them apart should ask for them.
+  return {
+    svg: previewSvg(layers, { glowSigma: livery.render?.glowSigma ?? 14 }),
+    placed,
+    notes,
+  };
 }
 
 export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, modelPath = null, port = 7391, log = console.log }) {

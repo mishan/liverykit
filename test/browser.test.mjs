@@ -1103,3 +1103,124 @@ test('the artwork follows the pointer, without waiting for the release', { skip:
     'the fit should already reflect the drag while the button is still down');
   assert.ok(mid.every((n) => n >= 0 && n <= 1), `at must stay panel-relative mid-drag: ${mid}`);
 });
+
+test('a hostile palette value paints a swatch and nothing else', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // A livery is a file people share, and its palette values used to be pasted
+  // into a `style` attribute. `esc` escapes HTML; a style attribute is not HTML
+  // but a list of declarations, so `red;position:fixed;inset:0` went through it
+  // untouched and became a page-sized invisible sheet over the editor. This
+  // project has already had that exact bug once — from a duplicate id — and the
+  // fake DOM could not see it either time, because it renders no CSS.
+  //
+  // So: a real browser, real layout, and the question a person would ask, which
+  // is whether anything is lying on top of the editor.
+  const base = (await import('../liveries/neon-grid-any.mjs')).default;
+  const livery = structuredClone({ ...base });
+  livery.palette = { ...livery.palette, trap: 'red;position:fixed;inset:0;z-index:9999' };
+
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('the editor never came up'); return done(); }
+      await settle(400);
+      const swatch = (n) => document.querySelector('[data-swatch="' + n + '"]');
+      say('real swatch: ' + getComputedStyle(swatch('ink')).backgroundColor);
+      say('trap swatch: ' + getComputedStyle(swatch('trap')).backgroundColor);
+      say('trap position: ' + getComputedStyle(swatch('trap')).position);
+
+      // The measurement that matters: how big is it. An inset:0 sheet is the
+      // size of the viewport; a swatch is the size of a swatch.
+      const box = swatch('trap').getBoundingClientRect();
+      say('trap size: ' + Math.round(box.width) + 'x' + Math.round(box.height));
+      say('viewport: ' + innerWidth + 'x' + innerHeight);
+
+      // And nothing from the palette is what a click in the middle of the
+      // editor lands on. The overlay legitimately covers the texture, so the
+      // question is not "what is on top" but "is a SWATCH on top".
+      const tex = document.querySelector('#texture');
+      const r = tex.getBoundingClientRect();
+      const hit = document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2));
+      say('hit is a swatch: ' + !!hit?.closest?.('[data-swatch]'));
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname, liveryObject: livery });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.match(find('real swatch: '), /rgb\(18, 32, 58\)|rgb\(\d+, \d+, \d+\)/,
+    `an ordinary palette colour must still show: ${report.join(' | ')}`);
+  assert.equal(find('trap swatch: '), 'trap swatch: rgba(0, 0, 0, 0)',
+    'the CSSOM parses one colour or none, so a value carrying declarations paints nothing');
+  assert.equal(find('trap position: '), 'trap position: static',
+    'and above all does not position itself');
+  assert.equal(find('hit is a swatch: '), 'hit is a swatch: false',
+    'nothing from the palette was laid over the editor');
+  const [w, h] = find('trap size: ').slice('trap size: '.length).split('x').map(Number);
+  const [vw, vh] = find('viewport: ').slice('viewport: '.length).split('x').map(Number);
+  assert.ok(w < vw / 4 && h < vh / 4,
+    `the swatch is ${w}x${h} in a ${vw}x${vh} viewport, which is a sheet over the page, not a swatch`);
+});
+
+test('an emissive-only treatment actually puts pixels on screen', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // `traces` draws nothing into the base layer, and the editor used to show the
+  // base alone — so the element was painted correctly by the build and invisible
+  // in the tool for looking at it. The fix flattens both layers for display,
+  // which relies on `feGaussianBlur` and `mix-blend-mode`: things librsvg does
+  // not have and a fake DOM cannot tell you about. Hence a real browser, and
+  // hence reading PIXELS rather than markup — the markup was never the question.
+  const profile = {
+    id: 'fixture', name: 'Fixture',
+    textures: { body: { file: 'b.dds', width: 256, height: 256 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { L: { rect: [0, 0, 1, 1], tags: ['left'], anisotropy: 1 } } },
+  };
+  const liveryObject = {
+    name: 'Traces', folder: 'traces', car: 'fixture', packs: ['core', 'synthwave'],
+    palette: { ink: '#000000', wire: '#00FF00' },
+    surfaces: {
+      body: {
+        background: 'ink',
+        regions: [{ id: 'wires', panel: 'L', at: [0, 0, 1, 1], treatment: 'traces', color: 'wire', lanes: 6 }],
+      },
+    },
+  };
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-emis-'));
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW no regions'); return done(); }
+      await uvTab();
+      const svg = document.querySelector('#texture svg');
+      if (!svg) { say('THREW no svg in the texture layer'); return done(); }
+
+      // Rasterise what the editor is actually displaying, and look at it.
+      const markup = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const done2 = new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error('svg would not load')); });
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+      await done2;
+
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 256;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 256, 256);
+      const px = g.getImageData(0, 0, 256, 256).data;
+
+      let lit = 0, greenest = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        // The background is pure black, so anything with green in it came from
+        // the emissive layer — either the crisp strokes or the glow around them.
+        if (px[i + 1] > 24) lit++;
+        if (px[i + 1] > greenest) greenest = px[i + 1];
+      }
+      say('lit: ' + lit);
+      say('greenest: ' + greenest);
+      done();
+    })();
+  `, { liveryObject, profile, fitPath: join(dir, 'fit.json') });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  const lit = Number(find('lit: ').slice(5));
+  const greenest = Number(find('greenest: ').slice(10));
+
+  assert.ok(lit > 200, `the traces should cover a meaningful area, got ${lit} lit pixels: ${report.join(' | ')}`);
+  assert.ok(greenest > 200, `and reach near full strength where the strokes are, got ${greenest}`);
+});

@@ -58,6 +58,28 @@
         the panel is readable from trackside.</p>
       <ul id="panels"></ul>
 
+      <h2>Palette</h2>
+      <p class="hint">Named colours. Regions refer to these by name, so changing
+        one changes everything using it.</p>
+      <div id="palette"></div>
+      <div class="row">
+        <input id="newcolourname" placeholder="name">
+        <input id="newcolourvalue" placeholder="#00F0FF">
+        <button id="addcolour">Add</button>
+      </div>
+
+      <h2>Identity</h2>
+      <p class="hint">What <code>{driver}</code> and <code>{number}</code> become
+        in a design's text.</p>
+      <div id="identity"></div>
+      <div class="row">
+        <input id="newtokenname" placeholder="token">
+        <input id="newtokenvalue" placeholder="value">
+        <button id="addtoken">Add</button>
+      </div>
+
+      <div id="dangling"></div>
+
       <h2>Fit</h2>
       <p class="hint">Where this car wants the artwork.</p>
       <pre id="fitjson">{}</pre>
