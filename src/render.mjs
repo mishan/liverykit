@@ -73,17 +73,31 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // The rect the author writes is the FINAL one. For a quarter turn the
     // treatment is handed that rect with its width and height swapped about the
     // same centre, so rotating the result lands exactly where they asked.
-    if (region.rotate !== undefined && !Number.isFinite(region.rotate)) {
+    // `rotate: 'auto'` means "however far this panel is from upright". An
+    // unwrapper is free to lay a door sideways to pack the sheet, and a road car
+    // routinely does: the Abarth's doors measure 270 and 90 degrees while the
+    // formula car's flanks measure 0. Text placed without this reads vertically,
+    // which looks like a bug and is really the texture being honest about its
+    // own layout.
+    //
+    // A panel with no measurement — anything near-horizontal, where "up" on the
+    // surface is meaningless — resolves to 0 rather than to a number derived
+    // from rounding error.
+    const asked = region.rotate === 'auto'
+      ? (frac.panel?.textRotation ?? 0)
+      : region.rotate;
+    if (asked !== undefined && !Number.isFinite(asked)) {
       // A non-finite angle poisons every coordinate downstream, and an SVG
       // carrying rotate(NaN,...) draws nothing at all — silently, which is the
       // exact failure this library exists to prevent. `rotate: '90deg'` is the
       // obvious way to arrive here.
       throw new Error(
         `"${region.treatment ?? 'region'}" on ${tex.file} has rotate: ` +
-        `${JSON.stringify(region.rotate)}. It must be a finite number of degrees, e.g. rotate: 90.`
+        `${JSON.stringify(region.rotate)}. It must be a finite number of degrees ` +
+        `(e.g. rotate: 90), or 'auto' to follow the panel's own orientation.`
       );
     }
-    const rot = (((region.rotate ?? 0) % 360) + 360) % 360;
+    const rot = (((asked ?? 0) % 360) + 360) % 360;
     const quarter = rot === 90 || rot === 270;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     const drawn = quarter

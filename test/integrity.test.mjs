@@ -13,6 +13,7 @@ import { makeProbes, gridShape } from '../src/engine/uvgrid.mjs';
 import { makeZip } from '../src/engine/zip.mjs';
 import { definePack, registerPack, unregisterPack, resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
+import { buildKn5 } from './fixtures/kn5.mjs';
 import '../src/index.mjs';
 
 const profile = {
@@ -211,65 +212,6 @@ test('mip chain length is an integer the encoder can actually honour', () => {
 // verified byte-exact against a real 50 MB car. A synthetic file is used
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
-
-function buildKn5({ version = 6, extraMeshes = [], placeholderTexture = false, encrypted = false } = {}) {
-  const parts = [];
-  const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32LE(n); return b; };
-  const f32 = (n) => { const b = Buffer.alloc(4); b.writeFloatLE(n); return b; };
-  const str = (s) => Buffer.concat([u32(Buffer.byteLength(s)), Buffer.from(s, 'utf8')]);
-
-  parts.push(Buffer.from('sc6969', 'ascii'), u32(version));
-  if (version > 5) parts.push(u32(0));
-
-  // textures: one null slot (type 0, no further fields) then one real DDS
-  const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
-  // An encrypted model substitutes a 1x1 image for every texture; the real one
-  // lives in the protected blob appended after the node tree.
-  dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
-  dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
-  parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
-
-  // one material binding that texture as a diffuse
-  parts.push(u32(1), str('BodyMat'), str('ksPerPixel'), Buffer.from([0, 0]), u32(0),
-    u32(0), u32(1), str('txDiffuse'), u32(0), str('body.dds'));
-
-  // root dummy -> one mesh child
-  const ident = Buffer.concat([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1].map(f32));
-  parts.push(u32(1), str('root'), u32(1 + extraMeshes.length), Buffer.from([1]), ident);
-
-  const verts = [
-    [0, 0, 0,  0, 1, 0,  0.25, -0.75,  0, 0, 0],
-    [1, 0, 0,  0, 1, 0,  0.75, -0.75,  0, 0, 0],
-    [0, 0, 1,  0, 1, 0,  0.25, -0.25,  0, 0, 0],
-  ];
-  parts.push(u32(2), str('body_mesh'), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
-    u32(verts.length), ...verts.map((v) => Buffer.concat(v.map(f32))),
-    u32(3), Buffer.from([0, 0, 1, 0, 2, 0]),
-    u32(0),                    // materialId — first of the 33-byte trailer
-    Buffer.alloc(29));         // layer, lodIn, lodOut, bounding sphere, isRenderable
-
-  // Extra meshes, for tests that need geometry the analysis will look for by
-  // name (a steering wheel) or trip over (an occluder).
-  for (const em of extraMeshes) {
-    // Indices matter: the occupancy grid is built by SAMPLING TRIANGLES, so a
-    // mesh with no index buffer occupies nothing and cannot occlude.
-    const idx = em.indices ?? [];
-    const idxBuf = Buffer.alloc(idx.length * 2);
-    idx.forEach((v, i) => idxBuf.writeUInt16LE(v, i * 2));
-    parts.push(u32(2), str(em.name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
-      u32(em.verts.length), ...em.verts.map((v) => Buffer.concat(v.map(f32))),
-      u32(idx.length), idxBuf, u32(0), Buffer.alloc(29));
-  }
-
-  // Custom Shaders Patch appends the protected payload after the node tree and
-  // ends the file with a length-prefixed marker.
-  if (encrypted) {
-    const marker = '__AC_SHADERS_PATCH_KN5ENC_v1__';
-    parts.push(Buffer.alloc(4096, 0xab), u32(marker.length), Buffer.from(marker, 'ascii'),
-      Buffer.from([0x44, 0x0a, 0x01]), u32(1));
-  }
-  return Buffer.concat(parts);
-}
 
 test('kn5: parses a well-formed file to the exact final byte', async () => {
   const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
@@ -872,7 +814,9 @@ test('the build report separates what was not painted from what merely warrants 
   for (const status of ['absent', 'unbound', 'unencodable', 'no-match']) {
     assert.equal(isMissingNote({ status }), true, status);
   }
-  for (const status of ['unconfirmed', 'unverified']) {
+  // `fit-stale` is the one that reads like a failure and isn't: the override was
+  // refused, so the region stayed where the livery put it — painted, with a note.
+  for (const status of ['unconfirmed', 'unverified', 'fit-stale']) {
     assert.equal(isMissingNote({ status }), false, status);
   }
 
@@ -1248,4 +1192,553 @@ test('an empty or malformed tag selector is refused, not silently everything', a
   // A region with no tags at all is untouched — that is the ordinary case.
   const { regions } = expandRegions(p, 'body', [{ treatment: 'fill', panel: 'a' }]);
   assert.equal(regions.length, 1);
+});
+
+test('limit takes the largest matching panels, for text that wants one', async () => {
+  // A pattern wants every panel it matches; a number wants exactly one, and
+  // wants the one with room for it. Without this, [left, visible] put the car
+  // number on seven panels of the Abarth at seven different sizes.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const p = tagCar({}, {
+    small: { rect: [0.0, 0, 0.10, 0.10], tags: ['left', 'visible'] },
+    big: { rect: [0.2, 0, 0.50, 0.50], tags: ['left', 'visible'] },
+    mid: { rect: [0.8, 0, 0.20, 0.20], tags: ['left', 'visible'] },
+  });
+  assert.equal(panelsWithTags(p, 'body', ['left', 'visible']).length, 3, 'unlimited matches all');
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible'], { limit: 1 }), ['big']);
+  assert.deepEqual(panelsWithTags(p, 'body', ['left', 'visible'], { limit: 2 }), ['big', 'mid'],
+    'largest first, not profile order');
+
+  const { expandRegions } = await import('../src/profile.mjs');
+  assert.throws(
+    () => expandRegions(p, 'body', [{ treatment: 'text', tags: ['left'], limit: 0 }]),
+    /whole number of panels, 1 or more/,
+  );
+});
+
+test('a `once` region lands on the primary texture only', async () => {
+  // `body` on the RSS4 binds to two chassis textures. A pattern belongs on both;
+  // a car number belongs on the car once, not once per texture.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const p = {
+    id: 'c',
+    textures: {
+      front: { file: 'f.dds', width: 64, height: 64 },
+      rear: { file: 'r.dds', width: 64, height: 64 },
+    },
+    bind: { body: { roles: ['front', 'rear'], source: 'human' } },
+  };
+  const { targets } = resolveTargets(p, { name: 'L', surfaces: { body: spec } });
+  assert.deepEqual(targets.map((t) => [t.role, t.primary]), [['front', true], ['rear', false]]);
+
+  // And a `paint` entry is always its own primary — there is nothing to share with.
+  const direct = resolveTargets(p, { name: 'L', paint: { rear: spec } });
+  assert.equal(direct.targets[0].primary, true);
+});
+
+// --- fits -------------------------------------------------------------------
+
+const fitLivery = () => ({
+  name: 'L',
+  surfaces: {
+    body: {
+      background: 'ink',
+      regions: [
+        { treatment: 'grid' },
+        { id: 'num', treatment: 'text', tags: ['left', 'visible'], limit: 1, at: [0.2, 0.2, 0.6, 0.6], text: '{number}' },
+        { id: 'team', treatment: 'text', tags: ['left'], at: [0, 0.8, 1, 0.1], text: '{team}' },
+      ],
+    },
+  },
+});
+const fitCar = () => ({
+  id: 'c',
+  textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+  panels: {
+    body: {
+      quarter: { rect: [0.0, 0, 0.5, 0.5], tags: ['left', 'visible'] },
+      door: { rect: [0.5, 0, 0.3, 0.3], tags: ['left', 'visible'] },
+    },
+  },
+});
+
+test('a fit moves a region without touching the design', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const { expandRegions } = await import('../src/profile.mjs');
+  const livery = fitLivery();
+  const profile = fitCar();
+
+  const before = expandRegions(profile, 'body', livery.surfaces.body.regions).regions;
+  assert.equal(before.find((r) => r.id === 'num').panel, 'quarter', 'largest panel by default');
+
+  const fit = { livery: 'L', car: 'c', regions: { num: { panel: 'door', at: [0.1, 0.1, 0.8, 0.8] } } };
+  const { regions } = applyFit(livery.surfaces.body.regions, fit, { profile, role: 'body' });
+  const after = expandRegions(profile, 'body', regions).regions;
+  const num = after.find((r) => r.id === 'num');
+  assert.equal(num.panel, 'door', 'an explicit panel beats the tag selection');
+  assert.deepEqual(num.at, [0.1, 0.1, 0.8, 0.8]);
+  assert.equal(num.tags, undefined, 'tags are cleared, or panel and tags would conflict');
+  // The design is untouched — a fit adjusts a copy.
+  assert.deepEqual(livery.surfaces.body.regions[1].at, [0.2, 0.2, 0.6, 0.6]);
+});
+
+test('a fit can drop a region a car has nowhere to put', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const fit = { livery: 'L', car: 'c', regions: { team: { drop: true } } };
+  const { regions } = applyFit(fitLivery().surfaces.body.regions, fit, { profile: fitCar(), role: 'body' });
+  assert.deepEqual(regions.map((r) => r.id), [undefined, 'num']);
+});
+
+test('a stale fit is reported and ignored, never silently obeyed', async () => {
+  // A design gets edited, a profile regenerated, a panel renamed. A fit that
+  // quietly does nothing would be this project's oldest bug one level up.
+  const { applyFit, unusedFitIds } = await import('../src/fit.mjs');
+  const notes = [];
+  const used = new Set();
+  const fit = {
+    livery: 'L', car: 'c',
+    regions: { num: { panel: 'nonexistent' }, 'no-such-region': { drop: true } },
+  };
+  const { regions } = applyFit(fitLivery().surfaces.body.regions, fit, { profile: fitCar(), role: 'body', used, notes });
+
+  const num = regions.find((r) => r.id === 'num');
+  assert.equal(num.panel, undefined, 'the bad override is ignored');
+  assert.deepEqual(num.tags, ['left', 'visible'], 'and the region keeps what the livery gave it');
+  assert.equal(notes[0].status, 'fit-stale');
+  assert.match(notes[0].text, /does not have/);
+  assert.deepEqual(unusedFitIds(fit, used), ['no-such-region']);
+});
+
+test('a fit may adjust placement, and nothing else', async () => {
+  // Left open, this becomes a second livery language. Colours and treatments
+  // belong to the design; a fit says where things go on one car.
+  const { validateFit } = await import('../src/fit.mjs');
+  assert.throws(() => validateFit({ livery: 'L', car: 'c', regions: { a: { color: 'red' } } }),
+    /may not override "color"/);
+  assert.throws(() => validateFit({ livery: 'L', car: 'c', regions: { a: { treatment: 'fill' } } }),
+    /may not override "treatment"/);
+  assert.throws(() => validateFit({ car: 'c' }), /missing "livery"/);
+  assert.doesNotThrow(() => validateFit({
+    livery: 'L', car: 'c', notes: ['free text is fine'],
+    regions: { a: { panel: 'p', at: [0, 0, 1, 1], rotate: 90, drop: false } },
+  }));
+});
+
+test('region ids must be unique across a livery', async () => {
+  // Ids are how a fit addresses a region. Two the same makes an override
+  // ambiguous, which silently adjusts one of them and not the other.
+  const { regionIds } = await import('../src/fit.mjs');
+  const dup = fitLivery();
+  dup.surfaces.body.regions[2].id = 'num';
+  assert.throws(() => regionIds(dup), /uses the region id "num" twice/);
+  assert.deepEqual([...regionIds(fitLivery()).keys()], ['num', 'team']);
+});
+
+test('the shipped fits apply cleanly to the cars they name', async () => {
+  const { loadFit, applyFit, regionIds, unusedFitIds } = await import('../src/fit.mjs');
+  const { loadProfile, expandRegions, binding } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const ids = regionIds(livery);
+
+  for (const car of ['abarth500', 'rss_formula_rss_4']) {
+    const fit = await loadFit(new URL(`../fits/neon-grid-any@${car}.json`, import.meta.url));
+    assert.equal(fit.car, car);
+    assert.equal(fit.livery, 'neon-grid-any');
+    for (const id of Object.keys(fit.regions)) {
+      assert.ok(ids.has(id), `${car}: fit names "${id}", which the livery does not declare`);
+    }
+
+    const profile = await loadProfile(new URL(`../cars/${car}.json`, import.meta.url));
+    const role = binding(profile, 'body').roles[0];
+    const used = new Set();
+    const notes = [];
+    const { regions } = applyFit(livery.surfaces.body.regions, fit, { profile, role, used, notes });
+    expandRegions(profile, role, regions);
+    assert.deepEqual(notes, [], `${car}: ${notes.map((n) => n.text)}`);
+    assert.deepEqual(unusedFitIds(fit, used), [], `${car}: fit ids that matched nothing`);
+  }
+});
+
+// --- the fitting editor -----------------------------------------------------
+
+test('panel-relative and absolute coordinates round-trip exactly', async () => {
+  // The editor works in absolute texture fractions because that is what a mouse
+  // gives you, and converts once on the way into the fit. `at` never acquires a
+  // second meaning depending on where it was written.
+  const { toAbsolute, toPanelRelative } = await import('../src/fit.mjs');
+  const panel = [0.2, 0.1, 0.4, 0.5];
+  for (const at of [[0, 0, 1, 1], [0.5, 0, 0.5, 1], [0.25, 0.3, 0.4, 0.2]]) {
+    assert.deepEqual(toPanelRelative(panel, toAbsolute(panel, at)), at, JSON.stringify(at));
+  }
+  assert.deepEqual(toAbsolute([0.2, 0.1, 0.4, 0.5], [0.5, 0, 0.5, 1]), [0.4, 0.1, 0.2, 0.5]);
+  // A degenerate panel cannot express anything relative to itself, and must not
+  // divide by zero on the way to saying so.
+  assert.deepEqual(toPanelRelative([0, 0, 0, 0], [0, 0, 1, 1]), [0, 0, 1, 1]);
+});
+
+test('the editor reports where regions actually landed, not where it thinks they did', async () => {
+  // The overlay draws the rectangle the RENDERER resolved, so if the two ever
+  // disagree you can see it rather than dragging a box that has quietly stopped
+  // corresponding to the artwork.
+  const { renderSurface, editorState } = await import('../src/ui/server.mjs');
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const { loadFit } = await import('../src/fit.mjs');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const state = editorState({ livery, profile, fit, liveryId: 'neon-grid-any' });
+  assert.ok(state.surfaces.length > 3, 'editable surfaces');
+  // The name a FIT knows this design by is the module basename, not the skin
+  // folder the game installs. The browser writes it into any fit it creates, so
+  // the two must not be confused.
+  assert.equal(state.livery.id, 'neon-grid-any');
+  assert.equal(state.livery.folder, 'neon_grid_any');
+  assert.ok(state.surfaces.every((s) => s.panels.length >= 0 && s.file));
+  assert.ok(Object.keys(state.regionIds).includes('number-left'));
+
+  const out = renderSurface({ livery, profile, fit, role });
+  assert.match(out.svg, /^<svg /, 'a self-contained document the browser can render');
+  assert.deepEqual(out.notes, [], `unexpected notes: ${out.notes.map((n) => n.text)}`);
+
+  // The fit moves the number onto the door; the reported placement must agree.
+  const num = out.placed.find((p) => p.id === 'number-left');
+  assert.equal(num.panel, 'left_mid');
+  const door = profile.panels[role].left_mid.rect;
+  assert.ok(num.abs[0] >= door[0] && num.abs[0] + num.abs[2] <= door[0] + door[2] + 1e-9,
+    `placement ${num.abs} should sit inside the panel ${door}`);
+
+  // And a region the fit drops should not be reported as placed at all.
+  assert.equal(out.placed.find((p) => p.id === 'driver-left'), undefined);
+});
+
+test('the editor is told the profile\'s panel name, not the livery\'s', async () => {
+  // A design may say `flankLeft` where the profile calls the island `left_mid`,
+  // and both are right — that is what an alias block is for. But only `left_mid`
+  // is a key in profile.panels, which is what the panel list and every lookup in
+  // the browser are keyed by. Reporting the livery's spelling made those lookups
+  // find nothing, and a drag then fell back to ABSOLUTE coordinates and wrote
+  // them into `at`, which means panel-relative. The artwork moved somewhere
+  // nobody asked for, from a fit that reads perfectly well.
+  const { renderSurface, editorState } = await import('../src/ui/server.mjs');
+
+  const profile = {
+    id: 'c', name: 'C',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { left_mid: { rect: [0.1, 0.2, 0.4, 0.4], tags: ['left'] } } },
+    aliases: { body: { flankLeft: 'left_mid' } },
+  };
+  const livery = {
+    name: 'L', folder: 'l', car: 'c', palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: { body: { background: 'ink', regions: [
+      { id: 'badge', panel: 'flankLeft', at: [0.5, 0, 0.5, 1], treatment: 'fill', color: 'accent' },
+    ] } },
+  };
+
+  const state = editorState({ livery, profile, fit: null, liveryId: 'l' });
+  const names = state.surfaces[0].panels.map((p) => p.name);
+  assert.deepEqual(names, ['left_mid'], 'the panel list is keyed by the profile');
+
+  const placed = renderSurface({ livery, profile, fit: null, role: 'body' }).placed
+    .find((p) => p.id === 'badge');
+  assert.equal(placed.panel, 'left_mid', 'the placement names the panel the list contains');
+  assert.ok(names.includes(placed.panel), 'so the browser can find it');
+
+  // And the DECLARED panel resolves the same way, or "is this still where the
+  // design put it?" compares two spellings of one island and always says no.
+  assert.equal(state.surfaces[0].regions[0].panel, 'left_mid');
+
+  // The rectangle is still measured against that panel: `at` is the right half
+  // of a panel starting at x=0.1 and 0.4 wide.
+  assert.deepEqual(placed.abs, [0.3, 0.2, 0.2, 0.4]);
+});
+
+test('the editor and the build agree on what a region without an id is called', async () => {
+  // A region the design gave no id is addressed by POSITION, and the key is made
+  // from the surface it sits on. The editor passed the surface and the build did
+  // not, so the editor wrote `body#0` into a fit and the build looked for `#0`.
+  // Every adjustment made to an unnamed region — which is 95 of the 95 regions
+  // in the bundled neon-grid — did nothing, and said so only as a stale-id note
+  // buried at the end of the build.
+  const { applyFit } = await import('../src/fit.mjs');
+  const { buildSkin } = await import('../src/build.mjs');
+
+  const profile = {
+    id: 'c', name: 'C',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { L: { rect: [0, 0, 0.5, 1] }, R: { rect: [0.5, 0, 0.5, 1] } } },
+  };
+  const livery = {
+    name: 'L', folder: 'l', car: 'c', palette: { ink: '#101014', accent: '#00f0ff' },
+    surfaces: { body: { background: 'ink', regions: [
+      { panel: 'L', at: [0, 0, 1, 1], treatment: 'fill', color: 'accent' },
+    ] } },
+  };
+  const fit = { livery: 'l', car: 'c', regions: { 'body#0': { panel: 'R' } } };
+
+  // What the editor calls it.
+  const key = applyFit(livery.surfaces.body.regions, null,
+    { profile, role: 'body', surfaceKey: 'body' }).regions[0].__key;
+  assert.equal(key, 'body#0');
+
+  // And the build has to reach the same region by that name. buildSkin needs an
+  // encoder, so this checks the one thing that decides it: whether the fit was
+  // used up, or left over and reported stale.
+  const used = new Set();
+  const notes = [];
+  const out = applyFit(livery.surfaces.body.regions, fit,
+    { profile, role: 'body', surfaceKey: 'body', used, notes }).regions;
+  assert.equal(out[0].panel, 'R', 'the override applied');
+  assert.ok(used.has('body#0'), 'and the fit id was consumed rather than left dangling');
+  assert.equal(typeof buildSkin, 'function');
+
+  // The source of truth for what the build passes: it must name the surface.
+  const src = await readFile(new URL('../src/build.mjs', import.meta.url), 'utf8');
+  assert.match(src, /surfaceKey:\s*from/,
+    'buildSkin must pass the surface key, or unnamed regions are addressed differently here');
+});
+
+test('a car model is looked for where a person would actually have one', async () => {
+  // This project ships no .kn5 and never will — a model belongs to whoever made
+  // the car. So the editor's 3D views depend entirely on the person supplying
+  // one, and "the 3D view is broken" and "you have not said where your game is"
+  // look identical unless the tool goes looking in the right places and lists
+  // what it tried. The default used to be a single path inside the checkout,
+  // which works only if you unpack a car into the repo.
+  const { carModelCandidates } = await import('../src/profile.mjs');
+  const profile = { id: 'abarth500', calibration: { source: 'abarth500.kn5' } };
+
+  const env = { AC_ROOT: '/games/ac', ASSETTOCORSA: '/other/ac' };
+  assert.deepEqual(carModelCandidates(profile, { root: '/repo', env }), [
+    '/games/ac/content/cars/abarth500/abarth500.kn5',
+    '/other/ac/content/cars/abarth500/abarth500.kn5',
+    '/repo/content/cars/abarth500/abarth500.kn5',
+    '/repo/cars/abarth500/abarth500.kn5',
+  ], 'the game install is asked first, then the checkout, in both layouts');
+
+  // No environment: the checkout still works, which is the arrangement for
+  // anyone unpacking a car they do not want to keep.
+  assert.deepEqual(carModelCandidates(profile, { root: '/repo' }), [
+    '/repo/content/cars/abarth500/abarth500.kn5',
+    '/repo/cars/abarth500/abarth500.kn5',
+  ]);
+
+  // A profile that does not record what it was built from cannot be guessed at,
+  // and saying so beats offering a path with `undefined` in it.
+  assert.deepEqual(carModelCandidates({ id: 'x' }, { root: '/repo' }), []);
+});
+
+test('a stale fit reaches the editor as a note rather than a crash', async () => {
+  const { renderSurface } = await import('../src/ui/server.mjs');
+  const { loadProfile, binding } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  const out = renderSurface({
+    livery, profile, role,
+    fit: { livery: 'x', car: 'abarth500', regions: { 'no-such-region': { drop: true } } },
+  });
+  assert.equal(out.notes.length, 1);
+  assert.match(out.notes[0].text, /matches no region/);
+  assert.ok(out.placed.length > 0, 'and everything else still renders');
+});
+
+test('rotate: auto follows the panel the unwrapper actually made', async () => {
+  // An unwrapper is free to lay a panel sideways to pack the sheet, and a road
+  // car routinely does. Text placed without compensating reads vertically, which
+  // looks like a bug and is really the texture being honest about its layout.
+  const p = {
+    id: 't',
+    textures: { body: { file: 'b.dds', width: 512, height: 512 } },
+    panels: {
+      body: {
+        upright: { rect: [0, 0, 0.4, 0.4], textRotation: 0 },
+        sideways: { rect: [0.5, 0, 0.4, 0.4], textRotation: 270 },
+        flat: { rect: [0, 0.5, 0.4, 0.4] },              // roof: no measurement
+      },
+    },
+  };
+  const draw = (panel) => renderTexture({
+    profile: p, role: 'body',
+    regions: [{ treatment: 'text', panel, rotate: 'auto', text: 'X', color: 'white' }],
+    treatments: resolveTreatments(['core']), palette: {}, rng: Math.random,
+    font: 'sans-serif', tokens: {},
+  }).base;
+
+  assert.doesNotMatch(draw('upright'), /rotate\(/, 'an upright panel needs no correction');
+  assert.match(draw('sideways'), /rotate\(270/, 'a sideways panel is turned back level');
+  // A near-horizontal panel has no meaningful "up", so the honest answer is to
+  // leave it alone rather than rotate by a number derived from rounding error.
+  assert.doesNotMatch(draw('flat'), /rotate\(/, 'no measurement means no rotation');
+});
+
+test('the shipped profiles carry a measured orientation per panel', async () => {
+  // The measurement that explains what a car looks like: the Abarth's doors are
+  // laid sideways in its texture, the formula car's flanks are not.
+  const { loadProfile } = await import('../src/profile.mjs');
+  const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+
+  assert.equal(ab.panels.skinbase_default.left_mid.textRotation, 270);
+  assert.equal(ab.panels.skinbase_default.right_mid.textRotation, 90);
+  assert.equal(rss.panels.body.left_mid.textRotation, 0);
+  assert.equal(rss.panels.body.right_mid.textRotation, 0);
+});
+
+test('a surface with no regions builds instead of crashing', async () => {
+  // `regions` is optional everywhere else in this codebase. A surface that only
+  // sets a background is a legitimate way to flat-colour a part.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { applyFit } = await import('../src/fit.mjs');
+  const profile = {
+    id: 'c',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+  };
+  const { targets } = resolveTargets(profile, { name: 'L', surfaces: { body: { background: 'ink' } } });
+  assert.equal(targets.length, 1);
+  // The build filters regions before applying a fit; both halves must tolerate
+  // the field being absent.
+  assert.doesNotThrow(() => (targets[0].spec.regions ?? []).filter(() => true));
+  assert.deepEqual(applyFit(targets[0].spec.regions ?? [], null, { profile, role: 'body' }).regions, []);
+});
+
+test('the editor refuses to start on a fit it cannot honour', async () => {
+  // A missing fit is normal — most cars have never been tuned. A fit that exists
+  // and is wrong is not, and starting anyway gives an editor that looks fine and
+  // fails only when you press Save, by which point the work has been done twice.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-ui-'));
+
+  const ui = (fitPath, port) =>
+    startUi({ livery, profile, fitPath, liveryId: 'neon-grid-any', port, log: () => {} });
+
+  const bad = join(dir, 'bad.json');
+  await writeFile(bad, JSON.stringify({ car: 'abarth500', regions: {} }));   // no "livery"
+  await assert.rejects(() => ui(bad, 7395), /Could not load .*missing "livery"/s);
+
+  // A fit that simply is not there must still start.
+  const { server } = await ui(join(dir, 'absent.json'), 7396);
+  server.close();
+});
+
+test('the editor refuses a fit that is for some other design or car', async () => {
+  // `--fit` takes any path and the conventional one outlives the profile it was
+  // written for, so a file being open is no evidence it belongs here. Unchecked,
+  // the editor resolves one design's ids against another car's panels and then
+  // overwrites the original on Save — silently, because each step is valid.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp, writeFile, readFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-ui-'));
+
+  for (const [name, fit, expected] of [
+    ['othercar.json', { livery: 'neon-grid-any', car: 'rss_formula_rss_4' }, /"car" is "rss_formula_rss_4"/],
+    ['otherdesign.json', { livery: 'something-else', car: 'abarth500' }, /"livery" is "something-else"/],
+  ]) {
+    const path = join(dir, name);
+    await writeFile(path, JSON.stringify({ ...fit, regions: {} }));
+    await assert.rejects(
+      () => startUi({ livery, profile, fitPath: path, liveryId: 'neon-grid-any', port: 7398, log: () => {} }),
+      expected, name);
+  }
+
+  // And Save is a whole-file overwrite, so the same check has to hold there: a
+  // client that has drifted must not be able to replace this pair's fit with
+  // another pair's.
+  const path = join(dir, 'mine.json');
+  await writeFile(path, JSON.stringify({ livery: 'neon-grid-any', car: 'abarth500', regions: {} }));
+  const { server, url } = await startUi({
+    livery, profile, fitPath: path, liveryId: 'neon-grid-any', port: 7399, log: () => {},
+  });
+  try {
+    const res = await fetch(`${url}api/fit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ livery: 'neon-grid-any', car: 'rss_formula_rss_4', regions: { x: { drop: true } } }),
+    });
+    assert.equal(res.status, 409, 'the server is fine; the submission is for something else');
+    assert.match((await res.json()).error, /"car" is "rss_formula_rss_4"/);
+    const onDisk = JSON.parse(await readFile(path, 'utf8'));
+    assert.equal(onDisk.car, 'abarth500', 'and the file on disk is untouched');
+    assert.deepEqual(onDisk.regions, {});
+  } finally {
+    server.close();
+  }
+});
+
+test('a fit knows a design by its module name, not its skin folder', async () => {
+  // fits/<livery>@<car>.json, and the file repeats the pair inside itself. Derive
+  // the two halves differently and the contents disagree with the filename.
+  const { fitLiveryId } = await import('../src/fit.mjs');
+  assert.equal(fitLiveryId('/a/b/liveries/neon-grid-any.mjs'), 'neon-grid-any');
+  assert.equal(fitLiveryId('neon-grid.mjs'), 'neon-grid');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  assert.notEqual(livery.folder, 'neon-grid-any', 'the skin folder is the underscored name, and is not this');
+});
+
+test('a bad ?role on /api/model is a client error, not a crash', async () => {
+  // texture() throws on an unknown role, which through the generic handler comes
+  // back as a 500: a stack trace in the log and "the server crashed" in the
+  // browser, for what is a typo in a query string.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server } = await startUi({
+    livery, profile, fitPath: '/nonexistent/fit.json', liveryId: 'neon-grid-any',
+    port: 0, log: () => {},
+  });
+  try {
+    const at = `http://127.0.0.1:${server.address().port}`;
+    const missing = await fetch(`${at}/api/model`);
+    assert.equal(missing.status, 400, 'no role at all');
+    assert.match((await missing.json()).error, /needs a \?role/);
+
+    const unknown = await fetch(`${at}/api/model?role=no_such_role`);
+    assert.equal(unknown.status, 404, 'a role this car does not have');
+    assert.match((await unknown.json()).error, /Known roles:/);
+  } finally {
+    server.close();
+  }
+});
+
+test('the editor caps how much it will read from a request', async () => {
+  // Loopback or not, an unbounded read grows the process until it dies. A fit is
+  // a few kilobytes of JSON.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const { server, url } = await startUi({
+    livery, profile, fitPath: '/nonexistent/fit.json', liveryId: 'neon-grid-any', port: 7397, log: () => {},
+  });
+  try {
+    const res = await fetch(`${url}api/fit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ livery: 'L', car: 'c', pad: 'x'.repeat(3 * 1024 * 1024) }),
+    });
+    assert.equal(res.status, 500);
+    assert.match((await res.json()).error, /body over/);
+  } finally {
+    server.close();
+  }
 });

@@ -5,11 +5,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
-import { loadProfile, doNotPaint, mergeBindings, binding } from '../src/profile.mjs';
+import { loadProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
+import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -22,6 +24,7 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit --scan <path>             inspect a car's textures, emit a profile
   liverykit --explain <kn5>           rank which texture is the bodywork, with
                                       the evidence, so you can confirm it
+  liverykit <livery> --ui             open the fitting editor for this car
 
 Arguments
   <livery>            path to a livery module, or a name in ./liveries/
@@ -47,6 +50,14 @@ Options
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
   --profile <path>    override the car profile (default: cars/<livery.car>.json)
+  --fit <path>        per-car placement overrides for this design
+                      (default: fits/<livery>@<car>.json, if it exists)
+  --ui                open the fitting editor instead of building
+  --model <kn5>       car model for the editor's 3D views. Searched for, if not
+                      given, under $AC_ROOT, $ASSETTOCORSA and this checkout —
+                      content/cars/<car>/ or cars/<car>/. Never shipped: the
+                      model is the car maker's.
+  --port <n>          port for --ui                            (default: 7391)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
 
@@ -72,6 +83,10 @@ const { values, positionals } = parseArgs({
     'car-name': { type: 'string' },
     skins: { type: 'string' },
     profile: { type: 'string' },
+    fit: { type: 'string' },
+    ui: { type: 'boolean', default: false },
+    model: { type: 'string' },
+    port: { type: 'string' },
     pack: { type: 'string', multiple: true, default: [] },
     help: { type: 'boolean', default: false },
   },
@@ -129,6 +144,10 @@ if (values['from-kn5']) {
     profile.bind = mergeBindings(prior.bind, profile.bind);
     if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
   }
+
+  const report = preserveHandwork(profile, prior);
+  for (const line of describeHandwork(report, priorPath)) console.log(line);
+
 
   const outPath = join(values.out, `${profile.id}.json`);
   await mkdir(values.out, { recursive: true });
@@ -235,13 +254,79 @@ const profilePath = values.profile
   : join(ROOT, 'cars', `${livery.car}.json`);
 const profile = await loadProfile(profilePath);
 
+// A fit adjusts where THIS design's artwork sits on THIS car — see
+// docs/fitting.md. It is looked up by convention so the common case needs no
+// flag, and its absence is completely normal: a car without one renders exactly
+// as the design placed things.
+const liveryName = fitLiveryId(liveryPath);
+const fitPath = values.fit
+  ? resolve(values.fit)
+  : join(ROOT, 'fits', `${liveryName}@${profile.id}.json`);
+const fit = await loadFit(fitPath).catch((e) => {
+  // An explicitly requested fit that will not load is an error; a missing
+  // conventional one is just a car nobody has tuned yet.
+  if (values.fit) fail(new Error(`Could not read --fit ${fitPath}: ${e.message}`));
+  return null;
+});
+if (fit) console.log(`  fit: ${fitPath.replace(ROOT + '/', '')}`);
+
 const folder = values.uvgrid ? `${livery.folder}_uvgrid` : livery.folder;
 const outDir = join(values.out, folder);
 
 console.log(`${livery.name}  ->  ${profile.name ?? profile.id}\n`);
 
-// --- build ------------------------------------------------------------------
-if (values.uvgrid) {
+/**
+ * The car model, if it can be found. Reports every path tried when it cannot.
+ *
+ * The order lives in `carModelCandidates` so it can be tested; the looking is
+ * here because only the CLI knows the checkout root and the environment.
+ */
+async function findCarModel(profile, explicit) {
+  if (explicit) {
+    const p = resolve(explicit);
+    // Named outright, so a miss is an error rather than a fallback: quietly
+    // ignoring the flag would be the worst of both.
+    await stat(p).catch(() => fail(new Error(`--model ${p} does not exist.`)));
+    return { path: p, looked: [p] };
+  }
+  const looked = carModelCandidates(profile, { root: ROOT, env: process.env });
+  for (const p of looked) {
+    if (await stat(p).then(() => true, () => false)) return { path: p, looked };
+  }
+  return { path: null, looked };
+}
+
+// --- the fitting editor -----------------------------------------------------
+//
+// Local only. It reads this machine's car models and stock skins, which the
+// project never ships, so it binds to 127.0.0.1 and there is no hosted version.
+if (values.ui) {
+  const { startUi } = await import('../src/ui/server.mjs');
+
+  // The profile records which kn5 it was generated from, so a person who has the
+  // car usually needs no flag. A missing model is not an error — it costs the 3D
+  // views and nothing else, which is the right trade for anyone holding a profile
+  // for a car they do not own or have not unpacked.
+  const { path: modelPath, looked } = await findCarModel(profile, values.model);
+  if (!modelPath) {
+    console.log('  no car model found, so the 3D views will be unavailable. Looked in:');
+    for (const p of looked) console.log(`    ${p}`);
+    console.log('  Point --model at the car\'s .kn5, or set AC_ROOT to your Assetto Corsa');
+    console.log('  install. The model is the game\'s, so this project never ships one.');
+  }
+
+  const { url } = await startUi({
+    livery,
+    profile,
+    fitPath,
+    liveryId: liveryName,
+    modelPath,
+    port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
+  });
+  console.log(`  fitting editor at ${url}`);
+  console.log(`  writes ${fitPath.replace(ROOT + '/', '')} when you press Save`);
+  console.log('  ctrl-c to stop');
+} else if (values.uvgrid) {
   const pngDir = join(values.out, `${folder}_png`);
   await buildCalibration({
     profile,
@@ -262,6 +347,7 @@ if (values.uvgrid) {
     scale: size ? size / largestTexture(profile) : 1,
     seed: values.seed,
     flat: values.flat,
+    fit,
     // Never inside outDir: packaging zips whatever it finds there.
     pngDir: values['keep-png'] ? join(values.out, `${folder}_png`) : null,
     liveryDir: dirname(liveryPath),
