@@ -1679,6 +1679,78 @@ test('a copy that cannot be placed can still be deleted', async () => {
   assert.equal(JSON.parse(dom.querySelector('#fitjson').textContent).copies?.['badge-gone'], undefined);
 });
 
+test('a copy cannot take an id belonging to another surface', async () => {
+  // Fit ids are FLAT across the livery — that is how a fit names a region
+  // without knowing which texture it lives on — while applyFit runs once per
+  // surface. So "is this name free?" asked of the regions in front of it is the
+  // wrong question, and a copy could quietly claim a name the design uses
+  // somewhere else.
+  const { applyFit, allRegionKeys } = await import('../src/fit.mjs');
+  const profile = { panels: { body: { L: { rect: [0, 0, 0.4, 0.4] } } } };
+  const targets = [
+    { from: 'body', role: 'body', spec: { regions: [{ id: 'badge', panel: 'L', treatment: 'fill' }] } },
+    { from: 'suit', role: 'suit', spec: { regions: [{ id: 'sponsor', treatment: 'fill' }] } },
+  ];
+  const reserved = allRegionKeys(targets);
+  assert.deepEqual([...reserved].sort(), ['badge', 'sponsor']);
+
+  const notes = [];
+  const { regions } = applyFit(
+    targets[0].spec.regions,
+    { livery: 'x', car: 'y', copies: { sponsor: { of: 'badge', panel: 'L' } } },
+    { profile, role: 'body', surfaceKey: 'body', reserved, notes },
+  );
+  assert.deepEqual(regions.map((r) => r.__key), ['badge'], 'the copy was refused');
+  assert.match(notes[0].text, /already declares/);
+
+  // Without the reserved set it is accepted, which is the bug: the surface it
+  // collides with is not the one being drawn.
+  const ok = applyFit(
+    targets[0].spec.regions,
+    { livery: 'x', car: 'y', copies: { elsewhere: { of: 'badge', panel: 'L' } } },
+    { profile, role: 'body', surfaceKey: 'body', reserved, notes: [] },
+  );
+  assert.deepEqual(ok.regions.map((r) => r.__key), ['badge', 'elsewhere'], 'a free name is fine');
+});
+
+test('a mirrored copy turns the rotation the design gave the source', async () => {
+  // The angle was read from the fit only. A livery is free to rotate a region
+  // itself, and applyFit clones the source's own `rotate` unchanged — so a
+  // mirrored copy of turned artwork faced the same way as its source instead of
+  // mirroring it, which on opposite flanks is upside down.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.surfaces.body.regions[0].rotate = 30;
+
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#mirrorcreate').onclick();
+
+  const copy = JSON.parse(dom.querySelector('#fitjson').textContent).copies['badge-mirror'];
+  assert.ok(copy, 'the copy was made');
+  assert.notEqual(copy.rotate, undefined, "the design's rotation has to reach the copy");
+  assert.notEqual(copy.rotate, 30, 'and be mirrored rather than repeated');
+});
+
+test('a mirror whose target panel is missing is reported, not thrown', async () => {
+  // `mirrorOf` is a name, and a profile can carry one whose target has gone.
+  // Dereferencing it unchecked turned "this car has no matching panel" into a
+  // TypeError from inside a click handler.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body.L.mirrorOf = 'no_such_panel';
+
+  const { dom } = await runApp({ server });
+  const buttons = inspectorButtons(dom, ['#mirrorcreate', '#duplicate', '#delete', '#mirror', '#unpair', '#mirrornow', '#pairwith']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await buttons.get('#mirrorcreate').onclick();
+
+  assert.match(dom.querySelector('#status').textContent, /does not have/,
+    'it should say so rather than throw');
+  assert.equal(JSON.parse(dom.querySelector('#fitjson').textContent).copies, undefined);
+});
+
 test('a created copy is listed, selectable and deletable', async () => {
   // The region list came from the SAVED fit, so a copy made in the editor was
   // rendered on the car and absent from the list: not selectable, not movable,

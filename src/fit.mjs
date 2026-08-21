@@ -171,6 +171,23 @@ export function regionKey(surfaceKey, region, index) {
 }
 
 /**
+ * Every key a fit could address, across the whole livery.
+ *
+ * Takes resolved targets rather than the livery, because a positional key is
+ * made from the surface a region resolved to and only `resolveTargets` knows
+ * that. Needed because fit ids are FLAT while applyFit runs once per surface: a
+ * check against "the regions I can see" is a check against one surface, and a
+ * copy is free to claim a name belonging to another.
+ */
+export function allRegionKeys(targets = []) {
+  const keys = new Set();
+  for (const t of targets) {
+    (t.spec?.regions ?? []).forEach((r, i) => keys.add(regionKey(t.from, r, i)));
+  }
+  return keys;
+}
+
+/**
  * Collect every region id a livery declares, and reject duplicates.
  *
  * Ids are flat across the whole livery rather than per surface, because that is
@@ -218,7 +235,7 @@ export function regionIds(livery) {
  * the one option not on the table — a fit quietly doing nothing is this
  * project's oldest bug wearing yet another costume.
  */
-export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [] } = {}) {
+export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [], reserved = null } = {}) {
   // Keys are stamped even with no fit at all. A car nobody has tuned is the
   // common case, and the editor still has to be able to name every region in
   // order to let you start tuning one.
@@ -306,11 +323,15 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       // Reported and skipped, like every other thing a fit asks for and cannot
       // have; the design's own region keeps the name, because the design is the
       // thing that is not a per-car adjustment.
-      if (out.some((r) => r.__key === id)) {
+      // `reserved` is every key the whole livery declares, not merely this
+      // surface's. Fit ids are flat and applyFit runs once per surface, so
+      // checking only what is in front of it lets a copy quietly take a name
+      // that belongs to a region on the driver's suit.
+      if (out.some((r) => r.__key === id) || reserved?.has(id)) {
         notes.push({
           term: id, status: 'fit-stale',
           text: `fit: copied region "${id}" would take the id of a region the livery ` +
-                `already declares on ${role} — rename the copy; it was not drawn`,
+                `already declares — rename the copy; it was not drawn`,
         });
         continue;
       }

@@ -354,9 +354,25 @@ async function inBrowser(driver, {
     'user_pref("network.proxy.no_proxies_on", "127.0.0.1,localhost");',
   ].join('\n'));
 
+  // The isolation above is written into a Firefox PROFILE, so it applies to
+  // Firefox and to nothing else. A Chromium here would have taken none of it and
+  // the suite would still have claimed to be offline, so it gets the equivalent
+  // switches rather than an assurance that does not cover it: no first-run
+  // network calls, no variations fetch, and a proxy pointing nowhere with
+  // loopback exempted.
   const args = BROWSER === 'firefox'
     ? ['--headless', '--window-size=1400,900', '--profile', profileDir, url]
-    : ['--headless=new', '--disable-gpu', '--window-size=1400,900', url];
+    : [
+      '--headless=new', '--disable-gpu', '--window-size=1400,900',
+      `--user-data-dir=${profileDir}`,
+      '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
+      '--disable-component-update', '--disable-domain-reliability', '--disable-sync',
+      '--metrics-recording-only', '--disable-client-side-phishing-detection',
+      '--variations-server-url=', '--disable-features=OptimizationHints',
+      '--proxy-server=http://127.0.0.1:1',
+      '--proxy-bypass-list=127.0.0.1;localhost',
+      url,
+    ];
   // Force the software rasteriser. A headless box has no GPU, and Firefox
   // otherwise reports "Exhausted GL driver options" on some runs and works on
   // others — which made the GL-dependent tests pass by taking their own skip

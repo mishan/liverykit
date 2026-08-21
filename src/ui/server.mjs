@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
-import { applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
@@ -438,13 +438,20 @@ export function fitUsage(livery, profile, fit) {
  * overlay is wrong and you can see that it is.
  */
 export function renderSurface({ livery, profile, fit, role, seed }) {
-  const spec = resolveTargets(profile, livery).targets.find((t) => t.role === role)?.spec;
+  const targets = resolveTargets(profile, livery).targets;
+  const target = targets.find((t) => t.role === role);
+  const spec = target?.spec;
   if (!spec) throw new Error(`No surface resolves to texture role "${role}" on this car.`);
 
   const notes = [];
   const used = new Set();
-  const surfaceKey = resolveTargets(profile, livery).targets.find((t) => t.role === role)?.from ?? '';
-  const fitted = applyFit(spec.regions ?? [], fit, { profile, role, surfaceKey, used, notes }).regions;
+  const surfaceKey = target.from ?? '';
+  const fitted = applyFit(spec.regions ?? [], fit, {
+    profile, role, surfaceKey, used, notes,
+    // Every id the livery declares ANYWHERE, so a copy cannot quietly take a
+    // name that belongs to a region on another surface.
+    reserved: allRegionKeys(targets),
+  }).regions;
 
   // Whether an id is stale is a question about the WHOLE livery, not about this
   // surface. A fit is flat, applyFit runs once per surface, and `used` above

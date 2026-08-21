@@ -991,7 +991,16 @@ function alreadyMirrored(id, other) {
   const flips = there.name === here.name ? selfMirrorFlips(here) : mirrorFlips(here, there);
   const want = mirrorAt(toPanelRelative(here.rect, a.abs), flips);
   const have = toPanelRelative(there.rect, b.abs);
-  return want.every((n, i) => Math.abs(n - have[i]) < 0.001);
+  if (!want.every((n, i) => Math.abs(n - have[i]) < 0.001)) return false;
+
+  // Rotation as well as rectangle. Mirroring propagates both, so comparing only
+  // the rectangle called a pair "already mirrored" — and disabled Mirror now —
+  // while one half sat at an angle the other did not. Which is precisely the
+  // state that button exists to repair.
+  const mine = resolvedRotation(id);
+  const theirs = resolvedRotation(other);
+  if (mine === undefined && theirs === undefined) return true;
+  return mirrorRotation(mine ?? 0, flips) === (theirs ?? 0);
 }
 
 function drawInspector() {
@@ -1187,6 +1196,10 @@ function wireInspectorButtons(id) {
       if (state.unlinked.has(id)) { state.unlinked.delete(id); state.unlinked.delete(other); }
       else { state.unlinked.add(id); if (other) state.unlinked.add(other); }
       drawInspector();
+      // The car shows the twin's rectangle beside the selected one, and which
+      // twin that is has just changed. Redrawing only the inspector left the
+      // old partner lit up on the model while edits no longer reached it.
+      drawOverlay();
       status(state.unlinked.has(id) ? 'sides edit independently' : 'sides move together');
     };
   }
@@ -1241,6 +1254,7 @@ function wireInspectorButtons(id) {
       state.unlinked.delete(id);
       if (other) state.unlinked.delete(other);
       drawInspector();
+      drawOverlay();                       // the former twin must stop being highlighted
       status(`${id} is on its own now`);
     };
   }
@@ -1264,14 +1278,27 @@ async function mirrorCopy(id) {
   const here = state.surface.panels.find((p) => p.name === sel.panel);
   if (!here) return status('this region has no panel to mirror across');
 
+  // `mirrorOf` is a name, and a profile can carry one whose target is gone —
+  // regeneration renames islands, and a hand-written profile may simply be
+  // wrong. Dereferencing it unchecked turned "this car has no matching panel"
+  // into a TypeError from inside a click handler.
   const there = state.surface.panels.find((p) => p.name === (here.mirrorOf ?? here.name));
+  if (!there) {
+    return status(`${sel.panel} says its mirror is ${here.mirrorOf}, which this car does not have`);
+  }
   const flips = there.name === here.name ? selfMirrorFlips(here) : mirrorFlips(here, there);
-  const own = state.fit.regions[id] ?? {};
+
+  // The rotation the source actually has, which is the fit's if it overrode one
+  // and the DESIGN's otherwise. Reading only the fit meant a mirrored copy of
+  // artwork the livery had turned kept that angle unmirrored: applyFit clones
+  // the source's own `rotate` unchanged, so the two halves faced the same way
+  // instead of mirroring each other.
+  const rotate = resolvedRotation(id);
 
   const copyId = await addCopy(id, 'mirror', {
     panel: there.name,
     at: mirrorAt(toPanelRelative(here.rect, sel.abs), flips),
-    ...(own.rotate !== undefined ? { rotate: mirrorRotation(own.rotate, flips) } : {}),
+    ...(rotate !== undefined ? { rotate: mirrorRotation(rotate, flips) } : {}),
   });
   // Linked from the start: it was created as this region's other half, and
   // having to then declare that would be asking twice.
@@ -1314,17 +1341,32 @@ async function duplicateRegion(id) {
   };
   const nudged = [nudge(at[0], at[2]), nudge(at[1], at[3]), at[2], at[3]];
   const stacked = nudged[0] === at[0] && nudged[1] === at[1];
-  const own = state.fit.regions[id] ?? {};
+  const rotate = resolvedRotation(id);
   const copyId = await addCopy(id, 'copy', {
     ...(sel.panel ? { panel: sel.panel } : {}),
     at: nudged,
-    ...(own.rotate !== undefined ? { rotate: own.rotate } : {}),
+    ...(rotate !== undefined ? { rotate } : {}),
   });
   await refresh();
   selectRegion(copyId);
   status(stacked
     ? `duplicated as ${copyId}, exactly on top — it fills its panel, so there is nowhere to offset it`
     : `duplicated as ${copyId}`);
+}
+
+/**
+ * The rotation a region actually has: the fit's if it overrode one, the design's
+ * if it did not.
+ *
+ * A copy is made from what is ON the car, not from what the fit happens to
+ * mention. Reading only the fit made a mirrored copy of rotated artwork keep the
+ * angle unmirrored, because applyFit clones the source's own `rotate` and the
+ * copy said nothing to the contrary.
+ */
+function resolvedRotation(id) {
+  const o = copyEntry(id) ?? state.fit.regions[id] ?? {};
+  if (o.rotate !== undefined) return o.rotate;
+  return state.surface.regions.find((r) => r.id === id)?.rotate ?? undefined;
 }
 
 /** Write a copy into the fit and re-read what the surface now contains. */
@@ -1339,6 +1381,11 @@ async function addCopy(id, suffix, placement) {
     ...state.data.surfaces.flatMap((s) => s.regions.map((r) => r.id)),
     ...Object.keys(state.fit.copies ?? {}),
     ...Object.keys(state.fit.mirrors ?? {}),
+    // Overrides too. An older fit can still carry an entry for `badge-copy`
+    // after the region it adjusted left the design, and taking that name writes
+    // one id under both `regions` and `copies` — which renders from the copy and
+    // is then refused by validateFit on the way to disk.
+    ...Object.keys(state.fit.regions ?? {}),
   ]);
 
   // Named after the source so the fit reads as what it is, and numbered on
