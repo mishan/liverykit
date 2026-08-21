@@ -140,7 +140,17 @@ test('the browser probe does not depend on a shell being installed', async () =>
  * somewhere unrelated rather than as this test failing.
  */
 async function launch(command, args, env = {}) {
-  const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], env: browserEnv(env) });
+  // `detached` puts the child in its own process GROUP, which is the only way to
+  // stop it cleanly. Under Xvfb the thing spawned is `xvfb-run`, a shell script:
+  // signalling it leaves Xvfb and the browser running, and those survivors hold
+  // the pipes below open — so the test passes, the run finishes, and node then
+  // sits there forever with nothing left to do. Signalling the group reaches all
+  // of them.
+  const child = spawn(command, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: browserEnv(env),
+    detached: true,
+  });
   const state = { done: false, code: null, signal: null, error: null, output: '' };
 
   // Bounded: a browser that fails in a loop can produce megabytes, and the tail
@@ -155,7 +165,16 @@ async function launch(command, args, env = {}) {
 
   return {
     get done() { return state.done; },
-    kill: () => child.kill('SIGKILL'),
+    kill: () => {
+      // The group, then the pipes. Killing alone is not enough: a handle Node
+      // still holds keeps the event loop alive whether or not anything is
+      // writing to it.
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+      child.kill('SIGKILL');
+      child.stdout.destroy();
+      child.stderr.destroy();
+      child.unref();
+    },
     why(waited) {
       const how = state.error ? `could not be started: ${state.error.message}`
         : state.done ? `exited after ${(waited / 1000).toFixed(1)}s `
