@@ -15,6 +15,19 @@ import { r2 } from './engine/rng.mjs';
 const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 
 /**
+ * What an identity token looks like inside a region's `text`.
+ *
+ * Named rather than written inline where it is used, because the editor has to
+ * know the same rule — a token called `driver-name` can never be substituted, so
+ * `{driver-name}` would be painted on the door as itself — and `src/ui/uses.js`
+ * cannot import from here, since the browser loads that file directly. The test
+ * lifts this constant out of the source and checks the two agree, so this has to
+ * stay findable: a regex spelled out at the call site was, until moving the call
+ * one line hid it and the check quietly stopped comparing anything.
+ */
+export const TOKEN = /\{(\w+)\}/g;
+
+/**
  * A value from a livery, made safe to put in a document.
  *
  * A treatment builds markup by interpolation — `fill="${color}"` — which is the
@@ -119,7 +132,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // instead is caught rather than trusted.
     const opts = safeDeep({ ...region, text: undefined });
     if (typeof region.text === 'string') {
-      opts.text = region.text.replace(/\{(\w+)\}/g, (_, k) => tokens[k] ?? '');
+      opts.text = region.text.replace(TOKEN, (_, k) => tokens[k] ?? '');
     } else if (region.text !== undefined) {
       opts.text = region.text;
     } else {
