@@ -1955,7 +1955,7 @@ test('a livery carrying code is not offered as data to edit', async () => {
   // JSON.stringify drops a function without a word, so a procedural design
   // edited this way would show one thing and build another. Refusing is the
   // same rule as everywhere else here, one level up.
-  const { serialisableDesign } = await import('../src/ui/server.mjs');
+  const { serialisableDesign } = await import('../src/livery.mjs');
   const { design, lossy } = serialisableDesign({
     name: 'L', palette: { ink: '#000' },
     surfaces: { body: { regions: [{ id: 'a', treatment: 'fill' }] } },

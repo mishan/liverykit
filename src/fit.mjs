@@ -40,7 +40,11 @@ import { basename } from 'node:path';
  * (`neon_grid_any`) and is a different string on every design that has both.
  */
 export function fitLiveryId(liveryPath) {
-  return basename(liveryPath).replace(/\.mjs$/, '');
+  // Both extensions. A design may now be data rather than code, and stripping
+  // only `.mjs` would give `my-livery.json` a fit called
+  // `my-livery.json@abarth500.json` — which loads, and disagrees with every
+  // other fit about how the pair is named.
+  return basename(liveryPath).replace(/\.(mjs|json)$/, '');
 }
 
 /**

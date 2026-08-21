@@ -35,6 +35,7 @@ import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, 
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
 import { treatmentOptions } from './fields.js';
+import { serialisableDesign } from '../livery.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -234,32 +235,6 @@ function matchCase(sample, word) {
   if (sample === sample.toUpperCase()) return word.toUpperCase();
   if (sample[0] === sample[0].toUpperCase()) return word[0].toUpperCase() + word.slice(1);
   return word;
-}
-
-/**
- * The livery as data, and an honest account of anything that could not come.
- *
- * A livery is an ES module, but everything the editor needs from it is plain:
- * palette, identity, and regions naming a treatment by string. Both shipped
- * designs round-trip through JSON unchanged.
- *
- * A PROCEDURAL design does not. Regions built in a loop survive — they are
- * ordinary objects by the time anyone sees them — but a function anywhere in the
- * object does not, and JSON.stringify drops one without a word. That is the
- * exact shape of failure this project exists to refuse, so the paths are
- * collected and reported; a caller that finds `lossy` non-empty must not offer
- * to author, because what it would show is not what the build would paint.
- */
-export function serialisableDesign(livery) {
-  const lossy = [];
-  const walk = (v, path) => {
-    if (typeof v === 'function') { lossy.push(path); return undefined; }
-    if (v === null || typeof v !== 'object') return v;
-    if (Array.isArray(v)) return v.map((x, i) => walk(x, `${path}[${i}]`));
-    return Object.fromEntries(
-      Object.entries(v).map(([k, x]) => [k, walk(x, path ? `${path}.${k}` : k)]));
-  };
-  return { design: walk(livery, ''), lossy };
 }
 
 /** Every treatment a design can reach, with whatever describes it. */
