@@ -346,6 +346,108 @@ test('a selected region turns into a highlight the shader can use', async () => 
   assert.ok(tiny.border < 0.004 / 2, `border ${tiny.border} would swallow a 0.004-wide region`);
 });
 
+test('the page and the script agree about what exists', async () => {
+  // A structural check, because the DOM harness above cannot make one: it
+  // invents an element for any selector asked of it, which is exactly how it
+  // hid two bugs that made the editor completely unusable.
+  //
+  // The first was a DUPLICATE id. The 3D canvas was given `car`, which the
+  // header's car-name span already had, and the stylesheet then applied
+  // `position: absolute; inset: 0` to both. The span's containing block is the
+  // viewport, so it became an invisible page-sized sheet over the whole editor
+  // and swallowed every click. Nothing looked wrong.
+  //
+  // The second was an INVALID selector. `#3dnote` cannot be a CSS id selector —
+  // they may not start with a digit — so querySelector throws a SyntaxError
+  // rather than returning null.
+  const [html, app, css] = await Promise.all(
+    ['index.html', 'app.js', 'style.css'].map((f) =>
+      readFile(new URL(`../src/ui/${f}`, import.meta.url), 'utf8')));
+
+  const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(ids.filter((v, i) => ids.indexOf(v) !== i), [],
+    'duplicate ids: querySelector silently takes the first, and CSS takes both');
+
+  const selectors = [...new Set([...app.matchAll(/\$\('([^']+)'\)/g)].map((m) => m[1]))];
+
+  // These are built by drawInspector into #inspector's innerHTML, so they exist
+  // when they are asked for but never appear in the static page.
+  const dynamic = new Set(['#drop', '#reset']);
+  const missing = selectors.filter((s) =>
+    s.startsWith('#') && !dynamic.has(s) && !ids.includes(s.slice(1)));
+  assert.deepEqual(missing, [], 'app.js queries ids the page does not contain');
+
+  assert.deepEqual(selectors.filter((s) => /^#[0-9]/.test(s)), [],
+    'an id selector may not begin with a digit — querySelector throws on these');
+
+  // `hidden` is only a UA rule of `display: none`, and any id or class rule
+  // setting `display` outranks it. #carview did exactly that: the canvas stayed
+  // over the stage while marked hidden, ate every click meant for a panel or a
+  // drag box, and went solid black once WebGL cleared it — so the UV view went
+  // blank and stayed blank while the tabs themselves worked.
+  //
+  // The reset must therefore exist, and must be able to win.
+  assert.match(css, /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/,
+    'the stylesheet needs a [hidden] reset that outranks its own display rules');
+
+  // And anything app.js toggles with `hidden` must be covered by it.
+  const toggled = [...new Set([...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]))];
+  assert.ok(toggled.length, 'the editor toggles something with hidden');
+  for (const id of toggled) {
+    assert.ok(ids.includes(id), `app.js hides #${id}, which the page does not contain`);
+  }
+
+  // Every id the stylesheet positions absolutely must be one of the stage
+  // layers. That is precisely the rule the #car collision broke.
+  //
+  // Parsed rule by rule rather than with one regex over the whole file: a
+  // pattern that spans `{` happily matches a hex colour in the previous rule's
+  // body, which is a fine way to make a test that fails for the wrong reason.
+  // Comments first: they sit between rules, so splitting on `}` glues a
+  // comment onto the next selector — and this file's comments mention the very
+  // id the check is about.
+  for (const rule of css.replace(/\/\*[\s\S]*?\*\//g, '').split('}')) {
+    const [selector, body = ''] = rule.split('{');
+    if (!/position:\s*absolute/.test(body)) continue;
+    for (const [, id] of selector.matchAll(/#([\w-]+)/g)) {
+      assert.ok(['texture', 'overlay', 'carview'].includes(id),
+        `#${id} is positioned absolutely but is not a stage layer`);
+    }
+  }
+});
+
+test('the camera matrices compose in the convention GLSL reads them', async () => {
+  // perspective() and lookAt() build COLUMN-major arrays, which is what
+  // uniformMatrix4fv(transpose = false) expects, and mul() was originally a
+  // row-major multiply. The composed matrix put geometry behind the eye — a
+  // vertex that should land at w = 4.7 came out at w = -0.3 — so the viewport
+  // showed the inside of the car with every letter mirrored.
+  const { _internal } = await import('../src/ui/view3d.js');
+  const { perspective, lookAt, mul } = _internal;
+
+  // Apply a column-major matrix the way the shader does.
+  const apply = (m, v) => [0, 1, 2, 3].map((r) =>
+    m[r] * v[0] + m[4 + r] * v[1] + m[8 + r] * v[2] + m[12 + r] * v[3]);
+
+  const P = perspective(0.8, 1.4, 0.05, 100);
+  const V = lookAt([3, 2, 5], [0, 0.7, 0], [0, 1, 0]);
+  const mvp = mul(P, V);
+
+  for (const pt of [[0, 0.7, 0, 1], [1, 0.5, -1.8, 1], [-0.9, 1.6, 2, 1]]) {
+    const stepwise = apply(P, apply(V, pt));
+    const composed = apply(mvp, pt);
+    for (let i = 0; i < 4; i++) {
+      assert.ok(Math.abs(stepwise[i] - composed[i]) < 1e-6,
+        `composing P and V must equal applying them in turn: ${composed} vs ${stepwise}`);
+    }
+  }
+
+  // And the car must be IN FRONT of the camera: w > 0 for a point at the
+  // target, which is the check that would have caught the inside-out view.
+  const [, , , w] = apply(mvp, [0, 0.7, 0, 1]);
+  assert.ok(w > 0, `the look-at target must be in front of the eye, got w = ${w}`);
+});
+
 test('the whole car packs every mesh exactly once, painted or not', async () => {
   const { wholeModelGeometry, packModel } = await import('../src/ui/server.mjs');
   const { unpackModel } = await import('../src/ui/view3d.js');
@@ -744,10 +846,61 @@ test('mirror pairs need both halves and mirrored panels', async () => {
   ]).size, 2);
 });
 
+test('a mirror pair is linked only where the panels can be checked', async () => {
+  // The rule is "if both name a panel outright those panels have to be each
+  // other's mirror". Two ways to get that wrong, and both link things that
+  // should not be linked or refuse things that should.
+  const { mirrorPairs } = await import('../src/ui/server.mjs');
+  const profile = {
+    panels: {
+      body: {
+        left_mid: { rect: [0, 0, 0.4, 0.4], mirrorOf: 'right_mid' },
+        right_mid: { rect: [0.5, 0, 0.4, 0.4], mirrorOf: 'left_mid' },
+        centre_nose: { rect: [0, 0.5, 0.4, 0.4] },      // straddles the centreline
+        roof: { rect: [0.5, 0.5, 0.4, 0.4] },
+      },
+    },
+    aliases: { body: { flankLeft: 'left_mid', flankRight: 'right_mid' } },
+  };
+  const pairs = (regions) => mirrorPairs({ surfaces: { body: { regions } } }, profile, 'body');
+
+  // A livery may name a panel through the profile's aliases — that is what they
+  // are for. Failing to resolve them made a genuine mirror look unverifiable.
+  assert.equal(pairs([
+    { id: 'number-left', panel: 'flankLeft' },
+    { id: 'number-right', panel: 'flankRight' },
+  ]).size, 2, 'aliases resolve, exactly as the renderer resolves them');
+
+  // A panel with no mirror IS its own: it crosses the centreline, so both halves
+  // live on it, mirrored within it. A car with two numbers on its nose.
+  assert.equal(pairs([
+    { id: 'number-left', panel: 'centre_nose' },
+    { id: 'number-right', panel: 'centre_nose' },
+  ]).size, 2, 'a centreline panel is its own mirror');
+
+  // But a two-sided panel named by both halves is not: they would stack.
+  assert.equal(pairs([
+    { id: 'number-left', panel: 'left_mid' },
+    { id: 'number-right', panel: 'left_mid' },
+  ]).size, 0, 'a panel that HAS a mirror is not its own');
+
+  // A name that resolves to nothing cannot be shown to be anyone's mirror.
+  // Linking on the grounds that the evidence is missing is how a badge ends up
+  // on a roof.
+  assert.equal(pairs([
+    { id: 'badge-left', panel: 'no_such_panel' },
+    { id: 'badge-right', panel: 'roof' },
+  ]).size, 0, 'unverifiable is unlinked, not linked');
+  assert.equal(pairs([
+    { id: 'badge-left', panel: 'left_mid' },
+    { id: 'badge-right', panel: 'no_such_panel' },
+  ]).size, 0, 'and it does not matter which half is the unknown one');
+});
+
 test('the shipped example livery pairs all three of its sided regions', async () => {
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const surface = state.surfaces[0];
 
   const linked = surface.regions.filter((r) => r.mirror).map((r) => `${r.id}->${r.mirror}`);
@@ -765,7 +918,7 @@ test('rotating one half of a pair rotates the other', async () => {
   const role = binding(profile, 'body').roles[0];
 
   const { dom } = await runApp({
-    state: editorState({ livery, profile, fit }),
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
     render: renderSurface({ livery, profile, fit, role }),
   });
 
@@ -925,7 +1078,7 @@ test('dragging one half of a pair onto a shared panel brings the other with it',
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles[0];
 
-  const state = editorState({ livery, profile, fit: null });
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   const surface = state.surfaces.find((x) => x.role === role);
 

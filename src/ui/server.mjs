@@ -235,11 +235,25 @@ function matchCase(sample, word) {
 /**
  * Regions that are two halves of one idea, and should move together.
  *
- * Both halves have to exist, and if both name a panel outright those panels
- * have to be each other's mirror. That second check is what stops a livery
- * where `badge-left` sits on the door and `badge-right` on the roof from being
- * linked into nonsense — and it costs nothing, because `mirrorOf` is measured
- * from the model rather than guessed from a name.
+ * Both halves have to exist, and if both name a panel outright those panels have
+ * to be each other's mirror. That second check is what stops a livery where
+ * `badge-left` sits on the door and `badge-right` on the roof from being linked
+ * into nonsense — and it costs nothing, because `mirrorOf` is measured from the
+ * model rather than guessed from a name.
+ *
+ * Two things the check has to get right, and both come down to the same rule:
+ * link only what can be VERIFIED as a mirror.
+ *
+ *   * A declared name may be an alias, so it is resolved through the profile
+ *     exactly as the renderer resolves it. A name that resolves to nothing —
+ *     the design names a panel this car does not have — cannot be shown to be
+ *     anyone's mirror, so the halves are left unlinked. Linking on the grounds
+ *     that the evidence is missing is how a badge ends up on a roof.
+ *
+ *   * Both halves may name the SAME panel, and that is valid: a panel with no
+ *     mirror straddles the centreline, so it is its own, and a car with two
+ *     numbers on its nose wears both of them there. `commit` already mirrors
+ *     within such a panel; this must not refuse the pair before it gets there.
  */
 export function mirrorPairs(livery, profile, role) {
   const byId = new Map();
@@ -248,15 +262,26 @@ export function mirrorPairs(livery, profile, role) {
   }
 
   const panels = profile.panels?.[role] ?? {};
+  // The renderer's resolution, not a lookup: a livery is free to say `flankLeft`
+  // and let the profile's aliases say which island that is.
+  const resolve = (name) => {
+    const real = profile.aliases?.[role]?.[name] ?? name;
+    return panels[real] ? [real, panels[real]] : [null, null];
+  };
+
   const out = new Map();
   for (const [id, r] of byId) {
     const other = partnerId(id);
     if (!other || !byId.has(other)) continue;
     const o = byId.get(other);
     if (r.panel && o.panel) {
-      const mine = panels[r.panel] ?? profile.panels?.[profile.aliases?.[role]?.[r.panel]] ?? null;
-      const theirs = panels[o.panel];
-      if (mine && theirs && mine.mirrorOf !== o.panel && theirs.mirrorOf !== r.panel) continue;
+      const [mineName, mine] = resolve(r.panel);
+      const [theirsName, theirs] = resolve(o.panel);
+      if (!mine || !theirs) continue;                       // unverifiable, so unlinked
+      const mirrored = mineName === theirsName
+        ? mine.mirrorOf === undefined                       // a centreline panel is its own
+        : mine.mirrorOf === theirsName || theirs.mirrorOf === mineName;
+      if (!mirrored) continue;
     }
     out.set(id, other);
   }
