@@ -428,18 +428,41 @@ export function mirrorAt(at, flips) {
 /**
  * The rotation that keeps artwork the same way up on the twin.
  *
- * Only the V axis matters, which is worth stating because it looks wrong at
- * first. Rotation is about which way the artwork READS, and "up" in an image is
- * the -v direction. Reversing u moves the artwork to the other end of the panel
- * without turning it over; reversing v inverts the panel's idea of up, so the
- * artwork needs half a turn to match.
+ * Derived rather than guessed, because the guess was wrong. This said "only the
+ * V axis matters" — reversing u moves artwork along the panel without turning
+ * it over — and that is true at 0 degrees and false at every other angle, which
+ * is exactly how it survived until somebody rotated a driver name and found it
+ * upside down on the far side.
  *
- * `auto` passes through untouched, because it is not an angle. It defers to
- * each panel's own measured textRotation, which already accounts for all of it.
+ * Let S = diag(su, sv), with su = -1 when the u axes run opposite and +1 when
+ * they agree. Writing the artwork's up direction in image coordinates as
+ * up(t) = (sin t, -cos t), the twin has to satisfy up(f) = S up(t), so
+ *
+ *     sin f = su sin t        cos f = sv cos t
+ *
+ * which has one solution in each of four cases:
+ *
+ *     neither flipped     f = t
+ *     both flipped        f = t + 180
+ *     u flipped only      f = -t
+ *     v flipped only      f = 180 - t
+ *
+ * Only the first two preserve handedness. The other two are reflections, so
+ * there is no rotation that makes the twin a true mirror image of the original
+ * — the artwork itself would have to be flipped. That is the right outcome for
+ * text, which should READ on both flanks rather than be reversed on one, and it
+ * is why this matches the up direction rather than the whole frame.
+ *
+ * `auto` passes through untouched. It is not an angle: it defers to each
+ * panel's own measured textRotation, which already accounts for all of this.
  */
 export function mirrorRotation(rotate, flips) {
   if (typeof rotate !== 'number' || !Number.isFinite(rotate)) return rotate;
-  return flips.v ? (((rotate + 180) % 360) + 360) % 360 : rotate;
+  const t = (((rotate % 360) + 360) % 360);
+  if (flips.u && flips.v) return (t + 180) % 360;
+  if (flips.u) return (360 - t) % 360;
+  if (flips.v) return (540 - t) % 360;
+  return t;
 }
 
 /** Ids a fit mentions that the livery does not declare. */

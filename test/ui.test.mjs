@@ -974,11 +974,36 @@ test('a mirrored placement is measured, not assumed', async () => {
   assert.deepEqual(same, { u: false, v: false });
   assert.deepEqual(mirrorAt([0.1, 0.2, 0.3, 0.4], same), [0.1, 0.2, 0.3, 0.4]);
 
-  // Only V affects which way the artwork reads: reversing u moves it to the
-  // other end of the panel without turning it over.
-  assert.equal(mirrorRotation(90, { u: true, v: false }), 90);
-  assert.equal(mirrorRotation(90, { u: false, v: true }), 270);
+  // Rotation is decided by BOTH axes. Solving up(f) = S up(t) for the four
+  // sign combinations gives one answer each, and the Abarth's flanks — u
+  // reversed, v not — are the case that was wrong: a driver name rotated 270
+  // was copied across as 270 and came out upside down, because the answer is
+  // -t, which is 90.
+  assert.equal(mirrorRotation(270, { u: true, v: false }), 90, 'the reported bug');
+  assert.equal(mirrorRotation(90, { u: true, v: false }), 270);
+  assert.equal(mirrorRotation(90, { u: false, v: true }), 90);
   assert.equal(mirrorRotation(0, { u: false, v: true }), 180);
+  assert.equal(mirrorRotation(0, { u: true, v: true }), 180);
+  assert.equal(mirrorRotation(90, { u: true, v: true }), 270);
+  assert.equal(mirrorRotation(90, { u: false, v: false }), 90);
+
+  // Upright text was right under the old rule too, which is exactly why this
+  // survived: it is only wrong once something is turned.
+  assert.equal(mirrorRotation(0, { u: true, v: false }), 0);
+
+  // Mirroring twice returns where it started, for every combination. That is
+  // the property the old rule quietly failed and the cheapest check that these
+  // four cases are one reflection rather than four guesses.
+  for (const f of [{ u: 0, v: 0 }, { u: 1, v: 0 }, { u: 0, v: 1 }, { u: 1, v: 1 }]) {
+    const flips = { u: !!f.u, v: !!f.v };
+    for (const t of [0, 90, 180, 270]) {
+      assert.equal(mirrorRotation(mirrorRotation(t, flips), flips), t,
+        `${t} through ${JSON.stringify(flips)} twice`);
+    }
+  }
+  // Angles arriving unnormalised, from a fit written by hand.
+  assert.equal(mirrorRotation(-90, { u: true, v: false }), 90);
+  assert.equal(mirrorRotation(450, { u: false, v: false }), 90);
   // `auto` is not an angle. It defers to each panel's own measured rotation,
   // which already accounts for every bit of this.
   assert.equal(mirrorRotation('auto', { u: true, v: true }), 'auto');
