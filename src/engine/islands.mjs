@@ -104,6 +104,20 @@ function measure(model, mesh, verts, tris) {
   // area-weighted, and comparing against the panel's own plane gives the
   // rotation artwork has to undo.
   let aniso = 0, wsum = 0, uvArea = 0, area3d = 0;
+  // The tangents' LENGTHS, kept as well as their ratio.
+  //
+  // `anisotropy` says a panel is 3.9 times wider than it is tall in UV terms,
+  // which is what the renderer needs to un-stretch a glyph. It cannot answer the
+  // question a person actually asks about a placement — "how big will that be on
+  // the car" — because a ratio has no size in it. Both panels of a 1:1 wheel hub
+  // and a 1:1 bonnet report 1.
+  //
+  // The magnitudes are right here, computed for the ratio and then thrown away,
+  // so keeping them costs two additions and closes that. Assetto Corsa models
+  // are in metres — confirmed independently by the wheel-derived track width and
+  // wheelbase matching a spec sheet, which the README already points at as the
+  // two numbers in a profile you can check — so these are metres per unit of UV.
+  let sumT = 0, sumB = 0;
   let bx = 0, by = 0, bz = 0, nx = 0, ny = 0, nz = 0;
   // The tangent's DIRECTION, not just its length. The length alone gives
   // anisotropy; the direction says which way along the car "rightwards on the
@@ -129,6 +143,8 @@ function measure(model, mesh, verts, tris) {
     if (lb < 1e-9) continue;
     const w = Math.abs(det);
     aniso += (lt / lb) * w;
+    sumT += lt * w;
+    sumB += lb * w;
     wsum += w;
 
     // Area-weighted so a few stray triangles at a panel's edge cannot outvote
@@ -168,6 +184,13 @@ function measure(model, mesh, verts, tris) {
     box3d: { x0, x1, y0, y1, z0, z1 },
     centroid: { x: cx / n, y: cy / n, z: cz / n },
     anisotropy: wsum ? aniso / wsum : 1,
+    // NOT redundant with `anisotropy`, though it looks it. That is the
+    // area-weighted mean of each triangle's RATIO; this is the ratio of the two
+    // area-weighted means, and on a curved panel they differ — a mean of
+    // quotients is not the quotient of means. Both are honest answers to
+    // different questions, so both are kept rather than one being derived from
+    // the other and quietly disagreeing with the renderer.
+    metresPerUv: wsum ? [sumT / wsum, sumB / wsum] : null,
     uvArea,
     area3d,
     meshRef: mesh,
