@@ -2682,21 +2682,29 @@ function hideProposalBanner() {
 
 async function acceptProposal() {
   if (!currentProposal) return;
-  const id = currentProposal.id;
-  currentProposal = null;
-  hideProposalBanner();
-  await api('/api/proposal/ack', { id, status: 'accepted' });
-  status('accepted proposal');
+  const prop = currentProposal;
+  try {
+    await api('/api/proposal/ack', { id: prop.id, status: 'accepted' });
+    currentProposal = null;
+    hideProposalBanner();
+    status('accepted proposal');
+  } catch (e) {
+    status(`failed to accept proposal: ${e.message}`);
+  }
 }
 
 async function discardProposal() {
   if (!currentProposal) return;
-  const id = currentProposal.id;
-  currentProposal = null;
-  hideProposalBanner();
-  await api('/api/proposal/ack', { id, status: 'discarded' });
-  await undo();
-  status('discarded proposal');
+  const prop = currentProposal;
+  try {
+    await api('/api/proposal/ack', { id: prop.id, status: 'discarded' });
+    currentProposal = null;
+    hideProposalBanner();
+    await undo();
+    status('discarded proposal');
+  } catch (e) {
+    status(`failed to discard proposal: ${e.message}`);
+  }
 }
 
 const acceptBtn = $('#proposal-accept');
