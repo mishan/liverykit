@@ -363,3 +363,60 @@ test('every shipped profile has a name a person would recognise', async () => {
     assert.ok(p.name && p.name !== p.id, `cars/${f} has no display name (got ${JSON.stringify(p.name)})`);
   }
 });
+
+test('a car states its own name, and the profile stops shipping an empty one', async () => {
+  // Nothing in a kn5 says "Abarth 500", so the display name defaulted to '' and
+  // every profile regenerated without `--car-name` shipped with none — falling
+  // back to the id everywhere, and calling the car
+  // `ac_friends_honda_nsx_gt3_evo` from then on.
+  //
+  // But the kn5 is not the only file in the folder. `ui/ui_car.json` sits beside
+  // it and carries the name the car's author gave it, which is what Content
+  // Manager and the game read. Taking it is a measurement, not an inference.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const car = async (uiCar, opts = {}) => {
+    const dir = await mkdtemp(join(tmpdir(), 'lk-name-'));
+    await writeFile(join(dir, 'car.kn5'), carKn5());
+    if (uiCar !== null) {
+      await mkdir(join(dir, 'ui'), { recursive: true });
+      await writeFile(join(dir, 'ui', 'ui_car.json'), uiCar);
+    }
+    const said = [];
+    const p = await profileFromKn5(join(dir, 'car.kn5'),
+      { id: 'c', visibility: false, log: (m) => said.push(m), ...opts });
+    return { name: p.name, said: said.join('\n') };
+  };
+
+  assert.equal((await car('{"name":"Honda NSX GT3 Evo","brand":"Honda"}')).name, 'Honda NSX GT3 Evo');
+
+  // UTF-16LE with a byte-order mark, which a surprising number of these are.
+  // JSON.parse sees NUL bytes between every character and gives up.
+  const utf16 = Buffer.concat([
+    Buffer.from([0xFF, 0xFE]),
+    Buffer.from('{"name":"Mazda 787B"}', 'utf16le'),
+  ]);
+  assert.equal((await car(utf16)).name, 'Mazda 787B', 'UTF-16 is common enough to handle');
+
+  // And a UTF-8 BOM, which is the other half of the same problem.
+  assert.equal((await car('﻿{"name":"Lancia 037"}')).name, 'Lancia 037');
+
+  // An explicit name still wins. It is the one a person chose.
+  assert.equal((await car('{"name":"From the file"}', { name: 'From the flag' })).name, 'From the flag');
+
+  // Every way this file goes wrong is a shrug and a note, never a throw: a
+  // profile is worth generating without a display name, and refusing to measure
+  // a car because its metadata has a trailing comma would be absurd.
+  const broken = await car('{"name":"Half a car",}');
+  assert.equal(broken.name, '');
+  assert.match(broken.said, /not valid JSON/);
+  assert.match(broken.said, /--car-name/, 'and says what to do instead');
+
+  assert.equal((await car(null)).name, '', 'no ui folder at all is not an error');
+  assert.equal((await car('{"brand":"Nobody"}')).name, '', 'nor a file with no name in it');
+  assert.equal((await car('{"name":"   "}')).name, '', 'nor a name that is only spaces');
+});
