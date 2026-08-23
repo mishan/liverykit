@@ -237,23 +237,23 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
   }
 });
 
-test('mcp tools: propose_fit posts fit overrides', async () => {
+test('mcp tools: propose_fit with valid add-copy', async () => {
   const { url, stop } = await setupTestEditor();
   try {
     const client = createEditorClient(url);
     const handler = createToolHandler(client);
 
     const propRes = await handler.callTool('propose_fit', {
-      why: 'nudge stripe to front nose',
+      why: 'add copy of stripe on right flank',
       fit: [
-        { op: 'set-override', id: 'stripe-centre', panel: 'nose_upper', at: [0, 0, 1, 0.5] },
+        { op: 'add-copy', id: 'stripe-right', of: 'stripe-centre', panel: 'flank_right' },
       ],
     });
 
     assert.ok(!propRes.isError);
     const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
-    assert.equal(pending.proposal.why, 'nudge stripe to front nose');
-    assert.equal(pending.proposal.fit[0].op, 'set-override');
+    assert.equal(pending.proposal.why, 'add copy of stripe on right flank');
+    assert.equal(pending.proposal.fit[0].op, 'add-copy');
   } finally {
     await stop();
   }

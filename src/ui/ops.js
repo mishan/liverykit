@@ -124,23 +124,39 @@ export function applyDesignOp(design, op) {
 
 export function opSetOverride(fit, { id, panel, at, rotate }) {
   if (!isSafeKey(id)) return;
-  fit.regions[id] ??= {};
-  if (panel !== undefined) fit.regions[id].panel = panel;
-  if (at !== undefined) fit.regions[id].at = at;
-  if (rotate !== undefined) fit.regions[id].rotate = rotate;
+  let target = null;
+  if (fit.copies && fit.copies[id]) {
+    target = fit.copies[id];
+  } else if (fit.mirrors && fit.mirrors[id]) {
+    target = fit.mirrors[id];
+  } else {
+    fit.regions ??= {};
+    fit.regions[id] ??= {};
+    target = fit.regions[id];
+  }
+
+  if (panel !== undefined) target.panel = panel;
+  if (at !== undefined) target.at = at;
+  if (rotate !== undefined) target.rotate = rotate;
 }
 
 export function opDropOverride(fit, { id }) {
   if (!isSafeKey(id)) return;
-  delete fit.regions[id];
+  if (fit.regions) delete fit.regions[id];
+  if (fit.copies) delete fit.copies[id];
+  if (fit.mirrors) delete fit.mirrors[id];
 }
 
-export function opAddCopy(fit, { id, of, panel, at, rotate }) {
+export function opAddCopy(fit, { id, of, panel, at, rotate, isMirror = false }) {
   if (!isSafeKey(id) || (of !== undefined && !isSafeKey(of))) return;
-  fit.regions[id] = { of };
-  if (panel !== undefined) fit.regions[id].panel = panel;
-  if (at !== undefined) fit.regions[id].at = at;
-  if (rotate !== undefined) fit.regions[id].rotate = rotate;
+  const block = isMirror ? 'mirrors' : 'copies';
+  fit[block] ??= {};
+  fit[block][id] = { of };
+  if (panel !== undefined) fit[block][id].panel = panel;
+  if (at !== undefined) fit[block][id].at = at;
+  if (rotate !== undefined) fit[block][id].rotate = rotate;
+
+  if (fit.regions) delete fit.regions[id];
 }
 
 export function applyFitOp(fit, op) {
@@ -157,7 +173,7 @@ export function applyFitOp(fit, op) {
 
 export function applyProposalDiff({ design: currentDesign, fit: currentFit }, proposal) {
   const design = structuredClone(currentDesign ?? {});
-  const fit = structuredClone(currentFit ?? { regions: {} });
+  const fit = structuredClone(currentFit ?? { regions: {}, copies: {} });
   fit.regions ??= {};
 
   if (JSON.stringify(proposal ?? {}).includes('"source":"human"') || JSON.stringify(proposal ?? {}).includes('"source": "human"')) {

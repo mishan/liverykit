@@ -80,14 +80,28 @@ async function toolReadFit(client) {
     }
   }
 
-  const staleIds = [];
-  for (const [id, override] of Object.entries(fit.regions ?? {})) {
-    if (override.of) {
-      if (!knownRegionIds.has(override.of)) staleIds.push(id);
-    } else {
-      if (!knownRegionIds.has(id)) staleIds.push(id);
+  const staleSet = new Set();
+
+  for (const note of state.notes ?? []) {
+    if (note.status === 'fit-stale' && note.term) {
+      staleSet.add(note.term);
     }
   }
+
+  for (const id of Object.keys(fit.regions ?? {})) {
+    if (!knownRegionIds.has(id)) {
+      staleSet.add(id);
+    }
+  }
+
+  const copies = { ...(fit.mirrors ?? {}), ...(fit.copies ?? {}) };
+  for (const [id, spec] of Object.entries(copies)) {
+    if (!knownRegionIds.has(id) && spec?.of && !knownRegionIds.has(spec.of)) {
+      staleSet.add(id);
+    }
+  }
+
+  const staleIds = Array.from(staleSet);
 
   return {
     content: [{ type: 'text', text: JSON.stringify({ fit, staleIds }, null, 2) }],

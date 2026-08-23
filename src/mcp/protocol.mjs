@@ -9,12 +9,15 @@ import { createInterface } from 'node:readline';
  * - tools/list
  * - tools/call
  */
-export function createProtocolServer({ toolHandler, serverInfo = { name: 'liverykit', version: '0.1.0' }, onSend = null }) {
+export function createProtocolServer({ toolHandler, serverInfo = { name: 'liverykit', version: '0.1.0' }, onSend = null, record = false }) {
   const responses = [];
   let outputHandler = onSend;
 
   const send = (msg) => {
-    responses.push(msg);
+    if (record) {
+      responses.push(msg);
+      if (responses.length > 50) responses.shift();
+    }
     if (outputHandler) {
       outputHandler(msg);
     }
