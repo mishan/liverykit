@@ -254,6 +254,8 @@ async function checkAgainst(car) {
   ].join('');
 }
 
+$('#adoptsurface').onclick = () => adoptSurface($('#adoptsurface').dataset.role);
+
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
@@ -1084,12 +1086,97 @@ async function movePanel(name) {
  * to what the cursor is over, and pretending there is would move the wrong
  * region on the wrong sheet.
  */
+/**
+ * Clicking a part of the car the design does not paint.
+ *
+ * The whole-car view knows which texture every part uses — that is what the
+ * per-texture groups are for — and the state knows which role each texture is.
+ * Between them the editor can answer the question that otherwise costs an
+ * afternoon: a car ships four plausible number-plate textures at 1024 square,
+ * and telling them apart by name is guesswork, while pointing at the one on the
+ * door is not.
+ *
+ * It OFFERS rather than acts. Adding a surface changes the design, and a click
+ * that quietly did so — on a view whose main gesture is orbiting — would be the
+ * editor making a decision on your behalf in the place you are least expecting
+ * one.
+ */
+function offerToAdopt(group) {
+  const row = $('#adopt');
+  if (!row) return false;
+  const known = group?.file ? state.data?.roles?.[group.file.toLowerCase()] : null;
+
+  // A part already painted is not an offer, it is where you are already working.
+  if (!group || group.role !== null || !known) { row.hidden = true; return false; }
+
+  if (!known.paintable) {
+    // The profile already knows this one is a mistake: a normal map encodes
+    // surface direction, a shader map encodes gloss. Painting either gives a car
+    // that loads and lights wrongly, so this says so instead of offering.
+    $('#adoptwhat').textContent = `${known.file} — ${known.why}`;
+    $('#adoptsurface').hidden = true;
+    row.hidden = false;
+    return true;
+  }
+
+  $('#adoptwhat').textContent =
+    `${known.file} (${known.width}×${known.height}) is not in this design.`;
+  $('#adoptsurface').hidden = false;
+  $('#adoptsurface').dataset.role = known.role;
+  row.hidden = false;
+  return true;
+}
+
+/**
+ * Take an unpainted texture into the design.
+ *
+ * Written as `paint.<role>`, which names a texture role directly, rather than as
+ * `surfaces.<term>`, which goes through the car's bindings. These are exactly the
+ * surfaces with no binding and usually no panels — a banner or a number plate is
+ * too small a share of the car to survive the panel threshold — so `paint` is
+ * not a shortcut here, it is the only thing that addresses them at all.
+ *
+ * It arrives EMPTY, with no background. The whole sheet then renders as the
+ * renderer's default black, which is the honest picture of what you have just
+ * taken over: the stock artwork is gone and nothing has replaced it yet.
+ */
+async function adoptSurface(role) {
+  if (!role) return;
+  if (state.lossy.length) return status(CANNOT_EDIT);
+  // Already painted, by ANY route. `resolveTargets` refuses a role claimed
+  // twice — one write would silently overwrite the other — so adopting a role
+  // the design reaches through `surfaces.<term>` would produce a design that
+  // throws on the next render rather than one that paints two things.
+  // Checked against the resolved surfaces, not just the `paint` block, because
+  // the block is only one of the two ways in.
+  if (state.data?.surfaces?.some((sf) => sf.role === role) || state.design?.paint?.[role]) {
+    return status(`${role} is already painted by this design`);
+  }
+
+  remember(`paint ${role}`);
+  (state.design.paint ??= {})[role] = { regions: [] };
+  $('#adopt').hidden = true;
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+
+  // Straight to it, because adopting a surface and then hunting for it in a
+  // list would be two steps where the person meant one.
+  const i = state.data.surfaces.findIndex((s) => s.role === role);
+  if (i >= 0) await selectSurface(i);
+  status(`${role} is yours now — it renders black until you put something on it`);
+}
+
 export function claimCarPointer(uv, e) {
   // Only the whole-car view is excluded, and only for the reason above. The
   // condition used to be `view !== '3d'`, which is the same thing in practice —
   // the callback cannot fire when no car is on screen — but says something
   // broader than it means, and could not be tested without a GL context.
-  if (state.view === 'all' || !uv) return false;
+  // The whole-car view has no selection to drag, and one thing worth clicking:
+  // a part the design does not paint. Answering `false` afterwards lets the
+  // gesture go on to orbit, so pointing at something never costs you the drag.
+  if (state.view === 'all') { offerToAdopt(uv?.group); return false; }
+  if (!uv) return false;
 
   const sel = state.placed.find((p) => p.id === state.selected);
   const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
@@ -2452,6 +2539,11 @@ function nextFrame() {
 }
 
 async function showView(which) {
+  // The offer belongs to the click that produced it. Left up across a view
+  // change it would invite adopting a surface you can no longer see, from a
+  // sentence about a car you have navigated away from.
+  if ($('#adopt')) $('#adopt').hidden = true;
+
   state.view = which;
   const is3d = which === '3d' || which === 'all';
   for (const [id, name] of [['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all']]) {

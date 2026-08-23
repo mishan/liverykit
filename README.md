@@ -97,6 +97,15 @@ all ordinary parts of an island. liverykit ray-casts against the whole car,
 wheels and wings included, and reports `visible` per panel. On the example car
 87 panels are completely unseeable from trackside.
 
+Clicking a part the design does not paint names its texture and offers to take
+it into the design — which is how you find out which of the four 1024-square
+plate textures a GT3 car ships is the one on the door, without painting each in
+turn to see which rectangle changes. It writes `paint.<role>`, addressing the texture
+directly, because these surfaces have no binding and usually no panels: a banner
+is too small a share of the car to survive the panel threshold. Normal maps and
+shader maps are named but not offered, since painting one gives a car that loads
+and lights wrongly.
+
 The **Whole car** view shows every texture at once, with your design on the
 surfaces it paints and the car's own artwork — read from your kn5, never shipped
 — on the ones it does not. So what you are looking at is the car, not a livery

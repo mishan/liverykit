@@ -156,7 +156,11 @@ test('app.js declares its helpers before the boot await reaches them', async () 
   // statement, so no future edit can reintroduce the ordering problem without
   // moving it.
   const src = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
-  const boot = src.indexOf('await selectSurface(');
+  // The LAST one. `indexOf` found the first, which stopped being the boot the
+  // moment a helper had cause to select a surface itself — and then reported
+  // every declaration below that helper as coming after the boot, which is a
+  // page of noise pointing at nothing.
+  const boot = src.lastIndexOf('await selectSurface(');
   assert.ok(boot > 0, 'the module still boots by selecting a surface');
 
   // The boot is more than one statement now — it opens the car view too — so
@@ -2841,4 +2845,98 @@ test('adding to a surface with no panels says so, rather than naming undefined',
   const added = design.surfaces.body.regions.at(-1);
   assert.equal(added.panel, undefined, 'and it really is a bare rectangle');
   assert.equal(added.tags, undefined);
+});
+
+test('clicking an unpainted part of the car offers to paint it, and names it', async () => {
+  // A car ships four plausible number-plate textures at 1024 square, and telling
+  // them apart by name is guesswork. Pointing at the one on the door is not —
+  // the whole-car groups know which texture each part uses, and the state knows
+  // which role each texture is. This is the join between them.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  const claim = mod.claimCarPointer;
+
+  // Whole-car view: the gesture is orbiting, so the claim must DECLINE even
+  // when it has something to say. Taking the drag to show a hint would cost the
+  // camera movement that is the main thing this view is for.
+  dom.querySelector('#tab-all').onclick();
+  const hit = (group) => claim({ u: 0.5, v: 0.5, group }, {});
+
+  assert.equal(hit({ role: null, file: 'b.dds' }), false, 'it never takes the gesture');
+
+  // A part the design does not paint, and the car does have a role for.
+  hit({ role: null, file: 'b.dds' });
+  assert.equal(dom.querySelector('#adopt').hidden, false);
+  assert.match(dom.querySelector('#adoptwhat').textContent, /b\.dds/, 'named, because that is the answer');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, false);
+
+  // A part already painted is where you are working, not an offer.
+  hit({ role: 'body', file: 'b.dds' });
+  assert.equal(dom.querySelector('#adopt').hidden, true);
+
+  // And bare space behind the car.
+  hit({ role: null, file: 'b.dds' });
+  claim(null, {});
+  assert.equal(dom.querySelector('#adopt').hidden, true, 'nothing under the pointer, nothing to offer');
+});
+
+test('a surface the profile says not to paint is refused, with the reason', async () => {
+  // A normal map encodes surface direction and a shader map encodes gloss.
+  // Painting either gives a car that loads, lights wrongly, and reports nothing
+  // — so offering them would be the editor inviting a mistake the profile
+  // already knows about.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.doNotPaint = [{ file: 'b_nm.dds', reason: 'normal map — encodes surface direction' }];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'b_nm.dds' } }, {});
+
+  assert.equal(dom.querySelector('#adopt').hidden, false, 'it still says what the part is');
+  assert.match(dom.querySelector('#adoptwhat').textContent, /normal map/, 'and why not');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, true, 'but offers no button');
+});
+
+test('adopting a surface writes paint, not surfaces, and goes there', async () => {
+  // `paint.<role>` names a texture role directly; `surfaces.<term>` goes through
+  // the car's bindings. These are exactly the surfaces with no binding and
+  // usually no panels — a banner is too small a share of the car to survive the
+  // panel threshold — so `paint` is not a shortcut, it is the only thing that
+  // addresses them at all.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  // A second texture the design does not touch — a banner, exactly the case
+  // this exists for: too small a share of the car to have panels of its own.
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.ok(design.paint?.banner, 'written as paint, keyed by the texture role');
+  assert.deepEqual(design.paint.banner.regions, [], 'and empty, so the black says you have taken it over');
+  assert.equal(design.paint.banner.background, undefined, 'no invented background');
+  assert.equal(design.surfaces?.banner, undefined, 'not through a binding the car does not have');
+
+  assert.match(dom.querySelector('#status').textContent, /renders black/);
+  assert.equal(dom.querySelector('#adopt').hidden, true, 'the offer is spent');
+
+  // And a role the design already paints is refused rather than written. Two
+  // claims on one texture is a design `resolveTargets` throws on, because one
+  // write would silently overwrite the other — so this must never be reachable
+  // by a click, whichever route the design took to get there first.
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'b.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+  assert.match(dom.querySelector('#status').textContent, /already painted/);
+  assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).paint?.body, undefined);
 });

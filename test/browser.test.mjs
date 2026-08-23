@@ -1484,6 +1484,22 @@ test('the car supplies its own artwork for the parts a design does not paint', {
       gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
       at('pointerup', 1);
 
+      // WHICH surface is under the pointer. The fake DOM tests hand the group
+      // to claimCarPointer ready-made, so nothing there checks that picking
+      // reports it — and in the whole-car view it is the only way to know: the
+      // geometry is one buffer, and a UV coordinate means something different on
+      // every texture in it.
+      //
+      // Scanned across the middle rather than aimed, because where a quad lands
+      // on screen depends on the camera framing, and the question is whether the
+      // two groups are told apart at all.
+      const seen = new Set();
+      for (let x = 4; x < canvas.width; x += 4) {
+        const g = viewer.pickUV(box.x + x, box.y + box.height / 2)?.group;
+        if (g) seen.add(String(g.file));
+      }
+      say('picked: ' + [...seen].sort().join(','));
+
       let painted = 0, stock = 0, grey = 0;
       for (let i = 0; i < px.length; i += 4) {
         const r = px[i], g = px[i + 1], b = px[i + 2];
@@ -1507,4 +1523,6 @@ test('the car supplies its own artwork for the parts a design does not paint', {
     `the unpainted part should wear the car's own texture: ${report.join(' | ')}`);
   assert.equal(n('grey: '), 0,
     `nothing should be left grey when the car supplied a texture: ${report.join(' | ')}`);
+  assert.equal(find('picked: '), 'picked: INTERNAL_glass.dds,body.dds',
+    `picking must say which surface is under the pointer: ${report.join(' | ')}`);
 });
