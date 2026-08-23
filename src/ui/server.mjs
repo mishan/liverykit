@@ -523,7 +523,48 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     regionIds: Object.fromEntries(ids),
     fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
+    // Every texture the car has, by the FILE the model names it with, so the
+    // browser can turn "you clicked this part" into "that is
+    // `ext_banner_colour`, and here is what it would cost to paint it".
+    //
+    // Keyed on the lowercased file because that is what a material's `txDiffuse`
+    // says and what the whole-car groups carry; role names are the profile's
+    // own and cannot be recovered from geometry.
+    //
+    // `paintable` is false for the things a livery must not touch — normal maps,
+    // AC shader maps — so the editor can offer the ones worth offering and say
+    // why about the rest, rather than presenting a normal map as an opportunity.
+    roles: textureIndex(profile),
   };
+}
+
+/**
+ * Every texture the car has, keyed by the FILE the model names it with.
+ *
+ * The whole-car view can say which texture a part of the car uses, because the
+ * groups carry it; it cannot say which ROLE that is, because a role name is the
+ * profile's own and nothing in the geometry knows it. This is the join.
+ *
+ * `paintable` is what makes the answer useful rather than merely informative. A
+ * normal map encodes surface direction and a shader map encodes gloss; painting
+ * either corrupts the lighting on a car that will still load and still look
+ * wrong. Offering those as opportunities would be the editor inviting a mistake
+ * the profile already knows about.
+ *
+ * A file can be BOTH a texture role and listed in `doNotPaint` — the tyre blur
+ * variants are — so the two are merged rather than concatenated. Losing the role
+ * name would leave the editor unable to say what it was refusing.
+ */
+function textureIndex(profile) {
+  const out = {};
+  for (const [role, t] of Object.entries(profile.textures ?? {})) {
+    out[t.file.toLowerCase()] = { role, file: t.file, width: t.width, height: t.height, paintable: true };
+  }
+  for (const d of profile.doNotPaint ?? []) {
+    const key = d.file.toLowerCase();
+    out[key] = { ...(out[key] ?? { role: null, file: d.file }), paintable: false, why: d.reason };
+  }
+  return out;
 }
 
 /**

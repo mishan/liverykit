@@ -634,7 +634,11 @@ export function createViewer(canvas) {
       for (let i = 0; i < indices.length; i += 3) {
         const [ia, ib, ic] = [indices[i], indices[i + 1], indices[i + 2]];
         const hit = rayTriangle(orig, dir, at(ia), at(ib), at(ic));
-        if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic };
+        // `i` as well: it is the offset into the index buffer, which is what the
+        // groups are cut on, so it says WHICH SURFACE was hit. In the whole-car
+        // view that is the only way to find out — the geometry is one buffer and
+        // a UV coordinate means something different on every texture in it.
+        if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic, i };
       }
       if (!best) return null;
 
@@ -643,7 +647,8 @@ export function createViewer(canvas) {
       const w = 1 - best.u - best.v;
       const uv = (k) => uvs[best.ia * 2 + k] * w + uvs[best.ib * 2 + k] * best.u
         + uvs[best.ic * 2 + k] * best.v;
-      return { u: uv(0), v: uv(1), dist: best.dist };
+      const group = (groups ?? []).find((g) => best.i >= g.start && best.i < g.start + g.count);
+      return { u: uv(0), v: uv(1), dist: best.dist, group: group ?? null };
     },
 
     /**
