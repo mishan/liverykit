@@ -41,13 +41,33 @@ const BARELY_SEEN = 0.35;
 const TOO_SMALL_MM = 25;
 
 /**
- * Vertices a rectangle must contain before its visibility is worth believing.
+ * How much of a placement must land on actual bodywork.
  *
- * Not a tuning knob so much as an admission. Thirteen points gave a confident
- * 100% on a real placement while the one beside it had forty-two; neither
- * number is wrong, but one of them is a sample and the other is a rumour.
+ * A uv rectangle is a rectangle in the TEXTURE, and a texture is mostly not the
+ * car: islands are irregular, and the space between them is painted by nobody.
+ * Artwork sitting in that space is rendered, looks perfect in the uv view, and
+ * does not exist on the car.
+ *
+ * This is what happened to the team name. The move measured 86% VISIBLE — of
+ * the 11% of it that was on the model. Visibility was answering honestly about
+ * a sliver, and nothing was asking about the rest.
  */
-const ENOUGH_POINTS = 20;
+const MUST_LAND_ON = 0.6;
+
+/**
+ * The same bar for artwork that is not carrying a message.
+ *
+ * Far lower, because a fill or a stripe SHOULD bleed off the island — a panel's
+ * rect is the bounding box of an irregular shape, and painting only the inscribed
+ * part would leave gaps at the edges. The first version of this check applied
+ * one bar to everything and reported eight findings on a real design, all eight
+ * being one background grid doing exactly what a background grid does. A check
+ * that has to be ignored teaches you to ignore it, which is how the finding that
+ * mattered would have been lost in the noise.
+ *
+ * A word, though, is either on the car or it is not.
+ */
+const BLEED_IS_FINE_BELOW = 0.15;
 
 /**
  * Everything this design and this car have to say to each other.
@@ -107,9 +127,9 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   return {
     car: profile.id,
     name: profile.name || profile.id,
-    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen' && c !== 'unmeasured'),
+    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen' && c !== 'off-mesh'),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: model ? [] : ['unseen', 'unmeasured'],
+    notChecked: model ? [] : ['unseen', 'off-mesh'],
     // Surfaces that threw. Empty is the answer callers want; non-empty means
     // the findings below cover less of the car than they appear to.
     notPlaced: failed,
@@ -117,7 +137,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'unmeasured'];
+const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'off-mesh'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -338,28 +358,30 @@ function unseen(placed, profile, t, seen, say) {
     const at = [p.frac.x, p.frac.y, p.frac.w, p.frac.h];
     const answer = rectVisibility(seen.model, seen.prepared, meshes, at);
 
-    // TOO FEW POINTS TO JUDGE, said out loud.
-    //
-    // The cast stands on mesh vertices whose uv falls inside the rectangle, so
-    // its resolution is the mesh's vertex spacing. A small region on a coarse
-    // door can contain a handful, or none — and `continue` here was a silent
-    // pass hiding inside the check written to prevent silent passes. Measured
-    // on the Honda, one placement got a confident 100% from thirteen points
-    // while its neighbour used forty-two.
-    //
-    // This does not say the placement is bad. It says this instrument cannot
-    // tell, which is the one thing worse than a bad answer to leave unsaid.
-    if (!answer || answer.samples < ENOUGH_POINTS) {
+    // Nothing there at all: the rectangle is off the model entirely, which is
+    // not a visibility verdict and must not be reported as one.
+    if (!answer) {
       say({
-        kind: 'unmeasured',
-        severity: 'low',
-        surface: t.from,
-        panel: p.region.panel,
-        ids: [p.id],
-        samples: answer?.samples ?? 0,
-        why: `${name(t, p.id)} covers ${answer?.samples ?? 0} vertices of the mesh, ` +
-          `too few to say whether it can be seen — the cast stands on vertices, so a ` +
-          'region smaller than the geometry under it is below what this can measure',
+        kind: 'off-mesh', severity: p.region.treatment === 'text' ? 'high' : 'low',
+        surface: t.from, panel: p.region.panel, ids: [p.id], coverage: 0,
+        why: `${name(t, p.id)} lands on no geometry at all — it is painted into ` +
+          'texture space this car does not use, so none of it appears',
+      });
+      continue;
+    }
+
+    // Partly there. Reported before visibility, because "86% visible" of a
+    // tenth of a placement is a true sentence that misleads completely, and
+    // whichever of the two is said first is the one that gets acted on.
+    const coverage = answer.samples / answer.of;
+    const carries = p.region.treatment === 'text';
+    if (coverage < (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW)) {
+      say({
+        kind: 'off-mesh', severity: carries ? 'high' : 'low',
+        surface: t.from, panel: p.region.panel,
+        ids: [p.id], coverage: Math.round(coverage * 100) / 100,
+        why: `${name(t, p.id)} has only ${Math.round(coverage * 100)}% of its area ` +
+          'on the car — the rest is texture space no triangle uses, and is painted nowhere',
       });
       continue;
     }
