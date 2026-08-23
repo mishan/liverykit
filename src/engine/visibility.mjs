@@ -213,6 +213,67 @@ const round = (n) => Math.round(n * 10000) / 10000;
  * panels are visible — and it is checkable, since the eye should end up inside
  * the car's bounding box and above its floor.
  */
+/**
+ * The grid and the rays, handed out so a caller can ask about something other
+ * than a whole panel.
+ *
+ * `computeSafeAreas` answers one question per island and throws the apparatus
+ * away. But a panel's `visible` is a single number for a rectangle that may be
+ * partly behind something — on the Honda NSX the number plate meshes stand
+ * proud of the front doors — and it cannot say WHICH part. Placing artwork in
+ * the hidden fraction of an 88%-visible panel is then invisible to every check
+ * there is, and shows up as a name nobody can read.
+ *
+ * The grid is the expensive part and it is per CAR, not per question, so
+ * handing it out is what makes asking thirty times cheap.
+ */
+export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {
+  const occ = buildOccupancy(model, occluders, cellSize);
+  return {
+    occ,
+    cellSize,
+    dirs: viewDirections(),
+    maxSteps: Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5),
+  };
+}
+
+/**
+ * How much of ONE uv rectangle can be seen from trackside.
+ *
+ * Every vertex already carries its own `(u, v)` beside its position and normal,
+ * so there is no inverse mapping to invent: the rectangle selects which vertices
+ * to stand on, and the rays are the same forty-nine `computeSafeAreas` uses,
+ * with the same "several angles, not one" rule. A surface visible from exactly
+ * one of forty-nine directions is not a place to put a driver's name.
+ *
+ * `null` when the rectangle contains no vertices at all — which is a different
+ * answer from zero. Zero means measured and hidden; null means the question did
+ * not land on any geometry, and reporting that as invisible would condemn a
+ * placement for the wrong reason.
+ */
+export function rectVisibility(model, prepared, meshes, [rx, ry, rw, rh], { minDirections = 4 } = {}) {
+  const { occ, cellSize, dirs, maxSteps } = prepared;
+  const lift = cellSize * 1.6;
+  let seen = 0;
+  let total = 0;
+
+  for (const mesh of meshes) {
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const p = vertex(model, mesh, i);
+      if (p.u < rx || p.u > rx + rw || p.v < ry || p.v > ry + rh) continue;
+      total++;
+      const sx = p.x + p.nx * lift, sy = p.y + p.ny * lift, sz = p.z + p.nz * lift;
+      let clear = 0;
+      for (const [dx, dy, dz] of dirs) {
+        if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
+        if (escapes(occ, sx, sy, sz, dx, dy, dz, maxSteps)) clear++;
+      }
+      if (clear >= minDirections) seen++;
+    }
+  }
+  return total ? { fraction: seen / total, samples: total } : null;
+}
+
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
   let best = null;
   for (const mesh of model.meshes) {
