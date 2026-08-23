@@ -265,16 +265,16 @@ true.
 
 ## Shape of the work
 
-**1. Knowing.** The read-only tools and the stdio plumbing, attached to a running
+**1. Knowing. (Done)** The read-only tools and the stdio plumbing, attached to a running
 editor. Nothing can be changed by anything in this step, which makes it a safe
 place to find out whether the protocol layer is right. Useful on its own: asking
 a 425-panel profile a question in conversation is worth having by itself.
 
-**2. The inbox.** `POST /api/proposal`, the browser's poll, Accept and Discard
+**2. The inbox. (Done)** `POST /api/proposal`, the browser's poll, Accept and Discard
 wired to the existing undo stack. Still no proposing tool — this step is the
 editor learning to receive one.
 
-**3. Proposing.** `propose_design` and `propose_fit`, with every refusal in place
+**3. Proposing. (Done)** `propose_design` and `propose_fit`, with every refusal in place
 and a test each.
 
 **4. Judgement.** Only after using it: whether the agent should ever be handed a

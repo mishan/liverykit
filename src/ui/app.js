@@ -18,6 +18,7 @@ import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
 import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColour } from './uses.js';
+import { applyDesignOp, applyFitOp } from './ops.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -2633,14 +2634,79 @@ function esc(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// --- proposal polling --------------------------------------------------------
+let currentProposal = null;
+
+function applyProposalDiffInApp(p) {
+  if (Array.isArray(p?.design)) {
+    for (const op of p.design) applyDesignOp(state.design, op);
+  }
+
+  if (Array.isArray(p?.fit)) {
+    for (const op of p.fit) applyFitOp(state.fit, op);
+  }
+}
+
+async function checkProposals() {
+  if (currentProposal) return;
+  try {
+    const res = await api('/api/proposal');
+    const p = res?.proposal;
+    if (p && p.id && p.id !== currentProposal?.id) {
+      currentProposal = p;
+      remember(`proposal: ${p.why}`);
+      applyProposalDiffInApp(p);
+      setDirty(true);
+      setDesignDirty();
+      await reloadState();
+      await refresh();
+      showProposalBanner(p);
+    }
+  } catch {
+    // server down or network glitch
+  }
+}
+
+function showProposalBanner(p) {
+  const banner = $('#proposal-banner');
+  const why = $('#proposal-why');
+  if (!banner || !why) return;
+  why.textContent = p.why;
+  banner.hidden = false;
+}
+
+function hideProposalBanner() {
+  const banner = $('#proposal-banner');
+  if (banner) banner.hidden = true;
+}
+
+async function acceptProposal() {
+  if (!currentProposal) return;
+  const id = currentProposal.id;
+  currentProposal = null;
+  hideProposalBanner();
+  await api('/api/proposal/ack', { id, status: 'accepted' });
+  status('accepted proposal');
+}
+
+async function discardProposal() {
+  if (!currentProposal) return;
+  const id = currentProposal.id;
+  currentProposal = null;
+  hideProposalBanner();
+  await api('/api/proposal/ack', { id, status: 'discarded' });
+  await undo();
+  status('discarded proposal');
+}
+
+const acceptBtn = $('#proposal-accept');
+if (acceptBtn) acceptBtn.onclick = acceptProposal;
+const discardBtn = $('#proposal-discard');
+if (discardBtn) discardBtn.onclick = discardProposal;
+
+setInterval(checkProposals, 1000);
+
 // --- boot, last -------------------------------------------------------------
-//
-// After every declaration, so no helper can be reached before it exists.
-//
-// It opens on the CAR. That is where the work happens now — you can select,
-// move, resize and rotate there, and it is the only view that answers whether a
-// placement is any good. showView falls back to the UV sheet on its own if
-// there is no model or no WebGL, so this is a preference rather than a demand.
 await selectSurface(0);
 await showView('3d');
 // Last, after the car is on screen, so a slow profile directory cannot delay

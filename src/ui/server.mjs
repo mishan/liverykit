@@ -44,6 +44,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
+import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Where the profiles this checkout ships live. A profile is the entirety of what
@@ -223,7 +224,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
 
 /**
  * The one dependency the browser shares with Node, and where it comes from.
@@ -669,6 +670,8 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
   };
 }
 
+export { applyDesignOp, applyFitOp, applyProposalDiff };
+
 export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
@@ -704,6 +707,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   // that looks fine and fails only when you press Save, by which point you have
   // done the work twice. Validated on the way in, same as the save path.
   const started = new Date().toISOString().slice(11, 19);
+  let pendingProposal = null;
   let fit = null;
   try {
     fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
@@ -894,6 +898,45 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         return json(200, { saved: fitPath });
       }
 
+      if (req.method === 'GET' && url.pathname === '/api/proposal') {
+        return json(200, { proposal: pendingProposal });
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/proposal') {
+        const prop = await body();
+        if (!prop.why || typeof prop.why !== 'string' || !prop.why.trim()) {
+          return json(400, { error: 'Proposal requires a non-empty "why" field explaining the change.' });
+        }
+        try {
+          const baseFit = fit ?? { livery: liveryId, car: profile.id, regions: {} };
+          const { design: nextDesign, fit: nextFit } = applyProposalDiff({ design: livery, fit: baseFit }, prop);
+          if (liveryPath && Array.isArray(prop.design) && prop.design.length > 0) {
+            const refusal = designRefusal(nextDesign, liveryPath);
+            if (refusal) return json(409, { error: `Proposed design rejected: ${refusal}` });
+          }
+          try {
+            validateFit(nextFit, fitPath);
+          } catch (e) {
+            return json(409, { error: `Proposed fit rejected: ${e.message}` });
+          }
+
+          const id = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          pendingProposal = { id, why: prop.why.trim(), design: prop.design ?? [], fit: prop.fit ?? [] };
+          return json(200, { id });
+        } catch (e) {
+          return json(400, { error: e.message });
+        }
+      }
+
+      if (req.method === 'POST' && url.pathname === '/api/proposal/ack') {
+        const { id, status: ackStatus } = await body();
+        if (pendingProposal && pendingProposal.id === id) {
+          pendingProposal = null;
+          log(`  proposal ${id} ${ackStatus}`);
+        }
+        return json(200, { ok: true });
+      }
+
       // A tiny transparent icon. Not cosmetic: a 404 here is the one line that
       // is always in the console, and it trains you to ignore the console.
       if (url.pathname === '/favicon.ico') {
@@ -937,7 +980,8 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   });
 
   await new Promise((ok) => server.listen(port, '127.0.0.1', ok));
-  return { server, url: `http://127.0.0.1:${port}/`, fitPath };
+  const boundPort = server.address().port;
+  return { server, url: `http://127.0.0.1:${boundPort}/`, fitPath };
 }
 
 export { toAbsolute, toPanelRelative };
