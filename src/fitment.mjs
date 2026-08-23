@@ -77,9 +77,25 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   // rectangle is being asked about.
   const seen = model ? { model, prepared: occupancyFor(model) } : null;
 
+  const failed = [];
   for (const t of targets) {
     const spec = t.spec ?? {};
-    const placed = placements(profile, t, spec, fit);
+
+    // Per TARGET, so one broken surface does not hide the findings on the rest
+    // — and so the run says which surface went unchecked instead of returning a
+    // short list of findings that reads like a clean bill of health.
+    let placed;
+    try {
+      placed = placements(profile, t, spec, fit);
+    } catch (e) {
+      failed.push(t.from);
+      say({
+        kind: 'unresolvable', severity: 'fatal', surface: t.from, ids: [],
+        why: `${t.from} could not be placed on this car, so nothing about it ` +
+          `was checked: ${e.message}`,
+      });
+      continue;
+    }
 
     overlaps(placed, t, say);
     outsideSafe(placed, profile, t, say);
@@ -94,6 +110,9 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen' && c !== 'unmeasured'),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
     notChecked: model ? [] : ['unseen', 'unmeasured'],
+    // Surfaces that threw. Empty is the answer callers want; non-empty means
+    // the findings below cover less of the car than they appear to.
+    notPlaced: failed,
     findings,
   };
 }
@@ -110,14 +129,19 @@ const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unse
  * is looking at.
  */
 function placements(profile, t, spec, fit) {
-  const fitted = applyFit(spec.regions ?? [], fit, { profile, role: t.role }).regions;
-  let expanded;
-  try {
-    expanded = expandRegions(profile, t.role, fitted);
-  } catch {
-    return [];                                  // the design is invalid; not our finding
-  }
-  return expanded.regions.filter((r) => r.panel).map((r, i) => {
+  // `surfaceKey` is not optional in practice. Fit ids for unnamed regions are
+  // `${surfaceKey}#${index}` — omitting it produced `#0`, which matches nothing
+  // a fit ever wrote, so every override and copy on an unnamed region was
+  // silently skipped and this module checked the design's own coordinates while
+  // claiming to check the fitted ones.
+  const fitted = applyFit(spec.regions ?? [], fit, {
+    profile, role: t.role, surfaceKey: t.from,
+  }).regions;
+  // No try/catch. An invalid design is a finding, not an absence of them, and
+  // swallowing this here made a livery that cannot be resolved at all look
+  // identical to one that is clean. The caller turns the throw into a `fatal`.
+  const expanded = expandRegions(profile, t.role, fitted);
+  const out = expanded.regions.filter((r) => r.panel).map((r, i) => {
     let frac = null;
     try {
       frac = resolveRect(profile, t.role, r);
@@ -127,9 +151,24 @@ function placements(profile, t, spec, fit) {
     // once expanded, and two different placements can print the same name. The
     // panel disambiguates them, which is also what somebody would need in order
     // to go and find the thing being complained about.
-    const fallback = r.panel ? `${t.from}#${i}@${r.panel}` : `${t.from}#${i}`;
-    return { region: r, id: r.__key ?? r.id ?? fallback, frac };
+    return { region: r, key: r.id ?? r.__key ?? `${t.from}#${i}`, frac };
   }).filter((p) => p.frac);
+
+  // `expandRegions` runs AFTER `applyFit`, so one region selecting by TAG
+  // becomes several placements all carrying the key that was stamped before
+  // anyone knew there would be more than one. Two findings would name the same
+  // region and at least one would send you to the wrong panel.
+  //
+  // The panel is appended only where a key is genuinely shared. A key that
+  // appears once is the key a FIT writes, and is what somebody needs in order
+  // to go and change the thing being complained about — qualifying it
+  // unconditionally would have made every id unique and none of them usable.
+  const seenTimes = new Map();
+  for (const p of out) seenTimes.set(p.key, (seenTimes.get(p.key) ?? 0) + 1);
+  for (const p of out) {
+    p.id = seenTimes.get(p.key) > 1 ? `${p.key}@${p.region.panel}` : p.key;
+  }
+  return out;
 }
 
 /**
