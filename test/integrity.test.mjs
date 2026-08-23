@@ -1854,6 +1854,7 @@ test('a panel records how big it is on the car, not only how stretched', async (
   assert.equal(metresAcross(resolveRect(older, role, { panel: 'left_mid' })), null,
     'a profile predating the measurement says nothing rather than guessing');
 });
+
 test('the editor can say what a design would find on another car', async () => {
   // A design's portability is invisible while you work on it, because you are
   // looking at one car and everything resolves. You find out it does not travel
@@ -1947,3 +1948,117 @@ test('the editor can say what a design would find on another car', async () => {
   } finally {
     server.close();
   }});
+
+test('unpainted meshes are grouped by their own texture, not lumped together', async () => {
+  // They used to be one group with no role, drawn flat grey — honest, and it
+  // reads as a bug: a grey rectangle over a door panel looks like a sticker
+  // rather than like "your livery does not paint this". One group per texture
+  // is what lets each wear the car's own artwork instead.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+
+  // Real buffers, because `vertex` reads one — three triangles laid out the way
+  // a kn5 stores them, each on its own material and so its own texture.
+  const stride = 32;
+  const verts = stride * 9;
+  const buf = Buffer.alloc(verts + 18);
+  for (let i = 0; i < 9; i++) buf.writeFloatLE(i % 3, i * stride);
+  // `triangles` reads uint16 indices out of the same buffer, so they need a real
+  // home in it — a mesh with no readable indices emits no geometry and no group.
+  for (let m = 0; m < 3; m++) for (let k = 0; k < 3; k++) buf.writeUInt16LE(k, verts + m * 6 + k * 2);
+  const mesh = (i) => ({
+    materialId: i, vertexCount: 3, vertexStart: i * 3 * stride, stride,
+    indexCount: 3, indexStart: verts + i * 6,
+    world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+  });
+  const model = {
+    buf,
+    meshes: [mesh(0), mesh(1), mesh(2)],
+    materials: [
+      { slots: { txDiffuse: 'body.dds' } },
+      { slots: { txDiffuse: 'INTERNAL_glass.dds' } },
+      { slots: { txDiffuse: 'MIRROR.dds' } },
+    ],
+  };
+
+  const g = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]);
+  const roleless = g.groups.filter((x) => x.role === null);
+
+  assert.deepEqual(roleless.map((x) => x.file), ['INTERNAL_glass.dds', 'MIRROR.dds'],
+    'one group per unpainted texture, sorted so the order does not depend on mesh order');
+  assert.deepEqual(g.groups.filter((x) => x.role === 'body').map((x) => x.file), ['body.dds'],
+    'and the painted one is still its own group');
+});
+
+test('the whole-car preview answers about the design it was sent', async () => {
+  // The one view whose job is to show the whole thing was asking with the fit
+  // alone, so the server rendered the livery ON DISK: every unsaved edit
+  // invisible, and a surface adopted a moment ago — unsaved by definition —
+  // unable to appear at all.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-prev-'));
+  const { server } = await startUi({
+    livery, profile, fitPath: join(dir, 'absent.json'),
+    liveryId: 'neon-grid-any', port: 0, log: () => {},
+  });
+  const ask = (body) => fetch(`http://127.0.0.1:${server.address().port}/api/preview`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+
+  try {
+    const onDisk = await ask({ fit: null });
+    assert.ok(onDisk.surfaces.length, 'the shipped design paints something');
+
+    // A design that exists only in the browser, painting a role the file does
+    // not — which is exactly what adopting a surface produces.
+    const role = Object.keys(profile.textures)[0];
+    const mine = {
+      name: 'probe', packs: ['core'],
+      palette: { hot: '#FF00E5' },
+      paint: { [role]: { background: 'hot', regions: [{ id: 'probe', treatment: 'fill', color: 'hot' }] } },
+    };
+    const sent = await ask({ fit: null, design: mine });
+
+    assert.deepEqual(sent.surfaces.map((s) => s.from), [`paint.${role}`],
+      'it answered about the design it was sent, not the one on disk');
+    assert.match(sent.surfaces[0].svg, /FF00E5/i, 'and rendered what that design says');
+  } finally {
+    server.close();
+  }
+});
+
+test('the texture index is a map, not an object with a prototype', async () => {
+  // Its keys are FILENAMES out of a car somebody else made, and `__proto__.dds`
+  // is a legal filename. On an ordinary object, writing that key mutates the
+  // prototype instead of the map — silently, and for every object in the
+  // process.
+  //
+  // The browser needs its own guard as well, because this crosses the wire as
+  // JSON and arrives with an ordinary prototype however it left. This one
+  // protects the server's own use of it.
+  const { editorState } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const hostile = structuredClone(profile);
+  hostile.textures.evil = { file: '__proto__', width: 64, height: 64 };
+  hostile.textures.ctor = { file: 'constructor', width: 64, height: 64 };
+
+  const { roles } = editorState({ livery, profile: hostile, fit: null, liveryId: 'x' });
+
+  assert.equal(Object.getPrototypeOf(roles), null, 'a string-keyed map has no prototype');
+  assert.equal({}.evil, undefined, 'and nothing reached Object.prototype building it');
+  assert.equal(roles.__proto__?.role, 'evil', 'the special names are ordinary entries');
+  assert.equal(roles.constructor?.role, 'ctor');
+  // And a name the car does not have answers with nothing at all, rather than
+  // with whatever Object.prototype happens to carry.
+  assert.equal(roles.toString, undefined);
+  assert.equal(roles.hasOwnProperty, undefined);
+});
