@@ -16,6 +16,9 @@
 // as a sanity check that the profile matches what the game actually draws.
 // ---------------------------------------------------------------------------
 
+import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
 import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
@@ -412,10 +415,26 @@ export async function profileFromKn5(path, {
     log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
   }
 
+  // The car's own name for itself, when `--car-name` did not supply one.
+  //
+  // Nothing in a kn5 says "Abarth 500", which is why this used to default to the
+  // empty string and every profile regenerated without the flag shipped as
+  // `"name": ""` — falling back to the id everywhere, so the car was called
+  // `ac_friends_honda_nsx_gt3_evo` from then on. But the kn5 is not the only
+  // file in the folder: `ui/ui_car.json` sits beside it and carries the name the
+  // car's author gave it.
+  //
+  // Reading it is a MEASUREMENT rather than a guess — it is not this project
+  // inferring a name, it is the car stating one — which is why it does not
+  // collide with the rule that keeps `source: "human"` off-limits to
+  // automation. A name given explicitly still wins, and `preserveDisplayName`
+  // still keeps a hand-written one across regeneration.
+  const named = name || await carNameBeside(path, log);
+
   const profile = {
     bind,
     id: id ?? basenameNoExt(path),
-    name,
+    name: named,
     game: 'assettocorsa',
     calibration: {
       method: 'kn5',
@@ -468,5 +487,50 @@ export async function profileFromKn5(path, {
 }
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
+/**
+ * The name the car's author gave it, from `ui/ui_car.json` beside the model.
+ *
+ * Content Manager and the game both read that file, so it is the authoritative
+ * name for the car — this is not liverykit inferring anything, it is the car
+ * saying so, which is the difference between this and the proposals a person has
+ * to confirm.
+ *
+ * Every failure here is a shrug and a note, never a throw. A profile is worth
+ * generating without a display name, and the ways this file goes wrong in the
+ * wild are numerous and dull:
+ *
+ *   * it is often absent, on cars unpacked without their `ui` folder
+ *   * it is sometimes UTF-16 with a BOM, which `JSON.parse` will not take
+ *   * it is sometimes malformed — trailing commas, unescaped quotes in a
+ *     description somebody typed by hand
+ *
+ * None of those are reasons to refuse to measure a car, and all of them are
+ * reasons to say what happened rather than quietly produce `"name": ""` again.
+ */
+async function carNameBeside(kn5Path, log) {
+  const at = join(dirname(kn5Path), 'ui', 'ui_car.json');
+  const raw = await readFile(at).catch(() => null);
+  if (!raw) return '';
+
+  // UTF-16LE with a byte-order mark, which a surprising number of these are.
+  // `JSON.parse` sees NUL bytes between every character and gives up; decoding
+  // first costs two lines and turns "no name" into a name.
+  const text = raw[0] === 0xFF && raw[1] === 0xFE
+    ? raw.subarray(2).toString('utf16le')
+    : raw.toString('utf8').replace(/^\uFEFF/, '');
+
+  let ui;
+  try {
+    ui = JSON.parse(text);
+  } catch (e) {
+    log(`  ! ${at} is not valid JSON (${e.message.split('\n')[0]}), so the car has no display name.`);
+    log('    Pass --car-name to set one.');
+    return '';
+  }
+  const found = typeof ui?.name === 'string' ? ui.name.trim() : '';
+  if (found) log(`  Name from ui_car.json: ${found}`);
+  return found;
+}
+
 const basename = (p) => p.split(/[\\/]/).pop();
 const basenameNoExt = (p) => basename(p).replace(/\.kn5$/i, '');
