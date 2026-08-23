@@ -9,13 +9,14 @@ import { createInterface } from 'node:readline';
  * - tools/list
  * - tools/call
  */
-export function createProtocolServer({ toolHandler, serverInfo = { name: 'liverykit', version: '0.1.0' } }) {
+export function createProtocolServer({ toolHandler, serverInfo = { name: 'liverykit', version: '0.1.0' }, onSend = null }) {
   const responses = [];
+  let outputHandler = onSend;
 
   const send = (msg) => {
     responses.push(msg);
-    if (typeof process !== 'undefined' && process.stdout?.write) {
-      process.stdout.write(JSON.stringify(msg) + '\n');
+    if (outputHandler) {
+      outputHandler(msg);
     }
   };
 
@@ -93,7 +94,10 @@ export function createProtocolServer({ toolHandler, serverInfo = { name: 'livery
     }
   };
 
-  const listen = (input = process.stdin) => {
+  const listen = (input = process.stdin, output = process.stdout) => {
+    if (!outputHandler && output?.write) {
+      outputHandler = (msg) => output.write(JSON.stringify(msg) + '\n');
+    }
     const rl = createInterface({ input, crlfDelay: Infinity });
     rl.on('line', async (line) => {
       const trimmed = line.trim();

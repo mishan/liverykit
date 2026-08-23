@@ -903,6 +903,9 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       }
 
       if (req.method === 'POST' && url.pathname === '/api/proposal') {
+        if (pendingProposal) {
+          return json(409, { error: 'A proposal is already pending review in the editor.' });
+        }
         const prop = await body();
         if (!prop.why || typeof prop.why !== 'string' || !prop.why.trim()) {
           return json(400, { error: 'Proposal requires a non-empty "why" field explaining the change.' });

@@ -3,17 +3,26 @@
  * Shared between Node (server.mjs / tests) and Browser (app.js).
  */
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+export function isSafeKey(key) {
+  return typeof key === 'string' && key.length > 0 && !UNSAFE_KEYS.has(key);
+}
+
 export function opSetPalette(design, { name, value }) {
+  if (!isSafeKey(name)) return;
   design.palette ??= {};
   if (value === null) delete design.palette[name];
   else design.palette[name] = value;
 }
 
 export function opDeletePalette(design, { name }) {
+  if (!isSafeKey(name)) return;
   if (design.palette) delete design.palette[name];
 }
 
 export function opSetIdentity(design, { key, value }) {
+  if (!isSafeKey(key)) return;
   design.identity ??= {};
   if (value === null) delete design.identity[key];
   else design.identity[key] = value;
@@ -29,6 +38,9 @@ export function opAddRegion(design, { surface = 'surfaces.body', region, index }
   } else if (design.paint && design.paint[surface]) {
     group = 'paint';
   }
+  if (group !== 'surfaces' && group !== 'paint') return;
+  if (!isSafeKey(name)) return;
+
   design[group] ??= {};
   design[group][name] ??= { regions: [] };
   design[group][name].regions ??= [];
@@ -38,6 +50,7 @@ export function opAddRegion(design, { surface = 'surfaces.body', region, index }
 }
 
 export function opRemoveRegion(design, { id }) {
+  if (!isSafeKey(id)) return;
   for (const grp of ['surfaces', 'paint']) {
     if (!design[grp]) continue;
     for (const spec of Object.values(design[grp])) {
@@ -49,6 +62,7 @@ export function opRemoveRegion(design, { id }) {
 }
 
 export function opReorderRegion(design, { surface, id, toIndex }) {
+  if (!isSafeKey(id)) return;
   for (const grp of ['surfaces', 'paint']) {
     if (!design[grp]) continue;
     for (const [surfName, spec] of Object.entries(design[grp])) {
@@ -65,6 +79,7 @@ export function opReorderRegion(design, { surface, id, toIndex }) {
 }
 
 export function opSetOption(design, { id, key, value }) {
+  if (!isSafeKey(id) || !isSafeKey(key)) return;
   for (const grp of ['surfaces', 'paint']) {
     if (!design[grp]) continue;
     for (const spec of Object.values(design[grp])) {
@@ -79,6 +94,7 @@ export function opSetOption(design, { id, key, value }) {
 }
 
 export function opSetRegion(design, { id, region }) {
+  if (!isSafeKey(id)) return;
   for (const grp of ['surfaces', 'paint']) {
     if (!design[grp]) continue;
     for (const spec of Object.values(design[grp])) {
@@ -107,6 +123,7 @@ export function applyDesignOp(design, op) {
 }
 
 export function opSetOverride(fit, { id, panel, at, rotate }) {
+  if (!isSafeKey(id)) return;
   fit.regions[id] ??= {};
   if (panel !== undefined) fit.regions[id].panel = panel;
   if (at !== undefined) fit.regions[id].at = at;
@@ -114,10 +131,12 @@ export function opSetOverride(fit, { id, panel, at, rotate }) {
 }
 
 export function opDropOverride(fit, { id }) {
+  if (!isSafeKey(id)) return;
   delete fit.regions[id];
 }
 
 export function opAddCopy(fit, { id, of, panel, at, rotate }) {
+  if (!isSafeKey(id) || (of !== undefined && !isSafeKey(of))) return;
   fit.regions[id] = { of };
   if (panel !== undefined) fit.regions[id].panel = panel;
   if (at !== undefined) fit.regions[id].at = at;
