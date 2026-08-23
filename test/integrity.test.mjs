@@ -1988,3 +1988,47 @@ test('unpainted meshes are grouped by their own texture, not lumped together', a
   assert.deepEqual(g.groups.filter((x) => x.role === 'body').map((x) => x.file), ['body.dds'],
     'and the painted one is still its own group');
 });
+
+test('the whole-car preview answers about the design it was sent', async () => {
+  // The one view whose job is to show the whole thing was asking with the fit
+  // alone, so the server rendered the livery ON DISK: every unsaved edit
+  // invisible, and a surface adopted a moment ago — unsaved by definition —
+  // unable to appear at all.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-prev-'));
+  const { server } = await startUi({
+    livery, profile, fitPath: join(dir, 'absent.json'),
+    liveryId: 'neon-grid-any', port: 0, log: () => {},
+  });
+  const ask = (body) => fetch(`http://127.0.0.1:${server.address().port}/api/preview`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+
+  try {
+    const onDisk = await ask({ fit: null });
+    assert.ok(onDisk.surfaces.length, 'the shipped design paints something');
+
+    // A design that exists only in the browser, painting a role the file does
+    // not — which is exactly what adopting a surface produces.
+    const role = Object.keys(profile.textures)[0];
+    const mine = {
+      name: 'probe', packs: ['core'],
+      palette: { hot: '#FF00E5' },
+      paint: { [role]: { background: 'hot', regions: [{ id: 'probe', treatment: 'fill', color: 'hot' }] } },
+    };
+    const sent = await ask({ fit: null, design: mine });
+
+    assert.deepEqual(sent.surfaces.map((s) => s.from), [`paint.${role}`],
+      'it answered about the design it was sent, not the one on disk');
+    assert.match(sent.surfaces[0].svg, /FF00E5/i, 'and rendered what that design says');
+  } finally {
+    server.close();
+  }
+});

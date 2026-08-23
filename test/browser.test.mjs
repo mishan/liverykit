@@ -741,8 +741,25 @@ test('the whole-car view puts every painted surface on the model at once', { ski
     (async () => {
       if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
 
+      // What the whole-car view actually ASKS FOR. Two bugs lived here: the
+      // preview was requested with the fit alone, so the server answered about
+      // the livery on disk and every unsaved edit was invisible; and the group
+      // roles were taken from the cached geometry, which is only as fresh as the
+      // fetch. Both are in the wiring, which is why neither showed up in a test
+      // of either piece on its own.
+      const sentDesign = [];
+      const realFetch = window.fetch;
+      window.fetch = async (u, i) => {
+        if (String(u).includes('/api/preview') && i?.body) {
+          sentDesign.push(!!JSON.parse(i.body).design);
+        }
+        return realFetch(u, i);
+      };
+
       document.querySelector('#tab-all').click();
       await settle(4000);
+      window.fetch = realFetch;
+      say('preview asked with a design: ' + (sentDesign.length ? sentDesign.every(Boolean) : 'never asked'));
       say('note: ' + document.querySelector('#viewnote').textContent);
       say('canvas hidden: ' + document.querySelector('#carview').hidden);
 
@@ -788,6 +805,10 @@ test('the whole-car view puts every painted surface on the model at once', { ski
   // the others by an unrelated coincidence of coordinates.
   assert.equal(find('region: '), 'region: 0,0,0,0',
     'the whole-car view must not dim itself around one surface\'s rectangle');
+  // The working design has to travel with the request, or this view shows the
+  // file on disk and an unsaved surface can never appear on it.
+  assert.equal(find('preview asked with a design: '), 'preview asked with a design: true',
+    `the whole-car preview must be of what is being edited: ${report.join(' | ')}`);
 });
 
 test('a region can be dragged on the car itself', { skip: BROWSER ? false : 'no browser' }, async (t) => {
