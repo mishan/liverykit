@@ -160,3 +160,15 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
 /* A count, not a badge: it is there to be read before you rename something. */
 .uses { color: var(--muted); font-size: 11px; min-width: 3.5em; text-align: right; }
 .unused { opacity: 0.55; }
+
+/* --- proposal banner ---------------------------------------------------- */
+.proposal-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: #1a2a3a; border-bottom: 1px solid var(--accent);
+  color: var(--ink); font-size: 13px;
+}
+.proposal-label { color: var(--accent); font-weight: 600; }
+#proposal-why { flex: 1; font-style: italic; }
+.proposal-btn.accept { background: #005f73; border-color: var(--accent); color: #ffffff; }
+.proposal-btn.discard { background: #5f1a2a; border-color: var(--hot); color: #ffffff; }
+
