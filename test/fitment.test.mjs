@@ -19,8 +19,8 @@ const profile = {
   bind: { body: { roles: ['body'], source: 'human' } },
   panels: {
     body: {
-      L: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 0.88, tags: ['left'] },
-      R: { rect: [0.5, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 0.9, tags: ['right'] },
+      L: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 0.88, tags: ['left', 'visible'] },
+      R: { rect: [0.5, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 0.9, tags: ['right', 'visible'] },
     },
   },
 };
@@ -157,3 +157,56 @@ function plane({ rows, cols }) {
     meshes: [{ materialId: 0, vertexStart: 0, vertexCount: n, stride, world }],
   };
 }
+
+test('a surface that cannot be placed is a finding, not a short list', () => {
+  // Both halves of the same mistake. `expandRegions` threw on an unresolvable
+  // region and the catch returned `[]`, so a livery naming a tag this car has
+  // never heard of produced zero findings — indistinguishable from a clean one,
+  // and the more confident-looking of the two.
+  const r = fitment(design([
+    // `tags: []` matches every panel by vacuous truth, so `expandRegions`
+    // refuses it outright rather than painting the whole texture.
+    { id: 'ghost', treatment: 'text', tags: [], at: [0, 0, 1, 1], text: 'X' },
+  ]), profile);
+
+  const fatal = r.findings.filter((f) => f.severity === 'fatal');
+  assert.equal(fatal.length, 1, `the failure is stated: ${JSON.stringify(r.findings)}`);
+  assert.equal(fatal[0].kind, 'unresolvable');
+  assert.match(fatal[0].why, /nothing about it/);
+  assert.deepEqual(r.notPlaced, ['surfaces.body'], 'and the surface it cost us is named');
+});
+
+test('an unnamed region is addressed by the key a fit would write', () => {
+  // `applyFit` builds positional keys as `${surfaceKey}#${index}`. Called
+  // without one they came out `#0`, matching no key any fit has ever written —
+  // so overrides on unnamed regions were dropped and this module checked where
+  // the DESIGN put things while reporting on where the FIT did.
+  const regions = [{ treatment: 'text', panel: 'L', at: [0, 0, 0.2, 0.1], text: '{team}' }];
+  const moved = fitment(design(regions), profile,
+    { livery: 'F', car: 'fixture', regions: { 'surfaces.body#0': { at: [0.4, 0.4, 0.01, 0.01] } } });
+
+  const small = moved.findings.filter((f) => f.kind === 'unreadable');
+  assert.equal(small.length, 1, 'the fit moved it, and the move is what got checked');
+  assert.equal(small[0].ids[0], 'surfaces.body#0',
+    'named as the fit names it, so it can be edited');
+
+  // Unmoved, the design's own 20%-of-1.6m box is a legible 320 mm and silent.
+  const asis = fitment(design(regions), profile);
+  assert.deepEqual(asis.findings.filter((f) => f.kind === 'unreadable'), []);
+});
+
+test('regions expanded from one tag do not all answer to the same name', () => {
+  // A tag selection becomes one placement per matching panel, but `__key` was
+  // stamped by `applyFit` BEFORE the expansion, so every clone carried it. Two
+  // findings would name the same region and one of them would be a lie about
+  // where to look.
+  const r = fitment(design([
+    // One region, both panels — the clones are what share a key.
+    { treatment: 'text', tags: ['visible'], at: [0.4, 0.4, 0.01, 0.01], text: '{team}' },
+  ]), profile);
+
+  const ids = r.findings.filter((f) => f.kind === 'unreadable').map((f) => f.ids[0]);
+  assert.equal(ids.length, 2);
+  assert.equal(new Set(ids).size, 2, `each names its own placement: ${ids.join(', ')}`);
+  assert.deepEqual(ids.sort(), ['surfaces.body#0@L', 'surfaces.body#0@R']);
+});
