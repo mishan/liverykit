@@ -264,23 +264,59 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
 });
 
 test('mcp tools: propose_design with adopt-surface', async () => {
+  // `grips`, not `wing`. On the RSS4 `wing` is a vocabulary TERM bound to no
+  // roles at all — `bind.wing` is an empty array, which is the profile saying
+  // this car has no such surface — so `paint.wing` names a texture that does
+  // not exist and could never be adopted. `grips` is a real texture role on
+  // this profile that the design does not paint, which is the case the tool is
+  // actually for.
   const { url, stop } = await setupTestEditor();
   try {
     const client = createEditorClient(url);
     const handler = createToolHandler(client);
 
     const propRes = await handler.callTool('propose_design', {
-      why: 'adopt rear wing surface into design',
+      why: 'adopt the grip texture into the design',
       design: [
-        { op: 'adopt-surface', role: 'wing', background: 'ink' },
+        { op: 'adopt-surface', role: 'grips' },
       ],
     });
 
     assert.ok(!propRes.isError);
     const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
-    assert.equal(pending.proposal.why, 'adopt rear wing surface into design');
+    assert.equal(pending.proposal.why, 'adopt the grip texture into the design');
     assert.equal(pending.proposal.design[0].op, 'adopt-surface');
-    assert.equal(pending.proposal.design[0].role, 'wing');
+    assert.equal(pending.proposal.design[0].role, 'grips');
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: a secondary bound role is not offered as unpainted', async () => {
+  // A vocabulary term may bind to several textures: on the RSS4 `body` binds to
+  // `body` AND `bodyRear`. The editor's `surfaces` list holds one entry per
+  // term — the primary — because that is the one you edit, so reading painted
+  // roles off it marks every secondary as free.
+  //
+  // Offering `bodyRear` for adoption would then produce `paint.bodyRear`
+  // alongside `surfaces.body`, two claims on one texture, which
+  // `resolveTargets` refuses outright. The design would stop resolving on the
+  // next request.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+    const res = await handler.callTool('describe_car', {});
+    const text = res.content.map((c) => c.text).join('\n');
+    const described = JSON.parse(text);
+
+    const offered = (described.unpaintedSurfaces ?? []).map((s) => s.role);
+    assert.ok(!offered.includes('bodyRear'),
+      `bodyRear is already painted via surfaces.body; offered: ${offered.join(', ')}`);
+    assert.ok(!offered.includes('body'), 'nor the primary');
+    // And it still offers the ones that genuinely are free, or the check above
+    // would pass on a tool that offered nothing at all.
+    assert.ok(offered.length > 0, 'some textures on this car really are unpainted');
   } finally {
     await stop();
   }
@@ -430,5 +466,33 @@ test('integrity: tool descriptions declare agent has no eyes', async () => {
       t.description.includes('cannot visually see') || t.description.includes('cannot see'),
       `Tool "${t.name}" description must state that agent cannot see the car`
     );
+  }
+});
+
+test('render_view tells an empty role apart from no role at all', async () => {
+  // `if (args.role)` sent an empty string, a stray space or a null down the
+  // render-everything path, so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+
+    for (const role of ['', '   ', null, 42]) {
+      const res = await tools.callTool('render_view', { role });
+      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
+      assert.match(res.content[0].text, /not a texture role/);
+      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
+    }
+
+    // Omitting it is a real request and still renders everything.
+    const all = await tools.callTool('render_view', {});
+    assert.ok(!all.isError, all.content[0].text);
+    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
+
+    // And a real role is trimmed rather than refused.
+    const one = await tools.callTool('render_view', { role: ' body ' });
+    assert.ok(!one.isError, one.content[0].text);
+  } finally {
+    await stop();
   }
 });
