@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
@@ -589,6 +589,7 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
     .filter((r) => r.__key)
     .map((r) => {
       const p = r.panel ? findPanel(profile, role, r.panel) : null;
+      const abs = p ? toAbsolute(p.rect, r.at) : (r.at ?? [0, 0, 1, 1]);
       return {
         id: r.__key,
         // The PROFILE's name for the panel, not the livery's. A design is free
@@ -601,8 +602,23 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
         // asked for, from a fit that reads perfectly well.
         panel: r.panel ? panelName(profile, role, r.panel) : null,
         // Absolute texture fractions, which is what the overlay draws in.
-        abs: p ? toAbsolute(p.rect, r.at) : (r.at ?? [0, 0, 1, 1]),
+        abs,
         anisotropy: p?.anisotropy ?? 1,
+        // How big this actually is on the car. Computed HERE rather than sent
+        // as `metresPerUv` for the browser to multiply, because the axis order
+        // is the part that is easy to get silently wrong — swapping the two
+        // gives a believable answer that is off by the anisotropy, and on a 1:1
+        // panel is not wrong at all, so the mistake survives being tried once.
+        // `metresAcross` is the one place that arithmetic lives.
+        //
+        // `null` for a profile generated before the measurement existed, which
+        // is both bundled cars until they are regenerated.
+        //
+        // From the ABSOLUTE rect, not from `at`. `metresPerUv` is metres per
+        // unit of the whole sheet and `at` is panel-relative, so multiplying
+        // the two would report a region on a small panel as though it covered
+        // the car. I wrote that version first.
+        metres: p ? metresAcross({ w: abs[2], h: abs[3], panel: p }) : null,
       };
     });
 

@@ -1704,6 +1704,7 @@ function drawInspector() {
     <label>anisotropy</label><div>${sel.anisotropy.toFixed(2)}
       ${sel.anisotropy > 1.15 || sel.anisotropy < 0.87
         ? '<span class="note">stretched — text is pre-compensated, art is not</span>' : ''}</div>
+    ${onTheCar(sel)}
     <label>at (panel-relative)</label>
     <div><code>${(o.at ?? []).map((n) => n.toFixed(3)).join(', ') || 'from the design'}</code></div>
     <label>rotation</label>
@@ -1736,6 +1737,43 @@ function drawInspector() {
  * fit then adjusts the wrong thing. The remedy is one line in the design, so it
  * is worth saying every time rather than burying in documentation.
  */
+/**
+ * How big this region actually is on the car.
+ *
+ * The one question the UV sheet cannot answer and the 3D view can only answer by
+ * eye. Every other number in this panel is a fraction of an image — `at` is
+ * panel-relative, the overlay is texture-relative, and none of them tell you
+ * whether the sponsor you just placed comes out the size of a postcard or the
+ * size of a door. The profile measures it; this is where it gets said.
+ *
+ * Silent when the profile predates the measurement rather than showing a zero or
+ * a dash, because an empty row invites the reader to wonder what it means. The
+ * hint says which profiles are in that state and what to do about it, once, on
+ * the region where the question came up.
+ */
+function onTheCar(sel) {
+  const row = (body) => `<label>on the car</label><div class="muted">${body}</div>`;
+
+  // TWO reasons there can be no answer, wanting different things done about
+  // them. Both arrive as `metres: null`, and one message covering both would
+  // send somebody off to rebuild a profile that is already fine — and leave
+  // them no wiser when the number still does not appear.
+  //
+  // No panel means no measurement CAN exist. `metresPerUv` belongs to a panel,
+  // an absolute rectangle is not on one, and panels on a single car differ in
+  // scale by more than a factor of ten, so there is nothing honest to fall back
+  // to. A fact about the placement, not about the profile.
+  if (!sel.panel) {
+    return row('placed by coordinate, so no panel measures it — put it on a panel to find out');
+  }
+  if (!sel.metres) {
+    return row(`this profile has no measurement for <code>${esc(sel.panel)}</code> —
+      regenerate it with <code>--from-kn5</code>`);
+  }
+  const mm = (m) => (m < 1 ? `${Math.round(m * 1000)} mm` : `${m.toFixed(2)} m`);
+  return `<label>on the car</label><div>${mm(sel.metres.w)} × ${mm(sel.metres.h)}</div>`;
+}
+
 function derivedNote(id) {
   const r = state.surface.regions.find((x) => x.id === id);
   if (!r?.derived) return '';
