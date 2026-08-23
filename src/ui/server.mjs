@@ -134,10 +134,15 @@ export function modelGeometry(model, file) {
  * that meets the bodywork perfectly can still miss the sidepod beside it.
  *
  * Every mesh appears exactly once. A mesh whose texture the livery does not
- * paint goes into a group with no role, which the viewer renders in flat grey —
- * present, obviously unpainted, and not pretending to be stock artwork it does
- * not have. Leaving those out entirely would be worse: a car with holes in it
- * reads as a broken export rather than as an unpainted panel.
+ * paint goes into a group with no ROLE but with its FILE, one group per texture
+ * — which is what lets the viewer draw the car's own artwork there, out of the
+ * kn5, and fall back to flat grey only when it cannot. Leaving those meshes out
+ * entirely would be worse than either: a car with holes in it reads as a broken
+ * export rather than as an unpainted panel.
+ *
+ * They used to be ONE group and always grey. That is honest and it reads as a
+ * bug: a grey rectangle across a door panel looks like a sticker somebody left
+ * on, and it was reported as a fault twice.
  */
 export function wholeModelGeometry(model, files) {
   const positions = [];
@@ -556,7 +561,12 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
  * name would leave the editor unable to say what it was refusing.
  */
 function textureIndex(profile) {
-  const out = {};
+  // Null-prototype, because every key here is a FILENAME out of a car somebody
+  // else made. `__proto__.dds` is a legal filename and a special key on an
+  // ordinary object — writing one mutates the prototype instead of the map —
+  // and `constructor` or `toString` answer with a function nobody stored. Both
+  // failures are silent, which is the only kind this project minds.
+  const out = Object.create(null);
   for (const [role, t] of Object.entries(profile.textures ?? {})) {
     out[t.file.toLowerCase()] = { role, file: t.file, width: t.width, height: t.height, paintable: true };
   }

@@ -453,9 +453,19 @@ export function createViewer(canvas) {
     const blocks = Math.ceil(width / 4) * Math.ceil(height / 4) * blockBytes;
     if (buffer.byteLength < 128 + blocks) return false;
 
-    gl.bindTexture(gl.TEXTURE_2D, target);
-    gl.compressedTexImage2D(gl.TEXTURE_2D, 0, glFormat, width, height, 0,
-      new Uint8Array(buffer, 128, blocks));
+    // The header can read perfectly and the upload still fail: S3TC in WebGL 1
+    // wants dimensions that are multiples of four, and a large texture can
+    // simply run out of memory. Both THROW, and an exception here would escape
+    // `setWholeCar` and take the whole view down over a wing mirror. This
+    // function's contract is that every failure answers `false` and the caller
+    // keeps the grey, so the contract has to cover the driver too.
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, target);
+      gl.compressedTexImage2D(gl.TEXTURE_2D, 0, glFormat, width, height, 0,
+        new Uint8Array(buffer, 128, blocks));
+    } catch {
+      return false;
+    }
     // No mip chain was uploaded, so LINEAR rather than a MIPMAP filter — asking
     // for mips that are not there renders the texture as nothing at all, black
     // and silent, which is a memorable afternoon.

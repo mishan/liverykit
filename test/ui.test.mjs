@@ -94,7 +94,12 @@ async function runApp({ state, render, server = null }) {
       if (path === '/api/state') return editorState({ ...server, livery, fit, liveryId: 'test' });
       return renderSurface({ ...server, livery, fit, role: sent?.role ?? server.role });
     };
-    return { ok: true, status: 200, json: async () => answer() };
+    // THROUGH JSON, as the real transport does. Handing the object over
+    // directly let the fake keep things the wire cannot: a null-prototype map
+    // arrives at the browser as an ordinary object, and a `roles` lookup that
+    // was safe here was not safe there. A harness that transports better than
+    // the network is a harness that hides transport bugs.
+    return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(answer())) };
   };
 
   // Cache-busted so each test gets a fresh evaluation; a module that throws on
@@ -3072,3 +3077,45 @@ test('the whole-car view is re-roled from the design, not from the cached geomet
   assert.deepEqual(reRole(undefined, undefined), []);
 });
 
+
+test('a texture named like a special key is a texture, not a prototype', async () => {
+  // Every key in the roles index is a FILENAME out of a car somebody else made.
+  // `__proto__.dds` is a legal filename and a special key on an ordinary object:
+  // writing one mutates the prototype instead of the map, and `constructor`
+  // answers with a function nobody stored. Both fail silently, and the second
+  // would refuse to offer a surface for a reason that does not exist.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.evil = { file: '__proto__.dds', width: 64, height: 64 };
+  server.profile.textures.ctor = { file: 'constructor.dds', width: 64, height: 64 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  assert.equal({}.polluted, undefined, 'nothing reached Object.prototype on the way here');
+
+  dom.querySelector('#tab-all').onclick();
+
+  // A file whose name is a special key still resolves to its own role.
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: '__proto__.dds' } }, {});
+  assert.equal(dom.querySelector('#adopt').hidden, false);
+  assert.match(dom.querySelector('#adoptwhat').textContent, /__proto__\.dds/);
+
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'constructor.dds' } }, {});
+  assert.equal(dom.querySelector('#adopt').hidden, false, 'and is offered, not silently refused');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, false);
+
+  // And a name the car does NOT have must not be answered by the prototype.
+  //
+  // `constructor` and `__proto__`, because lookups are lowercased and those two
+  // survive it — `toString` becomes `tostring` and misses the prototype by
+  // accident, which is not a defence. The roles map crosses the wire as JSON, so
+  // whatever prototype the server gave it is gone by the time the browser reads
+  // it: the null-prototype on the server protects the server, and this protects
+  // the browser.
+  for (const file of ['constructor', '__proto__']) {
+    mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file } }, {});
+    assert.equal(dom.querySelector('#adopt').hidden, true,
+      `${file} is a key off the prototype, not a texture this car has`);
+  }
+});

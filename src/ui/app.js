@@ -1136,7 +1136,14 @@ async function movePanel(name) {
 function offerToAdopt(group) {
   const row = $('#adopt');
   if (!row) return false;
-  const known = group?.file ? state.data?.roles?.[group.file.toLowerCase()] : null;
+  // `Object.hasOwn`, because `roles` arrives as JSON and is therefore an
+  // ordinary object with an ordinary prototype. A texture called `constructor`
+  // or `toString` is a legal filename, and a plain lookup would answer with a
+  // function off the prototype — then read `.paintable` from it, get undefined,
+  // and refuse to offer a surface for a reason that does not exist.
+  const roles = state.data?.roles ?? {};
+  const key = group?.file ? String(group.file).toLowerCase() : null;
+  const known = key && Object.hasOwn(roles, key) ? roles[key] : null;
 
   // A part already painted is not an offer, it is where you are already working.
   if (!group || group.role !== null || !known) { row.hidden = true; return false; }
