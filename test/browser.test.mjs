@@ -1547,3 +1547,38 @@ test('the car supplies its own artwork for the parts a design does not paint', {
   assert.equal(find('picked: '), 'picked: INTERNAL_glass.dds,body.dds',
     `picking must say which surface is under the pointer: ${report.join(' | ')}`);
 });
+
+test('the fitment panel measures the real car, in a real browser', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The fake DOM has hidden four bugs in this project, and the fitment panel is
+  // exactly the shape that fools it: a fetch, a sort, and innerHTML built from
+  // the answer. This drives the real button against the real endpoint, so the
+  // findings on screen are ones the server actually computed.
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      const btn = document.querySelector('#recheck');
+      if (!btn) { say('THREW no #recheck button'); return done(); }
+      const [x, y] = centre(btn);
+      const hit = topAt(x, y);
+      say('topmost at button: #' + (hit.closest('[id]')?.id ?? 'nothing'));
+      clickAt(x, y);
+      await settle(2500);
+      const el = document.querySelector('#fitment');
+      say('panel filled: ' + (el.innerHTML.trim().length > 0));
+      say('still measuring: ' + el.textContent.includes('measuring'));
+      say('says what it skipped: ' + /not checked|not placed/.test(el.textContent));
+      say('rows: ' + el.querySelectorAll('div').length);
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.match(find('topmost at button'), /#recheck|#right/,
+    `something is covering the button: ${find('topmost at button')}`);
+  assert.equal(find('panel filled: '), 'panel filled: true', report.join(' | '));
+  assert.equal(find('still measuring: '), 'still measuring: false',
+    `the request never came back: ${report.join(' | ')}`);
+  // No model is loaded in this harness, so the geometry checks cannot run — and
+  // the panel has to say so rather than showing a reassuring blank.
+  assert.equal(find('says what it skipped: '), 'says what it skipped: true', report.join(' | '));
+});
