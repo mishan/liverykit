@@ -183,6 +183,67 @@ window.addEventListener('keydown', (e) => {
 
 wireAdders();
 
+// --- what this design would find on a car it has never been shown -----------
+//
+// A design's portability is invisible while you work on it, because you are
+// looking at one car and everything resolves. `tags: ['left', 'mid']` and
+// `panel: 'left_mid'` draw the same rectangle here; on the next car one finds
+// the flank and the other finds nothing, and you learn which by building it and
+// looking at a bare panel.
+//
+// A profile is the whole of what liverykit knows about a car, so a second
+// opinion costs nothing — no model, no game install, nothing to download.
+// Asking is a dropdown.
+$('#othercar').onchange = () => checkAgainst($('#othercar').value);
+
+async function loadOtherCars() {
+  const r = await fetch('/api/cars').then((x) => x.json()).catch(() => null);
+  if (!r?.cars?.length) return;
+  $('#othercar').innerHTML = '<option value="">pick a car…</option>'
+    + r.cars.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+}
+
+async function checkAgainst(car) {
+  const el = $('#portability');
+  if (!car) { el.innerHTML = ''; return; }
+  el.innerHTML = '<p class="hint">asking…</p>';
+
+  // The WORKING design, not the file on disk. The question is about the edit in
+  // front of you; answering about the saved copy would call a region portable
+  // minutes after you pinned it.
+  const r = await fetch('/api/portability', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ car, design: state.design }),
+  }).then((x) => x.json()).catch((e) => ({ fatal: e.message }));
+
+  if (r.fatal) { el.innerHTML = `<div class="note">! ${esc(r.fatal)}</div>`; return; }
+
+  const missing = r.regions.filter((x) => x.status === 'missing');
+  const absolute = r.regions.filter((x) => x.status === 'absolute');
+  const matched = r.regions.filter((x) => x.status === 'matched');
+  const absent = (r.surfaces ?? []).filter((s) => s.status === 'absent');
+  const invalid = (r.surfaces ?? []).filter((s) => s.status === 'invalid');
+
+  el.innerHTML = [
+    `<div class="hint">${matched.length} of ${r.regions.length} regions land on
+      ${esc(r.name)}.</div>`,
+    // Named one by one, because the useful next action is to go and change a
+    // particular region — a count tells you there is a problem and not where.
+    ...missing.map((x) => `<div class="note">! <code>${esc(x.id)}</code> ${esc(x.why)}</div>`),
+    ...invalid.map((s) => `<div class="note">! ${esc(s.from)}: ${esc(s.why)}</div>`),
+    ...absent.map((s) => `<div class="note">${esc(s.from)} — this car has no such surface</div>`),
+    // Neither a failure nor a pass. An absolute rectangle resolves on every car,
+    // which is exactly why it is the placement most likely to be quietly wrong
+    // on the next one; calling it fine would be the reassuring silence this
+    // project exists to refuse.
+    absolute.length
+      ? `<div class="hint">${absolute.length} placed by coordinate, so they land somewhere on
+         every car and nothing here can say whether it is the right somewhere.</div>`
+      : '',
+  ].join('');
+}
+
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
@@ -746,18 +807,60 @@ async function addRegion(treatment) {
   const panel = sel?.panel ?? state.surface.panels[0]?.name;
   const id = freeRegionId(treatment);
 
+  // PANEL OR TAGS, decided here and changeable afterwards in the inspector.
+  // Naming the panel pins the region to this car's word for that island; naming
+  // its tags says "the left flank, whatever this car calls it", which is the
+  // entire reason `surfaces:` exists. Choosing silently would make one of those
+  // the editor's opinion rather than the author's.
+  //
+  // The default follows what the design has already said about itself. A design
+  // with a `car` field is FOR that car, and the exact name is the better answer.
+  // One without has declared that it means to travel, and pinning it to
+  // `left_mid` would be the editor undoing that declaration a region at a time.
+  const tags = portableTags(panel);
+  const placement = (state.design?.car || !tags.length) ? { panel } : { tags };
+
   remember(`add ${id}`);
   regions.push({
     id,
     treatment,
-    ...(panel ? { panel } : {}),
+    ...(panel ? placement : {}),
     at: [0.25, 0.25, 0.5, 0.5],
   });
   setDesignDirty();
   await reloadState();
   await refresh();
   selectRegion(id);
-  status(`added ${id} — it paints last, so it goes on top`);
+  status(placement.tags
+    ? `added ${id} on tags [${placement.tags.join(', ')}] — portable, and Placement can pin it`
+    : `added ${id} on ${panel} — pinned to this car, and Placement can free it`);
+}
+
+/**
+ * The tags that would select this panel and not half the car.
+ *
+ * A panel carries everything measurement could say about it, and the full set is
+ * usually too specific to travel — `['left', 'mid', 'upper', 'visible',
+ * 'readable']` is a description of one island rather than a way of finding its
+ * counterpart elsewhere. Equally, one tag is usually too broad: `['left']` on
+ * the Abarth is most of the car's left side.
+ *
+ * So the default is the SIDE and the SECTION, which is the pair that identifies
+ * a place on a car in the way a person means it — "left flank", "centre nose".
+ * Anything else the panel carries is offered in the inspector and left unticked,
+ * because the editor should not be inventing constraints nobody asked for.
+ */
+const SIDE = new Set(['left', 'right', 'centre', 'shared']);
+const SECTION = new Set(['nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']);
+
+function portableTags(panelName) {
+  const has = state.surface?.panels?.find((p) => p.name === panelName)?.tags ?? [];
+  const side = has.filter((t) => SIDE.has(t));
+  const section = has.filter((t) => SECTION.has(t));
+  // A panel with no side and no section has nothing portable to say about
+  // itself, and inventing a selection from whatever else it carries would be
+  // worse than admitting that. The caller falls back to the panel name.
+  return side.length || section.length ? [...side, ...section] : [];
 }
 
 /** Take a region out of the design, with everything the fit said about it. */
@@ -1701,6 +1804,7 @@ function drawInspector() {
     <div><code>${esc(sel.id)}</code></div>
     ${derivedNote(sel.id)}
     <label>panel</label><div>${sel.panel ? esc(sel.panel) : '<span class="muted">absolute</span>'}</div>
+    ${placementControl(id, sel)}
     <label>anisotropy</label><div>${sel.anisotropy.toFixed(2)}
       ${sel.anisotropy > 1.15 || sel.anisotropy < 0.87
         ? '<span class="note">stretched — text is pre-compensated, art is not</span>' : ''}</div>
@@ -1772,6 +1876,132 @@ function onTheCar(sel) {
   }
   const mm = (m) => (m < 1 ? `${Math.round(m * 1000)} mm` : `${m.toFixed(2)} m`);
   return `<label>on the car</label><div>${mm(sel.metres.w)} × ${mm(sel.metres.h)}</div>`;
+}
+
+/**
+ * Switch a region between naming a panel and naming tags.
+ *
+ * The two are mutually exclusive in the format — `expandRegions` throws on a
+ * region carrying both, and rightly, since they are two different answers to one
+ * question — so this deletes as it writes. Getting that wrong would produce a
+ * design the editor renders happily and the build refuses, which is the worst
+ * available outcome and the reason it is done in one place.
+ */
+async function setPlacement(id, mode) {
+  const region = (designRegions() ?? []).find((r) => r.id === id);
+  if (!region) return status(`${id} is not one of this design's own regions`);
+  const sel = state.placed.find((p) => p.id === id);
+  let said;
+
+  if (mode === 'panel') {
+    if (region.tags === undefined) return;
+    // Whichever panel it is actually on. A tag region can be on several, and
+    // pinning it has to pick one — the selected placement is the one under the
+    // cursor, so it is the one the person means.
+    const panel = sel?.panel ?? state.surface.panels[0]?.name;
+    if (!panel) return status('there is no panel here to pin it to');
+    remember(`pin ${id}`);
+    delete region.tags;
+    delete region.limit;
+    region.panel = panel;
+    said = `${id} is pinned to ${panel} — exact here, absent on any other car`;
+  } else {
+    const tags = portableTags(sel?.panel ?? region.panel);
+    if (!tags.length) return status(`${region.panel ?? 'this panel'} carries no tags to select it by`);
+    remember(`free ${id}`);
+    delete region.panel;
+    region.tags = tags;
+    said = `${id} now selects [${tags.join(', ')}] — adjust below and watch the count`;
+  }
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+  // AFTER the render, not before it. `refresh` finishes by writing its own
+  // timing into the status line, so a message set first is shown for two
+  // milliseconds and then replaced by "rendered in 0 ms" — which is how the
+  // editor came to have several explanations nobody has ever read.
+  status(said);
+}
+
+/**
+ * Add or remove one tag from a region's selection.
+ *
+ * Removing the last one is refused rather than written. `tags: []` matches EVERY
+ * panel, because `every` on an empty list is vacuously true — `expandRegions`
+ * throws on it for that reason, and an editor that could write it would be
+ * offering a click that makes the design unbuildable.
+ */
+async function toggleTag(id, tag) {
+  const region = (designRegions() ?? []).find((r) => r.id === id);
+  if (!region?.tags) return;
+  const next = region.tags.includes(tag)
+    ? region.tags.filter((t) => t !== tag)
+    : [...region.tags, tag];
+  if (!next.length) return status('a tag selection needs at least one tag — an empty one matches everything');
+
+  remember(`tags ${id}`);
+  region.tags = next;
+  setDesignDirty();
+  await reloadState();
+  await refresh();
+  selectRegion(id);
+}
+
+/**
+ * Panel or tags, for a region the DESIGN owns.
+ *
+ * The difference the whole of `surfaces:` turns on, and until now it was
+ * invisible: a region said `panel: 'left_mid'` or `tags: ['left', 'mid']` in a
+ * file, and the editor drew the same rectangle either way. So a design's
+ * portability could only be discovered by pointing it at a second car, which is
+ * both late and hard to tell apart from the tool being broken.
+ *
+ * A switch rather than a question asked once at placement, because the answer is
+ * genuinely revisable — a region drawn exactly where this car needs it often
+ * turns out to belong everywhere, and the reverse happens too. And because the
+ * count underneath is what makes tags trustworthy: switching re-renders, and the
+ * editor then reports how many panels the RENDERER put it on rather than its own
+ * opinion of how many it should have.
+ *
+ * Only for design regions. A fit may not change a placement rule — that is the
+ * boundary the authoring plan is built on — so a fit-created copy shows where it
+ * landed and no switch.
+ */
+function placementControl(id, sel) {
+  if (!ownRegion(id)) return '';
+  const region = (designRegions() ?? []).find((r) => r.id === id);
+  if (!region) return '';
+
+  const onTags = region.tags !== undefined;
+  const landed = state.placed.filter((p) => p.id === id).length;
+  const known = state.surface?.panels?.find((p) => p.name === sel.panel)?.tags ?? [];
+  const chosen = onTags ? (region.tags ?? []) : portableTags(sel.panel);
+
+  const choice = `<div class="row">
+    <button class="rot${onTags ? '' : ' on'}" data-place="panel">this panel</button>
+    <button class="rot${onTags ? ' on' : ''}" data-place="tags"${known.length ? '' : ' disabled'}>by tags</button>
+  </div>`;
+
+  if (!onTags) {
+    return `<label>placement</label>${choice}
+      <div class="hint">pinned to <code>${esc(sel.panel ?? 'nothing')}</code>, which is this car's
+      name for it — another car gets nothing here.</div>`;
+  }
+
+  // Every tag the panel under this region carries, lit where the region uses it.
+  // Offered from the PANEL rather than from a fixed list, because tags are
+  // measured per car and a menu of names this car does not use would be a menu
+  // of ways to select nothing.
+  const boxes = known.map((t) => `<button class="rot${chosen.includes(t) ? ' on' : ''}"
+    data-tag="${esc(t)}">${esc(t)}</button>`).join(' ');
+
+  return `<label>placement</label>${choice}
+    <div class="row">${boxes}</div>
+    <div class="hint">${landed
+      ? `${landed === 1 ? 'one panel' : `${landed} panels`} on this car — portable: another car
+         gets whatever it tags the same way`
+      : '<strong>nothing on this car</strong> — and so nothing on any other either'}</div>`;
 }
 
 function derivedNote(id) {
@@ -1860,6 +2090,16 @@ function wireInspectorButtons(id) {
     setDirty(true);
     await refresh();
   };
+
+  // Placement is a DESIGN edit, unlike everything else wired here: it changes
+  // the rule by which the region finds a place on any car, which is precisely
+  // the thing a fit is not allowed to touch.
+  for (const b of $('#inspector').querySelectorAll?.('[data-place]') ?? []) {
+    b.onclick = () => setPlacement(id, b.dataset.place);
+  }
+  for (const b of $('#inspector').querySelectorAll?.('[data-tag]') ?? []) {
+    b.onclick = () => toggleTag(id, b.dataset.tag);
+  }
 
   // Rotation is a fit override like any other, so it travels with the region
   // and never edits the design.
@@ -2376,3 +2616,8 @@ function esc(s) {
 // there is no model or no WebGL, so this is a preference rather than a demand.
 await selectSurface(0);
 await showView('3d');
+// Last, after the car is on screen, so a slow profile directory cannot delay
+// anything anybody is waiting for. It answers `undefined` rather than throwing
+// when there is nothing to list, because a second opinion is not a prerequisite
+// for editing.
+await loadOtherCars();

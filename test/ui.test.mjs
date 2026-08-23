@@ -2608,3 +2608,158 @@ test('a region on no panel is not told to regenerate a profile that is fine', as
   assert.doesNotMatch(shown, /--from-kn5/,
     'the profile is measured; regenerating it would change nothing');
 });
+test('a region can be freed from this car\'s panel names, and pinned back', async () => {
+  // The difference the whole of `surfaces:` turns on, and until now it was
+  // invisible in the editor: `panel: 'L'` and `tags: ['left']` draw the same
+  // rectangle here and mean completely different things on the next car.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body.L.tags = ['left', 'mid', 'visible'];
+  server.profile.panels.body.R.tags = ['right', 'mid', 'visible'];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  delete server.livery.car;
+
+  const { dom } = await runApp({ server });
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+  const region = () => design().surfaces.body.regions[0];
+
+  const buttons = (names) => {
+    const inspector = dom.querySelector('#inspector');
+    const made = new Map(names.map((n) => [n, { dataset: n, onclick: null }]));
+    inspector.querySelectorAll = (q) => [...made.values()]
+      .filter((b) => (q === '[data-place]' ? b.dataset.place : q === '[data-tag]' ? b.dataset.tag : false));
+    inspector.querySelector = () => null;
+    return made;
+  };
+
+  // Freed: the panel name goes, the tags arrive, and they are the SIDE and
+  // SECTION rather than everything the panel happens to carry — `visible` is
+  // measured, true, and not a way of finding this panel on another car.
+  let b = buttons([{ place: 'tags' }]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await [...b.values()][0].onclick();
+  assert.equal(region().panel, undefined, 'the car-specific name is gone');
+  assert.deepEqual(region().tags, ['left', 'mid']);
+  assert.match(dom.querySelector('#status').textContent, /left, mid/);
+
+  // A tag can be added — including one the default declined to assume.
+  b = buttons([{ tag: 'visible' }]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await [...b.values()][0].onclick();
+  assert.deepEqual(region().tags, ['left', 'mid', 'visible']);
+
+  // Pinned back: the tags go and the panel returns. Both fields must never be
+  // set at once — `expandRegions` throws on a region carrying both, so an
+  // editor that wrote one would render happily and fail the build.
+  b = buttons([{ place: 'panel' }]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await [...b.values()][0].onclick();
+  assert.equal(region().panel, 'L');
+  assert.equal(region().tags, undefined, 'panel and tags may never both be set');
+});
+
+test('a tag selection may not be emptied, because empty matches everything', async () => {
+  // `tags: []` matches EVERY panel — `every` on an empty list is vacuously true
+  // — which is why expandRegions throws on it. A button that could write it
+  // would be a click that makes the design unbuildable.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body.L.tags = ['left'];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', tags: ['left'], at: [0.1, 0.1, 0.3, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  const inspector = dom.querySelector('#inspector');
+  const only = { dataset: { tag: 'left' }, onclick: null };
+  inspector.querySelector = () => null;
+  inspector.querySelectorAll = (q) => (q === '[data-tag]' ? [only] : []);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await only.onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(design.surfaces.body.regions[0].tags, ['left'], 'the last tag is kept');
+  assert.match(dom.querySelector('#status').textContent, /at least one tag/);
+});
+
+test('a design that says which car it is for gets exact placements', async () => {
+  // The default follows what the design has already declared about itself. A
+  // `car` field means it is FOR that car and the exact panel name is the better
+  // answer; without one it means to travel, and pinning each new region to this
+  // car's names would be the editor undoing that a region at a time.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body.L.tags = ['left', 'mid'];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const forThisCar = async (car) => {
+    server.livery.car = car;
+    if (!car) delete server.livery.car;
+    const { dom } = await runApp({ server });
+    dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+    dom.querySelector('#newtreatment').value = 'fill';
+    await dom.querySelector('#addregion').onclick();
+    const d = JSON.parse(dom.querySelector('#designjson').textContent);
+    return d.surfaces.body.regions.at(-1);
+  };
+
+  assert.deepEqual((await forThisCar('fixture')).panel, 'L', 'a design for one car names the panel');
+  assert.equal((await forThisCar('fixture')).tags, undefined);
+
+  const portable = await forThisCar(null);
+  assert.deepEqual(portable.tags, ['left', 'mid'], 'a design with no car travels by default');
+  assert.equal(portable.panel, undefined);
+});
+
+test('the other-car check reports misses by name, and does not call absolutes fine', async () => {
+  // The panel exists to answer a question you cannot ask by looking: does this
+  // design travel. So the shape of the answer matters — a count says there is a
+  // problem, a name says which region to go and change.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, calls } = await runApp({ server });
+  const report = {
+    car: 'other', name: 'Some Other Car',
+    surfaces: [{ from: 'surfaces.wing', status: 'absent' }],
+    regions: [
+      { id: 'flank', from: 'surfaces.body', kind: 'tags', status: 'matched', panels: ['a', 'b'] },
+      { id: 'nose-badge', from: 'surfaces.body', kind: 'panel', status: 'missing',
+        panels: [], why: 'this car has no panel called "centre_nose"' },
+      { id: 'stripe', from: 'surfaces.body', kind: 'absolute', status: 'absolute', panels: [] },
+    ],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/portability'
+      ? { ok: true, status: 200, json: async () => report }
+      : realFetch(path, init));
+  try {
+    dom.querySelector('#othercar').value = 'other';
+    await dom.querySelector('#othercar').onchange();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const shown = dom.querySelector('#portability').innerHTML;
+  // Whitespace-tolerant: the markup wraps, and where it wraps is not the point.
+  assert.match(shown, /1 of 3 regions land on\s+Some Other Car/);
+  assert.match(shown, /nose-badge/, 'a miss is named, because the next action is to go and fix that one');
+  assert.match(shown, /no panel called/);
+  assert.match(shown, /surfaces\.wing/, 'and a surface the car lacks is worth seeing too');
+
+  // The one that would be easiest to get wrong: an absolute placement always
+  // resolves, which is exactly why it is the most likely to be quietly wrong on
+  // another car. Reporting it as a pass would be the reassuring silence this
+  // project refuses.
+  assert.doesNotMatch(shown, /<div class="note">! <code>stripe/, 'an absolute is not a failure');
+  assert.match(shown, /1 placed by coordinate/, 'but it is not counted as fine either');
+
+  // And it asked about the WORKING design rather than the file on disk.
+  const asked = calls.find((c) => c.path === '/api/portability');
+  assert.ok(asked === undefined || asked.body.design, 'the design travels with the question');});
