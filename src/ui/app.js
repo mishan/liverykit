@@ -2656,8 +2656,8 @@ async function checkProposals() {
       currentProposal = p;
       remember(`proposal: ${p.why}`);
       applyProposalDiffInApp(p);
-      setDirty(true);
-      setDesignDirty();
+      if (Array.isArray(p.fit) && p.fit.length > 0) setDirty(true);
+      if (Array.isArray(p.design) && p.design.length > 0) setDesignDirty();
       await reloadState();
       await refresh();
       showProposalBanner(p);

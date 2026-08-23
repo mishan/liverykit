@@ -227,9 +227,9 @@ MCP over stdio is JSON-RPC 2.0 with a small handshake — `initialize`, then
 `tools/list` and `tools/call`. Resources and prompts exist and are not needed
 here. That subset is a couple of hundred lines of line-delimited JSON handling.
 
-Which matters, because this project has **one runtime dependency** and says so
-out loud. Taking the official SDK to expose eight tools would more than double
-the dependency footprint of the whole tool for the sake of a handshake. Hand-roll
+Which matters, because this project keeps a minimal dependency footprint and says so
+out loud. Taking the official SDK to expose eight tools would significantly expand
+the dependency tree for the sake of a handshake. Hand-roll
 the subset, keep it in `src/mcp/`, and treat the day the protocol outgrows that
 as the day to reconsider — not before.
 

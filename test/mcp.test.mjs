@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, rm } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { startUi } from '../src/ui/server.mjs';
@@ -317,6 +317,29 @@ test('refusal: invalid fit proposal is refused at proposal time', async () => {
 
     assert.ok(res.isError);
     assert.match(res.content[0].text, /Proposal refused|fit rejected/);
+  } finally {
+    await stop();
+  }
+});
+
+test('refusal: concurrent pending proposal is rejected', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+
+    const first = await handler.callTool('propose_fit', {
+      why: 'first proposal',
+      fit: [{ op: 'set-override', id: 'stripe-centre', panel: 'nose' }],
+    });
+    assert.ok(!first.isError);
+
+    const second = await handler.callTool('propose_fit', {
+      why: 'second proposal',
+      fit: [{ op: 'set-override', id: 'stripe-centre', panel: 'flank' }],
+    });
+    assert.ok(second.isError);
+    assert.match(second.content[0].text, /already pending/);
   } finally {
     await stop();
   }
