@@ -26,6 +26,7 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit --explain <kn5>           rank which texture is the bodywork, with
                                       the evidence, so you can confirm it
   liverykit <livery> --ui             open the fitting editor for this car
+  liverykit --mcp                     start MCP server attached to editor
 
 Arguments
   <livery>            path to a livery module, or a name in ./liveries/
@@ -59,6 +60,8 @@ Options
                       content/cars/<car>/ or cars/<car>/. Never shipped: the
                       model is the car maker's.
   --port <n>          port for --ui                            (default: 7391)
+  --mcp               start Model Context Protocol (MCP) server for editor
+  --editor <url>      editor URL for --mcp (default: http://127.0.0.1:7391/)
   --pack <module>     load an extra treatment pack (repeatable)
 `;
 
@@ -88,6 +91,8 @@ const { values, positionals } = parseArgs({
     ui: { type: 'boolean', default: false },
     model: { type: 'string' },
     port: { type: 'string' },
+    mcp: { type: 'boolean', default: false },
+    editor: { type: 'string' },
     pack: { type: 'string', multiple: true, default: [] },
     help: { type: 'boolean', default: false },
   },
@@ -223,6 +228,28 @@ if (values.scan) {
   }
   console.log(formatScan(list));
   process.exit(0);
+}
+
+// --- MCP mode ---------------------------------------------------------------
+if (values.mcp) {
+  const { createEditorClient } = await import('../src/mcp/client.mjs');
+  const { createToolHandler } = await import('../src/mcp/tools.mjs');
+  const { createProtocolServer } = await import('../src/mcp/protocol.mjs');
+
+  const editorUrl = values.editor ?? 'http://127.0.0.1:7391/';
+  const client = createEditorClient(editorUrl);
+
+  try {
+    const buildInfo = await client.checkEditor();
+    console.error(`Connected to fitting editor at ${client.baseUrl} (build ${buildInfo.build})`);
+  } catch (err) {
+    fail(err);
+  }
+
+  const handler = createToolHandler(client);
+  const server = createProtocolServer({ toolHandler: handler });
+  server.listen(process.stdin);
+  await new Promise(() => {});
 }
 
 // --- load livery + profile --------------------------------------------------
