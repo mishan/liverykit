@@ -357,8 +357,9 @@ export async function profileFromKn5(path, {
         // 40 mm tall or 400, which is the question somebody placing artwork is
         // actually asking and the one thing a flat sheet can never answer.
         //
-        // Millimetres, because a profile is read by people and the sixth
-        // decimal of a figure measured off a game model would be pretending.
+        // Metres, to three decimals — so millimetre precision, not millimetres.
+        // A profile is read by people, and the sixth decimal of a figure
+        // measured off a game model would be pretending.
         metresPerUv: i.metresPerUv ? i.metresPerUv.map(r3) : undefined,
         confidence: 'measured',
         source: { mesh: i.mesh, vertices: i.vertexCount },

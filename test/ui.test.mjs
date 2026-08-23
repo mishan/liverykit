@@ -2577,7 +2577,34 @@ test('a profile that never measured its panels says so, rather than nothing', as
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
   const shown = dom.querySelector('#inspector').innerHTML;
 
-  assert.match(shown, /not measured/);
+  assert.match(shown, /no measurement for/);
   assert.match(shown, /--from-kn5/, 'and says what to do about it');
+  assert.match(shown, /<code>L<\/code>/, 'naming the panel whose measurement is missing');
   assert.doesNotMatch(shown, /\bNaN\b|undefined/);
+});
+
+test('a region on no panel is not told to regenerate a profile that is fine', async () => {
+  // Both reasons for having no size arrive as `metres: null`, and they want
+  // different things done about them. An absolute rectangle is not ON a panel,
+  // and `metresPerUv` belongs to a panel — panels on one car differ in scale by
+  // more than ten times, so there is nothing to fall back to. Telling somebody
+  // to rebuild their profile would send them off to fix something that is not
+  // broken and leave them no wiser when the number still did not appear.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body.L.metresPerUv = [8, 2];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', at: [0.1, 0.1, 0.3, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const shown = dom.querySelector('#inspector').innerHTML;
+
+  assert.match(shown, /placed by coordinate/);
+  assert.doesNotMatch(shown, /--from-kn5/,
+    'the profile is measured; regenerating it would change nothing');
 });
