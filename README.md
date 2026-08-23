@@ -436,6 +436,43 @@ design written for one car will always look better on it.
 
 ---
 
+## Model Context Protocol (MCP)
+
+`liverykit` includes a Model Context Protocol (MCP) server over stdio for AI pair programming and automated design workflows. The MCP server attaches to a **running editor instance** (`--ui`) and exposes tools for querying car profiles, reading working designs/fits, and submitting proposals to the editor's proposal inbox for human review.
+
+### Starting the MCP Server
+
+1. Start the fitting editor:
+   ```sh
+   node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --ui
+   ```
+
+2. Connect an MCP client (such as Claude Desktop or an AI coding agent) by launching:
+   ```sh
+   node bin/liverykit.mjs --mcp
+   ```
+   If the editor is running on a non-default port, pass `--editor <url>`:
+   ```sh
+   node bin/liverykit.mjs --mcp --editor http://127.0.0.1:7391/
+   ```
+
+### Available MCP Tools
+
+- **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
+- **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
+- **`list_treatments`**: Catalogue of all loaded treatment options and schemas.
+- **`read_design`**: Read working design data held in the running editor.
+- **`read_fit`**: Read working fit overrides and copies, including stale region IDs.
+- **`report`**: Detailed report of which surfaces and textures this design paints on this car.
+- **`propose_design`**: Propose design changes (palette, regions, options, identity) to the editor's inbox.
+- **`propose_fit`**: Propose fit placement overrides or copies to the editor's inbox.
+
+Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect, drag, and **Accept** or **Discard** them using the undo stack. The MCP server never writes directly to disk.
+
+See [docs/mcp.md](docs/mcp.md) for full protocol details and design rationale.
+
+---
+
 ## Writing your own treatments
 
 A treatment takes a rectangle and returns SVG. Anything it puts in `emissive` is
@@ -539,6 +576,8 @@ rather type `liverykit`. `--help` is authoritative.
   --term rims                       explain a different vocabulary term
   --no-visibility                   skip the ray casting: faster, less accurate
 --scan <skins dir>                classify textures without a model
+--mcp                             start the MCP stdio protocol server (attaches to running --ui)
+  --editor <url>                    editor URL for --mcp (default: http://127.0.0.1:7391/)
 --out <dir>                       output directory (default: dist)
 ```
 

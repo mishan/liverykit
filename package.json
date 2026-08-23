@@ -27,7 +27,7 @@
     "build": "node bin/liverykit.mjs neon-grid",
     "uvgrid": "node bin/liverykit.mjs neon-grid --uvgrid",
     "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "test:fast": "node --test test/integrity.test.mjs test/ui.test.mjs test/classifier.test.mjs"
+    "test:fast": "node --test test/integrity.test.mjs test/ui.test.mjs test/classifier.test.mjs test/mcp.test.mjs"
   },
   "keywords": [
     "assetto-corsa",
