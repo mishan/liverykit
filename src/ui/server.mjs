@@ -709,8 +709,11 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   const started = new Date().toISOString().slice(11, 19);
   let pendingProposal = null;
   let fit = null;
+  let workingFit = null;
+  let workingDesign = livery;
   try {
     fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
+    workingFit = fit;
     // And it has to be a fit for THIS design on THIS car. `--fit` takes any
     // path, and the conventional one outlives the profile it was written for,
     // so the file being open is not by itself evidence that it belongs here.
@@ -758,7 +761,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       }
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
-        return json(200, editorState({ livery, profile, fit, liveryId }));
+        return json(200, editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId }));
       }
 
       // What each treatment takes, so the inspector can offer a control rather
@@ -803,8 +806,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
         const { fit: working, design } = await body();
+        if (working !== undefined) workingFit = working;
+        if (design !== undefined) workingDesign = design;
         return json(200, editorState({
-          livery: design ?? livery, profile, fit: working ?? fit, liveryId,
+          livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId,
         }));
       }
 
@@ -814,8 +819,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         // render has to be of what is being edited rather than of what is on
         // disk. Nothing here writes it.
         const { fit: working, design, role, seed } = await body();
+        if (working !== undefined) workingFit = working;
+        if (design !== undefined) workingDesign = design;
         return json(200, renderSurface({
-          livery: design ?? livery, profile, fit: working, role, seed,
+          livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed,
         }));
       }
 
@@ -824,10 +831,12 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
         const { fit: working, design, seed } = await body();
-        const state = editorState({ livery: design ?? livery, profile, fit: working });
+        if (working !== undefined) workingFit = working;
+        if (design !== undefined) workingDesign = design;
+        const state = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit });
         const surfaces = [];
         for (const s of state.surfaces) {
-          const out = renderSurface({ livery: design ?? livery, profile, fit: working, role: s.role, seed });
+          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed });
           surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
         }
         return json(200, { surfaces });
@@ -875,6 +884,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (refuse) return json(409, { error: refuse });
         await writeFile(liveryPath, JSON.stringify(next, null, 2) + '\n');
         livery = next;
+        workingDesign = next;
         log(`  saved ${liveryPath}`);
         return json(200, { saved: liveryPath });
       }
@@ -894,6 +904,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         await mkdir(dirname(fitPath), { recursive: true });
         await writeFile(fitPath, JSON.stringify(next, null, 2) + '\n');
         fit = next;
+        workingFit = next;
         log(`  saved ${fitPath}`);
         return json(200, { saved: fitPath });
       }
@@ -911,8 +922,9 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           return json(400, { error: 'Proposal requires a non-empty "why" field explaining the change.' });
         }
         try {
-          const baseFit = fit ?? { livery: liveryId, car: profile.id, regions: {} };
-          const { design: nextDesign, fit: nextFit } = applyProposalDiff({ design: livery, fit: baseFit }, prop);
+          const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
+          const baseDesign = workingDesign ?? livery;
+          const { design: nextDesign, fit: nextFit } = applyProposalDiff({ design: baseDesign, fit: baseFit }, prop);
           if (liveryPath && Array.isArray(prop.design) && prop.design.length > 0) {
             const refusal = designRefusal(nextDesign, liveryPath);
             if (refusal) return json(409, { error: `Proposed design rejected: ${refusal}` });
