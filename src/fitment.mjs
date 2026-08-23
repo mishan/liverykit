@@ -41,6 +41,15 @@ const BARELY_SEEN = 0.35;
 const TOO_SMALL_MM = 25;
 
 /**
+ * Vertices a rectangle must contain before its visibility is worth believing.
+ *
+ * Not a tuning knob so much as an admission. Thirteen points gave a confident
+ * 100% on a real placement while the one beside it had forty-two; neither
+ * number is wrong, but one of them is a sample and the other is a rumour.
+ */
+const ENOUGH_POINTS = 20;
+
+/**
  * Everything this design and this car have to say to each other.
  *
  * `model` is optional and is the difference between the checks that need
@@ -82,14 +91,14 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   return {
     car: profile.id,
     name: profile.name || profile.id,
-    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen'),
+    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen' && c !== 'unmeasured'),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: model ? [] : ['unseen'],
+    notChecked: model ? [] : ['unseen', 'unmeasured'],
     findings,
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen'];
+const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'unmeasured'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -289,7 +298,32 @@ function unseen(placed, profile, t, seen, say) {
   for (const p of placed) {
     const at = [p.frac.x, p.frac.y, p.frac.w, p.frac.h];
     const answer = rectVisibility(seen.model, seen.prepared, meshes, at);
-    if (!answer) continue;                      // no geometry there: not a verdict
+
+    // TOO FEW POINTS TO JUDGE, said out loud.
+    //
+    // The cast stands on mesh vertices whose uv falls inside the rectangle, so
+    // its resolution is the mesh's vertex spacing. A small region on a coarse
+    // door can contain a handful, or none — and `continue` here was a silent
+    // pass hiding inside the check written to prevent silent passes. Measured
+    // on the Honda, one placement got a confident 100% from thirteen points
+    // while its neighbour used forty-two.
+    //
+    // This does not say the placement is bad. It says this instrument cannot
+    // tell, which is the one thing worse than a bad answer to leave unsaid.
+    if (!answer || answer.samples < ENOUGH_POINTS) {
+      say({
+        kind: 'unmeasured',
+        severity: 'low',
+        surface: t.from,
+        panel: p.region.panel,
+        ids: [p.id],
+        samples: answer?.samples ?? 0,
+        why: `${name(t, p.id)} covers ${answer?.samples ?? 0} vertices of the mesh, ` +
+          `too few to say whether it can be seen — the cast stands on vertices, so a ` +
+          'region smaller than the geometry under it is below what this can measure',
+      });
+      continue;
+    }
     if (answer.fraction >= BARELY_SEEN) continue;
     say({
       kind: 'unseen',
