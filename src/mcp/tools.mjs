@@ -12,7 +12,16 @@ async function toolDescribeCar(client) {
   }));
   const totalPanels = state.surfaces.reduce((sum, s) => sum + (s.panels?.length ?? 0), 0);
 
-  const paintedRoles = new Set(state.surfaces.map((s) => s.role));
+  // From `paintedRoles`, not from `surfaces`. A vocabulary term may bind to
+  // several textures — the RSS4 spreads its bodywork across two — and
+  // `surfaces` holds one entry per term, the primary, because that is the one
+  // you edit. Reading painted roles off it marks every secondary as unpainted
+  // and offers it for adoption, which would claim a role the design already
+  // paints and produce a livery that refuses to resolve.
+  //
+  // The fallback keeps this working against an editor older than the field
+  // rather than reporting every role on the car as free.
+  const paintedRoles = new Set(state.paintedRoles ?? state.surfaces.map((s) => s.role));
   const unpaintedSurfaces = [];
   const unpaintable = [];
 

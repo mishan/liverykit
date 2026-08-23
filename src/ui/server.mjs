@@ -528,6 +528,14 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     regionIds: Object.fromEntries(ids),
     fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
+    // EVERY role this design paints, not just the one entry per term that
+    // `surfaces` carries. A vocabulary term may bind to several textures — the
+    // RSS4 spreads its bodywork across two — and `surfaces` deliberately holds
+    // only the primary, because that is the one you edit. Anything asking "is
+    // this texture already painted" needs the whole set, and computing it from
+    // `surfaces` marks the secondaries as unpainted and offers them for
+    // adoption, which would then claim a role the design already has.
+    paintedRoles: [...new Set(targets.map((t) => t.role))],
     // Every texture the car has, by the FILE the model names it with, so the
     // browser can turn "you clicked this part" into "that is
     // `ext_banner_colour`, and here is what it would cost to paint it".

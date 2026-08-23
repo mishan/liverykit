@@ -264,23 +264,59 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
 });
 
 test('mcp tools: propose_design with adopt-surface', async () => {
+  // `grips`, not `wing`. On the RSS4 `wing` is a vocabulary TERM bound to no
+  // roles at all — `bind.wing` is an empty array, which is the profile saying
+  // this car has no such surface — so `paint.wing` names a texture that does
+  // not exist and could never be adopted. `grips` is a real texture role on
+  // this profile that the design does not paint, which is the case the tool is
+  // actually for.
   const { url, stop } = await setupTestEditor();
   try {
     const client = createEditorClient(url);
     const handler = createToolHandler(client);
 
     const propRes = await handler.callTool('propose_design', {
-      why: 'adopt rear wing surface into design',
+      why: 'adopt the grip texture into the design',
       design: [
-        { op: 'adopt-surface', role: 'wing', background: 'ink' },
+        { op: 'adopt-surface', role: 'grips' },
       ],
     });
 
     assert.ok(!propRes.isError);
     const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
-    assert.equal(pending.proposal.why, 'adopt rear wing surface into design');
+    assert.equal(pending.proposal.why, 'adopt the grip texture into the design');
     assert.equal(pending.proposal.design[0].op, 'adopt-surface');
-    assert.equal(pending.proposal.design[0].role, 'wing');
+    assert.equal(pending.proposal.design[0].role, 'grips');
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: a secondary bound role is not offered as unpainted', async () => {
+  // A vocabulary term may bind to several textures: on the RSS4 `body` binds to
+  // `body` AND `bodyRear`. The editor's `surfaces` list holds one entry per
+  // term — the primary — because that is the one you edit, so reading painted
+  // roles off it marks every secondary as free.
+  //
+  // Offering `bodyRear` for adoption would then produce `paint.bodyRear`
+  // alongside `surfaces.body`, two claims on one texture, which
+  // `resolveTargets` refuses outright. The design would stop resolving on the
+  // next request.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+    const res = await handler.callTool('describe_car', {});
+    const text = res.content.map((c) => c.text).join('\n');
+    const described = JSON.parse(text);
+
+    const offered = (described.unpaintedSurfaces ?? []).map((s) => s.role);
+    assert.ok(!offered.includes('bodyRear'),
+      `bodyRear is already painted via surfaces.body; offered: ${offered.join(', ')}`);
+    assert.ok(!offered.includes('body'), 'nor the primary');
+    // And it still offers the ones that genuinely are free, or the check above
+    // would pass on a tool that offered nothing at all.
+    assert.ok(offered.length > 0, 'some textures on this car really are unpainted');
   } finally {
     await stop();
   }
