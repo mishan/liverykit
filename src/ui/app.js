@@ -2704,7 +2704,8 @@ if (acceptBtn) acceptBtn.onclick = acceptProposal;
 const discardBtn = $('#proposal-discard');
 if (discardBtn) discardBtn.onclick = discardProposal;
 
-setInterval(checkProposals, 1000);
+const proposalTimer = setInterval(checkProposals, 1000);
+if (proposalTimer?.unref) proposalTimer.unref();
 
 // --- boot, last -------------------------------------------------------------
 await selectSurface(0);

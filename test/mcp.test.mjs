@@ -40,7 +40,12 @@ async function setupTestEditor() {
     log: () => {},
   });
 
-  const stop = () => new Promise((ok) => server.close(ok));
+  const stop = () => new Promise((ok) => {
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
+    server.close(ok);
+  });
   return { server, url, stop };
 }
 
