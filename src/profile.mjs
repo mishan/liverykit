@@ -502,6 +502,26 @@ export function expandRegions(profile, role, regions = []) {
  * panel — a background fill should reach the island edge even though type
  * shouldn't.
  */
+/**
+ * How big a resolved rectangle is on the actual car, in metres.
+ *
+ * Takes what `resolveRect` returned, because the panel it landed on is what
+ * carries the measurement. Answers `null` rather than a guess when the profile
+ * predates `metresPerUv` or the region is placed absolutely with no panel under
+ * it — a plausible-looking wrong number here would be worse than no number,
+ * since the whole point is to be able to trust it.
+ *
+ * Written once, here, because getting the axis order wrong is silent: swapping
+ * the two gives a sensible-looking answer that is wrong by the anisotropy, and
+ * on a 1:1 panel it is not wrong at all, so the mistake survives testing on the
+ * first panel somebody tries it on.
+ */
+export function metresAcross(frac) {
+  const per = frac?.panel?.metresPerUv;
+  if (!Array.isArray(per) || per.length !== 2) return null;
+  return { w: frac.w * per[0], h: frac.h * per[1] };
+}
+
 export function resolveRect(profile, role, spec) {
   const at = spec.at ?? [0, 0, 1, 1];
   checkRect(at, `region "at"`, (m) => { throw new Error(m); });

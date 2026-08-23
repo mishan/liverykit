@@ -76,6 +76,14 @@ on a typical open-wheeler there are around 190 such pairs, and the front and rea
 halves of a single sidepod are routinely separate islands. Paint one and half the
 pod stays stock.
 
+**How big a panel is on the car.** Each measured panel records `metresPerUv`,
+the world size of one unit of texture along each axis. `anisotropy` says a panel
+is 3.9 times wider than tall in texture terms, which is what the renderer needs
+to un-stretch a glyph; it cannot say whether that glyph lands 40 mm tall or 400,
+because a ratio has no size in it. The editor shows the figure for whatever
+region is selected. Profiles generated before this existed say *not measured*
+rather than guessing — regenerate with `--from-kn5` to get it.
+
 **Which panels are visible, and from where.** Being inside a UV island doesn't
 mean anyone can see it — duct interiors, bulkhead backs and floor undersides are
 all ordinary parts of an island. liverykit ray-casts against the whole car,

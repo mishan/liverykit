@@ -2527,3 +2527,57 @@ test('a livery the editor cannot save does not offer to add to it', async () => 
   assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/,
     'and nothing was marked as needing saving');
 });
+
+test('the inspector says how big a region is on the actual car', async () => {
+  // Every other number in the inspector is a fraction of an image: `at` is
+  // panel-relative, the overlay is texture-relative, the anisotropy is a ratio.
+  // None of them answer whether the sponsor you just placed comes out the size
+  // of a postcard or the size of a door, which is the question.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  // The fixture's L panel is a quarter of the sheet; give it a measurement, so
+  // the arithmetic below has exactly one right answer.
+  server.profile.panels.body.L.metresPerUv = [8, 2];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0, 0, 0.5, 0.5], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const shown = dom.querySelector('#inspector').innerHTML;
+
+  // The panel is [0, 0, 0.4, 0.4] of the sheet and the region is half of it, so
+  // 0.2 of the sheet across: 0.2 x 8 = 1.6 m, and 0.2 x 2 = 400 mm.
+  //
+  // NOT 0.5 x 8 = 4 m, which is what multiplying `at` by the measurement gives.
+  // `metresPerUv` is per unit of the WHOLE sheet and `at` is panel-relative, so
+  // that version reports a region on a small panel as though it spanned the car
+  // — believably, and wrong by however large the panel is. I wrote it first.
+  assert.match(shown, /1\.60 m × 400 mm/,
+    `expected 1.60 m × 400 mm from a panel-relative half of a 0.4 panel, got: ${shown.slice(0, 400)}`);
+
+  // Metres and millimetres, because 0.4 m is a number you have to convert in
+  // your head to picture and 400 mm is not.
+  assert.doesNotMatch(shown, /0\.40 m/);
+});
+
+test('a profile that never measured its panels says so, rather than nothing', async () => {
+  // Both bundled cars are in this state until somebody regenerates them, so it
+  // is the case most people will see first. A blank row would read as a bug in
+  // the editor; a zero would read as a measurement.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const shown = dom.querySelector('#inspector').innerHTML;
+
+  assert.match(shown, /not measured/);
+  assert.match(shown, /--from-kn5/, 'and says what to do about it');
+  assert.doesNotMatch(shown, /\bNaN\b|undefined/);
+});

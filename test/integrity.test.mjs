@@ -1795,3 +1795,62 @@ test('the vendor route serves two named files and cannot be walked out of', asyn
     server.close();
   }
 });
+
+test('a panel records how big it is on the car, not only how stretched', async () => {
+  // `anisotropy` says a panel is 3.9 times wider than tall in UV terms, which is
+  // what the renderer needs to un-stretch a glyph. It cannot say whether that
+  // glyph lands 40 mm tall or 400: a wheel hub and a bonnet both report 1.0.
+  // The magnitudes were already being computed to form that ratio and thrown
+  // away, so `metresPerUv` keeps them.
+  //
+  // The fixture states its own dimensions, so this asserts rather than
+  // estimates. The left flank is a flat quad 3.7 m along z by 1.5 m up y,
+  // unwrapped into a UV rect 0.29 by 0.46 — and a flat quad is the one case
+  // where the arithmetic can be done by hand and checked.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+  const { metresAcross } = await import('../src/profile.mjs');
+  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-scale-'));
+  const file = join(dir, 'car.kn5');
+  await writeFile(file, carKn5());
+  const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+  const role = Object.keys(profile.panels)[0];
+  const flank = profile.panels[role].left_mid;
+
+  const [, , uvW, uvH] = CAR.faces.left;
+  const alongCar = CAR.length / uvW;      // 3.7 m over 0.29 of the sheet
+  const upTheSide = CAR.height / uvH;     // 1.5 m over 0.46
+
+  assert.ok(Math.abs(flank.metresPerUv[0] - alongCar) < 0.01,
+    `along u: ${flank.metresPerUv[0]} should be about ${alongCar.toFixed(2)}`);
+  assert.ok(Math.abs(flank.metresPerUv[1] - upTheSide) < 0.01,
+    `along v: ${flank.metresPerUv[1]} should be about ${upTheSide.toFixed(2)}`);
+
+  // And it agrees with the ratio that was already there, which is the check
+  // that catches the two being computed off different axes — an error that
+  // leaves both numbers looking perfectly reasonable on their own.
+  assert.ok(Math.abs(flank.metresPerUv[0] / flank.metresPerUv[1] - flank.anisotropy) < 0.02,
+    'the magnitudes must divide to the anisotropy already recorded');
+
+  // The payoff: a region covering a third of that panel's width is now a
+  // number of metres rather than a fraction of an image nobody can picture.
+  const third = resolveRect(profile, role, { panel: 'left_mid', at: [0, 0, 1 / 3, 0.5] });
+  const m = metresAcross(third);
+  assert.ok(Math.abs(m.w - CAR.length / 3) < 0.02, `${m.w} m across, expected ${(CAR.length / 3).toFixed(2)}`);
+  assert.ok(Math.abs(m.h - CAR.height / 2) < 0.02, `${m.h} m tall, expected ${(CAR.height / 2).toFixed(2)}`);
+
+  // A profile generated before this measurement existed, or a region placed
+  // absolutely with no panel under it, gets NO answer rather than a plausible
+  // wrong one. Half the shipped profiles are in the first case until somebody
+  // regenerates them, and a made-up size would be believed.
+  assert.equal(metresAcross(resolveRect(profile, role, { at: [0, 0, 1, 1] })), null,
+    'no panel, no measurement');
+  const older = structuredClone(profile);
+  delete older.panels[role].left_mid.metresPerUv;
+  assert.equal(metresAcross(resolveRect(older, role, { panel: 'left_mid' })), null,
+    'a profile predating the measurement says nothing rather than guessing');
+});
