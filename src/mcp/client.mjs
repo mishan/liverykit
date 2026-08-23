@@ -7,7 +7,8 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
   const request = async (path, options = {}) => {
     let res;
     try {
-      res = await fetch(new URL(path, url).href, options);
+      const headers = { connection: 'close', ...options.headers };
+      res = await fetch(new URL(path, url).href, { ...options, headers });
     } catch (e) {
       throw new Error(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
     }
