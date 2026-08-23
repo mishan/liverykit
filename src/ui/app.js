@@ -211,11 +211,20 @@ async function checkAgainst(car) {
   // The WORKING design, not the file on disk. The question is about the edit in
   // front of you; answering about the saved copy would call a region portable
   // minutes after you pinned it.
+  // A 404 is JSON too, and it carries an `error` rather than the report —
+  // reading `.json()` and carrying on reached `r.regions.filter` on undefined
+  // and threw, so the panel went blank on the one occasion it had something to
+  // say. Every way this can fail becomes `fatal` here, in one place.
   const r = await fetch('/api/portability', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ car, design: state.design }),
-  }).then((x) => x.json()).catch((e) => ({ fatal: e.message }));
+  }).then(async (x) => {
+    const body = await x.json().catch(() => ({}));
+    if (!x.ok) return { fatal: body.error ?? `the editor answered ${x.status}` };
+    if (!Array.isArray(body.regions)) return { fatal: body.fatal ?? 'the answer had no regions in it' };
+    return body;
+  }).catch((e) => ({ fatal: e.message }));
 
   if (r.fatal) { el.innerHTML = `<div class="note">! ${esc(r.fatal)}</div>`; return; }
 
@@ -831,9 +840,14 @@ async function addRegion(treatment) {
   await reloadState();
   await refresh();
   selectRegion(id);
-  status(placement.tags
-    ? `added ${id} on tags [${placement.tags.join(', ')}] — portable, and Placement can pin it`
-    : `added ${id} on ${panel} — pinned to this car, and Placement can free it`);
+  status(!panel
+    // Nothing mapped on this surface, so the region went in with neither
+    // `panel` nor `tags` and is a bare rectangle. "added fill on undefined" was
+    // the editor reading its own variable out loud.
+    ? `added ${id} as a plain rectangle — this surface has no panels mapped, so there was nothing to place it on`
+    : placement.tags
+      ? `added ${id} on tags [${placement.tags.join(', ')}] — portable, and Placement can pin it`
+      : `added ${id} on ${panel} — pinned to this car, and Placement can free it`);
 }
 
 /**
@@ -1977,6 +1991,19 @@ function placementControl(id, sel) {
   const landed = state.placed.filter((p) => p.id === id).length;
   const known = state.surface?.panels?.find((p) => p.name === sel.panel)?.tags ?? [];
   const chosen = onTags ? (region.tags ?? []) : portableTags(sel.panel);
+
+  // A region on NEITHER is placed by coordinate, and there is no third button
+  // for that. Showing the switch implied it was pinned, and "this panel" was a
+  // button with nothing to pin to — the region is not on a panel, so `sel.panel`
+  // is null and `setPlacement` returned without doing anything. It says what it
+  // is instead, and what that costs, which is what somebody weighing
+  // portability actually needs to know.
+  if (!onTags && region.panel === undefined) {
+    return `<label>placement</label>
+      <div class="hint">a rectangle in the texture, on no panel — it lands
+      <em>somewhere</em> on every car, and nothing can say whether that
+      somewhere is the right one.</div>`;
+  }
 
   const choice = `<div class="row">
     <button class="rot${onTags ? '' : ' on'}" data-place="panel">this panel</button>

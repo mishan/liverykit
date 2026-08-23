@@ -2762,4 +2762,83 @@ test('the other-car check reports misses by name, and does not call absolutes fi
 
   // And it asked about the WORKING design rather than the file on disk.
   const asked = calls.find((c) => c.path === '/api/portability');
-  assert.ok(asked === undefined || asked.body.design, 'the design travels with the question');});
+  assert.ok(asked === undefined || asked.body.design, 'the design travels with the question');
+});
+
+test('the other-car check survives an answer that is not a report', async () => {
+  // A 404 from /api/portability is JSON too, and it carries an `error` rather
+  // than a report. Reading it and carrying on reached `regions.filter` on
+  // undefined and threw — so the panel went blank on the one occasion it had
+  // something worth saying.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  const { dom } = await runApp({ server });
+
+  const realFetch = globalThis.fetch;
+  const answer = async (status, body) => {
+    globalThis.fetch = async (path, init) =>
+      (path === '/api/portability'
+        ? { ok: status === 200, status, json: async () => body }
+        : realFetch(path, init));
+    try {
+      dom.querySelector('#othercar').value = 'other';
+      await dom.querySelector('#othercar').onchange();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    return dom.querySelector('#portability').innerHTML;
+  };
+
+  assert.match(await answer(404, { error: 'no profile called "ghost"' }), /no profile called/);
+  assert.match(await answer(500, {}), /500/, 'even an answer with nothing in it says something');
+  assert.match(await answer(200, { fatal: 'two surfaces claim one role' }), /two surfaces claim one role/);
+  // The shape that used to throw: a 200 with no regions array.
+  assert.match(await answer(200, { car: 'x', name: 'X' }), /no regions/);
+});
+
+test('a region on no panel is not offered a switch that cannot do anything', async () => {
+  // The switch is panel-or-tags, and a region placed by coordinate is on
+  // neither. Showing it implied the region was pinned, and "this panel" was a
+  // button with nothing to pin to.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', at: [0.1, 0.1, 0.3, 0.3], treatment: 'fill', color: 'accent',
+  };
+
+  const { dom } = await runApp({ server });
+  inspectorButtons(dom, ['#delete']);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const shown = dom.querySelector('#inspector').innerHTML;
+
+  assert.doesNotMatch(shown, /data-place=/, 'no button that would do nothing');
+  assert.match(shown, /on no panel/, 'but it says what it is');
+  assert.match(shown, /every car/, 'and what that costs when the design travels');
+});
+
+test('adding to a surface with no panels says so, rather than naming undefined', async () => {
+  // `panel` is undefined when nothing is mapped, and the region goes in as a
+  // bare rectangle. The status line used to read "added fill on undefined —
+  // pinned to this car", which is the editor reading its own variable aloud.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.panels.body = {};
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.body.regions = [];
+
+  const { dom } = await runApp({ server });
+  dom.querySelector('#newtreatment').value = 'fill';
+  await dom.querySelector('#addregion').onclick();
+
+  const said = dom.querySelector('#status').textContent;
+  assert.doesNotMatch(said, /undefined/);
+  assert.match(said, /no panels mapped/);
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  const added = design.surfaces.body.regions.at(-1);
+  assert.equal(added.panel, undefined, 'and it really is a bare rectangle');
+  assert.equal(added.tags, undefined);
+});
