@@ -163,6 +163,10 @@ defaults — often 512×512 where the skins ship 2048×2048 — so real sizes ar
 cross-referenced from a skin folder. The model is authoritative about *layout*,
 not about *resolution*.
 
+The car's display name comes from `ui/ui_car.json` beside the model — the name
+its author gave it, which is what Content Manager shows. `--car-name` overrides
+it, and a name already in the profile survives regeneration.
+
 Panels come out with systematic geometric names (`left_mid`, `centre_nose`).
 Give the ones you care about friendlier names in the profile's `aliases` block,
 which survives regeneration:
