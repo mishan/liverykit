@@ -318,8 +318,33 @@ row carries a count of what depends on it, renaming rewrites the references
 rather than orphaning them, and a panel lists whatever the design refers to and
 does not define.
 
-**4. Portability.** The panel-or-tags choice at placement time, and the
-second-profile check that shows what a tag selection matches on another car.
+**4. Portability.** *Done.* The panel-or-tags choice, and the second-profile
+check.
+
+Two departures from the plan above, both from building it. The choice is a
+SWITCH in the inspector rather than a question asked once while placing: the
+answer is genuinely revisable — a region drawn exactly where this car needs it
+often turns out to belong everywhere, and the reverse happens too — and a
+one-shot prompt would have made the commonest change the hardest one. It also
+reaches designs that already exist, which a placement-time question cannot.
+
+And the match count is read back from the RENDER rather than computed in the
+browser. The editor has each panel's tags and could have counted them itself, at
+the cost of a second implementation of `panelsWithTags` — including its
+distinct-rectangle rule — free to drift from the one that paints. Switching to
+tags re-renders anyway, so the number shown is how many panels the renderer
+actually used.
+
+The second-profile check went further than "what a tag selection matches",
+because the same walk answers more for nothing: a `panel:` naming an island the
+other car lacks, a surface it does not have at all, and a design that cannot be
+resolved against it. `src/portability.mjs` asks `resolveTargets` and
+`expandRegions` rather than reimplementing them, so a design that reports clean
+is one the build will genuinely paint.
+
+The interesting judgement is that an ABSOLUTE rectangle is reported as neither a
+pass nor a failure. It resolves on every car, which is exactly why it is the
+placement most likely to be quietly wrong on the next one.
 
 The order is deliberate: step 1 is the only one that touches the pack API, and it
 ships value with nothing else in place. If the file-format decision in step 2 is

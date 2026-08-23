@@ -21,6 +21,8 @@
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
 //   POST /api/state        the same, for a working fit or design not yet saved
 //   GET  /api/treatments   what each treatment takes, for the inspector
+//   GET  /api/cars         the other profiles this design could be pointed at
+//   POST /api/portability  what the working design would find on one of them
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   POST /api/design       write the design, if it is data and not code
@@ -28,21 +30,50 @@
 // ---------------------------------------------------------------------------
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
+import { portability } from '../portability.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// Where the profiles this checkout ships live. A profile is the entirety of what
+// liverykit knows about a car, so this directory IS the set of second opinions
+// available to a design — no model, no game install, nothing to fetch.
+const CARS = join(HERE, '..', '..', 'cars');
+
+/**
+ * Every profile except the one being edited, by id and display name.
+ *
+ * Read fresh each time rather than cached at startup, because generating a
+ * profile for a new car is a thing people do WHILE an editor is open, and an
+ * editor that had to be restarted to notice would be quietly out of date at
+ * exactly the moment the answer mattered.
+ */
+async function otherCars(current) {
+  const files = await readdir(CARS).catch(() => []);
+  const out = [];
+  for (const f of files.filter((n) => n.endsWith('.json')).sort()) {
+    const id = f.slice(0, -5);
+    if (id === current) continue;
+    // Named from the file's own contents, because a profile with no display
+    // name falls back to its id everywhere else and a picker that showed
+    // `ac_friends_honda_nsx_gt3_evo` in one place and `Honda NSX GT3 Evo` in
+    // another would look like two different cars.
+    const p = await readFile(join(CARS, f), 'utf8').then(JSON.parse).catch(() => null);
+    if (p?.id) out.push({ id, name: p.name || id });
+  }
+  return out;
+}
 
 /**
  * The geometry a texture is painted on, in world space, ready for WebGL.
@@ -731,6 +762,31 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // which packs the design loads, and never changes while the editor is up.
       if (req.method === 'GET' && url.pathname === '/api/treatments') {
         return json(200, { treatments: treatmentCatalogue(livery) });
+      }
+
+      // The other cars this design could be pointed at. A profile is the whole
+      // of what liverykit knows about a car, so the list of them is the list of
+      // second opinions available — no model, no game install, nothing to
+      // download.
+      if (req.method === 'GET' && url.pathname === '/api/cars') {
+        return json(200, { cars: await otherCars(profile.id), current: profile.id });
+      }
+
+      // What this design would find on one of them. POST, because the design in
+      // question is the working one in the browser rather than the one on disk,
+      // and answering about the saved copy would be answering about a file
+      // nobody is looking at.
+      if (req.method === 'POST' && url.pathname === '/api/portability') {
+        const sent = await body();
+        const design = sent.design ?? livery;
+        // Checked against the DIRECTORY listing rather than joined with the
+        // request, so this is a server that can read the profiles it already
+        // ships and not a path to hand somebody.
+        const known = await otherCars(profile.id);
+        const want = known.find((c) => c.id === sent.car);
+        if (!want) return json(404, { error: `no profile called ${JSON.stringify(sent.car)}` });
+        const other = await loadProfile(join(CARS, `${want.id}.json`));
+        return json(200, portability(design, other));
       }
 
       // The same answer, for a fit that has not been saved yet.

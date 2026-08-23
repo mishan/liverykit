@@ -64,6 +64,13 @@ reads *"the front 40% of the nose"* — and keeps meaning that if you point the
 same design at a different car with `--profile`. Absolute coordinates still work
 as an escape hatch for anything unmapped.
 
+The editor makes that choice visible. A region can name **this car's panel** or
+name **tags** — `left`, `mid` — and switch between them, with a live count of how
+many panels the selection lands on. **On another car** then checks the whole
+design against any other profile you have and names the regions that would find
+nothing there. Neither needs a model or a game install: a profile is the whole of
+what liverykit knows about a car.
+
 ### What the model tells you that a texture can't
 
 Two things in a profile are worth knowing about up front, because both catch

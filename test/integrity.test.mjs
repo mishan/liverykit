@@ -1854,3 +1854,78 @@ test('a panel records how big it is on the car, not only how stretched', async (
   assert.equal(metresAcross(resolveRect(older, role, { panel: 'left_mid' })), null,
     'a profile predating the measurement says nothing rather than guessing');
 });
+test('the editor can say what a design would find on another car', async () => {
+  // A design's portability is invisible while you work on it, because you are
+  // looking at one car and everything resolves. You find out it does not travel
+  // by pointing it at a second car and seeing a bare bonnet — which is late, and
+  // reads as a bug in the tool rather than as a decision made weeks earlier.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-port-'));
+  const { server } = await startUi({
+    livery, profile, fitPath: join(dir, 'absent.json'),
+    liveryId: 'neon-grid-any', port: 0, log: () => {},
+  });
+  const at = (p) => `http://127.0.0.1:${server.address().port}${p}`;
+  const ask = (body) => fetch(at('/api/portability'), {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+
+  try {
+    const { cars, current } = await (await fetch(at('/api/cars'))).json();
+    assert.equal(current, 'abarth500');
+    assert.ok(cars.length, 'there is at least one other profile to check against');
+    assert.ok(!cars.some((c) => c.id === 'abarth500'), 'and the car being edited is not offered as a second opinion');
+    assert.ok(cars.every((c) => c.id && c.name), 'each is named, so the picker never shows a blank row');
+
+    const other = cars[0].id;
+    const report = await (await ask({ car: other })).json();
+    assert.equal(report.car, other);
+    assert.ok(report.regions.length, 'the report has something in it');
+    for (const r of report.regions) {
+      assert.ok(['matched', 'missing', 'absolute'].includes(r.status), `odd status ${r.status}`);
+      assert.ok(r.id, 'every region is named, because the point is to go and fix one');
+      if (r.status === 'missing') assert.ok(r.why, 'and a miss says why, or it is not actionable');
+    }
+
+    // The working design is honoured, not the one on disk — the whole question
+    // is about the edit in front of you, and answering about a saved file would
+    // be answering about something nobody is looking at.
+    const mine = structuredClone({ ...livery });
+    mine.surfaces = { body: { regions: [{ id: 'probe', treatment: 'fill', tags: ['definitely-not-a-tag'] }] } };
+    const worked = await (await ask({ car: other, design: mine })).json();
+    assert.equal(worked.regions.length, 1, 'it answered about the design it was sent');
+    assert.equal(worked.regions[0].id, 'probe');
+    assert.equal(worked.regions[0].status, 'missing');
+    assert.match(worked.regions[0].why, /definitely-not-a-tag/);
+
+    // The judgement worth pinning: an absolute rectangle is NOT a pass. It
+    // resolves on every car, which is exactly why it is the placement most
+    // likely to be quietly wrong on the next one, and a report that called it
+    // `matched` would be telling you the design travels when it does not.
+    const mixed = structuredClone({ ...livery });
+    mixed.surfaces = { body: { regions: [
+      { id: 'by-tag', treatment: 'fill', tags: ['left'] },
+      { id: 'by-coordinate', treatment: 'fill', at: [0.1, 0.1, 0.2, 0.2] },
+    ] } };
+    const kinds = await (await ask({ car: other, design: mixed })).json();
+    const status = Object.fromEntries(kinds.regions.map((r) => [r.id, r.status]));
+    assert.equal(status['by-coordinate'], 'absolute',
+      'a coordinate placement is reported as what it is, not as a pass');
+    assert.notEqual(status['by-coordinate'], 'matched');
+    assert.ok(['matched', 'missing'].includes(status['by-tag']),
+      'and a tag selection gets a real verdict either way');
+
+    // And the car id is checked against the directory listing rather than
+    // joined onto a path, the same rule as everywhere else in this file.
+    assert.equal((await ask({ car: '../package' })).status, 404);
+    assert.equal((await ask({ car: 'no-such-car' })).status, 404);
+  } finally {
+    server.close();
+  }});
