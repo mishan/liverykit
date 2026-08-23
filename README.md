@@ -97,6 +97,12 @@ all ordinary parts of an island. liverykit ray-casts against the whole car,
 wheels and wings included, and reports `visible` per panel. On the example car
 87 panels are completely unseeable from trackside.
 
+The **Whole car** view shows every texture at once, with your design on the
+surfaces it paints and the car's own artwork — read from your kn5, never shipped
+— on the ones it does not. So what you are looking at is the car, not a livery
+floating on a grey mannequin. Parts the model cannot supply a texture for stay
+grey, which is honest about what is missing rather than guessing at it.
+
 It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
 disagree sharply: the flanks score 99% outside and 6% from the seat, the tub
 interior the other way about. If you race in cockpit view, that second number is

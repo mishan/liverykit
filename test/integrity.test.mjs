@@ -1854,6 +1854,7 @@ test('a panel records how big it is on the car, not only how stretched', async (
   assert.equal(metresAcross(resolveRect(older, role, { panel: 'left_mid' })), null,
     'a profile predating the measurement says nothing rather than guessing');
 });
+
 test('the editor can say what a design would find on another car', async () => {
   // A design's portability is invisible while you work on it, because you are
   // looking at one car and everything resolves. You find out it does not travel
@@ -1947,3 +1948,43 @@ test('the editor can say what a design would find on another car', async () => {
   } finally {
     server.close();
   }});
+
+test('unpainted meshes are grouped by their own texture, not lumped together', async () => {
+  // They used to be one group with no role, drawn flat grey — honest, and it
+  // reads as a bug: a grey rectangle over a door panel looks like a sticker
+  // rather than like "your livery does not paint this". One group per texture
+  // is what lets each wear the car's own artwork instead.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+
+  // Real buffers, because `vertex` reads one — three triangles laid out the way
+  // a kn5 stores them, each on its own material and so its own texture.
+  const stride = 32;
+  const verts = stride * 9;
+  const buf = Buffer.alloc(verts + 18);
+  for (let i = 0; i < 9; i++) buf.writeFloatLE(i % 3, i * stride);
+  // `triangles` reads uint16 indices out of the same buffer, so they need a real
+  // home in it — a mesh with no readable indices emits no geometry and no group.
+  for (let m = 0; m < 3; m++) for (let k = 0; k < 3; k++) buf.writeUInt16LE(k, verts + m * 6 + k * 2);
+  const mesh = (i) => ({
+    materialId: i, vertexCount: 3, vertexStart: i * 3 * stride, stride,
+    indexCount: 3, indexStart: verts + i * 6,
+    world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+  });
+  const model = {
+    buf,
+    meshes: [mesh(0), mesh(1), mesh(2)],
+    materials: [
+      { slots: { txDiffuse: 'body.dds' } },
+      { slots: { txDiffuse: 'INTERNAL_glass.dds' } },
+      { slots: { txDiffuse: 'MIRROR.dds' } },
+    ],
+  };
+
+  const g = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]);
+  const roleless = g.groups.filter((x) => x.role === null);
+
+  assert.deepEqual(roleless.map((x) => x.file), ['INTERNAL_glass.dds', 'MIRROR.dds'],
+    'one group per unpainted texture, sorted so the order does not depend on mesh order');
+  assert.deepEqual(g.groups.filter((x) => x.role === 'body').map((x) => x.file), ['body.dds'],
+    'and the painted one is still its own group');
+});
