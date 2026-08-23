@@ -1620,7 +1620,7 @@ async function panelRows(dom, sel, attr, rows) {
   el.querySelectorAll = (q) => (q === `[data-${attr}]` ? [...fields.values()] : []);
   el.rowFor = (name, part) => fields.get(`${name}:${part}`);
   // A real <select> always has a value; the fake one has to be told.
-  dom.querySelector('#surface').value = '0';
+  dom.querySelector('#surface').value = 'surfaces.body';
   await dom.querySelector('#surface').onchange();
   return el;
 }
@@ -2401,7 +2401,7 @@ test('a palette value never reaches the page as CSS', async () => {
   // rather than laying a sheet over the page.
   const swatches = ['ink', 'trap'].map((n) => ({ dataset: { swatch: n }, style: {} }));
   el.querySelectorAll = (q) => (q === '[data-swatch]' ? swatches : []);
-  dom.querySelector('#surface').value = '0';
+  dom.querySelector('#surface').value = 'surfaces.body';
   await dom.querySelector('#surface').onchange();
   assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real colour is set');
   assert.equal(swatches[1].style.backgroundColor, hostile,
@@ -2939,4 +2939,98 @@ test('adopting a surface writes paint, not surfaces, and goes there', async () =
   await dom.querySelector('#adoptsurface').onclick();
   assert.match(dom.querySelector('#status').textContent, /already painted/);
   assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).paint?.body, undefined);
+});
+
+
+test('a surface that cannot be adopted leaves the design exactly as it was', async () => {
+  // Reported: adopting a surface emptied the design. I could not reproduce it,
+  // which is the point of this test — the guard above only sees what the
+  // editor's surface list holds, and that list carries the PRIMARY target of
+  // each term, so a role claimed by some other route is invisible to it.
+  //
+  // So the change is proposed before it is applied: made on a copy, checked by
+  // the server, and only then does it become the design you are holding. That
+  // makes the whole class safe rather than the one case I could think of.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  const before = dom.querySelector('#designjson').textContent;
+
+  // The server refuses whatever comes next.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/state' && init?.method === 'POST'
+      ? { ok: false, status: 500, json: async () => ({ error: 'paints texture role "banner" twice' }) }
+      : realFetch(path, init));
+
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  try {
+    await dom.querySelector('#adoptsurface').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.equal(dom.querySelector('#designjson').textContent, before,
+    'the design is untouched, down to the byte');
+  assert.match(dom.querySelector('#status').textContent, /could not paint banner/);
+  assert.match(dom.querySelector('#status').textContent, /twice/, 'and says why, from the server');
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/,
+    'and nothing was marked dirty for a change that did not happen');
+});
+
+
+test('adopting a surface does not shift what every other one points at', async () => {
+  // Reported: after adopting, `surfaces.body` showed the adopted surface and
+  // `surfaces.tyres` showed the body. Nothing was lost and the design was
+  // intact — the picker was pointing at the wrong ones, which is worse, because
+  // everything you do next is real and lands somewhere else.
+  //
+  // The options carried their INDEX and were built once at boot. Adopting adds
+  // an entry, and `resolveTargets` walks `paint` before `surfaces`, so the new
+  // one arrives at the FRONT and shifts every index below it while the select
+  // kept the old numbers.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.tyres = { file: 'tyres.dds', width: 512, height: 512 };
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.profile.bind = {
+    body: { roles: ['body'], source: 'human' },
+    tyres: { roles: ['tyres'], source: 'human' },
+  };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.tyres = { regions: [{ id: 'tyre1', treatment: 'fill', color: 'ink' }] };
+
+  const { dom, mod } = await runApp({ server });
+  const options = () => dom.querySelector('#surface').innerHTML;
+  assert.match(options(), /value="surfaces\.body"/, 'options name the surface, not its position');
+
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+
+  // The new one exists, and the old ones still name themselves.
+  assert.match(options(), /value="paint\.banner"/, 'the adopted surface is offered');
+  assert.match(options(), /value="surfaces\.body"/);
+  assert.match(options(), /value="surfaces\.tyres"/);
+
+  // And picking one by name gets THAT one — asserted on the regions it shows,
+  // not on the value just written into the select, which would only prove the
+  // test can set a property.
+  const pick = async (from) => {
+    dom.querySelector('#surface').value = from;
+    await dom.querySelector('#surface').onchange();
+    return dom.querySelector('#regions').innerHTML;
+  };
+
+  assert.match(await pick('surfaces.tyres'), /tyre1/, 'the tyres surface shows the tyres region');
+  const body = await pick('surfaces.body');
+  assert.match(body, /badge/, 'and body shows the body region');
+  assert.doesNotMatch(body, /tyre1/, 'not whatever took position zero');
+  assert.match(await pick('paint.banner'), /class="hint"|^\s*$|<li/, 'the adopted one is reachable too');
 });
