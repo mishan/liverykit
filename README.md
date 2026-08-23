@@ -109,8 +109,14 @@ and lights wrongly.
 The **Whole car** view shows every texture at once, with your design on the
 surfaces it paints and the car's own artwork — read from your kn5, never shipped
 — on the ones it does not. So what you are looking at is the car, not a livery
-floating on a grey mannequin. Parts the model cannot supply a texture for stay
-grey, which is honest about what is missing rather than guessing at it.
+floating on a grey mannequin.
+
+The stock artwork goes to the GPU as compressed blocks with no decoding step,
+which means it covers DXT1, DXT3 and DXT5 — the great majority of what a car
+ships — and nothing else. A PNG texture, an uncompressed DDS, or a browser
+without `WEBGL_compressed_texture_s3tc` stays flat grey, as does an encrypted
+car, whose embedded textures are 1×1 placeholders. Grey means *this part is not
+yours and could not be shown*, never a guess at what belongs there.
 
 It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
 disagree sharply: the flanks score 99% outside and 6% from the seat, the tub

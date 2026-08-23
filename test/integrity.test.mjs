@@ -2032,3 +2032,33 @@ test('the whole-car preview answers about the design it was sent', async () => {
     server.close();
   }
 });
+
+test('the texture index is a map, not an object with a prototype', async () => {
+  // Its keys are FILENAMES out of a car somebody else made, and `__proto__.dds`
+  // is a legal filename. On an ordinary object, writing that key mutates the
+  // prototype instead of the map — silently, and for every object in the
+  // process.
+  //
+  // The browser needs its own guard as well, because this crosses the wire as
+  // JSON and arrives with an ordinary prototype however it left. This one
+  // protects the server's own use of it.
+  const { editorState } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const hostile = structuredClone(profile);
+  hostile.textures.evil = { file: '__proto__', width: 64, height: 64 };
+  hostile.textures.ctor = { file: 'constructor', width: 64, height: 64 };
+
+  const { roles } = editorState({ livery, profile: hostile, fit: null, liveryId: 'x' });
+
+  assert.equal(Object.getPrototypeOf(roles), null, 'a string-keyed map has no prototype');
+  assert.equal({}.evil, undefined, 'and nothing reached Object.prototype building it');
+  assert.equal(roles.__proto__?.role, 'evil', 'the special names are ordinary entries');
+  assert.equal(roles.constructor?.role, 'ctor');
+  // And a name the car does not have answers with nothing at all, rather than
+  // with whatever Object.prototype happens to carry.
+  assert.equal(roles.toString, undefined);
+  assert.equal(roles.hasOwnProperty, undefined);
+});
