@@ -12,7 +12,16 @@ async function toolDescribeCar(client) {
   }));
   const totalPanels = state.surfaces.reduce((sum, s) => sum + (s.panels?.length ?? 0), 0);
 
-  const paintedRoles = new Set(state.surfaces.map((s) => s.role));
+  // From `paintedRoles`, not from `surfaces`. A vocabulary term may bind to
+  // several textures — the RSS4 spreads its bodywork across two — and
+  // `surfaces` holds one entry per term, the primary, because that is the one
+  // you edit. Reading painted roles off it marks every secondary as unpainted
+  // and offers it for adoption, which would claim a role the design already
+  // paints and produce a livery that refuses to resolve.
+  //
+  // The fallback keeps this working against an editor older than the field
+  // rather than reporting every role on the car as free.
+  const paintedRoles = new Set(state.paintedRoles ?? state.surfaces.map((s) => s.role));
   const unpaintedSurfaces = [];
   const unpaintable = [];
 
@@ -152,8 +161,26 @@ async function toolReport(client) {
 }
 
 async function toolRenderView(client, args = {}) {
-  if (args.role) {
-    const res = await client.renderSurface(args.role, args.seed);
+  // OMITTED and EMPTY are different questions.
+  //
+  // `if (args.role)` sent an empty string, a stray space, or a null down the
+  // render-everything path — so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  // Omitting `role` is a real request; supplying one that is not a usable name
+  // is a mistake, and worth saying so.
+  // `undefined` is absence; JSON `null` is a value somebody sent, and sending
+  // it is the mistake this catches.
+  if ('role' in args && args.role !== undefined) {
+    const role = typeof args.role === 'string' ? args.role.trim() : '';
+    if (!role) {
+      return {
+        content: [{ type: 'text', text:
+          `render_view got role: ${JSON.stringify(args.role)}, which is not a texture role. ` +
+          'Omit `role` entirely to render every painted surface.' }],
+        isError: true,
+      };
+    }
+    const res = await client.renderSurface(role, args.seed);
     return {
       content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
     };
