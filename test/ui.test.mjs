@@ -94,7 +94,12 @@ async function runApp({ state, render, server = null }) {
       if (path === '/api/state') return editorState({ ...server, livery, fit, liveryId: 'test' });
       return renderSurface({ ...server, livery, fit, role: sent?.role ?? server.role });
     };
-    return { ok: true, status: 200, json: async () => answer() };
+    // THROUGH JSON, as the real transport does. Handing the object over
+    // directly let the fake keep things the wire cannot: a null-prototype map
+    // arrives at the browser as an ordinary object, and a `roles` lookup that
+    // was safe here was not safe there. A harness that transports better than
+    // the network is a harness that hides transport bugs.
+    return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(answer())) };
   };
 
   // Cache-busted so each test gets a fresh evaluation; a module that throws on
@@ -156,7 +161,11 @@ test('app.js declares its helpers before the boot await reaches them', async () 
   // statement, so no future edit can reintroduce the ordering problem without
   // moving it.
   const src = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
-  const boot = src.indexOf('await selectSurface(');
+  // The LAST one. `indexOf` found the first, which stopped being the boot the
+  // moment a helper had cause to select a surface itself — and then reported
+  // every declaration below that helper as coming after the boot, which is a
+  // page of noise pointing at nothing.
+  const boot = src.lastIndexOf('await selectSurface(');
   assert.ok(boot > 0, 'the module still boots by selecting a surface');
 
   // The boot is more than one statement now — it opens the car view too — so
@@ -1616,7 +1625,7 @@ async function panelRows(dom, sel, attr, rows) {
   el.querySelectorAll = (q) => (q === `[data-${attr}]` ? [...fields.values()] : []);
   el.rowFor = (name, part) => fields.get(`${name}:${part}`);
   // A real <select> always has a value; the fake one has to be told.
-  dom.querySelector('#surface').value = '0';
+  dom.querySelector('#surface').value = 'surfaces.body';
   await dom.querySelector('#surface').onchange();
   return el;
 }
@@ -2397,7 +2406,7 @@ test('a palette value never reaches the page as CSS', async () => {
   // rather than laying a sheet over the page.
   const swatches = ['ink', 'trap'].map((n) => ({ dataset: { swatch: n }, style: {} }));
   el.querySelectorAll = (q) => (q === '[data-swatch]' ? swatches : []);
-  dom.querySelector('#surface').value = '0';
+  dom.querySelector('#surface').value = 'surfaces.body';
   await dom.querySelector('#surface').onchange();
   assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real colour is set');
   assert.equal(swatches[1].style.backgroundColor, hostile,
@@ -2841,4 +2850,272 @@ test('adding to a surface with no panels says so, rather than naming undefined',
   const added = design.surfaces.body.regions.at(-1);
   assert.equal(added.panel, undefined, 'and it really is a bare rectangle');
   assert.equal(added.tags, undefined);
+});
+
+test('clicking an unpainted part of the car offers to paint it, and names it', async () => {
+  // A car ships four plausible number-plate textures at 1024 square, and telling
+  // them apart by name is guesswork. Pointing at the one on the door is not —
+  // the whole-car groups know which texture each part uses, and the state knows
+  // which role each texture is. This is the join between them.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  const claim = mod.claimCarPointer;
+
+  // Whole-car view: the gesture is orbiting, so the claim must DECLINE even
+  // when it has something to say. Taking the drag to show a hint would cost the
+  // camera movement that is the main thing this view is for.
+  dom.querySelector('#tab-all').onclick();
+  const hit = (group) => claim({ u: 0.5, v: 0.5, group }, {});
+
+  assert.equal(hit({ role: null, file: 'b.dds' }), false, 'it never takes the gesture');
+
+  // A part the design does not paint, and the car does have a role for.
+  hit({ role: null, file: 'b.dds' });
+  assert.equal(dom.querySelector('#adopt').hidden, false);
+  assert.match(dom.querySelector('#adoptwhat').textContent, /b\.dds/, 'named, because that is the answer');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, false);
+
+  // A part already painted is where you are working, not an offer.
+  hit({ role: 'body', file: 'b.dds' });
+  assert.equal(dom.querySelector('#adopt').hidden, true);
+
+  // And bare space behind the car.
+  hit({ role: null, file: 'b.dds' });
+  claim(null, {});
+  assert.equal(dom.querySelector('#adopt').hidden, true, 'nothing under the pointer, nothing to offer');
+});
+
+test('a surface the profile says not to paint is refused, with the reason', async () => {
+  // A normal map encodes surface direction and a shader map encodes gloss.
+  // Painting either gives a car that loads, lights wrongly, and reports nothing
+  // — so offering them would be the editor inviting a mistake the profile
+  // already knows about.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.doNotPaint = [{ file: 'b_nm.dds', reason: 'normal map — encodes surface direction' }];
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'b_nm.dds' } }, {});
+
+  assert.equal(dom.querySelector('#adopt').hidden, false, 'it still says what the part is');
+  assert.match(dom.querySelector('#adoptwhat').textContent, /normal map/, 'and why not');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, true, 'but offers no button');
+});
+
+test('adopting a surface writes paint, not surfaces, and goes there', async () => {
+  // `paint.<role>` names a texture role directly; `surfaces.<term>` goes through
+  // the car's bindings. These are exactly the surfaces with no binding and
+  // usually no panels — a banner is too small a share of the car to survive the
+  // panel threshold — so `paint` is not a shortcut, it is the only thing that
+  // addresses them at all.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  // A second texture the design does not touch — a banner, exactly the case
+  // this exists for: too small a share of the car to have panels of its own.
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.ok(design.paint?.banner, 'written as paint, keyed by the texture role');
+  assert.deepEqual(design.paint.banner.regions, [], 'and empty, so the black says you have taken it over');
+  assert.equal(design.paint.banner.background, undefined, 'no invented background');
+  assert.equal(design.surfaces?.banner, undefined, 'not through a binding the car does not have');
+
+  assert.match(dom.querySelector('#status').textContent, /renders black/);
+  assert.equal(dom.querySelector('#adopt').hidden, true, 'the offer is spent');
+
+  // And a role the design already paints is refused rather than written. Two
+  // claims on one texture is a design `resolveTargets` throws on, because one
+  // write would silently overwrite the other — so this must never be reachable
+  // by a click, whichever route the design took to get there first.
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'b.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+  assert.match(dom.querySelector('#status').textContent, /already painted/);
+  assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).paint?.body, undefined);
+});
+
+
+test('a surface that cannot be adopted leaves the design exactly as it was', async () => {
+  // Reported: adopting a surface emptied the design. I could not reproduce it,
+  // which is the point of this test — the guard above only sees what the
+  // editor's surface list holds, and that list carries the PRIMARY target of
+  // each term, so a role claimed by some other route is invisible to it.
+  //
+  // So the change is proposed before it is applied: made on a copy, checked by
+  // the server, and only then does it become the design you are holding. That
+  // makes the whole class safe rather than the one case I could think of.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  const before = dom.querySelector('#designjson').textContent;
+
+  // The server refuses whatever comes next.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/state' && init?.method === 'POST'
+      ? { ok: false, status: 500, json: async () => ({ error: 'paints texture role "banner" twice' }) }
+      : realFetch(path, init));
+
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  try {
+    await dom.querySelector('#adoptsurface').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  assert.equal(dom.querySelector('#designjson').textContent, before,
+    'the design is untouched, down to the byte');
+  assert.match(dom.querySelector('#status').textContent, /could not paint banner/);
+  assert.match(dom.querySelector('#status').textContent, /twice/, 'and says why, from the server');
+  assert.doesNotMatch(dom.querySelector('#status').textContent, /unsaved/,
+    'and nothing was marked dirty for a change that did not happen');
+});
+
+
+test('adopting a surface does not shift what every other one points at', async () => {
+  // Reported: after adopting, `surfaces.body` showed the adopted surface and
+  // `surfaces.tyres` showed the body. Nothing was lost and the design was
+  // intact — the picker was pointing at the wrong ones, which is worse, because
+  // everything you do next is real and lands somewhere else.
+  //
+  // The options carried their INDEX and were built once at boot. Adopting adds
+  // an entry, and `resolveTargets` walks `paint` before `surfaces`, so the new
+  // one arrives at the FRONT and shifts every index below it while the select
+  // kept the old numbers.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.tyres = { file: 'tyres.dds', width: 512, height: 512 };
+  server.profile.textures.banner = { file: 'banner.dds', width: 1024, height: 512 };
+  server.profile.bind = {
+    body: { roles: ['body'], source: 'human' },
+    tyres: { roles: ['tyres'], source: 'human' },
+  };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.surfaces.tyres = { regions: [{ id: 'tyre1', treatment: 'fill', color: 'ink' }] };
+
+  const { dom, mod } = await runApp({ server });
+  const options = () => dom.querySelector('#surface').innerHTML;
+  assert.match(options(), /value="surfaces\.body"/, 'options name the surface, not its position');
+
+  dom.querySelector('#tab-all').onclick();
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'banner.dds' } }, {});
+  await dom.querySelector('#adoptsurface').onclick();
+
+  // The new one exists, and the old ones still name themselves.
+  assert.match(options(), /value="paint\.banner"/, 'the adopted surface is offered');
+  assert.match(options(), /value="surfaces\.body"/);
+  assert.match(options(), /value="surfaces\.tyres"/);
+
+  // And picking one by name gets THAT one — asserted on the regions it shows,
+  // not on the value just written into the select, which would only prove the
+  // test can set a property.
+  const pick = async (from) => {
+    dom.querySelector('#surface').value = from;
+    await dom.querySelector('#surface').onchange();
+    return dom.querySelector('#regions').innerHTML;
+  };
+
+  assert.match(await pick('surfaces.tyres'), /tyre1/, 'the tyres surface shows the tyres region');
+  const body = await pick('surfaces.body');
+  assert.match(body, /badge/, 'and body shows the body region');
+  assert.doesNotMatch(body, /tyre1/, 'not whatever took position zero');
+  assert.match(await pick('paint.banner'), /class="hint"|^\s*$|<li/, 'the adopted one is reachable too');
+});
+
+test('the whole-car view is re-roled from the design, not from the cached geometry', async () => {
+  // Reported: regions added to a newly adopted surface never appeared in Whole
+  // car. The geometry is cached — a fact about the car, megabytes to fetch — and
+  // the ROLES came down with it, so they were only as fresh as that fetch.
+  // Adopting left the new surface's meshes in a group still marked roleless,
+  // and no amount of rendering the right texture would have put it anywhere.
+  // Through `runApp`, because app.js reads `document` as it loads — but the
+  // function itself needs no DOM, no GL context and no model download, which is
+  // the point of pulling it out of `loadWholeCar`.
+  const { mod } = await runApp({ server: copyFixture() });
+  const { reRole } = mod;
+  assert.ok(reRole, 'reRole is exported so this can be tested at all');
+
+  // Geometry as fetched when the design painted only the body.
+  const groups = [
+    { role: 'body', file: 'b.dds', start: 0, count: 6 },
+    { role: null, file: 'banner.dds', start: 6, count: 6 },
+    { role: null, file: 'glass.dds', start: 12, count: 6 },
+  ];
+
+  // The design now also paints the banner, and its file is how the two meet —
+  // role names are the profile's and mean nothing to geometry.
+  const after = reRole(groups, [
+    { role: 'body', file: 'b.dds' },
+    { role: 'banner', file: 'BANNER.dds' },
+  ]);
+  assert.deepEqual(after.map((g) => g.role), ['body', 'banner', null],
+    'the adopted surface is painted, and the glass is still not');
+  assert.deepEqual(after.map((g) => g.start), [0, 6, 12], 'and nothing else about the group moves');
+
+  // Losing a surface goes the other way, which the cached roles could never do.
+  assert.deepEqual(reRole(groups, [{ role: 'body', file: 'b.dds' }]).map((g) => g.role),
+    ['body', null, null]);
+  assert.deepEqual(reRole(groups, []).map((g) => g.role), [null, null, null]);
+  assert.deepEqual(reRole(undefined, undefined), []);
+});
+
+
+test('a texture named like a special key is a texture, not a prototype', async () => {
+  // Every key in the roles index is a FILENAME out of a car somebody else made.
+  // `__proto__.dds` is a legal filename and a special key on an ordinary object:
+  // writing one mutates the prototype instead of the map, and `constructor`
+  // answers with a function nobody stored. Both fail silently, and the second
+  // would refuse to offer a surface for a reason that does not exist.
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.textures.evil = { file: '__proto__.dds', width: 64, height: 64 };
+  server.profile.textures.ctor = { file: 'constructor.dds', width: 64, height: 64 };
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+
+  const { dom, mod } = await runApp({ server });
+  assert.equal({}.polluted, undefined, 'nothing reached Object.prototype on the way here');
+
+  dom.querySelector('#tab-all').onclick();
+
+  // A file whose name is a special key still resolves to its own role.
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: '__proto__.dds' } }, {});
+  assert.equal(dom.querySelector('#adopt').hidden, false);
+  assert.match(dom.querySelector('#adoptwhat').textContent, /__proto__\.dds/);
+
+  mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file: 'constructor.dds' } }, {});
+  assert.equal(dom.querySelector('#adopt').hidden, false, 'and is offered, not silently refused');
+  assert.equal(dom.querySelector('#adoptsurface').hidden, false);
+
+  // And a name the car does NOT have must not be answered by the prototype.
+  //
+  // `constructor` and `__proto__`, because lookups are lowercased and those two
+  // survive it — `toString` becomes `tostring` and misses the prototype by
+  // accident, which is not a defence. The roles map crosses the wire as JSON, so
+  // whatever prototype the server gave it is gone by the time the browser reads
+  // it: the null-prototype on the server protects the server, and this protects
+  // the browser.
+  for (const file of ['constructor', '__proto__']) {
+    mod.claimCarPointer({ u: 0.5, v: 0.5, group: { role: null, file } }, {});
+    assert.equal(dom.querySelector('#adopt').hidden, true,
+      `${file} is a key off the prototype, not a texture this car has`);
+  }
 });

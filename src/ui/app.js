@@ -114,9 +114,8 @@ $('#car').textContent = data.car.name;
 // this tool did not write. Escaping is not about a hostile car pack; it is that
 // a filename containing a quote silently breaks the attribute it sits in, and
 // the result looks like the editor is broken rather than the name unusual.
-$('#surface').innerHTML = data.surfaces
-  .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
-$('#surface').onchange = () => selectSurface(+$('#surface').value);
+drawSurfaces();
+$('#surface').onchange = () => selectSurface($('#surface').value);
 
 // What you can add. Straight from the packs this design loads, so a pack brought
 // in with --pack appears here without anything else knowing about it.
@@ -254,6 +253,8 @@ async function checkAgainst(car) {
   ].join('');
 }
 
+$('#adoptsurface').onclick = () => adoptSurface($('#adoptsurface').dataset.role);
+
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
@@ -364,8 +365,37 @@ function updateUndoButtons() {
 
 // --- rendering --------------------------------------------------------------
 
-async function selectSurface(i) {
-  state.surface = state.data.surfaces[i];
+/**
+ * The surfaces this design paints, as options keyed by WHAT THEY ARE.
+ *
+ * Keyed by `from` — `surfaces.body`, `paint.ext_banner_colour` — and not by
+ * position. The options used to carry their index, built once at boot, and the
+ * list is not fixed: adopting a surface adds one, and `resolveTargets` walks
+ * `paint` before `surfaces`, so the new entry arrives at the FRONT and shifts
+ * every index below it.
+ *
+ * The select kept the old numbers. Picking `surfaces.body` then selected
+ * whatever had taken position zero — the surface just adopted — and picking
+ * `surfaces.tyres` got the body. Nothing was lost and the design was intact;
+ * the editor was simply pointing at the wrong ones, which is worse, because
+ * everything you did next was real and landed somewhere else.
+ *
+ * `from` is unique per surface: `resolveTargets` refuses two entries claiming
+ * one texture, and each entry names the block it came from. So a value cannot
+ * go stale by anything short of the surface ceasing to exist.
+ */
+function drawSurfaces() {
+  const el = $('#surface');
+  if (!el) return;
+  el.innerHTML = state.data.surfaces
+    .map((s) => `<option value="${esc(s.from)}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
+  if (state.surface) el.value = state.surface.from;
+}
+
+async function selectSurface(from) {
+  const found = state.data.surfaces.find((s) => s.from === from);
+  if (!found) return status(`this design no longer paints ${from}`);
+  state.surface = found;
   state.selected = null;
   drawPanels();
   await refresh();
@@ -390,9 +420,13 @@ async function selectSurface(i) {
  * unselectable, undeletable.
  */
 async function reloadState() {
-  const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
+  const was = state.surface?.from;
   state.data = await api('/api/state', { fit: state.fit, design: state.design });
-  state.surface = state.data.surfaces[i < 0 ? 0 : i];
+  // By `from`, not by the index taken above: a design edit can add or remove a
+  // surface, and `resolveTargets` walks `paint` before `surfaces`, so an index
+  // from the old list points somewhere else in the new one.
+  state.surface = state.data.surfaces.find((s) => s.from === was) ?? state.data.surfaces[0];
+  drawSurfaces();
   drawPanels();
 }
 
@@ -1084,12 +1118,124 @@ async function movePanel(name) {
  * to what the cursor is over, and pretending there is would move the wrong
  * region on the wrong sheet.
  */
+/**
+ * Clicking a part of the car the design does not paint.
+ *
+ * The whole-car view knows which texture every part uses — that is what the
+ * per-texture groups are for — and the state knows which role each texture is.
+ * Between them the editor can answer the question that otherwise costs an
+ * afternoon: a car ships four plausible number-plate textures at 1024 square,
+ * and telling them apart by name is guesswork, while pointing at the one on the
+ * door is not.
+ *
+ * It OFFERS rather than acts. Adding a surface changes the design, and a click
+ * that quietly did so — on a view whose main gesture is orbiting — would be the
+ * editor making a decision on your behalf in the place you are least expecting
+ * one.
+ */
+function offerToAdopt(group) {
+  const row = $('#adopt');
+  if (!row) return false;
+  // `Object.hasOwn`, because `roles` arrives as JSON and is therefore an
+  // ordinary object with an ordinary prototype. A texture called `constructor`
+  // or `toString` is a legal filename, and a plain lookup would answer with a
+  // function off the prototype — then read `.paintable` from it, get undefined,
+  // and refuse to offer a surface for a reason that does not exist.
+  const roles = state.data?.roles ?? {};
+  const key = group?.file ? String(group.file).toLowerCase() : null;
+  const known = key && Object.hasOwn(roles, key) ? roles[key] : null;
+
+  // A part already painted is not an offer, it is where you are already working.
+  if (!group || group.role !== null || !known) { row.hidden = true; return false; }
+
+  if (!known.paintable) {
+    // The profile already knows this one is a mistake: a normal map encodes
+    // surface direction, a shader map encodes gloss. Painting either gives a car
+    // that loads and lights wrongly, so this says so instead of offering.
+    $('#adoptwhat').textContent = `${known.file} — ${known.why}`;
+    $('#adoptsurface').hidden = true;
+    row.hidden = false;
+    return true;
+  }
+
+  $('#adoptwhat').textContent =
+    `${known.file} (${known.width}×${known.height}) is not in this design.`;
+  $('#adoptsurface').hidden = false;
+  $('#adoptsurface').dataset.role = known.role;
+  row.hidden = false;
+  return true;
+}
+
+/**
+ * Take an unpainted texture into the design.
+ *
+ * Written as `paint.<role>`, which names a texture role directly, rather than as
+ * `surfaces.<term>`, which goes through the car's bindings. These are exactly the
+ * surfaces with no binding and usually no panels — a banner or a number plate is
+ * too small a share of the car to survive the panel threshold — so `paint` is
+ * not a shortcut here, it is the only thing that addresses them at all.
+ *
+ * It arrives EMPTY, with no background. The whole sheet then renders as the
+ * renderer's default black, which is the honest picture of what you have just
+ * taken over: the stock artwork is gone and nothing has replaced it yet.
+ */
+async function adoptSurface(role) {
+  if (!role) return;
+  if (state.lossy.length) return status(CANNOT_EDIT);
+  // Already painted, by ANY route. `resolveTargets` refuses a role claimed
+  // twice — one write would silently overwrite the other — so adopting a role
+  // the design reaches through `surfaces.<term>` would produce a design that
+  // throws on the next render rather than one that paints two things.
+  // Checked against the resolved surfaces, not just the `paint` block, because
+  // the block is only one of the two ways in.
+  if (state.data?.surfaces?.some((sf) => sf.role === role) || state.design?.paint?.[role]) {
+    return status(`${role} is already painted by this design`);
+  }
+
+  // PROPOSED FIRST, applied only if it survives. The guard above sees the
+  // editor's surface list, which holds the PRIMARY target of each term — so a
+  // role claimed by some other route is invisible to it, and the design would
+  // then fail to resolve on the very next request.
+  //
+  // The change is made on a COPY, the server is asked whether that copy
+  // resolves, and `state.design` is replaced only once the answer is yes. A
+  // design that cannot be rendered is therefore never the one you are holding,
+  // and the failure is a sentence rather than an editor full of nothing.
+  const next = structuredClone(state.design);
+  (next.paint ??= {})[role] = { regions: [] };
+
+  let data;
+  try {
+    data = await api('/api/state', { fit: state.fit, design: next });
+  } catch (e) {
+    return status(`could not paint ${role}: ${e.message}`);
+  }
+
+  remember(`paint ${role}`);
+  state.design = next;
+  state.data = data;
+  $('#adopt').hidden = true;
+  setDesignDirty();
+
+  // The list has a new entry, so the picker has to be rebuilt before anything
+  // selects from it — that ordering IS the bug this shipped with.
+  drawSurfaces();
+  const added = state.data.surfaces.find((sf) => sf.role === role);
+  if (added) await selectSurface(added.from);
+  else await refresh();
+  status(`${role} is yours now — it renders black until you put something on it`);
+}
+
 export function claimCarPointer(uv, e) {
   // Only the whole-car view is excluded, and only for the reason above. The
   // condition used to be `view !== '3d'`, which is the same thing in practice —
   // the callback cannot fire when no car is on screen — but says something
   // broader than it means, and could not be tested without a GL context.
-  if (state.view === 'all' || !uv) return false;
+  // The whole-car view has no selection to drag, and one thing worth clicking:
+  // a part the design does not paint. Answering `false` afterwards lets the
+  // gesture go on to orbit, so pointing at something never costs you the drag.
+  if (state.view === 'all') { offerToAdopt(uv?.group); return false; }
+  if (!uv) return false;
 
   const sel = state.placed.find((p) => p.id === state.selected);
   const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
@@ -2452,6 +2598,11 @@ function nextFrame() {
 }
 
 async function showView(which) {
+  // The offer belongs to the click that produced it. Left up across a view
+  // change it would invite adopting a surface you can no longer see, from a
+  // sentence about a car you have navigated away from.
+  if ($('#adopt')) $('#adopt').hidden = true;
+
   state.view = which;
   const is3d = which === '3d' || which === 'all';
   for (const [id, name] of [['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all']]) {
@@ -2500,6 +2651,31 @@ async function showView(which) {
  * the fit changes. Anything the livery does not paint appears in flat grey,
  * because a car with holes where its glass should be reads as a broken export.
  */
+/**
+ * Which groups are painted, according to the design as it stands.
+ *
+ * The geometry is cached, rightly: it is a fact about the car and costs
+ * megabytes to fetch. Which group is PAINTED is a fact about the design, and the
+ * design changes while the geometry does not — so the roles that came down with
+ * the geometry are only ever as fresh as the moment it was fetched. Adopting a
+ * surface left its meshes in a group still marked roleless, and no amount of
+ * rendering the right texture would have put it anywhere.
+ *
+ * Keyed by FILE, which is the thing both sides agree on: a group carries the
+ * texture its meshes use, and a surface carries the texture it writes. Role
+ * names are the profile's and mean nothing to geometry.
+ *
+ * Exported so this can be tested without a GL context and a model download,
+ * neither of which a fake DOM has.
+ */
+export function reRole(groups, surfaces) {
+  const roleOf = new Map((surfaces ?? []).map((sf) => [String(sf.file).toLowerCase(), sf.role]));
+  return (groups ?? []).map((g) => ({
+    ...g,
+    role: roleOf.get(String(g.file).toLowerCase()) ?? null,
+  }));
+}
+
 async function loadWholeCar() {
   if (!state.viewer) {
     state.viewer = createViewer($('#carview'));
@@ -2513,8 +2689,24 @@ async function loadWholeCar() {
     }
     state.wholeGeometry = unpackModel(await res.arrayBuffer());
   }
-  const g = state.wholeGeometry;
-  const { surfaces } = await api('/api/preview', { fit: state.fit });
+  // The WORKING design, like every other render in this editor. Without it the
+  // preview came from the livery on disk, so a region added since the last save
+  // was simply absent from the one view whose job is to show the whole thing —
+  // and an adopted surface, which is unsaved by definition, could never appear.
+  const { surfaces } = await api('/api/preview', { fit: state.fit, design: state.design });
+
+  // Re-roled HERE, from the surfaces the design paints now.
+  //
+  // The geometry is cached, because it is a fact about the car and costs
+  // megabytes to fetch. Which group is PAINTED is a fact about the design, and
+  // the design changes while the geometry does not — so the roles that came
+  // down with the geometry are only as fresh as the moment it was fetched.
+  // Adopting a surface left its meshes in a group still marked roleless, and no
+  // amount of rendering the right texture would have put it anywhere.
+  //
+  // Keyed by file, which is what both sides agree on: a group carries the
+  // texture its meshes use, and a surface carries the texture it writes.
+  const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
   await state.viewer.setWholeCar(g, surfaces);
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
@@ -2716,7 +2908,14 @@ const proposalTimer = setInterval(checkProposals, 1000);
 if (proposalTimer?.unref) proposalTimer.unref();
 
 // --- boot, last -------------------------------------------------------------
-await selectSurface(0);
+//
+// After every declaration, so no helper can be reached before it exists.
+//
+// It opens on the CAR. That is where the work happens now — you can select,
+// move, resize and rotate there, and it is the only view that answers whether a
+// placement is any good. showView falls back to the UV sheet on its own if
+// there is no model or no WebGL, so this is a preference rather than a demand.
+await selectSurface(state.data.surfaces[0]?.from);
 await showView('3d');
 // Last, after the car is on screen, so a slow profile directory cannot delay
 // anything anybody is waiting for. It answers `undefined` rather than throwing

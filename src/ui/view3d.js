@@ -304,9 +304,27 @@ export function createViewer(canvas) {
     return t;
   }
   const texture = greyTexture();
+  // A SECOND grey, for the unpainted parts of the whole-car view, and deliberately
+  // not the one above.
+  //
+  // `texture` starts grey and stops being grey the instant `setTexture` uploads
+  // the surface you are editing into it. The whole-car draw fell back to it for
+  // a group with no role, so every unpainted mesh on the car — glass, interior,
+  // brake discs, anything the design does not touch — was drawn wearing the
+  // BODY design. On a GT3 car that is windows filled in with sponsor artwork,
+  // which reads as a fault in the livery rather than in the viewer, and sends
+  // you off to look at the design.
+  //
+  // The editor opens on the car view, so `texture` has essentially never been
+  // grey by the time anybody presses Whole car. That is why it looked
+  // deliberate.
+  const unpainted = greyTexture();
   // Whole-car mode: one texture per painted surface, and one draw call each.
-  // `null` in a group means unpainted, and gets the grey.
+  // `null` in a group means the design does not paint it — it then gets the
+  // car's own texture from `byFile` if the model could supply one, and the grey
+  // if not.
   const byRole = new Map();
+  const byFile = new Map();
   let groups = null;
   // Kept on the CPU as well as uploaded, because picking needs to intersect it.
   // A body is a megabyte of floats; holding it is cheaper than a round trip to
@@ -384,9 +402,78 @@ export function createViewer(canvas) {
       gl.uniform4fv(u, [0, 0, 0, 0]);
     }
     for (const g of groups) {
-      gl.bindTexture(gl.TEXTURE_2D, byRole.get(g.role) ?? texture);
+      // In order: the design's own render for a painted role, then the car's
+      // own texture for a part the design skips, then grey.
+      //
+      // `unpainted`, never `texture`: a group with no role is a part of the car
+      // this design does not paint, and falling back to the surface being
+      // edited put the body artwork on the glass.
+      gl.bindTexture(gl.TEXTURE_2D,
+        byRole.get(g.role) ?? byFile.get(g.file) ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     }
+  }
+
+/**
+   * The car's own texture, straight from the kn5, with no decoding step.
+   *
+   * A DDS file is a 128-byte header and then S3TC blocks, which is exactly what
+   * `compressedTexImage2D` wants — so the bytes go from the model to the GPU
+   * untouched. Decoding them to RGBA in JavaScript would be slower, would use
+   * four times the memory, and would be undone by the driver recompressing.
+   *
+   * Answers false rather than throwing for every reason this can fail: no
+   * extension (S3TC is near-universal but not guaranteed), a format that is not
+   * DXT1/3/5, a PNG rather than a DDS, a truncated blob. The caller keeps the
+   * grey, which is the behaviour this replaced and a perfectly good fallback.
+   */
+  function uploadDds(target, buffer) {
+    const s3tc = gl.getExtension('WEBGL_compressed_texture_s3tc');
+    // 128 is the header, and every field read below lives inside it. The block
+    // data is checked separately once its size is known — guessing a floor here
+    // rejected a legitimate single-block texture.
+    if (!s3tc || !buffer || buffer.byteLength < 128) return false;
+    const head = new DataView(buffer);
+    if (head.getUint32(0, true) !== 0x20534444) return false;   // 'DDS '
+
+    const height = head.getUint32(12, true);
+    const width = head.getUint32(16, true);
+    const fourCC = head.getUint32(84, true);
+    const format = {
+      0x31545844: [s3tc.COMPRESSED_RGB_S3TC_DXT1_EXT, 8],       // 'DXT1'
+      0x33545844: [s3tc.COMPRESSED_RGBA_S3TC_DXT3_EXT, 16],     // 'DXT3'
+      0x35545844: [s3tc.COMPRESSED_RGBA_S3TC_DXT5_EXT, 16],     // 'DXT5'
+    }[fourCC];
+    if (!format || !width || !height) return false;
+    const [glFormat, blockBytes] = format;
+
+    // The top mip only. The chain after it would be nice for minification and
+    // costs a third more memory and a loop over sizes; at the distance this view
+    // is used, on parts the design does not paint, it buys nothing.
+    const blocks = Math.ceil(width / 4) * Math.ceil(height / 4) * blockBytes;
+    if (buffer.byteLength < 128 + blocks) return false;
+
+    // The header can read perfectly and the upload still fail: S3TC in WebGL 1
+    // wants dimensions that are multiples of four, and a large texture can
+    // simply run out of memory. Both THROW, and an exception here would escape
+    // `setWholeCar` and take the whole view down over a wing mirror. This
+    // function's contract is that every failure answers `false` and the caller
+    // keeps the grey, so the contract has to cover the driver too.
+    try {
+      gl.bindTexture(gl.TEXTURE_2D, target);
+      gl.compressedTexImage2D(gl.TEXTURE_2D, 0, glFormat, width, height, 0,
+        new Uint8Array(buffer, 128, blocks));
+    } catch {
+      return false;
+    }
+    // No mip chain was uploaded, so LINEAR rather than a MIPMAP filter — asking
+    // for mips that are not there renders the texture as nothing at all, black
+    // and silent, which is a memorable afternoon.
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return true;
   }
 
   /** Rasterise an SVG into a texture. The only way a browser will do it. */
@@ -485,6 +572,29 @@ export function createViewer(canvas) {
         if (!byRole.has(s.role)) byRole.set(s.role, greyTexture());
         await uploadSvg(byRole.get(s.role), s.svg, size);
       }
+
+      // The parts the design does NOT paint, wearing the car's own artwork.
+      //
+      // Each arrives as its own group with a `file` and no role. Fetching them
+      // is what makes this view answer its actual question — does the design
+      // work on this car — rather than showing a livery floating on a grey
+      // mannequin. Anything that cannot be fetched or uploaded keeps the grey,
+      // which is what all of them did before.
+      //
+      // Sequential rather than parallel: a GT3 car has tens of these, several of
+      // them megabytes, and firing them all at a local server at once buys
+      // nothing anybody can perceive while making the failure modes worse.
+      byFile.clear();
+      for (const g of model.groups ?? []) {
+        if (g.role !== null || !g.file || byFile.has(g.file)) continue;
+        try {
+          const res = await fetch(`/api/stock?file=${encodeURIComponent(g.file)}`);
+          if (!res.ok) continue;
+          const tex = greyTexture();
+          if (uploadDds(tex, await res.arrayBuffer())) byFile.set(g.file, tex);
+        } catch { /* the grey is a fine answer */ }
+      }
+
       groups = model.groups ?? null;
       draw();
     },
@@ -534,7 +644,11 @@ export function createViewer(canvas) {
       for (let i = 0; i < indices.length; i += 3) {
         const [ia, ib, ic] = [indices[i], indices[i + 1], indices[i + 2]];
         const hit = rayTriangle(orig, dir, at(ia), at(ib), at(ic));
-        if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic };
+        // `i` as well: it is the offset into the index buffer, which is what the
+        // groups are cut on, so it says WHICH SURFACE was hit. In the whole-car
+        // view that is the only way to find out — the geometry is one buffer and
+        // a UV coordinate means something different on every texture in it.
+        if (hit && (!best || hit.dist < best.dist)) best = { ...hit, ia, ib, ic, i };
       }
       if (!best) return null;
 
@@ -543,7 +657,8 @@ export function createViewer(canvas) {
       const w = 1 - best.u - best.v;
       const uv = (k) => uvs[best.ia * 2 + k] * w + uvs[best.ib * 2 + k] * best.u
         + uvs[best.ic * 2 + k] * best.v;
-      return { u: uv(0), v: uv(1), dist: best.dist };
+      const group = (groups ?? []).find((g) => best.i >= g.start && best.i < g.start + g.count);
+      return { u: uv(0), v: uv(1), dist: best.dist, group: group ?? null };
     },
 
     /**
