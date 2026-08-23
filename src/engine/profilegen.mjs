@@ -352,6 +352,14 @@ export async function profileFromKn5(path, {
       const p = {
         rect: i.rect,
         anisotropy: Math.round(i.anisotropy * 100) / 100,
+        // How big one UV unit is on the car, in metres, along each axis. The
+        // ratio above un-stretches a glyph; this says whether the glyph lands
+        // 40 mm tall or 400, which is the question somebody placing artwork is
+        // actually asking and the one thing a flat sheet can never answer.
+        //
+        // Millimetres, because a profile is read by people and the sixth
+        // decimal of a figure measured off a game model would be pretending.
+        metresPerUv: i.metresPerUv ? i.metresPerUv.map(r3) : undefined,
         confidence: 'measured',
         source: { mesh: i.mesh, vertices: i.vertexCount },
         centroid3d: [r3(i.centroid.x), r3(i.centroid.y), r3(i.centroid.z)],
