@@ -63,13 +63,19 @@ export function preserveHandwork(profile, prior) {
 /**
  * The car's display name.
  *
- * Nothing in a kn5 says "Abarth 500" — the name comes from `--car-name` and
- * defaults to the empty string, so regenerating without the flag replaced a
+ * Nothing in a kn5 says "Abarth 500" — the name came from `--car-name` and
+ * defaulted to the empty string, so regenerating without the flag replaced a
  * perfectly good name with nothing, and every profile that had been rebuilt
  * shipped with `"name": ""`. That is not an error anywhere: the CLI and the
  * editor both fall back to the id, so the car is quietly called
- * `rss_formula_rss_4` from then on. Measurement has nothing to say here, so the
- * prior name wins whenever this run was not given one.
+ * `rss_formula_rss_4` from then on.
+ *
+ * The generator now reads `ui/ui_car.json` beside the model, so a fresh run
+ * usually arrives with a name of its own. This still matters for the cases it
+ * cannot cover — a car unpacked without its `ui` folder, a screenshot-calibrated
+ * profile, or a name a person preferred to the author's — and the order is the
+ * same either way: an explicit `--car-name`, then the car's own name, then
+ * whatever the prior profile said.
  */
 function preserveDisplayName(profile, prior, report) {
   if (profile.name || !prior.name) return;
