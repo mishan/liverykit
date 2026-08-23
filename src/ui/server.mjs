@@ -25,6 +25,7 @@
 //   POST /api/portability  what the working design would find on one of them
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
+//   GET  /api/stock        the car's own texture for a surface the design skips
 //   POST /api/design       write the design, if it is data and not code
 //   POST /api/fit          write the fit file
 // ---------------------------------------------------------------------------
@@ -170,8 +171,29 @@ export function wholeModelGeometry(model, files) {
     for (const m of meshes) claimed.add(m);
     emit(meshes, { role, file });
   }
-  // Whatever is left: glass, tyres on a livery that ignores them, the aerials.
-  emit((model.meshes ?? []).filter((m) => !claimed.has(m)), { role: null, file: null });
+  // Whatever is left: glass, the number plates, the Lumirank panel, the mirrors.
+  //
+  // ONE GROUP PER TEXTURE, not one group for all of them. They used to be lumped
+  // together and drawn flat grey, which is honest but reads as a bug — a grey
+  // rectangle across a door panel looks like a sticker, not like "this part is
+  // unpainted", and it was reported as a fault twice. Split by texture, each can
+  // wear the car's OWN artwork, so the whole-car view shows the real car with
+  // your livery on the parts your livery paints.
+  //
+  // Sorted, so the group order does not depend on mesh order in the file and a
+  // test can say what it expects.
+  const leftover = new Map();
+  for (const m of (model.meshes ?? []).filter((x) => !claimed.has(x))) {
+    const file = model.materials?.[m.materialId]?.slots?.txDiffuse ?? null;
+    if (!leftover.has(file)) leftover.set(file, []);
+    leftover.get(file).push(m);
+  }
+  for (const file of [...leftover.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
+    // `role: null` still means "the design does not paint this", which is what
+    // the viewer keys its grey off. `file` is new, and says what to draw instead
+    // when the car itself can supply it.
+    emit(leftover.get(file), { role: null, file });
+  }
 
   return {
     positions: Float32Array.from(positions),
@@ -702,6 +724,56 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
     return model;
   };
 
+  /**
+   * The car's OWN artwork for a texture the design does not paint.
+   *
+   * The whole-car view used to draw those parts flat grey. That is honest and it
+   * reads as a bug: a grey rectangle over a door panel looks like a sticker
+   * somebody left on, not like "your livery does not paint this". Handing the
+   * browser the car's real texture answers the question the view exists for —
+   * does this design work on this car — instead of asking you to imagine the
+   * rest of it.
+   *
+   * These are the car maker's textures. They are read from YOUR copy of the car,
+   * on this machine, and served to a page on 127.0.0.1. Nothing is written, and
+   * nothing leaves the machine, which is the same rule the rest of this server
+   * follows.
+   *
+   * LOADED ONCE, and only the ones that will be drawn. `keepTextureData` holds
+   * every blob as a view over the whole kn5, which for a GT3 car is a couple of
+   * hundred megabytes kept alive to show a wing mirror. So the file is parsed a
+   * second time, the wanted blobs are COPIED out, and the big buffer goes.
+   */
+  let stock = null;
+  const stockTexture = async (file) => {
+    if (!modelPath) return null;
+    if (!stock) {
+      stock = new Map();
+      try {
+        const full = await parseKn5(modelPath, { keepTextureData: true });
+        const used = new Set((full.meshes ?? [])
+          .map((m) => full.materials?.[m.materialId]?.slots?.txDiffuse)
+          .filter(Boolean).map((n) => n.toLowerCase()));
+        for (const t of full.textures ?? []) {
+          // Only textures some mesh actually uses, so an unused slot in the file
+          // does not cost anything. `Buffer.from` COPIES — a subarray would keep
+          // the whole model alive and defeat the point of parsing twice.
+          if (!t.data || !used.has(t.name.toLowerCase())) continue;
+          // A 1x1 blob is not a small texture, it is an absent one: an encrypted
+          // kn5 substitutes placeholders and keeps the real artwork in a blob
+          // this project does not decrypt. Storing them would put a single grey
+          // texel on the bodywork and call it the car.
+          if (t.data.length <= 256) continue;
+          stock.set(t.name.toLowerCase(), Buffer.from(t.data));
+        }
+        log(`  stock textures available: ${stock.size}`);
+      } catch (e) {
+        log(`  ! could not read textures from ${modelPath}: ${e.message}`);
+      }
+    }
+    return stock.get(String(file).toLowerCase()) ?? null;
+  };
+
   // A missing fit is the normal case — most cars have never been tuned. A fit
   // that exists and is wrong is not, and starting anyway would give an editor
   // that looks fine and fails only when you press Save, by which point you have
@@ -758,6 +830,19 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const h = createHash('sha256');
         for (const f of [...SERVABLE].sort()) h.update(await readFile(join(HERE, f)));
         return json(200, { build: h.digest('hex').slice(0, 8), started });
+      }
+
+      // The car's own artwork for one texture, as the bytes the kn5 holds —
+      // usually DDS, occasionally PNG. Not decoded here: a browser can upload
+      // S3TC blocks to the GPU untouched, so decoding would be work done twice
+      // and then thrown away.
+      //
+      // The name is resolved by LOOKUP and never joined onto a path, so this can
+      // only ever answer with something the model itself contains.
+      if (req.method === 'GET' && url.pathname === '/api/stock') {
+        const data = await stockTexture(url.searchParams.get('file') ?? '');
+        if (!data) return send(404, 'text/plain', 'no such texture in this model');
+        return send(200, 'application/octet-stream', data);
       }
 
       if (req.method === 'GET' && url.pathname === '/api/state') {

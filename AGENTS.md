@@ -73,6 +73,13 @@ a pre-escaped `&quot;` would appear as five glyphs on the car.
 `test/injection.test.mjs` re-derives the field list from the packs' own
 descriptions, so a new option is covered without anybody remembering.
 
+**The whole-car view has three sources of texture, in order.** The design's own
+render for a surface it paints; the car's own texture, straight out of the kn5,
+for one it does not; and a grey for anything neither can supply. The grey used to
+be shared with the handle the per-surface view uploads into, so unpainted glass
+wore the body design — and it was never noticed, because it made the car look
+whole. DDS goes to the GPU as S3TC blocks with no decode step.
+
 **Fit ids are flat across the whole livery**, while `applyFit` runs once per
 surface. Any question of the form "is this id taken?" or "does this id match
 anything?" is therefore a question about all the surfaces, not the one in front
