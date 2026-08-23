@@ -2644,6 +2644,31 @@ async function showView(which) {
  * the fit changes. Anything the livery does not paint appears in flat grey,
  * because a car with holes where its glass should be reads as a broken export.
  */
+/**
+ * Which groups are painted, according to the design as it stands.
+ *
+ * The geometry is cached, rightly: it is a fact about the car and costs
+ * megabytes to fetch. Which group is PAINTED is a fact about the design, and the
+ * design changes while the geometry does not — so the roles that came down with
+ * the geometry are only ever as fresh as the moment it was fetched. Adopting a
+ * surface left its meshes in a group still marked roleless, and no amount of
+ * rendering the right texture would have put it anywhere.
+ *
+ * Keyed by FILE, which is the thing both sides agree on: a group carries the
+ * texture its meshes use, and a surface carries the texture it writes. Role
+ * names are the profile's and mean nothing to geometry.
+ *
+ * Exported so this can be tested without a GL context and a model download,
+ * neither of which a fake DOM has.
+ */
+export function reRole(groups, surfaces) {
+  const roleOf = new Map((surfaces ?? []).map((sf) => [String(sf.file).toLowerCase(), sf.role]));
+  return (groups ?? []).map((g) => ({
+    ...g,
+    role: roleOf.get(String(g.file).toLowerCase()) ?? null,
+  }));
+}
+
 async function loadWholeCar() {
   if (!state.viewer) {
     state.viewer = createViewer($('#carview'));
@@ -2657,8 +2682,24 @@ async function loadWholeCar() {
     }
     state.wholeGeometry = unpackModel(await res.arrayBuffer());
   }
-  const g = state.wholeGeometry;
-  const { surfaces } = await api('/api/preview', { fit: state.fit });
+  // The WORKING design, like every other render in this editor. Without it the
+  // preview came from the livery on disk, so a region added since the last save
+  // was simply absent from the one view whose job is to show the whole thing —
+  // and an adopted surface, which is unsaved by definition, could never appear.
+  const { surfaces } = await api('/api/preview', { fit: state.fit, design: state.design });
+
+  // Re-roled HERE, from the surfaces the design paints now.
+  //
+  // The geometry is cached, because it is a fact about the car and costs
+  // megabytes to fetch. Which group is PAINTED is a fact about the design, and
+  // the design changes while the geometry does not — so the roles that came
+  // down with the geometry are only as fresh as the moment it was fetched.
+  // Adopting a surface left its meshes in a group still marked roleless, and no
+  // amount of rendering the right texture would have put it anywhere.
+  //
+  // Keyed by file, which is what both sides agree on: a group carries the
+  // texture its meshes use, and a surface carries the texture it writes.
+  const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
   await state.viewer.setWholeCar(g, surfaces);
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));

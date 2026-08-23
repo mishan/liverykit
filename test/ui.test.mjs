@@ -3034,3 +3034,41 @@ test('adopting a surface does not shift what every other one points at', async (
   assert.doesNotMatch(body, /tyre1/, 'not whatever took position zero');
   assert.match(await pick('paint.banner'), /class="hint"|^\s*$|<li/, 'the adopted one is reachable too');
 });
+
+test('the whole-car view is re-roled from the design, not from the cached geometry', async () => {
+  // Reported: regions added to a newly adopted surface never appeared in Whole
+  // car. The geometry is cached — a fact about the car, megabytes to fetch — and
+  // the ROLES came down with it, so they were only as fresh as that fetch.
+  // Adopting left the new surface's meshes in a group still marked roleless,
+  // and no amount of rendering the right texture would have put it anywhere.
+  // Through `runApp`, because app.js reads `document` as it loads — but the
+  // function itself needs no DOM, no GL context and no model download, which is
+  // the point of pulling it out of `loadWholeCar`.
+  const { mod } = await runApp({ server: copyFixture() });
+  const { reRole } = mod;
+  assert.ok(reRole, 'reRole is exported so this can be tested at all');
+
+  // Geometry as fetched when the design painted only the body.
+  const groups = [
+    { role: 'body', file: 'b.dds', start: 0, count: 6 },
+    { role: null, file: 'banner.dds', start: 6, count: 6 },
+    { role: null, file: 'glass.dds', start: 12, count: 6 },
+  ];
+
+  // The design now also paints the banner, and its file is how the two meet —
+  // role names are the profile's and mean nothing to geometry.
+  const after = reRole(groups, [
+    { role: 'body', file: 'b.dds' },
+    { role: 'banner', file: 'BANNER.dds' },
+  ]);
+  assert.deepEqual(after.map((g) => g.role), ['body', 'banner', null],
+    'the adopted surface is painted, and the glass is still not');
+  assert.deepEqual(after.map((g) => g.start), [0, 6, 12], 'and nothing else about the group moves');
+
+  // Losing a surface goes the other way, which the cached roles could never do.
+  assert.deepEqual(reRole(groups, [{ role: 'body', file: 'b.dds' }]).map((g) => g.role),
+    ['body', null, null]);
+  assert.deepEqual(reRole(groups, []).map((g) => g.role), [null, null, null]);
+  assert.deepEqual(reRole(undefined, undefined), []);
+});
+
