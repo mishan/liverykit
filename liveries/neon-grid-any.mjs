@@ -186,6 +186,8 @@ export default {
       background: 'ink',
       regions: [
         { treatment: 'traces', rotate: 90, lanes: 14, width: 3, color: 'accent' },
+        { treatment: 'piping', rotate: 90, count: 6, color: 'accent', width: 4, glow: true },
+        { treatment: 'piping', rotate: 90, count: 2, color: 'hot', width: 3, glow: true },
       ],
     },
 
