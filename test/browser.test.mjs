@@ -1306,3 +1306,97 @@ test('a livery cannot run code in the editor', { skip: BROWSER ? false : 'no bro
   assert.equal(find('still drew the car: '), 'still drew the car: true',
     'and the rest of the livery still renders');
 });
+
+test('unpainted parts of the car stay grey, and do not wear the body design', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // Reported from a real car: on a Honda NSX GT3 the windows came out filled
+  // with sponsor artwork in the whole-car view. Glass is on its own texture,
+  // which the design does not paint, so those meshes belong to the group with
+  // no role — and that group fell back to `texture`, the handle the PER-SURFACE
+  // view uploads the design you are editing into. It starts grey, so the code
+  // read as correct; the editor opens on the car view, so by the time anybody
+  // presses Whole car it has held the body design for some time.
+  //
+  // Driven against the VIEWER rather than the whole editor, because the bundled
+  // fixture car has one texture and therefore no unpainted group at all — the
+  // condition cannot arise on it. Importing the module and handing it two
+  // groups is the smallest thing that reproduces a real car.
+  //
+  // Only a real GL context can answer this, and only by reading pixels: the
+  // markup is identical either way and so is every uniform.
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      const { createViewer } = await import('/view3d.js');
+      const canvas = document.createElement('canvas');
+      canvas.width = 200; canvas.height = 200;
+      document.body.appendChild(canvas);
+
+      let viewer;
+      try { viewer = createViewer(canvas); } catch (e) { say('webgl: absent'); return done(); }
+      if (!viewer) { say('webgl: absent'); return done(); }
+      say('webgl: present');
+
+      // Two quads facing the camera, side by side: the left one painted, the
+      // right one on no role at all — which is the glass.
+      const quad = (x0, x1) => [x0, -1, 0, x1, -1, 0, x1, 1, 0, x0, 1, 0];
+      const model = {
+        positions: new Float32Array([...quad(-1.2, -0.1), ...quad(0.1, 1.2)]),
+        uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+        indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+        groups: [
+          { role: 'body', start: 0, count: 6 },
+          { role: null, start: 6, count: 6 },
+        ],
+        bounds: { lo: [-1.2, -1, 0], hi: [1.2, 1, 0] },
+      };
+
+      const magenta = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+        + '<rect width="64" height="64" fill="#FF00E5"/></svg>';
+
+      // THE ORDER IS THE TEST. Uploading the surface first is what the editor
+      // does — it opens on the car view — and it is what turned the shared grey
+      // into the body design. Going straight to the whole-car view would find
+      // it still grey and pass for the wrong reason.
+      viewer.setGeometry(model);
+      await viewer.setTexture(magenta, 64);
+      await viewer.setWholeCar(model, [{ role: 'body', svg: magenta }], 64);
+
+      // preserveDrawingBuffer is false, so the pixels are gone by the next
+      // composite. Orbiting by one pixel redraws synchronously inside the
+      // pointermove handler, and this reads in that same task.
+      const box = canvas.getBoundingClientRect();
+      const at = (t, dx) => canvas.dispatchEvent(new PointerEvent(t, {
+        bubbles: true, cancelable: true, pointerId: 1, button: 0,
+        clientX: Math.round(box.x + box.width / 2) + dx,
+        clientY: Math.round(box.y + box.height / 2),
+      }));
+      at('pointerdown', 0);
+      at('pointermove', 1);
+      const gl = canvas.getContext('webgl');
+      const px = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      at('pointerup', 1);
+
+      let painted = 0, grey = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        if (r > 140 && b > 140 && g < 90) painted++;
+        else if (Math.abs(r - 60) < 26 && Math.abs(g - 66) < 26 && Math.abs(b - 78) < 26) grey++;
+      }
+      say('painted: ' + painted);
+      say('grey: ' + grey);
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  if (withoutGl(report)) return;
+
+  const painted = Number(find('painted: ').slice('painted: '.length));
+  const grey = Number(find('grey: ').slice('grey: '.length));
+
+  // BOTH, and that is the whole test. Asserting only the grey would pass on a
+  // viewer that drew nothing at all.
+  assert.ok(painted > 500, `the painted group should be painted: ${report.join(' | ')}`);
+  assert.ok(grey > 500,
+    `the group with no role must stay grey, not wear the surface being edited: ${report.join(' | ')}`);
+});

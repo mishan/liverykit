@@ -304,8 +304,23 @@ export function createViewer(canvas) {
     return t;
   }
   const texture = greyTexture();
+  // A SECOND grey, for the unpainted parts of the whole-car view, and deliberately
+  // not the one above.
+  //
+  // `texture` starts grey and stops being grey the instant `setTexture` uploads
+  // the surface you are editing into it. The whole-car draw fell back to it for
+  // a group with no role, so every unpainted mesh on the car — glass, interior,
+  // brake discs, anything the design does not touch — was drawn wearing the
+  // BODY design. On a GT3 car that is windows filled in with sponsor artwork,
+  // which reads as a fault in the livery rather than in the viewer, and sends
+  // you off to look at the design.
+  //
+  // The editor opens on the car view, so `texture` has essentially never been
+  // grey by the time anybody presses Whole car. That is why it looked
+  // deliberate.
+  const unpainted = greyTexture();
   // Whole-car mode: one texture per painted surface, and one draw call each.
-  // `null` in a group means unpainted, and gets the grey.
+  // `null` in a group means unpainted, and gets `unpainted`.
   const byRole = new Map();
   let groups = null;
   // Kept on the CPU as well as uploaded, because picking needs to intersect it.
@@ -384,7 +399,10 @@ export function createViewer(canvas) {
       gl.uniform4fv(u, [0, 0, 0, 0]);
     }
     for (const g of groups) {
-      gl.bindTexture(gl.TEXTURE_2D, byRole.get(g.role) ?? texture);
+      // `unpainted`, never `texture`: a group with no role is a part of the car
+      // this design does not paint, and falling back to the surface being
+      // edited put its artwork on the glass.
+      gl.bindTexture(gl.TEXTURE_2D, byRole.get(g.role) ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     }
   }
