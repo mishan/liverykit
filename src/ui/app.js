@@ -114,9 +114,8 @@ $('#car').textContent = data.car.name;
 // this tool did not write. Escaping is not about a hostile car pack; it is that
 // a filename containing a quote silently breaks the attribute it sits in, and
 // the result looks like the editor is broken rather than the name unusual.
-$('#surface').innerHTML = data.surfaces
-  .map((s, i) => `<option value="${i}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
-$('#surface').onchange = () => selectSurface(+$('#surface').value);
+drawSurfaces();
+$('#surface').onchange = () => selectSurface($('#surface').value);
 
 // What you can add. Straight from the packs this design loads, so a pack brought
 // in with --pack appears here without anything else knowing about it.
@@ -366,8 +365,37 @@ function updateUndoButtons() {
 
 // --- rendering --------------------------------------------------------------
 
-async function selectSurface(i) {
-  state.surface = state.data.surfaces[i];
+/**
+ * The surfaces this design paints, as options keyed by WHAT THEY ARE.
+ *
+ * Keyed by `from` — `surfaces.body`, `paint.ext_banner_colour` — and not by
+ * position. The options used to carry their index, built once at boot, and the
+ * list is not fixed: adopting a surface adds one, and `resolveTargets` walks
+ * `paint` before `surfaces`, so the new entry arrives at the FRONT and shifts
+ * every index below it.
+ *
+ * The select kept the old numbers. Picking `surfaces.body` then selected
+ * whatever had taken position zero — the surface just adopted — and picking
+ * `surfaces.tyres` got the body. Nothing was lost and the design was intact;
+ * the editor was simply pointing at the wrong ones, which is worse, because
+ * everything you did next was real and landed somewhere else.
+ *
+ * `from` is unique per surface: `resolveTargets` refuses two entries claiming
+ * one texture, and each entry names the block it came from. So a value cannot
+ * go stale by anything short of the surface ceasing to exist.
+ */
+function drawSurfaces() {
+  const el = $('#surface');
+  if (!el) return;
+  el.innerHTML = state.data.surfaces
+    .map((s) => `<option value="${esc(s.from)}">${esc(s.from)} — ${esc(s.file)}</option>`).join('');
+  if (state.surface) el.value = state.surface.from;
+}
+
+async function selectSurface(from) {
+  const found = state.data.surfaces.find((s) => s.from === from);
+  if (!found) return status(`this design no longer paints ${from}`);
+  state.surface = found;
   state.selected = null;
   drawPanels();
   await refresh();
@@ -392,9 +420,13 @@ async function selectSurface(i) {
  * unselectable, undeletable.
  */
 async function reloadState() {
-  const i = state.data.surfaces.findIndex((s) => s.role === state.surface.role);
+  const was = state.surface?.from;
   state.data = await api('/api/state', { fit: state.fit, design: state.design });
-  state.surface = state.data.surfaces[i < 0 ? 0 : i];
+  // By `from`, not by the index taken above: a design edit can add or remove a
+  // surface, and `resolveTargets` walks `paint` before `surfaces`, so an index
+  // from the old list points somewhere else in the new one.
+  state.surface = state.data.surfaces.find((s) => s.from === was) ?? state.data.surfaces[0];
+  drawSurfaces();
   drawPanels();
 }
 
@@ -1153,17 +1185,37 @@ async function adoptSurface(role) {
     return status(`${role} is already painted by this design`);
   }
 
+  // PROPOSED FIRST, applied only if it survives. The guard above sees the
+  // editor's surface list, which holds the PRIMARY target of each term — so a
+  // role claimed by some other route is invisible to it, and the design would
+  // then fail to resolve on the very next request.
+  //
+  // The change is made on a COPY, the server is asked whether that copy
+  // resolves, and `state.design` is replaced only once the answer is yes. A
+  // design that cannot be rendered is therefore never the one you are holding,
+  // and the failure is a sentence rather than an editor full of nothing.
+  const next = structuredClone(state.design);
+  (next.paint ??= {})[role] = { regions: [] };
+
+  let data;
+  try {
+    data = await api('/api/state', { fit: state.fit, design: next });
+  } catch (e) {
+    return status(`could not paint ${role}: ${e.message}`);
+  }
+
   remember(`paint ${role}`);
-  (state.design.paint ??= {})[role] = { regions: [] };
+  state.design = next;
+  state.data = data;
   $('#adopt').hidden = true;
   setDesignDirty();
-  await reloadState();
-  await refresh();
 
-  // Straight to it, because adopting a surface and then hunting for it in a
-  // list would be two steps where the person meant one.
-  const i = state.data.surfaces.findIndex((s) => s.role === role);
-  if (i >= 0) await selectSurface(i);
+  // The list has a new entry, so the picker has to be rebuilt before anything
+  // selects from it — that ordering IS the bug this shipped with.
+  drawSurfaces();
+  const added = state.data.surfaces.find((sf) => sf.role === role);
+  if (added) await selectSurface(added.from);
+  else await refresh();
   status(`${role} is yours now — it renders black until you put something on it`);
 }
 
@@ -2808,7 +2860,14 @@ const proposalTimer = setInterval(checkProposals, 1000);
 if (proposalTimer?.unref) proposalTimer.unref();
 
 // --- boot, last -------------------------------------------------------------
-await selectSurface(0);
+//
+// After every declaration, so no helper can be reached before it exists.
+//
+// It opens on the CAR. That is where the work happens now — you can select,
+// move, resize and rotate there, and it is the only view that answers whether a
+// placement is any good. showView falls back to the UV sheet on its own if
+// there is no model or no WebGL, so this is a preference rather than a demand.
+await selectSurface(state.data.surfaces[0]?.from);
 await showView('3d');
 // Last, after the car is on screen, so a slow profile directory cannot delay
 // anything anybody is waiting for. It answers `undefined` rather than throwing
