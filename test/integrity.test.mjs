@@ -1887,19 +1887,36 @@ test('the editor can say what a design would find on another car', async () => {
     const other = cars[0].id;
     const report = await (await ask({ car: other })).json();
     assert.equal(report.car, other);
-    assert.ok(report.regions.length, 'the report has something in it');
     for (const r of report.regions) {
       assert.ok(['matched', 'missing', 'absolute'].includes(r.status), `odd status ${r.status}`);
       assert.ok(r.id, 'every region is named, because the point is to go and fix one');
       if (r.status === 'missing') assert.ok(r.why, 'and a miss says why, or it is not actionable');
     }
 
+    // Everything below sends a design built HERE, addressing a texture role
+    // read out of the other profile, so the answers do not depend on which car
+    // profiles happen to be sitting in `cars/`.
+    //
+    // The first version cloned the shipped livery and replaced `surfaces`,
+    // leaving its `paint` block in place — and `paint` resolves on some cars and
+    // not others, so the region count was a fact about the checkout rather than
+    // about the code. It passed here, where an extra profile sorted first, and
+    // failed in CI, where a different one did. `paint` is used rather than
+    // `surfaces` for the same reason: it names a role directly instead of going
+    // through a binding this car may not have.
+    const otherProfile = JSON.parse(
+      await readFile(new URL(`../cars/${other}.json`, import.meta.url), 'utf8'));
+    const role = Object.keys(otherProfile.textures)[0];
+    assert.ok(role, `${other} has no texture roles, so nothing below would mean anything`);
+    const design = (regions) => ({ name: 'probe', packs: ['core'], paint: { [role]: { regions } } });
+
     // The working design is honoured, not the one on disk — the whole question
     // is about the edit in front of you, and answering about a saved file would
     // be answering about something nobody is looking at.
-    const mine = structuredClone({ ...livery });
-    mine.surfaces = { body: { regions: [{ id: 'probe', treatment: 'fill', tags: ['definitely-not-a-tag'] }] } };
-    const worked = await (await ask({ car: other, design: mine })).json();
+    const worked = await (await ask({
+      car: other,
+      design: design([{ id: 'probe', treatment: 'fill', tags: ['definitely-not-a-tag'] }]),
+    })).json();
     assert.equal(worked.regions.length, 1, 'it answered about the design it was sent');
     assert.equal(worked.regions[0].id, 'probe');
     assert.equal(worked.regions[0].status, 'missing');
@@ -1909,18 +1926,19 @@ test('the editor can say what a design would find on another car', async () => {
     // resolves on every car, which is exactly why it is the placement most
     // likely to be quietly wrong on the next one, and a report that called it
     // `matched` would be telling you the design travels when it does not.
-    const mixed = structuredClone({ ...livery });
-    mixed.surfaces = { body: { regions: [
-      { id: 'by-tag', treatment: 'fill', tags: ['left'] },
-      { id: 'by-coordinate', treatment: 'fill', at: [0.1, 0.1, 0.2, 0.2] },
-    ] } };
-    const kinds = await (await ask({ car: other, design: mixed })).json();
+    const kinds = await (await ask({
+      car: other,
+      design: design([
+        { id: 'by-name', treatment: 'fill', panel: 'definitely-not-a-panel' },
+        { id: 'by-coordinate', treatment: 'fill', at: [0.1, 0.1, 0.2, 0.2] },
+      ]),
+    })).json();
     const status = Object.fromEntries(kinds.regions.map((r) => [r.id, r.status]));
     assert.equal(status['by-coordinate'], 'absolute',
       'a coordinate placement is reported as what it is, not as a pass');
     assert.notEqual(status['by-coordinate'], 'matched');
-    assert.ok(['matched', 'missing'].includes(status['by-tag']),
-      'and a tag selection gets a real verdict either way');
+    assert.equal(status['by-name'], 'missing',
+      'and a panel this car does not have is a miss, whichever car it is');
 
     // And the car id is checked against the directory listing rather than
     // joined onto a path, the same rule as everywhere else in this file.
