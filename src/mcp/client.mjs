@@ -34,5 +34,15 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(proposal),
     }),
+    renderSurface: async (role, seed) => request('api/render', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ role, seed }),
+    }),
+    previewSurfaces: async (seed) => request('api/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seed }),
+    }),
   };
 }

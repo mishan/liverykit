@@ -11,6 +11,24 @@ async function toolDescribeCar(client) {
     panelCount: s.panels?.length ?? 0,
   }));
   const totalPanels = state.surfaces.reduce((sum, s) => sum + (s.panels?.length ?? 0), 0);
+
+  const paintedRoles = new Set(state.surfaces.map((s) => s.role));
+  const unpaintedSurfaces = [];
+  const unpaintable = [];
+
+  for (const info of Object.values(state.roles ?? {})) {
+    if (!info.paintable) {
+      unpaintable.push({ file: info.file, why: info.why });
+    } else if (info.role && !paintedRoles.has(info.role) && !state.design?.paint?.[info.role]) {
+      unpaintedSurfaces.push({
+        role: info.role,
+        file: info.file,
+        width: info.width,
+        height: info.height,
+      });
+    }
+  }
+
   return {
     content: [{
       type: 'text',
@@ -19,6 +37,8 @@ async function toolDescribeCar(client) {
         textureCount: textures.length,
         totalPanels,
         textures,
+        unpaintedSurfaces,
+        unpaintable,
       }, null, 2),
     }],
   };
@@ -131,6 +151,19 @@ async function toolReport(client) {
   };
 }
 
+async function toolRenderView(client, args = {}) {
+  if (args.role) {
+    const res = await client.renderSurface(args.role, args.seed);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+    };
+  }
+  const res = await client.previewSurfaces(args.seed);
+  return {
+    content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+  };
+}
+
 async function toolProposeDesign(client, args) {
   if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
     return {
@@ -187,7 +220,7 @@ export function createToolHandler(client) {
   const tools = [
     {
       name: 'describe_car',
-      description: `Describe the car profile including texture roles, panel counts, bind table, and axes. ${PROMPT_NOTE}`,
+      description: `Describe the car profile including texture roles, panel counts, bind table, axes, and unpainted/unpaintable surfaces. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {},
@@ -241,15 +274,26 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'render_view',
+      description: `Render texture SVG and region placement data for a surface role or the whole car. ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', description: 'Texture role to render (e.g. "ext_skin_sponsors" or "surfaces.body"). Omit for all painted surfaces.' },
+          seed: { type: 'string', description: 'Optional render seed string' },
+        },
+      },
+    },
+    {
       name: 'propose_design',
-      description: `Propose design changes (palette, regions, options, identity) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
+      description: `Propose design changes (palette, regions, options, identity, adopt-surface) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
           why: { type: 'string', description: 'Required justification for the proposal' },
           design: {
             type: 'array',
-            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region)',
+            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region, adopt-surface)',
             items: { type: 'object' },
           },
         },
@@ -293,6 +337,7 @@ export function createToolHandler(client) {
       case 'read_design': return toolReadDesign(client);
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
+      case 'render_view': return toolRenderView(client, args);
       case 'propose_design': return toolProposeDesign(client, args);
       case 'propose_fit': return toolProposeFit(client, args);
       default:
