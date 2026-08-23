@@ -23,6 +23,7 @@
 //   GET  /api/treatments   what each treatment takes, for the inspector
 //   GET  /api/cars         the other profiles this design could be pointed at
 //   POST /api/portability  what the working design would find on one of them
+//   POST /api/fitment      what is wrong with the working design ON THIS car
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   GET  /api/stock        the car's own texture for a surface the design skips
@@ -44,6 +45,7 @@ import { resolveTreatments } from '../registry.mjs';
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
+import { fitment } from '../fitment.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -938,6 +940,26 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!want) return json(404, { error: `no profile called ${JSON.stringify(sent.car)}` });
         const other = await loadProfile(join(CARS, `${want.id}.json`));
         return json(200, portability(design, other));
+      }
+
+      // What is wrong with the design where it actually sits.
+      //
+      // POST for the same reason portability is: the interesting design and the
+      // interesting fit are the ones in the browser, and answering about the
+      // files on disk would be answering about something nobody is looking at.
+      //
+      // The model is passed when it has loaded and omitted when it has not,
+      // which is the difference between the geometry checks running and
+      // reporting themselves as not run. It is never waited for — a 45 MB kn5
+      // on the first call would make the panel look broken, and `notChecked`
+      // already says plainly that the answer is partial.
+      if (req.method === 'POST' && url.pathname === '/api/fitment') {
+        const sent = await body();
+        const found = fitment(sent.design ?? livery, profile, sent.fit ?? fit, { model });
+        // Kicked off for NEXT time rather than awaited. The panel reports what
+        // it could check, and the checks it could not are named.
+        if (!model && !modelError) getModel().catch(() => {});
+        return json(200, { ...found, modelError });
       }
 
       // The same answer, for a fit that has not been saved yet.

@@ -468,3 +468,62 @@ test('integrity: tool descriptions declare agent has no eyes', async () => {
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// check_fitment — the tool that exists because of a specific mistake.
+//
+// Asked to improve a fit, I moved a team name into a part of the texture no
+// triangle uses. It rendered perfectly, it was on no part of the car, and every
+// number available to me said the move was fine. The value of this tool is
+// entirely in whether the bad news survives the trip to an agent intact.
+// ---------------------------------------------------------------------------
+
+test('check_fitment: a run that skipped checks cannot read as a clean one', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const tools = createToolHandler(client);
+
+    const listed = (await tools.listTools()).find((t) => t.name === 'check_fitment');
+    assert.ok(listed, 'the tool is offered');
+    assert.match(listed.description, /notChecked/,
+      'and the description tells the caller to read it');
+
+    const res = await tools.callTool('check_fitment', {});
+    const out = JSON.parse(res.content[0].text);
+
+    // No model is loaded in this test, so the geometry checks cannot run. That
+    // is the common case and the dangerous one: an empty findings list here
+    // means "nothing found by the checks that ran", and an agent that reads it
+    // as "the design is good" makes exactly my mistake.
+    assert.ok(out.notChecked.includes('unseen'), 'the skipped checks are named');
+    assert.ok(out.notChecked.includes('off-mesh'));
+    assert.ok(!out.checked.includes('unseen'), 'and not also counted as passed');
+    assert.match(out.verdict, /did not run/,
+      `the verdict says so in words, not just in a field: ${out.verdict}`);
+  } finally {
+    await stop();
+  }
+});
+
+test('check_fitment: the worst finding leads, and is counted', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const out = JSON.parse((await tools.callTool('check_fitment', {})).content[0].text);
+
+    const rank = { fatal: 0, high: 1, low: 2 };
+    const order = out.findings.map((f) => rank[f.severity]);
+    assert.deepEqual(order, [...order].sort((a, b) => a - b),
+      'worst first, so truncation loses the least important end');
+
+    // A count and a sorted list, because "some minor findings" is how nine low
+    // and one high gets summarised by anything reading in a hurry.
+    if (out.findings.length) {
+      assert.match(out.verdict, /Worst finding is (fatal|high|low)\./, out.verdict);
+      assert.match(out.verdict, /\d+ fatal, \d+ high, \d+ low/, out.verdict);
+    }
+  } finally {
+    await stop();
+  }
+});
