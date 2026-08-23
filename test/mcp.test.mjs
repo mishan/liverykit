@@ -110,6 +110,32 @@ test('mcp tools: describe_car', async () => {
     assert.equal(data.car.id, 'rss_formula_rss_4');
     assert.ok(data.textureCount > 0);
     assert.ok(data.totalPanels > 0);
+    assert.ok(Array.isArray(data.unpaintedSurfaces));
+    assert.ok(Array.isArray(data.unpaintable));
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: render_view', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+
+    // Single surface render
+    const resSurface = await handler.callTool('render_view', { role: 'body' });
+    assert.ok(!resSurface.isError);
+    const dataSurface = JSON.parse(resSurface.content[0].text);
+    assert.ok(dataSurface.svg);
+    assert.ok(Array.isArray(dataSurface.placed));
+
+    // Preview all surfaces
+    const resAll = await handler.callTool('render_view', {});
+    assert.ok(!resAll.isError);
+    const dataAll = JSON.parse(resAll.content[0].text);
+    assert.ok(Array.isArray(dataAll.surfaces));
+    assert.ok(dataAll.surfaces.length > 0);
   } finally {
     await stop();
   }
@@ -232,6 +258,29 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
 
     const cleared = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
     assert.equal(cleared.proposal, null);
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: propose_design with adopt-surface', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+
+    const propRes = await handler.callTool('propose_design', {
+      why: 'adopt rear wing surface into design',
+      design: [
+        { op: 'adopt-surface', role: 'wing', background: 'ink' },
+      ],
+    });
+
+    assert.ok(!propRes.isError);
+    const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
+    assert.equal(pending.proposal.why, 'adopt rear wing surface into design');
+    assert.equal(pending.proposal.design[0].op, 'adopt-surface');
+    assert.equal(pending.proposal.design[0].role, 'wing');
   } finally {
     await stop();
   }

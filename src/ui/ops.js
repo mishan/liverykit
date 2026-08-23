@@ -108,6 +108,14 @@ export function opSetRegion(design, { id, region }) {
   }
 }
 
+export function opAdoptSurface(design, { role, background = 'ink' }) {
+  if (!isSafeKey(role)) return;
+  design.paint ??= {};
+  if (!design.paint[role]) {
+    design.paint[role] = { regions: [], background };
+  }
+}
+
 export function applyDesignOp(design, op) {
   if (!op || typeof op !== 'object') return;
   switch (op.op) {
@@ -119,6 +127,8 @@ export function applyDesignOp(design, op) {
     case 'reorder-region': opReorderRegion(design, op); break;
     case 'set-option': opSetOption(design, op); break;
     case 'set-region': opSetRegion(design, op); break;
+    case 'adopt-surface':
+    case 'add-surface': opAdoptSurface(design, op); break;
   }
 }
 
