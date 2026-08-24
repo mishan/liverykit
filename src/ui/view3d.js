@@ -17,41 +17,42 @@
 const VS = `
 attribute vec3 position;
 attribute vec2 uv;
+attribute vec3 normal;
 uniform mat4 mvp;
 varying vec2 vUv;
+varying vec3 vN;
+varying vec3 vP;
 void main() {
   vUv = uv;
+  // The vertices arrive in world space already — the kn5 node transforms were
+  // baked in when the geometry was built — so there is no model matrix to undo
+  // and the normal needs no inverse transpose.
+  vN = normal;
+  vP = position;
   gl_Position = mvp * vec4(position, 1.0);
 }`;
 
-// No lighting on purpose. A shaded preview would misreport the artwork's colour,
-// which is the one thing this view exists to show honestly.
+// LIGHTING IS A MODE, and the reason it is a mode is worth keeping.
 //
-// The highlight obeys the same rule, and that decides its whole design. Tinting
-// the selected region would be the obvious way to show it and would break the
-// one promise this view makes, precisely where the promise matters most — on
-// the region you are working on. So the selection keeps its true colours and
-// EVERYTHING ELSE is dimmed toward the background, with an accent border on the
-// rectangle's edge so a dark region against dark bodywork still reads.
+// This shader used to draw the raw texture and say so: "no lighting on purpose,
+// a shaded preview would misreport the artwork's colour, which is the one thing
+// this view exists to show honestly." That is still true, and it is why `lit`
+// can be turned off and why the UV tab never had this problem at all.
 //
-// The test is per-fragment against the region's UV rectangle rather than
-// per-triangle. A region rarely lands on triangle boundaries, so a per-triangle
-// highlight would spill over the edges of the very thing it is drawing your
-// attention to, and the spill would be worst on coarse geometry where you can
-// least afford to misjudge the fit.
+// But it answered the wrong question for the whole-car view. That view exists
+// to tell you whether the design works ON THE CAR, and an unlit slab cannot:
+// you cannot see how a stripe crosses a curve, where a shoulder turns away from
+// the light, or which panels the eye actually lands on. The car looked nothing
+// like the car in the game, and "nothing like the game" is a real answer to
+// "will this look right".
 //
-// THREE zones, not two. Dimming everything outside the region told you where
-// the artwork was but not where it was allowed to go, and `at` is
-// panel-relative — the panel is the boundary every drag is clamped to, so
-// working without seeing it means finding the edges by hitting them.
+// So: shaded by default, honest colour one click away, and the highlight
+// overlay drawn AFTER the shading so the thing you are dragging keeps its
+// contrast in shadow.
 //
-//   inside the region      true colour, accent border, a grab corner
-//   rest of the host panel lightly dimmed, its own quiet border
-//   the rest of the car    dimmed hard
-//
-// The grab corner is drawn at exactly the size the hit test uses, so what you
-// can see is what you can grab. Resizing existed before this and was invisible,
-// which is the same as not existing.
+// No environment map, no image-based lighting, nothing fetched. A hemisphere
+// for the sky and the ground, one key light, one fill from behind, and a
+// clearcoat lobe — which is most of what car paint does and costs nothing.
 const FS = `
 precision mediump float;
 uniform sampler2D map;
@@ -60,7 +61,11 @@ uniform vec4 panel;       // its host panel, the boundary it is clamped to
 uniform vec4 twin;        // its opposite number, which moves with it
 uniform vec4 twinPanel;   // and where that one lives
 uniform float border;     // border thickness, in UV units
+uniform float lit;        // 0 = true colour, 1 = shaded like a car
+uniform vec3 eye;         // camera position, for the specular lobes
 varying vec2 vUv;
+varying vec3 vN;
+varying vec3 vP;
 
 bool within(vec4 r, vec2 p) {
   vec2 d = p - r.xy;
@@ -71,8 +76,66 @@ float edgeDist(vec4 r, vec2 p) {
   return min(min(d.x, r.z - d.x), min(d.y, r.w - d.y));
 }
 
+/**
+ * What the paint does with the light.
+ *
+ * Deliberately not a PBR pipeline. There is no roughness map, no metalness and
+ * no environment probe to sample — inventing them would be guessing, and a
+ * confident-looking guess about how a car reflects is exactly the kind of thing
+ * that would make a livery look good here and wrong in the game.
+ *
+ * What IS defensible: bodywork is a dielectric with a clear lacquer over it, so
+ * a broad diffuse term, a tight specular highlight that does not take the
+ * paint's colour, and a Fresnel rim that brightens at grazing angles. Those
+ * three are what make a car read as a curved metal object rather than a decal
+ * sheet, and none of them needs an asset.
+ */
+vec3 shade(vec3 albedo, vec3 n, vec3 v) {
+  vec3 key = normalize(vec3(0.4, 0.85, 0.35));
+  vec3 rim = normalize(vec3(-0.6, 0.25, -0.7));
+
+  // Sky above, ground bounce below. A car photographed outdoors gets most of
+  // its light this way, and it is what stops the underside going pure black.
+  vec3 sky = vec3(0.52, 0.60, 0.72);
+  vec3 ground = vec3(0.20, 0.19, 0.18);
+  vec3 ambient = mix(ground, sky, n.y * 0.5 + 0.5);
+
+  // Wrapped, so the terminator is soft. A hard lambert edge on a car body
+  // reads as a crease that is not there.
+  float nl = max(0.0, dot(n, key) * 0.75 + 0.25);
+  vec3 diffuse = albedo * (ambient * 0.85 + vec3(1.0, 0.97, 0.91) * nl * 0.95);
+  diffuse += albedo * vec3(0.35, 0.42, 0.55) * max(0.0, dot(n, rim)) * 0.35;
+
+  // Clearcoat. WHITE, not tinted by the paint: the highlight on a car is the
+  // sky in the lacquer, and colouring it by the artwork underneath is the
+  // single most common way a shaded preview lies about a livery.
+  vec3 h = normalize(key + v);
+  float spec = pow(max(0.0, dot(n, h)), 90.0) * 0.55;
+  float fres = pow(1.0 - max(0.0, dot(n, v)), 5.0);
+  spec += fres * 0.10;
+
+  vec3 c = diffuse + vec3(spec);
+  // A gentle shoulder so the highlight rolls off instead of clipping to a flat
+  // white patch. Not a tone mapper — the input is already display-referred.
+  return c / (1.0 + c * 0.22);
+}
+
 void main() {
   vec3 c = texture2D(map, vUv).rgb;
+
+  if (lit > 0.5) {
+    // Both faces are drawn, because car meshes are not reliably wound, so a
+    // normal can point away from the camera on a perfectly visible surface.
+    // Flipping it is what stops the far side of a shell rendering black.
+    vec3 v = normalize(eye - vP);
+    vec3 n = normalize(vN);
+    if (dot(n, v) < 0.0) n = -n;
+    c = shade(c, n, v);
+  }
+
+  // AFTER the shading, deliberately. The highlight is UI, not artwork: a
+  // selection outline that dims when the panel turns away from the light is a
+  // selection outline you lose exactly when you are dragging it out of view.
   if (region.z > 0.0) {
     vec3 dark = vec3(0.02, 0.03, 0.04);
     vec3 accent = vec3(0.0, 0.94, 1.0);
@@ -214,8 +277,9 @@ export function unpackModel(buffer) {
   let o = 4 + len;
   const positions = new Float32Array(buffer, o, meta.vertexCount * 3); o += meta.vertexCount * 12;
   const uvs = new Float32Array(buffer, o, meta.vertexCount * 2); o += meta.vertexCount * 8;
+  const normals = new Float32Array(buffer, o, meta.vertexCount * 3); o += meta.vertexCount * 12;
   const indices = new Uint32Array(buffer, o, meta.indexCount);
-  return { positions, uvs, indices, groups: meta.groups, bounds: meta.bounds };
+  return { positions, uvs, normals, indices, groups: meta.groups, bounds: meta.bounds };
 }
 
 /** Unpack the server's blob: two counts, then positions, UVs and indices. */
@@ -225,8 +289,9 @@ export function unpack(buffer) {
   let o = 8;
   const positions = new Float32Array(buffer, o, vertexCount * 3); o += vertexCount * 12;
   const uvs = new Float32Array(buffer, o, vertexCount * 2); o += vertexCount * 8;
+  const normals = new Float32Array(buffer, o, vertexCount * 3); o += vertexCount * 12;
   const indices = new Uint32Array(buffer, o, indexCount);
-  return { positions, uvs, indices };
+  return { positions, uvs, normals, indices };
 }
 
 /**
@@ -325,6 +390,7 @@ export function createViewer(canvas) {
   const loc = {
     position: gl.getAttribLocation(prog, 'position'),
     uv: gl.getAttribLocation(prog, 'uv'),
+    normal: gl.getAttribLocation(prog, 'normal'),
     mvp: gl.getUniformLocation(prog, 'mvp'),
     map: gl.getUniformLocation(prog, 'map'),
     region: gl.getUniformLocation(prog, 'region'),
@@ -332,9 +398,14 @@ export function createViewer(canvas) {
     twin: gl.getUniformLocation(prog, 'twin'),
     twinPanel: gl.getUniformLocation(prog, 'twinPanel'),
     border: gl.getUniformLocation(prog, 'border'),
+    lit: gl.getUniformLocation(prog, 'lit'),
+    eye: gl.getUniformLocation(prog, 'eye'),
   };
 
-  const buffers = { position: gl.createBuffer(), uv: gl.createBuffer(), index: gl.createBuffer() };
+  const buffers = {
+    position: gl.createBuffer(), uv: gl.createBuffer(),
+    normal: gl.createBuffer(), index: gl.createBuffer(),
+  };
 
   /** A single flat texel — the shape before any render arrives, and unpainted parts. */
   function greyTexture() {
@@ -392,6 +463,9 @@ export function createViewer(canvas) {
   let twin = [0, 0, 0, 0];
   let twinPanel = [0, 0, 0, 0];
   let border = 0.0015;
+  // Shaded by default. Honest colour is one call away and the UV tab, where you
+  // read colours off the sheet, is untouched by any of this.
+  let lit = true;
 
   function resize() {
     const w = canvas.clientWidth || 800;
@@ -424,6 +498,8 @@ export function createViewer(canvas) {
     gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
     gl.uniform1i(loc.map, 0);
     gl.uniform1f(loc.border, border);
+    gl.uniform1f(loc.lit, lit ? 1 : 0);
+    gl.uniform3fv(loc.eye, new Float32Array(eye));
     gl.activeTexture(gl.TEXTURE0);
     const bytes = ext ? 4 : 2;
     const type = ext ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
@@ -582,7 +658,7 @@ export function createViewer(canvas) {
 
   return {
     /** Upload geometry, and frame the camera on whatever it just received. */
-    setGeometry({ positions, uvs, indices }) {
+    setGeometry({ positions, uvs, normals, indices }) {
       groups = null;
       mesh = { positions, uvs, indices };
       gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
@@ -594,6 +670,16 @@ export function createViewer(canvas) {
       gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc.uv);
       gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, 0, 0);
+
+      // A model saved before normals travelled, or a hand-built fixture, gets a
+      // buffer of zeroes rather than a crash. `shade` normalises, and a zero
+      // normal comes out as the sky term alone — flat, wrong, and visibly so,
+      // which is better than a viewer that will not start.
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        normals ?? new Float32Array(positions.length), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(loc.normal);
+      gl.vertexAttribPointer(loc.normal, 3, gl.FLOAT, false, 0, 0);
 
       // WebGL1 needs an extension for 32-bit indices, and a car body exceeds
       // 65535 vertices often enough to matter. Narrowing is only safe when it
@@ -649,6 +735,9 @@ export function createViewer(canvas) {
      * The budget is still real, just applied to what is actually there rather
      * than to what might have been.
      */
+    /** True colour, or shaded like a car. The UV tab is unaffected either way. */
+    setLit(on) { lit = !!on; draw(); },
+
     async setWholeCar(model, surfaces, { budget = 192 * 1024 * 1024 } = {}) {
       // setGeometry clears the grouping, so the groups go on afterwards. The
       // order matters: a frame drawn with the new buffers and the old group

@@ -522,6 +522,7 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
     const g = {
       positions: Float32Array.from([0, 1, 2]),
       uvs: Float32Array.from([0, 1]),
+      normals: Float32Array.from([0, 1, 0]),
       indices: Uint32Array.from([0]),
       groups: [{ role, file: `${role}.dds`, start: 0, count: 1 }],
       bounds: { lo: [0, 0, 0], hi: [1, 1, 1] },
@@ -530,6 +531,9 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
     const back = unpackModel(buf);          // throws on a misaligned offset
     assert.equal(back.groups[0].role, role);
     assert.deepEqual([...back.positions], [0, 1, 2]);
+    // The normals share the alignment problem and are the newest array, so they
+    // are the one most likely to be read from the wrong offset.
+    assert.deepEqual([...back.normals], [0, 1, 0]);
   }
 });
 
@@ -3238,4 +3242,48 @@ test('the texture budget is shared out, not spent per surface', async () => {
   // texture larger than MAX_TEXTURE_SIZE is an error, not a slow path.
   assert.deepEqual(capped(4096, 4096, 2048), [2048, 2048]);
   assert.deepEqual(capped(2048, 512, 4096), [2048, 512], 'and nothing is shrunk needlessly');
+});
+
+test('the geometry the viewer receives carries the normals it lights with', async () => {
+  // The car was drawn with `gl_FragColor = vec4(texture, 1.0)` — no lighting at
+  // all — and the reason it could not be lit is here rather than in the shader:
+  // both geometry builders read the surface normal off every vertex and threw
+  // it away. An unlit slab cannot show how a stripe crosses a curve, which is
+  // most of what the whole-car view exists to answer.
+  const { wholeModelGeometry, modelGeometry, packModel } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+  for (const g of [wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }]),
+                   modelGeometry(model, CAR.texture)]) {
+    assert.equal(g.normals.length, g.positions.length, 'one normal per position');
+    // Unit length, because the shader divides by nothing and a zero normal
+    // would come out as flat sky.
+    for (let i = 0; i < g.normals.length; i += 3) {
+      const n = Math.hypot(g.normals[i], g.normals[i + 1], g.normals[i + 2]);
+      assert.ok(Math.abs(n - 1) < 1e-3, `normal ${i / 3} has length ${n}`);
+    }
+  }
+
+  // And they survive the trip, at the right offset. Adding an array to a packed
+  // format is exactly where an off-by-one buffer offset hides: everything still
+  // parses, and the numbers are someone else's.
+  const packed = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }]);
+  const back = unpackModel(new Uint8Array(packModel(packed)).buffer);
+  assert.deepEqual([...back.normals], [...packed.normals]);
+  assert.deepEqual([...back.indices], [...packed.indices],
+    'and the array after them is still where it should be');
+});
+
+test('packModel says what is missing instead of dying on undefined', async () => {
+  const { packModel } = await import('../src/ui/server.mjs');
+  assert.throws(() => packModel({
+    positions: Float32Array.from([0, 0, 0]),
+    uvs: Float32Array.from([0, 0]),
+    indices: Uint32Array.from([0]),
+    groups: [], bounds: { lo: [0, 0, 0], hi: [0, 0, 0] },
+  }), /needs a typed array for "normals"/,
+    'a builder that has not caught up is told so, at the call that did it');
 });
