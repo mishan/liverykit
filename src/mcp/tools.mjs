@@ -1,3 +1,5 @@
+import { CONSTRAINTS } from '../fitment.mjs';
+
 const PROMPT_NOTE = '(Note: as an AI model, you cannot visually see the 3D car or rendered artwork. Your proposals are presented to a human user in the fitting editor, who will inspect and accept/discard them.)';
 
 async function toolDescribeCar(client) {
@@ -294,6 +296,15 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'list_constraints',
+      description:
+        'List the placement constraints a design region may declare, and what each one ' +
+        'means. Constraints live on the DESIGN, not the fit, so they travel to every car. ' +
+        'A constraint name that is not on this list is refused rather than ignored, so ' +
+        `read this before writing one. ${PROMPT_NOTE}`,
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
       name: 'list_treatments',
       description: `List all available treatments from loaded packs with their option schemas. ${PROMPT_NOTE}`,
       inputSchema: {
@@ -405,6 +416,8 @@ export function createToolHandler(client) {
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
       case 'check_fitment': return toolCheckFitment(client);
+      case 'list_constraints':
+        return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };
       case 'render_view': return toolRenderView(client, args);
       case 'propose_design': return toolProposeDesign(client, args);
       case 'propose_fit': return toolProposeFit(client, args);

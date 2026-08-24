@@ -296,3 +296,98 @@ function withPlate(model, gap) {
     meshes: [m, plate],
   };
 }
+
+// ---------------------------------------------------------------------------
+// What a region may declare about where it is allowed to end up.
+//
+// On the DESIGN rather than the fit, so it travels: "this is a team name, keep
+// artwork off it" is true on every car, and restating it per car is how it goes
+// stale on the third one.
+// ---------------------------------------------------------------------------
+
+test('a region can ask to be kept clear, and a stripe across it is reported', () => {
+  // The case that prompted this. A cyan stripe running the length of the flank
+  // is artwork by every measure the overlap check had — not text, so not worth
+  // mentioning — and the team name underneath it is still lost. Measured on the
+  // real fit, the name ran to y 0.9404 and the stripe began at 0.94.
+  const guarded = fitment(design([
+    { id: 'team', treatment: 'text', panel: 'L', at: [0.1, 0.5, 0.8, 0.3], text: '{team}',
+      constraints: { keepClear: true } },
+    { id: 'stripe', treatment: 'stripe', panel: 'L', at: [0, 0.55, 1, 0.1], color: 'ink' },
+  ]), profile);
+
+  const crossed = guarded.findings.filter((f) => f.kind === 'crossed');
+  assert.equal(crossed.length, 1, JSON.stringify(guarded.findings));
+  assert.equal(crossed[0].severity, 'high');
+  assert.match(crossed[0].why, /stripe covers .* of team, which asked to be kept clear/);
+
+  // And with NEITHER side text, which is the case the old check could not see
+  // at all: a guarded badge under a stripe never reached the report, because
+  // the pair was filtered out before anything looked at it.
+  const neither = fitment(design([
+    { id: 'badge', treatment: 'logo', panel: 'L', at: [0.1, 0.5, 0.8, 0.3],
+      constraints: { keepClear: true } },
+    { id: 'stripe', treatment: 'stripe', panel: 'L', at: [0, 0.55, 1, 0.1], color: 'ink' },
+  ]), profile);
+  const hit = neither.findings.filter((f) => f.kind === 'crossed');
+  assert.equal(hit.length, 1, `a guarded non-text region still reports: ${
+    JSON.stringify(neither.findings)}`);
+  assert.deepEqual(hit[0].ids.sort(), ['badge', 'stripe']);
+
+  // Without the constraint the same pair is a low-severity overlap at most,
+  // because a stripe over artwork is a livery working.
+  const bare = fitment(design([
+    { id: 'team', treatment: 'text', panel: 'L', at: [0.1, 0.5, 0.8, 0.3], text: '{team}' },
+    { id: 'stripe', treatment: 'stripe', panel: 'L', at: [0, 0.55, 1, 0.1], color: 'ink' },
+  ]), profile);
+  assert.deepEqual(bare.findings.filter((f) => f.kind === 'crossed'), []);
+  assert.ok(!bare.findings.some((f) => f.severity === 'high'),
+    'the constraint is what makes it serious, not the geometry');
+
+  // Two unguarded non-text regions say nothing whatsoever. Layering is how a
+  // livery is built, and a checker that has to be ignored teaches you to
+  // ignore it.
+  const layered = fitment(design([
+    { id: 'badge', treatment: 'logo', panel: 'L', at: [0.1, 0.5, 0.8, 0.3] },
+    { id: 'stripe', treatment: 'stripe', panel: 'L', at: [0, 0.55, 1, 0.1], color: 'ink' },
+  ]), profile);
+  assert.deepEqual(layered.findings, [], JSON.stringify(layered.findings));
+});
+
+test('a region can set its own legibility floor and its own footing', () => {
+  // The panel is 0.4 of a 4 m-per-uv sheet, so 1.6 m across. A box 5% of that
+  // is 80 mm — fine by the global 25 mm rule, and not fine for artwork that
+  // said it needs 100.
+  const r = fitment(design([
+    { id: 'sponsor', treatment: 'logo', panel: 'L', at: [0.4, 0.4, 0.05, 0.05],
+      constraints: { minMm: 100 } },
+    { id: 'other', treatment: 'logo', panel: 'L', at: [0.1, 0.1, 0.05, 0.05] },
+  ]), profile);
+
+  const small = r.findings.filter((f) => f.kind === 'unreadable');
+  assert.deepEqual(small.map((f) => f.ids[0]), ['sponsor'],
+    'only the one that declared a floor — a logo is not text and has no default');
+  assert.equal(small[0].severity, 'high', 'a broken promise is not a hint');
+  assert.match(small[0].why, /asked for at least 100 mm/);
+});
+
+test('a misspelled constraint is refused, not quietly ignored', () => {
+  // The worst thing this module could contain. `keepclear` reads as a rule
+  // being enforced and behaves as no rule at all, which is precisely the silent
+  // pass everything else here exists to refuse.
+  const r = fitment(design([
+    { id: 'team', treatment: 'text', panel: 'L', at: [0.1, 0.5, 0.8, 0.3], text: '{team}',
+      constraints: { keepclear: true } },
+    { id: 'stripe', treatment: 'stripe', panel: 'L', at: [0, 0.55, 1, 0.1], color: 'ink' },
+  ]), profile);
+
+  const bad = r.findings.filter((f) => f.kind === 'bad-constraint');
+  assert.equal(bad.length, 1, JSON.stringify(r.findings));
+  assert.equal(bad[0].severity, 'fatal');
+  assert.match(bad[0].why, /"keepclear", which nothing enforces/);
+  assert.match(bad[0].why, /keepClear, minMm, minOnCar/, 'and says what it could have meant');
+
+  // And the rule it was trying to state is genuinely not in force.
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'crossed'), [],
+    'nothing pretends the typo worked');
+});
