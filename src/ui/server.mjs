@@ -37,7 +37,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseKn5, meshesUsingTexture, vertex, triangles, blends } from '../engine/kn5.mjs';
+import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
@@ -188,7 +188,10 @@ export function wholeModelGeometry(model, files) {
       // drawn in the opaque pass is a black slab and an opaque one drawn in the
       // blended pass merely sorts oddly. Wrong in the cheaper direction.
       const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
-      groups.push({ ...group, start, count: indices.length - start, blend });
+      groups.push({
+        ...group, start, count: indices.length - start, blend,
+        add: blend && additive(group.file),
+      });
     }
   };
 

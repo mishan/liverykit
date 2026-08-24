@@ -445,6 +445,24 @@ const BLENDS = new Set([
   'ksBrokenGlass',
 ]);
 
+/**
+ * Whether a surface ADDS light rather than covering what is behind it.
+ *
+ * An emissive sheet is a glow map: black where nothing glows. Assetto Corsa
+ * draws these additively, so the black contributes nothing and you see the
+ * plate underneath. Composited with SRC_ALPHA instead, an opaque black texture
+ * is simply a black rectangle — which is what has been standing in front of
+ * this car's number plates all along.
+ *
+ * Detected by NAME, which is weaker than reading a shader and is what the model
+ * gives us: both the plate and its twin are ksPerPixelAlpha, and the only thing
+ * distinguishing them is that one is called `_Emissive`. Worth saying plainly
+ * rather than hiding behind the helper.
+ */
+export function additive(file) {
+  return /emissive/i.test(String(file ?? ''));
+}
+
 /** Whether a material composites against what is behind it. */
 export function blends(shader) {
   return BLENDS.has(String(shader ?? ''));
