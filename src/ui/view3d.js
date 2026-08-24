@@ -813,10 +813,26 @@ export function createViewer(canvas) {
       // offsets would index past the end of them.
       this.setGeometry(model);
 
+      // PER SURFACE, and reported.
+      //
+      // This loop used to be a bare `await` in sequence, so one surface whose
+      // svg the browser would not rasterise threw, abandoned the remaining
+      // uploads AND the stock-texture pass, and returned before `groups` was
+      // ever assigned — leaving the previous frame's state on screen. From the
+      // outside that is indistinguishable from "the new surface did not
+      // render", and it puts nothing in the console, because the throw is
+      // swallowed by whoever called this.
+      //
+      // A surface that fails now keeps its grey and says which one it was.
+      const failed = [];
       const sizes = textureSizes(surfaces, { budget, max: gl.getParameter(gl.MAX_TEXTURE_SIZE) });
       for (const [i, s] of surfaces.entries()) {
         if (!byRole.has(s.role)) byRole.set(s.role, greyTexture());
-        await uploadSvg(byRole.get(s.role), s.svg, sizes[i].w, sizes[i].h);
+        try {
+          await uploadSvg(byRole.get(s.role), s.svg, sizes[i].w, sizes[i].h);
+        } catch (e) {
+          failed.push(`${s.role}: ${e.message}`);
+        }
       }
 
       // The parts the design does NOT paint, wearing the car's own artwork.
@@ -848,6 +864,16 @@ export function createViewer(canvas) {
       }));
       if (!groups.length) groups = null;
       draw();
+      // Handed back rather than logged, so the caller can put it on screen. A
+      // viewer that cannot draw part of the car should say so where the person
+      // is looking, not in a console they have no reason to open.
+      return {
+        uploaded: surfaces.length - failed.length,
+        failed,
+        groups: groups?.length ?? 0,
+        blended: (groups ?? []).filter((g) => g.blend).length,
+        additive: (groups ?? []).filter((g) => g.add).length,
+      };
     },
 
     /**
