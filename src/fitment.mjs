@@ -154,6 +154,18 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   for (const t of targets) {
     const spec = t.spec ?? {};
 
+    // WHICH TEXTURE, not just which surface.
+    //
+    // One surface term can bind several texture roles — `surfaces.body` on a
+    // formula car resolves to `body` AND `bodyRear` — and the design paints
+    // every one of them, so a region really does land more than once, on
+    // different parts of the car. That is two problems, not a double-counted
+    // one. But every finding carried only `surface`, which is the same string
+    // for both, so they arrived as exact duplicates and read like a bug in the
+    // checker. The role is what tells them apart, and it is also what somebody
+    // needs in order to go and look at the right sheet.
+    const sayHere = (f) => say({ role: t.role, ...f });
+
     // Per TARGET, so one broken surface does not hide the findings on the rest
     // — and so the run says which surface went unchecked instead of returning a
     // short list of findings that reads like a clean bill of health.
@@ -172,13 +184,13 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
     // Parsed once, before any check reads them, so a misspelled constraint is
     // reported rather than quietly enforcing nothing.
-    for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, say);
+    for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, sayHere);
 
-    overlaps(placed, t, say);
-    outsideSafe(placed, profile, t, say);
-    unreadable(placed, profile, t, say);
-    unmirrored(placed, profile, t, say);
-    if (seen) unseen(placed, profile, t, seen, say);
+    overlaps(placed, t, sayHere);
+    outsideSafe(placed, profile, t, sayHere);
+    unreadable(placed, profile, t, sayHere);
+    unmirrored(placed, profile, t, sayHere);
+    if (seen) unseen(placed, profile, t, seen, sayHere);
   }
 
   return {

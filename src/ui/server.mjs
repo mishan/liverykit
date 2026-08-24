@@ -976,7 +976,28 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // already says plainly that the answer is partial.
       if (req.method === 'POST' && url.pathname === '/api/fitment') {
         const sent = await body();
-        const found = fitment(sent.design ?? livery, profile, sent.fit ?? fit, { model });
+        // THREE sources, in this order, and the middle one was missing.
+        //
+        // `sent` is the browser posting what it currently holds. `workingFit` is
+        // what the editor holds server-side — which is where an accepted
+        // proposal lands, and where the browser's own edits land. `fit` is the
+        // file on disk at startup.
+        //
+        // Written as `sent.fit ?? fit`, this endpoint answered about the FILE
+        // whenever the caller sent nothing — which is exactly what the MCP tool
+        // does, since it asks about the editor's own working state rather than
+        // supplying one. So check_fitment reported confidently on a fit nobody
+        // was looking at, and agreed with reality only while the two happened
+        // to match. It read as a verified before/after and was neither.
+        //
+        // A query, so nothing is assigned: unlike /api/preview this does not
+        // adopt what it was sent as the new working state.
+        const found = fitment(
+          sent.design ?? workingDesign ?? livery,
+          profile,
+          sent.fit ?? workingFit ?? fit,
+          { model },
+        );
         // Kicked off for NEXT time rather than awaited. The panel reports what
         // it could check, and the checks it could not are named.
         if (!model && !modelError) getModel().catch(() => {});
