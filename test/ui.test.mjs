@@ -3441,3 +3441,27 @@ test('an emissive sheet adds light instead of covering what is behind it', async
   assert.match(pass, /if \(g\.add\) gl\.blendFunc\(gl\.ONE, gl\.ONE\);/);
   assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
 });
+
+test('a surface the browser cannot rasterise fails loudly and alone', async () => {
+  // Three rounds of "I still cannot see the plate, no errors in console", and
+  // this is why the console was clean. setWholeCar awaited each upload in
+  // sequence, so one surface whose svg would not rasterise threw, abandoned the
+  // remaining uploads AND the stock-texture pass, and returned before `groups`
+  // was assigned — leaving the previous frame on screen. Indistinguishable from
+  // "the new surface did not render", and silent, because the throw was
+  // swallowed by the caller.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const loop = src.slice(src.indexOf('const failed = [];'),
+    src.indexOf('// The parts the design does NOT paint'));
+
+  assert.match(loop, /try \{[\s\S]*await uploadSvg[\s\S]*\} catch/,
+    'each upload is attempted on its own');
+  assert.match(loop, /failed\.push/, 'and a failure is recorded rather than thrown');
+
+  // The report has to reach the person, not a console they have no reason to
+  // open. The viewer hands it back; the editor puts it in #viewnote.
+  assert.match(src, /return \{\s*uploaded:/, 'setWholeCar reports what it managed');
+  const app = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
+  assert.match(app, /const drew = await state\.viewer\.setWholeCar/);
+  assert.match(app, /FAILED TO UPLOAD/, 'and says so on screen');
+});
