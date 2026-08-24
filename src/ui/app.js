@@ -1505,7 +1505,12 @@ async function livePreview() {
     // `placed` too: a drag that crosses onto another panel changes where the
     // MIRRORED half landed, and its highlight is drawn from this.
     state.placed = out.placed;
-    if (state.view === '3d') await state.viewer?.setTexture(out.svg, 512);
+    // The surface's own size, not a guess. This is the view you judge a
+    // placement in, and 512 for a 2048 sheet is where the fuzziness came from.
+    if (state.view === '3d') {
+      const t = state.data.surfaces.find((x) => x.role === state.surface.role);
+      await state.viewer?.setTexture(out.svg, t?.width ?? 1024, t?.height ?? t?.width ?? 1024);
+    }
     else $('#texture').innerHTML = out.svg;
     // Cheap, and the numbers changing under the cursor is how you learn what a
     // panel-relative coordinate actually means.
@@ -2844,7 +2849,8 @@ function highlightOnCar(abs, panelName, twinId) {
 async function paintCar() {
   if (!state.viewer || !state.svg) return;
   try {
-    await state.viewer.setTexture(state.svg);
+    const t = state.data.surfaces.find((x) => x.role === state.surface?.role);
+    await state.viewer.setTexture(state.svg, t?.width ?? 1024, t?.height ?? t?.width ?? 1024);
   } catch (e) {
     $('#viewnote').textContent = `texture: ${e.message}`;
   }

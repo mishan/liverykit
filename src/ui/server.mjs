@@ -1003,7 +1003,17 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const surfaces = [];
         for (const s of state.surfaces) {
           const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed });
-          surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
+          // The texture's REAL dimensions travel with it. The browser was
+          // guessing a square 512 or 1024, and the car's own body sheet is
+          // 2048x2048 — so the livery was rasterised at a quarter of its
+          // resolution and drawn beside stock artwork uploaded at full size.
+          // Nothing here is a rendering setting; it is a fact about the car,
+          // and the only place that knows it is this side.
+          const tex = texture(profile, s.role);
+          surfaces.push({
+            role: s.role, from: s.from, file: s.file, svg: out.svg,
+            width: tex.width, height: tex.height,
+          });
         }
         return json(200, { surfaces });
       }
