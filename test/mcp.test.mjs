@@ -548,3 +548,33 @@ test('list_constraints: the vocabulary is discoverable, not folklore', async () 
     await stop();
   }
 });
+
+test('propose_design can record what a region needs, and refuses a name nothing enforces', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+
+    // The tool has to point at list_constraints, because guessing a constraint
+    // name is the one thing that cannot work: the vocabulary is closed and a
+    // near-miss is refused rather than ignored.
+    const listed = (await tools.listTools()).find((t) => t.name === 'propose_design');
+    assert.match(listed.description, /list_constraints/);
+    assert.match(listed.inputSchema.properties.design.description, /set-constraint/);
+
+    const res = await tools.callTool('propose_design', {
+      why: 'the team name is being crossed by a stripe on both flanks',
+      design: [{ op: 'set-constraint', id: 'stripe-centre', key: 'keepClear', value: true }],
+    });
+    assert.ok(!res.isError, res.content[0].text);
+
+    // And the whole point: it lands in the INBOX for a human, not on the design.
+    const { applyDesignOp, opSetConstraint } = await import('../src/ui/ops.js');
+    assert.throws(() => opSetConstraint({}, { id: 'x', key: 'keepClose', value: true }),
+      /No constraint called "keepClose"/);
+    assert.throws(() => applyDesignOp({}, { op: 'set-constraints', id: 'x' }),
+      /No design op called "set-constraints"/,
+      'a near-miss op name is refused too, rather than quietly doing nothing');
+  } finally {
+    await stop();
+  }
+});
