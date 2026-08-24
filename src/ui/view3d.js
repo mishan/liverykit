@@ -571,11 +571,21 @@ export function createViewer(canvas) {
     blended.sort((a, b) => dist2(b.centre, eye) - dist2(a.centre, eye));
 
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     // Depth TEST on so bodywork still occludes; depth WRITE off so two blended
     // surfaces do not occlude each other.
     gl.depthMask(false);
-    for (const g of blended) paint(g);
+    for (const g of blended) {
+      // ADDITIVE for emissive sheets, alpha for everything else.
+      //
+      // An emissive texture is a glow map — black where nothing glows — and the
+      // game adds it, so the black contributes nothing. Alpha-blended instead,
+      // an opaque black texture is just a black rectangle, and that is what has
+      // been sitting in front of this car's number plates: the plate's emissive
+      // twin, co-planar with it, drawn as a solid slab.
+      if (g.add) gl.blendFunc(gl.ONE, gl.ONE);
+      else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      paint(g);
+    }
     gl.depthMask(true);
     gl.disable(gl.BLEND);
   }

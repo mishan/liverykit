@@ -3408,3 +3408,36 @@ test('the whole-car view never paints grey where a transparent surface belongs',
   // solid surface should read as unpainted rather than vanish.
   assert.match(paintBody, /tex \?\? unpainted/);
 });
+
+test('an emissive sheet adds light instead of covering what is behind it', async () => {
+  // The black rectangle over the number plates, finally. Both the plate and its
+  // twin are ksPerPixelAlpha, so both go into the blended pass — and the twin
+  // is a 32x32 DXT5 glow map whose RGB is black. Composited with SRC_ALPHA an
+  // opaque black texture is simply a black rectangle, drawn co-planar with the
+  // plate and sorted against it.
+  //
+  // Assetto Corsa draws emissive sheets ADDITIVELY: black adds nothing, so the
+  // plate shows through. That is the difference, and no amount of getting the
+  // alpha pass right would have found it.
+  const { additive } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(additive('IGT_Numberplate_Emissive.dds'), true);
+  assert.equal(additive('honda_emissive.dds'), true);
+  assert.equal(additive('EXT_Glass_Emissive_Headlights.dds'), true);
+
+  // The plate itself is NOT additive — it is the thing being lit.
+  assert.equal(additive('IGT_Numberplate_Colour.dds'), false);
+  assert.equal(additive('EXT_Skin_Sponsors.dds'), false);
+  assert.equal(additive(undefined), false);
+
+  // Detected by name, which is weaker than reading a shader and is what the
+  // model gives: the two meshes share a shader and differ only in what their
+  // texture is called. If that ever stops holding, this is the line to doubt.
+  assert.equal(additive('anything_EMISSIVE_uppercase.dds'), true, 'case-insensitive');
+
+  // And the viewer has to pick the blend mode per group, not once for the pass.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const pass = src.slice(src.indexOf('for (const g of blended)'));
+  assert.match(pass, /if \(g\.add\) gl\.blendFunc\(gl\.ONE, gl\.ONE\);/);
+  assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
+});
