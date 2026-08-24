@@ -70,6 +70,62 @@ const MUST_LAND_ON = 0.6;
 const BLEED_IS_FINE_BELOW = 0.15;
 
 /**
+ * What a region may declare about where it is allowed to end up.
+ *
+ * On the DESIGN rather than the fit, so it travels: "this is a team name, keep
+ * artwork off it and never shrink it below 40 mm" is true of the design on
+ * every car, and restating it per car is how it goes stale on the third one.
+ *
+ *   keepClear   nothing may be painted across this, whatever the treatment.
+ *               The overlap check otherwise only speaks up for text on text —
+ *               so a stripe drawn over a team name was invisible to it.
+ *   minMm       the shortest side this must not go below ON THE CAR, replacing
+ *               the global 25 mm floor for this region. A team name and a
+ *               sponsor logo do not have the same legibility.
+ *   minOnCar    the fraction of the box that must land on actual geometry,
+ *               replacing the default. A background fill is meant to bleed off
+ *               an island; a name is not.
+ */
+export const CONSTRAINTS = {
+  keepClear: 'boolean — nothing may be painted across this region, whatever the ' +
+    'treatment. Without it the overlap check only speaks up for text on text, so a ' +
+    'stripe drawn over a team name goes unmentioned.',
+  minMm: 'number — the shortest side this must not go below ON THE CAR, in millimetres, ' +
+    'replacing the global 25 mm floor. Applies to any treatment, not just text.',
+  minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
+    'A background fill is meant to bleed off an island; a name is not.',
+};
+
+/**
+ * A region's declared constraints, or a complaint that it tried and failed.
+ *
+ * A misspelled constraint is the worst thing this module could contain: it
+ * reads as a rule being enforced and behaves as no rule at all, which is the
+ * silent pass this project exists to refuse. `keepclear` is not `keepClear`,
+ * and saying so is cheaper than wondering why the stripe still crosses.
+ */
+function constraintsOf(region, id, t, say) {
+  const c = region.constraints;
+  if (c === undefined) return {};
+  if (c === null || typeof c !== 'object' || Array.isArray(c)) {
+    say({ kind: 'bad-constraint', severity: 'fatal', surface: t.from, ids: [id],
+      why: `${name(t, id)} has constraints: ${JSON.stringify(c)}. It must be an object, ` +
+        `e.g. constraints: { keepClear: true }.` });
+    return {};
+  }
+  for (const k of Object.keys(c)) {
+    // hasOwn, not `in`. `'toString' in CONSTRAINTS` is true through the
+    // prototype chain, so a region declaring `constraints: { toString: 1 }`
+    // would have been accepted as a real rule and enforced as nothing.
+    if (Object.hasOwn(CONSTRAINTS, k)) continue;
+    say({ kind: 'bad-constraint', severity: 'fatal', surface: t.from, ids: [id],
+      why: `${name(t, id)} declares a constraint called ${JSON.stringify(k)}, which nothing ` +
+        `enforces. Known constraints: ${Object.keys(CONSTRAINTS).join(', ')}.` });
+  }
+  return c;
+}
+
+/**
  * Everything this design and this car have to say to each other.
  *
  * `model` is optional and is the difference between the checks that need
@@ -117,6 +173,10 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
       continue;
     }
 
+    // Parsed once, before any check reads them, so a misspelled constraint is
+    // reported rather than quietly enforcing nothing.
+    for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, say);
+
     overlaps(placed, t, say);
     outsideSafe(placed, profile, t, say);
     unreadable(placed, profile, t, say);
@@ -137,7 +197,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'off-mesh'];
+const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'off-mesh', 'crossed', 'bad-constraint'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -171,7 +231,7 @@ function placements(profile, t, spec, fit) {
     // once expanded, and two different placements can print the same name. The
     // panel disambiguates them, which is also what somebody would need in order
     // to go and find the thing being complained about.
-    return { region: r, key: r.id ?? r.__key ?? `${t.from}#${i}`, frac };
+    return { region: r, key: r.id ?? r.__key ?? `${t.from}#${i}`, frac, constraints: {} };
   }).filter((p) => p.frac);
 
   // `expandRegions` runs AFTER `applyFit`, so one region selecting by TAG
@@ -228,18 +288,32 @@ function overlaps(placed, t, say) {
       // name is not a layer, it is one of them lost, and neither can be read.
       const aText = A.region.treatment === 'text';
       const bText = B.region.treatment === 'text';
-      if (!aText && !bText) continue;
+
+      // Unless one of them ASKED not to be covered. A design knows things the
+      // treatment name cannot express — a cyan stripe running the length of the
+      // flank is artwork by every measure here, and a team name is still lost
+      // underneath it. `keepClear` is how a region says so once, on the design,
+      // for every car it will ever be fitted to.
+      const clearA = !!A.constraints.keepClear, clearB = !!B.constraints.keepClear;
+      if (!aText && !bText && !clearA && !clearB) continue;
+
       const bothText = aText && bText;
+      // Later paints over earlier, so B is on top and A is the one damaged.
+      const crossed = clearA ? A : clearB ? B : null;
+      const guarded = crossed && !bothText;
 
       say({
-        kind: 'overlap',
-        severity: bothText ? 'high' : 'low',
+        kind: guarded ? 'crossed' : 'overlap',
+        severity: bothText || guarded ? 'high' : 'low',
         surface: t.from,
         panel: A.region.panel,
         ids: [A.id, B.id],
         share: round(share),
-        why: `${name(t, B.id)} covers ${(share * 100).toFixed(0)}% of ${name(t, A.id)}` +
-          (bothText ? ', and both are text' : ''),
+        why: guarded
+          ? `${name(t, crossed === A ? B.id : A.id)} covers ${(share * 100).toFixed(0)}% of ` +
+            `${name(t, crossed.id)}, which asked to be kept clear`
+          : `${name(t, B.id)} covers ${(share * 100).toFixed(0)}% of ${name(t, A.id)}` +
+            (bothText ? ', and both are text' : ''),
       });
     }
   }
@@ -286,19 +360,28 @@ function outsideSafe(placed, profile, t, say) {
  */
 function unreadable(placed, profile, t, say) {
   for (const p of placed) {
-    if (p.region.treatment !== 'text') continue;
+    // A declared floor applies to ANY treatment, because a design that says
+    // "never smaller than 40 mm" knows something about its artwork that the
+    // word `text` does not carry — a sponsor mark is not text and still has a
+    // size below which it is a smudge.
+    const declared = typeof p.constraints.minMm === 'number' ? p.constraints.minMm : null;
+    if (declared === null && p.region.treatment !== 'text') continue;
     const m = metresAcross(p.frac);
     if (!m) continue;
     const mm = Math.min(m.w, m.h) * 1000;
-    if (mm >= TOO_SMALL_MM) continue;
+    const floor = declared ?? TOO_SMALL_MM;
+    if (mm >= floor) continue;
     say({
       kind: 'unreadable',
-      severity: mm < TOO_SMALL_MM / 2 ? 'high' : 'low',
+      severity: declared !== null || mm < floor / 2 ? 'high' : 'low',
       surface: t.from,
       panel: p.region.panel,
       ids: [p.id],
       mm: Math.round(mm),
-      why: `${p.id} is ${Math.round(mm)} mm across on the car, which is under the ` +
+      why: declared !== null
+        ? `${p.id} is ${Math.round(mm)} mm across on the car, and it asked for at least ` +
+          `${declared} mm`
+        : `${p.id} is ${Math.round(mm)} mm across on the car, which is under the ` +
         `${TOO_SMALL_MM} mm a line of text needs to read at any distance`,
     });
   }
@@ -375,13 +458,15 @@ function unseen(placed, profile, t, seen, say) {
     // whichever of the two is said first is the one that gets acted on.
     const coverage = answer.samples / answer.of;
     const carries = p.region.treatment === 'text';
-    if (coverage < (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW)) {
+    const asked = typeof p.constraints.minOnCar === 'number' ? p.constraints.minOnCar : null;
+    if (coverage < (asked ?? (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW))) {
       say({
-        kind: 'off-mesh', severity: carries ? 'high' : 'low',
+        kind: 'off-mesh', severity: asked !== null || carries ? 'high' : 'low',
         surface: t.from, panel: p.region.panel,
         ids: [p.id], coverage: Math.round(coverage * 100) / 100,
         why: `${name(t, p.id)} has only ${Math.round(coverage * 100)}% of its area ` +
-          'on the car — the rest is texture space no triangle uses, and is painted nowhere',
+          'on the car — the rest is texture space no triangle uses, and is painted nowhere' +
+          (asked !== null ? `; it asked for at least ${Math.round(asked * 100)}%` : ''),
       });
       continue;
     }
