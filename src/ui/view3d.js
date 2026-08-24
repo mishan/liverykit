@@ -521,18 +521,7 @@ export function createViewer(canvas) {
     for (const u of [loc.region, loc.panel, loc.twin, loc.twinPanel]) {
       gl.uniform4fv(u, [0, 0, 0, 0]);
     }
-    // TWO PASSES, and the order is the whole point.
-    //
-    // A blended surface has to be drawn after everything behind it, because
-    // blending reads what is already in the framebuffer. Drawn first, it
-    // composites against the background and then writes depth that stops the
-    // bodywork behind it ever being drawn.
-    //
-    // Everything used to be one opaque pass. On this car 62 of 75 textures
-    // carry alpha, and the number plates made it obvious: an emissive mask is
-    // transparent except where it glows, so drawn opaque it is a black slab
-    // standing in front of the plate it is supposed to light up.
-    const paint = (g) => {
+    for (const g of groups) {
       // In order: the design's own render for a painted role, then the car's
       // own texture for a part the design skips, then grey.
       //
@@ -542,31 +531,8 @@ export function createViewer(canvas) {
       gl.bindTexture(gl.TEXTURE_2D,
         byRole.get(g.role) ?? byFile.get(g.file) ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
-    };
-
-    for (const g of groups) if (!g.alpha) paint(g);
-
-    const blended = groups.filter((g) => g.alpha);
-    if (!blended.length) return;
-
-    // Back to front. Per GROUP, which is coarse — triangles within one group are
-    // not sorted against each other, so two panes of the same glass can still
-    // composite in the wrong order. Fixing that properly means splitting groups
-    // or depth-peeling, and this is enough to stop a mask hiding a number plate.
-    blended.sort((a, b) => dist2(b.centre, eye) - dist2(a.centre, eye));
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    // Depth TEST stays on so bodywork still hides what is behind it; depth
-    // WRITE goes off so two blended surfaces do not occlude each other.
-    gl.depthMask(false);
-    for (const g of blended) paint(g);
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
+    }
   }
-
-  const dist2 = (a, b) =>
-    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 
 /**
    * The car's own texture, straight from the kn5, with no decoding step.
@@ -631,26 +597,6 @@ export function createViewer(canvas) {
   }
 
   const isPot = (n) => n > 0 && (n & (n - 1)) === 0;
-
-  /**
-   * The centre of a group, in world space.
-   *
-   * Blended surfaces have to be drawn back to front, and "back" depends on
-   * where the camera is — so each group needs a point to measure from. Averaged
-   * over its vertices rather than the centre of its bounding box, because a
-   * long thin group (a stripe of glass down the flank) has a box centre that
-   * sits nowhere near its geometry.
-   */
-  function centreOf(g, positions, indices) {
-    let x = 0, y = 0, z = 0, n = 0;
-    // Every eighth index is plenty to locate a group and eight times cheaper on
-    // a body with a hundred thousand triangles.
-    for (let i = g.start; i < g.start + g.count; i += 8) {
-      const v = indices[i] * 3;
-      x += positions[v]; y += positions[v + 1]; z += positions[v + 2]; n++;
-    }
-    return n ? [x / n, y / n, z / n] : [0, 0, 0];
-  }
 
   /**
    * Clamp to what this GPU will actually accept.
@@ -826,12 +772,7 @@ export function createViewer(canvas) {
         } catch { /* the grey is a fine answer */ }
       }
 
-      // Centres now, not per frame: the geometry does not move and the sort
-      // runs on every draw.
-      groups = (model.groups ?? []).map((g) => ({
-        ...g, centre: centreOf(g, model.positions, model.indices),
-      }));
-      if (!groups.length) groups = null;
+      groups = model.groups ?? null;
       draw();
     },
 
