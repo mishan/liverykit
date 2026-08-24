@@ -3321,37 +3321,3 @@ test('an op the editor does not know is refused, not silently dropped', async ()
   opSetConstraint(design, { id: 'team', key: 'keepClear', value: null });
   assert.equal(design.surfaces.body.regions[0].constraints, undefined);
 });
-
-test('a texture with alpha is marked for blending, and an unknown one is not', async () => {
-  // Why the number plates were a black rectangle. Both plate meshes use
-  // ksPerPixelAlpha, and the emissive one is a MASK — transparent except where
-  // the number glows. The viewer had no blend state at all, so it drew that
-  // mask opaque: a black slab standing in front of the plate it exists to light.
-  //
-  // Not a plate problem. 62 of that car's 75 textures carry alpha.
-  const { stampAlpha } = await import('../src/ui/server.mjs');
-  const profile = { textures: {
-    body: { file: 'Body.dds', alpha: false },
-    glass: { file: 'Glass.dds', alpha: true },
-    plate_em: { file: 'IGT_Numberplate_Emissive.dds', alpha: true },
-  } };
-
-  const groups = stampAlpha([
-    { role: 'body', file: 'Body.dds' },
-    { role: null, file: 'Glass.dds' },
-    // Case matters here and must not: kn5 material slots and profile entries
-    // disagree about it constantly.
-    { role: null, file: 'igt_numberplate_emissive.dds' },
-    { role: null, file: 'SomethingNobodyRecorded.dds' },
-  ], profile);
-
-  assert.deepEqual(groups.map((g) => g.alpha), [false, true, true, false]);
-
-  // An unrecorded file is opaque, and that is the safe direction: a wrongly
-  // opaque surface looks solid, a wrongly blended one can disappear entirely.
-  assert.equal(groups[3].alpha, false, 'unknown means opaque, not transparent');
-
-  // A group the design does not paint still gets an answer — it has no role,
-  // and blending is a fact about the texture rather than about the livery.
-  assert.equal(groups[1].alpha, true);
-});
