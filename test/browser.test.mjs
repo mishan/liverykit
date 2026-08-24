@@ -1606,3 +1606,70 @@ test('the fitment panel measures the real car, in a real browser', { skip: BROWS
   // the panel has to say so rather than showing a reassuring blank.
   assert.equal(find('says what it skipped: '), 'says what it skipped: true', report.join(' | '));
 });
+
+test('a transparent texture does not paint a black slab over the car', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The number plates. Both plate meshes use ksPerPixelAlpha and the emissive
+  // one is a mask — transparent except where the number glows. With no blend
+  // state the viewer drew it opaque, so it became a black rectangle standing in
+  // front of the plate it exists to light. 62 of that car's 75 textures carry
+  // alpha, so this was never really about plates.
+  //
+  // Two quads, one behind the other. The front one is fully transparent. If
+  // blending works the back one shows through; if it does not, the front one
+  // paints over it and writes depth that hides it for good.
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      try {
+        const { createViewer } = await import('/view3d.js');
+        const canvas = document.querySelector('#carview');
+        canvas.hidden = false; canvas.style.width = '300px'; canvas.style.height = '300px';
+        let viewer;
+        try { viewer = createViewer(canvas); } catch { say('webgl: absent'); return done(); }
+
+        // Two coplanar-ish quads spanning the view, front one nearer the camera.
+        const quad = (z) => ({
+          positions: [-1,-1,z, 1,-1,z, 1,1,z, -1,1,z],
+          uvs: [0,0, 1,0, 1,1, 0,1],
+          normals: [0,0,1, 0,0,1, 0,0,1, 0,0,1],
+          indices: [0,1,2, 0,2,3],
+        });
+        const a = quad(0), b = quad(0.5);
+        const model = {
+          positions: new Float32Array([...a.positions, ...b.positions]),
+          uvs: new Float32Array([...a.uvs, ...b.uvs]),
+          normals: new Float32Array([...a.normals, ...b.normals]),
+          indices: new Uint32Array([...a.indices, ...b.indices.map((i) => i + 4)]),
+          groups: [
+            { role: 'back', file: 'back.dds', start: 0, count: 6, alpha: false },
+            { role: 'front', file: 'front.dds', start: 6, count: 6, alpha: true },
+          ],
+        };
+        const solid = (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">' +
+          '<rect width="8" height="8" fill="' + c + '"/></svg>';
+        const clear = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"></svg>';
+        viewer.setLit(false);
+        await viewer.setWholeCar(model, [
+          { role: 'back',  svg: solid('#FF00FF'), width: 8, height: 8 },
+          { role: 'front', svg: clear,            width: 8, height: 8 },
+        ]);
+        await settle(400);
+
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        const px = new Uint8Array(4);
+        gl.readPixels(Math.floor(canvas.width/2), Math.floor(canvas.height/2), 1, 1,
+                      gl.RGBA, gl.UNSIGNED_BYTE, px);
+        say('centre pixel: ' + px[0] + ',' + px[1] + ',' + px[2]);
+        say('magenta shows through: ' + (px[0] > 120 && px[2] > 120 && px[1] < 120));
+      } catch (e) {
+        say('THREW ' + (e && e.stack ? e.stack : e));
+      }
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
+
+  if (report.some((l) => l.startsWith('webgl: absent'))) return;
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.ok(!report.some((l) => l.startsWith('THREW')), report.join(' | '));
+  assert.equal(find('magenta shows through: '), 'magenta shows through: true',
+    `a transparent surface hid what was behind it: ${report.join(' | ')}`);
+});

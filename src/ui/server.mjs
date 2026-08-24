@@ -229,6 +229,31 @@ export function wholeModelGeometry(model, files) {
  * fields. A length-prefixed JSON header costs a few hundred bytes on a payload
  * of megabytes and stays readable when something goes wrong with it.
  */
+/**
+ * Mark which groups need blending, by FILE.
+ *
+ * 62 of this Honda's 75 textures are flagged alpha and the viewer drew every
+ * one of them opaque. The number plates are where that shows worst — an
+ * emissive mask is transparent except where it glows, so drawn opaque it is a
+ * black slab standing in front of the plate it exists to light — but glass,
+ * nets, decals and lights are all the same story.
+ *
+ * Keyed by file rather than by role, because a group the design does not paint
+ * has no role and still has to blend correctly. A file the profile has never
+ * heard of is opaque: that is the safe direction, since a wrongly-opaque
+ * surface looks solid and a wrongly-blended one can vanish.
+ */
+export function stampAlpha(groups, profile) {
+  const byFile = new Map();
+  for (const t of Object.values(profile?.textures ?? {})) {
+    if (t?.file) byFile.set(String(t.file).toLowerCase(), t.alpha === true);
+  }
+  for (const g of groups ?? []) {
+    g.alpha = byFile.get(String(g.file).toLowerCase()) === true;
+  }
+  return groups;
+}
+
 export function packModel(g) {
   // Named, because the alternative is a TypeError reading byteLength of
   // undefined forty lines away from the caller that forgot it. Normals became
@@ -1054,7 +1079,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           const tex = texture(profile, s.role);
           surfaces.push({
             role: s.role, from: s.from, file: s.file, svg: out.svg,
-            width: tex.width, height: tex.height,
+            width: tex.width, height: tex.height, alpha: tex.alpha === true,
           });
         }
         return json(200, { surfaces });
@@ -1067,6 +1092,8 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           .surfaces.map((s) => ({ role: s.role, file: s.file }));
         const g = wholeModelGeometry(m, files);
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
+
+        stampAlpha(g.groups, profile);
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packModel(g));
       }
