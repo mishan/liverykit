@@ -521,7 +521,20 @@ export function createViewer(canvas) {
     for (const u of [loc.region, loc.panel, loc.twin, loc.twinPanel]) {
       gl.uniform4fv(u, [0, 0, 0, 0]);
     }
-    for (const g of groups) {
+    // TWO PASSES, keyed on the MATERIAL.
+    //
+    // A blended surface has to be drawn after everything behind it, because
+    // compositing reads the framebuffer. Drawn first it blends against the
+    // background and writes depth that stops the bodywork behind it appearing.
+    //
+    // `g.blend` comes from the kn5 shader — ksPerPixelAlpha and the glass
+    // shaders — and NOT from the texture's alpha channel. An earlier attempt
+    // used the profile's `alpha` flag, which means "this DDS has an alpha
+    // channel" and is true of an entirely opaque DXT5 body texture. 62 of 75
+    // textures were flagged, nearly every panel went into the blended pass with
+    // depth write off, and the car stopped being able to hide its own interior.
+    // By shader it is 20 groups of 54, and the bodywork is not among them.
+    const paint = (g) => {
       // In order: the design's own render for a painted role, then the car's
       // own texture for a part the design skips, then grey.
       //
@@ -531,8 +544,30 @@ export function createViewer(canvas) {
       gl.bindTexture(gl.TEXTURE_2D,
         byRole.get(g.role) ?? byFile.get(g.file) ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
-    }
+    };
+
+    for (const g of groups) if (!g.blend) paint(g);
+
+    const blended = groups.filter((g) => g.blend);
+    if (!blended.length) return;
+
+    // Back to front, per GROUP. Coarse — triangles within a group are not
+    // sorted against each other — but enough to stop an emissive mask being
+    // drawn in front of the number plate it exists to light.
+    blended.sort((a, b) => dist2(b.centre, eye) - dist2(a.centre, eye));
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    // Depth TEST on so bodywork still occludes; depth WRITE off so two blended
+    // surfaces do not occlude each other.
+    gl.depthMask(false);
+    for (const g of blended) paint(g);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
   }
+
+  const dist2 = (a, b) =>
+    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 
 /**
    * The car's own texture, straight from the kn5, with no decoding step.
@@ -597,6 +632,16 @@ export function createViewer(canvas) {
   }
 
   const isPot = (n) => n > 0 && (n & (n - 1)) === 0;
+
+  /** The centre of a group, for sorting blended ones back to front. */
+  function centreOf(g, positions, indices) {
+    let x = 0, y = 0, z = 0, n = 0;
+    for (let i = g.start; i < g.start + g.count; i += 8) {
+      const v = indices[i] * 3;
+      x += positions[v]; y += positions[v + 1]; z += positions[v + 2]; n++;
+    }
+    return n ? [x / n, y / n, z / n] : [0, 0, 0];
+  }
 
   /**
    * Clamp to what this GPU will actually accept.
@@ -772,7 +817,12 @@ export function createViewer(canvas) {
         } catch { /* the grey is a fine answer */ }
       }
 
-      groups = model.groups ?? null;
+      // Centres now, not per frame: the geometry does not move and the sort
+      // runs on every draw.
+      groups = (model.groups ?? []).map((g) => ({
+        ...g, centre: centreOf(g, model.positions, model.indices),
+      }));
+      if (!groups.length) groups = null;
       draw();
     },
 
