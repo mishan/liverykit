@@ -541,8 +541,22 @@ export function createViewer(canvas) {
       // `unpainted`, never `texture`: a group with no role is a part of the car
       // this design does not paint, and falling back to the surface being
       // edited put the body artwork on the glass.
-      gl.bindTexture(gl.TEXTURE_2D,
-        byRole.get(g.role) ?? byFile.get(g.file) ?? unpainted);
+      const tex = byRole.get(g.role) ?? byFile.get(g.file) ?? null;
+
+      // A BLENDED group with no texture is not drawn at all.
+      //
+      // `unpainted` is opaque grey, and an opaque grey slab standing where a
+      // transparent surface belongs is the whole bug this pass exists to fix.
+      // The number plate's emissive twin is the case: it has no role, so if its
+      // stock DDS fails to fetch or upload it falls through to the grey — and
+      // being co-planar with the plate and sorted against it, that grey lands
+      // in front of the number about half the time.
+      //
+      // Not drawing it is the honest answer. The plate behind is real; the grey
+      // never was.
+      if (!tex && g.blend) return;
+
+      gl.bindTexture(gl.TEXTURE_2D, tex ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     };
 
