@@ -3376,3 +3376,35 @@ test('a transparent surface with no artwork is skipped and counted, not drawn gr
   assert.deepEqual(at(glass), [0x10, 0x10, 0x16], 'and the background shows through');
   assert.notDeepEqual(at(opaque), at(glass));
 });
+
+test('the whole-car view never paints grey where a transparent surface belongs', async () => {
+  // Asked whether my MCP render was the same thing as the editor's Whole car
+  // view. It is not — it is a separate CPU rasteriser in Node that shares the
+  // geometry and the artwork and nothing else. So a picture from it proves the
+  // design paints the plate, and proves nothing about the browser.
+  //
+  // The browser had its own version of the bug. In the blended pass a group
+  // with no texture fell through to `unpainted`, which is OPAQUE GREY. The
+  // number plate's emissive twin has no painted role, so a failed stock fetch
+  // put a grey slab in front of the plate — sorted against it and co-planar
+  // with it, so roughly half the time.
+  //
+  // I had already applied this exact reasoning to the Node renderer and not to
+  // the viewer, which is what the question exposed.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // Read out of the source because the alternative is a GPU. Crude, and it
+  // holds the one invariant that matters: nothing opaque stands in for
+  // something transparent.
+  const paintBody = src.slice(src.indexOf('const paint = (g) =>'),
+    src.indexOf('for (const g of groups) if (!g.blend) paint(g);'));
+  assert.match(paintBody, /if \(!tex && g\.blend\) return;/,
+    'a blended group with no texture is skipped, not drawn grey');
+  assert.ok(paintBody.indexOf('if (!tex && g.blend) return;')
+    < paintBody.indexOf('gl.bindTexture'),
+    'and skipped BEFORE it binds the grey fallback');
+
+  // The opaque path still falls back to grey, which is right: an unpainted
+  // solid surface should read as unpainted rather than vanish.
+  assert.match(paintBody, /tex \?\? unpainted/);
+});
