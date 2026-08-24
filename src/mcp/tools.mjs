@@ -1,4 +1,5 @@
 import { CONSTRAINTS } from '../fitment.mjs';
+import { VIEWS } from '../engine/shot.mjs';
 
 const PROMPT_NOTE = '(Note: as an AI model, you cannot visually see the 3D car or rendered artwork. Your proposals are presented to a human user in the fitting editor, who will inspect and accept/discard them.)';
 
@@ -337,6 +338,24 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'render_car',
+      description:
+        'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
+        'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
+        'to. Call this after proposing a change and before claiming it is an improvement. ' +
+        'Views: ' + Object.keys(VIEWS).join(', ') + '. Note the limits — no transparency, ' +
+        'no stock car textures (unpainted parts are flat grey), and one fixed light rig, so ' +
+        `it answers "does the artwork land where I said" and not "is this exactly the game". ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          view: { type: 'string', description: `One of: ${Object.keys(VIEWS).join(', ')}` },
+          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760)' },
+          height: { type: 'number', description: 'Pixels down, 150-900 (default 460)' },
+        },
+      },
+    },
+    {
       name: 'check_fitment',
       description:
         'Measure what is WRONG with the working design on this car: text landing on text, ' +
@@ -422,6 +441,17 @@ export function createToolHandler(client) {
       case 'read_design': return toolReadDesign(client);
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
+      case 'render_car': {
+        // Reported, not thrown. Without a car model there is no picture, and the
+        // useful answer is "no model" — a blank image would look like a car
+        // wearing nothing, which is a lie about the design rather than a gap.
+        try {
+          const png = await client.shoot(args.view ?? 'left', args.width, args.height);
+          return { content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }] };
+        } catch (e) {
+          return { content: [{ type: 'text', text: e.message }], isError: true };
+        }
+      }
       case 'check_fitment': return toolCheckFitment(client);
       case 'list_constraints':
         return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };
