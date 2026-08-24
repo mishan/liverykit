@@ -3181,3 +3181,61 @@ test('the fitment panel names regions worst-first', async () => {
   assert.ok(asked === undefined || (asked.body.design && asked.body.fit),
     'the edit in front of you is what gets checked');
 });
+
+// ---------------------------------------------------------------------------
+// Why the whole car looked fuzzy.
+//
+// Every painted surface was rasterised at a flat 512 square, justified in a
+// comment by "thirty-seven surfaces at full size is a hundred megabytes". But
+// thirty-seven is how many textures the CAR has; seven is how many this design
+// paints. The Honda's body sheet is 2048x2048, so the livery was shown at a
+// quarter of its resolution — directly beside the car's own stock artwork,
+// uploaded from the kn5 at full size. No filtering fixes that: the detail was
+// gone before the GPU saw it.
+// ---------------------------------------------------------------------------
+
+test('a painted surface is rasterised at the size of the texture it replaces', async () => {
+  const { textureSizes } = await import('../src/ui/view3d.js');
+
+  // The real seven, at their real sizes.
+  const honda = [
+    { role: 'ext_skin_sponsors', width: 2048, height: 2048 },
+    { role: 'rims', width: 1024, height: 1024 },
+    { role: 'tyres', width: 2048, height: 512 },
+    { role: 'interior', width: 1024, height: 1024 },
+    { role: 'belts', width: 512, height: 512 },
+    { role: 'steeringWheel', width: 512, height: 512 },
+    { role: 'ext_banner_colour', width: 1024, height: 512 },
+  ];
+  const sizes = textureSizes(honda);
+  assert.deepEqual(sizes[0], { w: 2048, h: 2048 }, 'the body sheet at full resolution');
+  assert.deepEqual(sizes[2], { w: 2048, h: 512 },
+    'and a non-square texture is not squashed into a square');
+
+  // The budget the old flat 512 was defending. Seven real textures cost about
+  // 33 MB, so there was never anything to defend against.
+  const mb = sizes.reduce((n, s) => n + s.w * s.h * 4, 0) / (1024 * 1024);
+  assert.ok(mb < 64, `seven surfaces at full size is ${mb.toFixed(0)} MB, not a hundred`);
+});
+
+test('the texture budget is shared out, not spent per surface', async () => {
+  const { textureSizes, capped } = await import('../src/ui/view3d.js');
+
+  // A design that really does paint forty surfaces gets halved rather than
+  // exhausting the GPU — and halving is what keeps every texture a power of
+  // two, which is what generateMipmap requires. Asking for a mip chain on a
+  // non-power-of-two texture renders it black.
+  const many = Array.from({ length: 40 }, () => ({ width: 2048, height: 2048 }));
+  const sizes = textureSizes(many, { budget: 64 * 1024 * 1024 });
+  const total = sizes.reduce((n, s) => n + s.w * s.h * 4, 0);
+  assert.ok(total <= 64 * 1024 * 1024, `${(total / 1048576).toFixed(0)} MB is over budget`);
+  for (const s of sizes) {
+    assert.equal(s.w & (s.w - 1), 0, `${s.w} is not a power of two`);
+    assert.equal(s.h & (s.h - 1), 0, `${s.h} is not a power of two`);
+  }
+
+  // And a card that will not accept 4096 gets something it will. Asking for a
+  // texture larger than MAX_TEXTURE_SIZE is an error, not a slow path.
+  assert.deepEqual(capped(4096, 4096, 2048), [2048, 2048]);
+  assert.deepEqual(capped(2048, 512, 4096), [2048, 512], 'and nothing is shrunk needlessly');
+});
