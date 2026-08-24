@@ -3321,3 +3321,58 @@ test('an op the editor does not know is refused, not silently dropped', async ()
   opSetConstraint(design, { id: 'team', key: 'keepClear', value: null });
   assert.equal(design.surfaces.body.regions[0].constraints, undefined);
 });
+
+test('what blends is decided by the material, not by the texture', async () => {
+  // My first attempt at this used the profile's `alpha` flag, which means
+  // "this DDS carries an alpha channel" — true of a DXT5 body texture that is
+  // entirely opaque. 62 of the Honda's 75 textures are flagged, so nearly every
+  // panel went into the blended pass with depth write off, and a car whose
+  // bodywork does not write depth cannot hide its own interior. It came back as
+  // a screenshot of a see-through car.
+  const { blends } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(blends('ksPerPixelAlpha'), true, 'the number plates');
+  assert.equal(blends('ksWindscreen'), true);
+  assert.equal(blends('ksPerPixelReflection'), true, 'side glass and mirrors');
+
+  // The bodywork, which is what went wrong.
+  assert.equal(blends('ksPerPixelMultiMap_damage_dirt'), false, 'the doors');
+  assert.equal(blends('ksPerPixelNM'), false);
+  assert.equal(blends('ksPerPixel'), false);
+
+  // Alpha TEST is a hard cutout: it neither blends nor needs sorting, and
+  // treating it as blended would put grilles and bolt heads in the sorted pass
+  // for nothing.
+  assert.equal(blends('ksPerPixelAT'), false, 'alpha test is not alpha blend');
+  assert.equal(blends('ksPerPixelAT_NM'), false);
+
+  assert.equal(blends(undefined), false, 'and an unknown shader is opaque');
+  assert.equal(blends('ksSomethingNobodyHasWrittenYet'), false,
+    'unknown means opaque: a wrongly opaque surface looks solid, a wrongly ' +
+    'blended one can disappear');
+});
+
+test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
+  // The shot has no stock car textures. Drawing glass or an emissive mask as
+  // grey would be a lie — grey is opaque and the whole point of those surfaces
+  // is that they are not — so they are left out and the count is reported.
+  // Silence would let a missing third of the car read as a design that paints
+  // nothing there.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const opaque = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map(), { width: 60, height: 60 });
+  assert.equal(opaque.skipped, 0, 'an opaque group with no artwork is drawn grey');
+
+  const glass = rasterise(quad, [{ role: 'glass', start: 0, count: 6, blend: true }],
+    new Map(), { width: 60, height: 60 });
+  assert.equal(glass.skipped, 1, 'a blended group with no artwork is not drawn');
+  const at = (img) => [0, 1, 2].map((k) => img.data[(30 * img.width + 30) * 4 + k]);
+  assert.deepEqual(at(glass), [0x10, 0x10, 0x16], 'and the background shows through');
+  assert.notDeepEqual(at(opaque), at(glass));
+});
