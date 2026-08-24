@@ -578,3 +578,67 @@ test('propose_design can record what a region needs, and refuses a name nothing 
     await stop();
   }
 });
+
+test('check_fitment answers about the working fit, not the file on disk', async () => {
+  // Found by doing the before/after the tool's own description asks for. A fit
+  // change went in, `read_fit` showed it, and `check_fitment` reported the
+  // identical findings as before — because the endpoint read `sent.fit ?? fit`
+  // and the MCP client deliberately sends nothing, asking the editor about its
+  // own state. So it fell through to the file loaded at startup and reported
+  // confidently on a fit nobody was looking at.
+  //
+  // It agreed with reality whenever the two happened to match, which is the
+  // worst way for this to be wrong: it reads as a verified comparison.
+  //
+  // Two text regions that do not overlap, then a working fit that puts one on
+  // the other. Overlap is the one check that needs neither a car model nor a
+  // regenerated profile, so this stays a test about plumbing.
+  const profile = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  const livery = {
+    name: 'Two Names', folder: 'two_names', packs: ['core'],
+    identity: { driver: 'Tester', team: 'Team', number: '7' },
+    palette: { ink: '#101014' },
+    surfaces: { body: { regions: [
+      { id: 'a-name', treatment: 'text', panel: 'centre_mid', at: [0.1, 0.1, 0.8, 0.2], text: '{driver}' },
+      { id: 'b-name', treatment: 'text', panel: 'centre_mid', at: [0.1, 0.7, 0.8, 0.2], text: '{team}' },
+    ] } },
+  };
+  const { server, url } = await startUi({
+    livery, profile, fitPath: join(ROOT, 'fits/neon-grid@rss_formula_rss_4.json'),
+    liveryId: 'neon-grid', liveryPath: join(ROOT, 'liveries/neon-grid.json'),
+    port: 0, log: () => {},
+  });
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const ask = async () => JSON.parse((await tools.callTool('check_fitment', {})).content[0].text);
+
+    const before = await ask();
+    assert.deepEqual(before.findings.filter((f) => f.kind === 'overlap'), [],
+      'the two names start apart');
+
+    // The door the browser and an accepted proposal both use.
+    await fetch(new URL('api/preview', url).href, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fit: { livery: 'neon-grid', car: profile.id, regions: {
+        'b-name': { panel: 'centre_mid', at: [0.1, 0.12, 0.8, 0.2] },
+      } } }),
+    });
+
+    const after = await ask();
+    const hit = after.findings.filter((f) => f.kind === 'overlap');
+    assert.ok(hit.length >= 1, `the working fit is what gets checked: ${
+      JSON.stringify(after.findings)}`);
+    assert.deepEqual(hit[0].ids.sort(), ['a-name', 'b-name']);
+    assert.match(hit[0].why, /both are text/);
+
+    // This car's `surfaces.body` binds two texture roles, so the collision is
+    // real on both sheets. They used to arrive as exact duplicates, which reads
+    // as a bug in the checker rather than as two places to go and look.
+    assert.equal(new Set(hit.map((f) => f.role)).size, hit.length,
+      `each names its own texture: ${JSON.stringify(hit.map((f) => f.role))}`);
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  }
+});
