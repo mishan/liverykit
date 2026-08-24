@@ -3465,3 +3465,53 @@ test('a surface the browser cannot rasterise fails loudly and alone', async () =
   assert.match(app, /const drew = await state\.viewer\.setWholeCar/);
   assert.match(app, /FAILED TO UPLOAD/, 'and says so on screen');
 });
+
+test('a design can name surfaces the car should not draw', async () => {
+  // A GT3 car ships one set of number plate meshes per racing series and
+  // renders ALL of them. The Honda has eight on the left flank alone — IGT,
+  // IMSA and two Blancpain variants, each with an emissive twin — stacked in
+  // one patch of door. In the game a skin makes the unused ones transparent;
+  // here they wore their stock 32x32 black textures and were drawn over the
+  // plate the design had just painted.
+  //
+  // This is a CHOICE and not something to infer. I tried inferring it twice:
+  // "unpainted geometry inside painted geometry" hid half the car, because a
+  // group is a whole texture and the body's box encloses the mirrors and the
+  // radiator; adding a size-similarity test hid the hood lining and the nets.
+  // Bounding boxes cannot tell an alternate from a part, which I had already
+  // concluded once while building the fitment checker and then ignored.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+
+  // No painted files, so every mesh arrives as a roleless leftover — the same
+  // shape the plate sets have on the real car.
+  const shown = wholeModelGeometry(model, []);
+  const other = shown.groups.find((g) => !g.role && g.file);
+  assert.ok(other, `something unpainted to hide: ${JSON.stringify(shown.groups)}`);
+
+  const profile = { textures: { spare: { file: other.file } } };
+  const hidden = wholeModelGeometry(model, [], { livery: { hide: ['spare'] }, profile });
+
+  assert.ok(!hidden.groups.some((g) => g.file === other.file),
+    'the named surface is not emitted at all — not drawn, not fetched, not counted');
+  assert.equal(hidden.groups.length, shown.groups.length - 1);
+
+  // Painted surfaces are never hidden this way: `hide` names things the design
+  // does not paint, and silently dropping its own artwork would be far worse
+  // than leaving an unwanted plate on screen.
+  const stillPainted = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }], {
+    livery: { hide: ['body'] },
+    profile: { textures: { body: { file: CAR.texture } } },
+  });
+  assert.ok(stillPainted.groups.some((g) => g.role === 'body'),
+    'a surface the design paints survives being named');
+
+  // An unknown role is ignored rather than throwing: a design travels between
+  // cars, and naming a plate set this car does not have is not an error.
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: ['no_such_role_on_this_car'] }, profile: {},
+  }));
+});
