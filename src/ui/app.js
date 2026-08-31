@@ -321,6 +321,16 @@ async function checkFitment() {
 
 $('#adoptsurface').onclick = () => adoptSurface($('#adoptsurface').dataset.role);
 
+// Shading is on by default and switchable, because both answers are true.
+//
+// Shaded tells you whether the design works on the CAR — how a stripe crosses a
+// curve, which panels the eye lands on, whether the whole thing reads at ten
+// metres. Unshaded tells you what colour the paint actually IS, which shading
+// necessarily distorts, and that was the original reason this viewer drew the
+// raw texture. The UV tab is always the honest one; this switch is for the two
+// tabs that draw geometry.
+$('#lit').onchange = () => state.viewer?.setLit($('#lit').checked);
+
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
@@ -2682,6 +2692,9 @@ async function showView(which) {
   $('#texture').hidden = is3d;
   $('#overlay').hidden = is3d;
   $('#carview').hidden = !is3d;
+  // Only where there is geometry to shade. On the UV tab you are reading the
+  // sheet, and a control offering to light it would be offering nonsense.
+  if ($('#litbox')) $('#litbox').hidden = !is3d;
   if (!is3d) return;
 
   // Unhiding is not the same as being laid out. `hidden = false` takes effect on
