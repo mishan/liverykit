@@ -3288,6 +3288,40 @@ test('packModel says what is missing instead of dying on undefined', async () =>
     'a builder that has not caught up is told so, at the call that did it');
 });
 
+test('an op the editor does not know is refused, not silently dropped', async () => {
+  const { applyDesignOp, applyFitOp, opSetConstraint } = await import('../src/ui/ops.js');
+
+  // The default case used to `break`, so an unknown op did nothing and said
+  // nothing — which looks exactly like an accepted proposal that changed the
+  // design. It is also how a `set-constraint` reaching an editor loaded before
+  // constraints existed would behave: banner says accepted, design untouched.
+  assert.throws(() => applyDesignOp({}, { op: 'set-constrait', id: 'a', key: 'minMm' }),
+    /No design op called "set-constrait"/);
+  assert.throws(() => applyFitOp({}, { op: 'nudge' }), /No fit op called "nudge"/);
+  assert.throws(() => applyDesignOp({}, { op: 'x' }), /reload the editor/,
+    'and it suggests the likely cause');
+
+  // A misspelled CONSTRAINT is refused at the point of writing, rather than
+  // written and reported later by fitment. A constraint is invisible until
+  // something violates it, so a typo reads as a rule in force.
+  const design = { surfaces: { body: { regions: [{ id: 'team', treatment: 'text' }] } } };
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'keepclear', value: true }),
+    /No constraint called "keepclear"/);
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'minMm', value: 'big' }),
+    /takes a number/);
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'minOnCar', value: 90 }),
+    /fraction between 0 and 1/);
+  assert.equal(design.surfaces.body.regions[0].constraints, undefined,
+    'and nothing was written on the way to refusing');
+
+  // The real thing round-trips, and removing the last one takes the object away
+  // rather than leaving `constraints: {}` behind in a saved design.
+  opSetConstraint(design, { id: 'team', key: 'keepClear', value: true });
+  assert.deepEqual(design.surfaces.body.regions[0].constraints, { keepClear: true });
+  opSetConstraint(design, { id: 'team', key: 'keepClear', value: null });
+  assert.equal(design.surfaces.body.regions[0].constraints, undefined);
+});
+
 test('a texture is clamped on both axes, and the budget measures what it returns', async () => {
   const { capped, textureSizes } = await import('../src/ui/view3d.js');
 

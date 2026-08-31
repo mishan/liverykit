@@ -5,6 +5,65 @@
 
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+export const CONSTRAINTS = {
+  keepClear: 'boolean — nothing may be painted across this region, whatever the ' +
+    'treatment. Without it the overlap check only speaks up for text on text, so a ' +
+    'stripe drawn over a team name goes unmentioned.',
+  minMm: 'number — the shortest side this must not go below ON THE CAR, in millimetres, ' +
+    'replacing the global 25 mm floor. Applies to any treatment, not just text.',
+  minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
+    'A background fill is meant to bleed off an island; a name is not.',
+};
+
+
+/**
+ * Write a constraint onto a region, or refuse to.
+ *
+ * THROWS on a name nothing enforces, rather than writing it. Every other op in
+ * this file returns quietly on bad input, and for most of them that is fine —
+ * a malformed palette entry is visible the moment you look at the palette. A
+ * constraint is different: it is invisible until something violates it, so a
+ * misspelled one reads as a rule in force and behaves as no rule at all. That
+ * is the failure this whole area of the code exists to refuse, and refusing it
+ * at the point of writing is better than reporting it later.
+ *
+ * `null` removes. Constraints are optional by nature and a region that has
+ * stopped needing one should be able to say so.
+ */
+export function opSetConstraint(design, { id, key, value }) {
+  if (!isSafeKey(id)) return;
+  if (!Object.hasOwn(CONSTRAINTS, key)) {
+    throw new Error(`No constraint called ${JSON.stringify(key)}. ` +
+      `Known constraints: ${Object.keys(CONSTRAINTS).join(', ')}.`);
+  }
+  if (value !== null) {
+    const want = key === 'keepClear' ? 'boolean' : 'number';
+    if (typeof value !== want) {
+      throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
+    }
+    if (key === 'minOnCar' && (value < 0 || value > 1)) {
+      throw new Error(`Constraint "minOnCar" is a fraction between 0 and 1; got ${value}.`);
+    }
+    if (key === 'minMm' && !(value > 0)) {
+      throw new Error(`Constraint "minMm" is a size in millimetres, above zero; got ${value}.`);
+    }
+  }
+  for (const grp of ['surfaces', 'paint']) {
+    for (const spec of Object.values(design[grp] ?? {})) {
+      for (const r of spec.regions ?? []) {
+        if (r.id !== id) continue;
+        if (value === null) {
+          delete r.constraints?.[key];
+          if (r.constraints && !Object.keys(r.constraints).length) delete r.constraints;
+        } else {
+          r.constraints ??= {};
+          r.constraints[key] = value;
+        }
+      }
+    }
+  }
+}
+
 export function isSafeKey(key) {
   return typeof key === 'string' && key.length > 0 && !UNSAFE_KEYS.has(key);
 }
@@ -134,8 +193,19 @@ export function opAdoptSurface(design, { role, background }) {
   }
 }
 
+/**
+ * Apply one design op, or say why not.
+ *
+ * The default case used to `break` and return, so an op name this build does
+ * not know did nothing and said nothing. That reads as an accepted proposal
+ * that changed the design, and it is how a `set-constraint` reaching an editor
+ * loaded before constraints existed would look: the banner says accepted, the
+ * design is untouched, and nobody is told which of the two happened.
+ */
 export function applyDesignOp(design, op) {
-  if (!op || typeof op !== 'object') return;
+  if (!op || typeof op !== 'object') {
+    throw new Error(`A design op must be an object; got ${JSON.stringify(op)}.`);
+  }
   switch (op.op) {
     case 'set-palette': opSetPalette(design, op); break;
     case 'delete-palette': opDeletePalette(design, op); break;
@@ -145,8 +215,12 @@ export function applyDesignOp(design, op) {
     case 'reorder-region': opReorderRegion(design, op); break;
     case 'set-option': opSetOption(design, op); break;
     case 'set-region': opSetRegion(design, op); break;
+    case 'set-constraint': opSetConstraint(design, op); break;
     case 'adopt-surface':
     case 'add-surface': opAdoptSurface(design, op); break;
+    default:
+      throw new Error(`No design op called ${JSON.stringify(op.op)}. If this came from an ` +
+        'agent, the editor may be older than the tool that sent it — reload the editor.');
   }
 }
 
@@ -188,7 +262,9 @@ export function opAddCopy(fit, { id, of, panel, at, rotate, isMirror = false }) 
 }
 
 export function applyFitOp(fit, op) {
-  if (!op || typeof op !== 'object') return;
+  if (!op || typeof op !== 'object') {
+    throw new Error(`A fit op must be an object; got ${JSON.stringify(op)}.`);
+  }
   fit.regions ??= {};
   switch (op.op) {
     case 'set-override': opSetOverride(fit, op); break;
@@ -196,6 +272,9 @@ export function applyFitOp(fit, op) {
     case 'drop':
     case 'drop-copy': opDropOverride(fit, op); break;
     case 'add-copy': opAddCopy(fit, op); break;
+    default:
+      throw new Error(`No fit op called ${JSON.stringify(op.op)}. If this came from an agent, ` +
+        'the editor may be older than the tool that sent it — reload the editor.');
   }
 }
 
