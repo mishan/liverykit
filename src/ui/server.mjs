@@ -23,6 +23,7 @@
 //   GET  /api/treatments   what each treatment takes, for the inspector
 //   GET  /api/cars         the other profiles this design could be pointed at
 //   POST /api/portability  what the working design would find on one of them
+//   POST /api/fitment      what is wrong with the working design ON THIS car
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   GET  /api/stock        the car's own texture for a surface the design skips
@@ -44,6 +45,7 @@ import { resolveTreatments } from '../registry.mjs';
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
+import { fitment } from '../fitment.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -528,6 +530,14 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     regionIds: Object.fromEntries(ids),
     fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
+    // EVERY role this design paints, not just the one entry per term that
+    // `surfaces` carries. A vocabulary term may bind to several textures — the
+    // RSS4 spreads its bodywork across two — and `surfaces` deliberately holds
+    // only the primary, because that is the one you edit. Anything asking "is
+    // this texture already painted" needs the whole set, and computing it from
+    // `surfaces` marks the secondaries as unpainted and offers them for
+    // adoption, which would then claim a role the design already has.
+    paintedRoles: [...new Set(targets.map((t) => t.role))],
     // Every texture the car has, by the FILE the model names it with, so the
     // browser can turn "you clicked this part" into "that is
     // `ext_banner_colour`, and here is what it would cost to paint it".
@@ -932,6 +942,38 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         return json(200, portability(design, other));
       }
 
+      // What is wrong with the design where it actually sits.
+      //
+      // POST for the same reason portability is: the interesting design and the
+      // interesting fit are the ones in the browser, and answering about the
+      // files on disk would be answering about something nobody is looking at.
+      //
+      // The model is passed when it has loaded and omitted when it has not,
+      // which is the difference between the geometry checks running and
+      // reporting themselves as not run. It is never waited for — a 45 MB kn5
+      // on the first call would make the panel look broken, and `notChecked`
+      // already says plainly that the answer is partial.
+      if (req.method === 'POST' && url.pathname === '/api/fitment') {
+        const sent = await body();
+        // THREE sources, in this order. `sent` is the browser posting what it
+        // holds; `workingDesign`/`workingFit` are what the editor holds, which
+        // is where an accepted proposal lands; the files on disk are last.
+        //
+        // The MCP client deliberately sends nothing — it asks the editor about
+        // its own state — so omitting the middle pair made this answer about
+        // the file loaded at startup and agree with reality only by luck.
+        const found = fitment(
+          sent.design ?? workingDesign ?? livery,
+          profile,
+          sent.fit ?? workingFit ?? fit,
+          { model },
+        );
+        // Kicked off for NEXT time rather than awaited. The panel reports what
+        // it could check, and the checks it could not are named.
+        if (!model && !modelError) getModel().catch(() => {});
+        return json(200, { ...found, modelError });
+      }
+
       // The same answer, for a fit that has not been saved yet.
       //
       // Creating or deleting a copy changes what the surface CONTAINS, and only
@@ -973,7 +1015,17 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const surfaces = [];
         for (const s of state.surfaces) {
           const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed });
-          surfaces.push({ role: s.role, from: s.from, file: s.file, svg: out.svg });
+          // The texture's REAL dimensions travel with it. The browser was
+          // guessing a square 512 or 1024, and the car's own body sheet is
+          // 2048x2048 — so the livery was rasterised at a quarter of its
+          // resolution and drawn beside stock artwork uploaded at full size.
+          // Nothing here is a rendering setting; it is a fact about the car,
+          // and the only place that knows it is this side.
+          const tex = texture(profile, s.role);
+          surfaces.push({
+            role: s.role, from: s.from, file: s.file, svg: out.svg,
+            width: tex.width, height: tex.height,
+          });
         }
         return json(200, { surfaces });
       }

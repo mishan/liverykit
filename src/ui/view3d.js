@@ -265,6 +265,65 @@ export function highlightUniforms({ region, panel, twin, twinPanel } = {}) {
 // checked without a GPU, and it is the half that was wrong.
 export const _internal = { perspective, lookAt, mul };
 
+/**
+ * Clamp to what this GPU will actually accept.
+ *
+ * MAX_TEXTURE_SIZE is 4096 on plenty of hardware and a car can ship a 4096
+ * sheet, so asking for a texture's real size is not by itself safe. Halved
+ * rather than clamped to the limit exactly, because a power of two is what the
+ * mip chain needs and 4096 -> 4096 is a no-op while 5000 -> 4096 is not.
+ */
+export function capped(w, h, max = 4096) {
+  // Halved TOGETHER so the aspect ratio survives, and the guard is on the
+  // dimension being halved rather than on both. Stopping when EITHER reached 1
+  // left the other above the limit: a 8192x2 sheet bottomed out at b = 1 with
+  // a still 8192, which is the texImage2D error this exists to prevent.
+  let a = Math.max(1, w), b = Math.max(1, h);
+  while (a > max || b > max) {
+    a = Math.max(1, Math.round(a / 2));
+    b = Math.max(1, Math.round(b / 2));
+  }
+  return [a, b];
+}
+
+/**
+ * What size to rasterise each painted surface at, for the whole-car view.
+ *
+ * Separated from the GPU so it can be checked without one, because the number
+ * it produces is the whole of why the car looked fuzzy. It used to be a flat
+ * 512 square for every surface, justified by "thirty-seven surfaces at full
+ * size is a hundred megabytes" — but thirty-seven is how many textures the CAR
+ * has, and seven is how many a design paints. The body sheet is 2048x2048, so
+ * the livery was drawn at a quarter of its resolution, right beside the car's
+ * own artwork uploaded from the kn5 at full size.
+ *
+ * The budget is shared ACROSS the surfaces rather than spent on each, and is
+ * met by halving everything — which keeps every texture a power of two, which
+ * is what `generateMipmap` requires.
+ */
+export function textureSizes(surfaces, { budget = 192 * 1024 * 1024, max = 4096 } = {}) {
+  const want = surfaces.map((s) => {
+    const w = s.width ?? 1024;
+    return capped(w, s.height ?? w, max);
+  });
+  // Measured on the numbers actually RETURNED. The check used to divide
+  // without rounding while the result rounded up, so a set could pass the
+  // budget and then exceed it — a check on values nobody uses.
+  const at = (s) => want.map(([w, h]) => ({
+    w: Math.max(64, Math.round(w / s)),
+    h: Math.max(64, Math.round(h / s)),
+  }));
+  const cost = (sizes) => sizes.reduce((n, s) => n + s.w * s.h * 4, 0);
+
+  let shrink = 1;
+  let sizes = at(shrink);
+  while (cost(sizes) > budget && shrink < 16) {
+    shrink *= 2;
+    sizes = at(shrink);
+  }
+  return sizes;
+}
+
 export function createViewer(canvas) {
   const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: false });
   if (!gl) throw new Error('WebGL is unavailable in this browser');
@@ -476,26 +535,53 @@ export function createViewer(canvas) {
     return true;
   }
 
-  /** Rasterise an SVG into a texture. The only way a browser will do it. */
-  async function uploadSvg(target, svg, size) {
+  const isPot = (n) => n > 0 && (n & (n - 1)) === 0;
+
+
+  /**
+   * Rasterise an SVG into a texture. The only way a browser will do it.
+   *
+   * Takes a WIDTH and a HEIGHT rather than one `size`. Car textures are not all
+   * square — this Honda's tyre sheet is 2048x512 — and forcing a square raster
+   * threw away three quarters of the horizontal detail on every one of them.
+   */
+  async function uploadSvg(target, svg, w, h = w) {
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     try {
       const img = new Image();
-      img.width = size;
-      img.height = size;
+      img.width = w;
+      img.height = h;
       await new Promise((ok, fail) => {
         img.onload = ok;
         img.onerror = () => fail(new Error('the browser could not rasterise the texture'));
         img.src = url;
       });
       const c = document.createElement('canvas');
-      c.width = c.height = size;
-      c.getContext('2d').drawImage(img, 0, 0, size, size);
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
       gl.bindTexture(gl.TEXTURE_2D, target);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      // WebGL 1 will only build a mip chain for a power-of-two texture, and
+      // silently renders a non-power-of-two one BLACK if you ask for a mipmap
+      // filter anyway. Car textures are almost always powers of two and
+      // occasionally are not — this car ships a 68x64 sheet — so the awkward
+      // case falls back to plain LINEAR rather than disappearing.
+      if (isPot(w) && isPot(h)) {
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      // Sharpens a livery seen at a glancing angle, which on a car body is most
+      // of it. Costs nothing where the extension is missing.
+      const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+      if (aniso) {
+        gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT,
+          Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+      }
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -549,28 +635,37 @@ export function createViewer(canvas) {
      * fonts fetched over the wire — so the canvas does not become tainted and
      * the upload is allowed.
      */
-    async setTexture(svg, size = 1024) {
-      await uploadSvg(texture, svg, size);
+    async setTexture(svg, w = 1024, h = w) {
+      await uploadSvg(texture, svg, ...capped(w, h, gl.getParameter(gl.MAX_TEXTURE_SIZE)));
       draw();
     },
 
     /**
      * The whole car: geometry grouped by surface, and one texture per group.
      *
-     * Textures are rasterised at 512 rather than 1024. Thirty-seven surfaces at
-     * full size is a hundred megabytes of GPU memory and several seconds of SVG
-     * rasterisation to look at a car from four metres away, and at that distance
-     * the difference is invisible. The per-surface view, where you are actually
-     * judging placement, keeps the full size.
+     * Each surface is rasterised at the size of the texture it REPLACES, which
+     * the server sends down beside the svg. This used to be a flat 512 square,
+     * justified by "thirty-seven surfaces at full size is a hundred megabytes"
+     * — but thirty-seven is the number of textures on the CAR, and the number
+     * a design paints is seven. The body sheet is 2048x2048, so the livery was
+     * being shown at a quarter of its resolution, immediately beside the car's
+     * own stock artwork uploaded from the kn5 at full size. That contrast is
+     * what "fuzzy" looks like, and no amount of filtering would have fixed it
+     * because the detail was gone before the GPU saw it.
+     *
+     * The budget is still real, just applied to what is actually there rather
+     * than to what might have been.
      */
-    async setWholeCar(model, surfaces, size = 512) {
+    async setWholeCar(model, surfaces, { budget = 192 * 1024 * 1024 } = {}) {
       // setGeometry clears the grouping, so the groups go on afterwards. The
       // order matters: a frame drawn with the new buffers and the old group
       // offsets would index past the end of them.
       this.setGeometry(model);
-      for (const s of surfaces) {
+
+      const sizes = textureSizes(surfaces, { budget, max: gl.getParameter(gl.MAX_TEXTURE_SIZE) });
+      for (const [i, s] of surfaces.entries()) {
         if (!byRole.has(s.role)) byRole.set(s.role, greyTexture());
-        await uploadSvg(byRole.get(s.role), s.svg, size);
+        await uploadSvg(byRole.get(s.role), s.svg, sizes[i].w, sizes[i].h);
       }
 
       // The parts the design does NOT paint, wearing the car's own artwork.

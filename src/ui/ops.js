@@ -108,6 +108,32 @@ export function opSetRegion(design, { id, region }) {
   }
 }
 
+/**
+ * Take an unpainted texture into the design, the way the editor's own button
+ * does — EMPTY, and with no background.
+ *
+ * This defaulted `background` to `ink`, which is a colour the agent did not
+ * choose and the person did not either. Two things wrong with that. It differs
+ * from what clicking Paint this too produces, so the same act had two outcomes
+ * depending on who performed it; and a background is a design decision that
+ * changes what the surface looks like, which is exactly the class of thing a
+ * proposal should put in front of somebody rather than assume.
+ *
+ * With no background the sheet renders the renderer's default black, which is
+ * the honest picture of a surface just taken over: the stock artwork is gone
+ * and nothing has replaced it. A proposal that wants a colour there can say so
+ * with `set-option`, where it will be read.
+ */
+export function opAdoptSurface(design, { role, background }) {
+  if (!isSafeKey(role)) return;
+  design.paint ??= {};
+  if (!design.paint[role]) {
+    design.paint[role] = { regions: [] };
+    // Only when asked for by name. `undefined` is not a colour.
+    if (typeof background === 'string' && background) design.paint[role].background = background;
+  }
+}
+
 export function applyDesignOp(design, op) {
   if (!op || typeof op !== 'object') return;
   switch (op.op) {
@@ -119,6 +145,8 @@ export function applyDesignOp(design, op) {
     case 'reorder-region': opReorderRegion(design, op); break;
     case 'set-option': opSetOption(design, op); break;
     case 'set-region': opSetRegion(design, op); break;
+    case 'adopt-surface':
+    case 'add-surface': opAdoptSurface(design, op); break;
   }
 }
 

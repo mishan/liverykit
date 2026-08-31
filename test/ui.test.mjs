@@ -3119,3 +3119,148 @@ test('a texture named like a special key is a texture, not a prototype', async (
       `${file} is a key off the prototype, not a texture this car has`);
   }
 });
+
+test('the fitment panel leads with what it could not check', async () => {
+  // The panel's whole value is that bad news reaches you. An empty findings
+  // list from a run that skipped the geometry checks and an empty list from a
+  // run that did all of them are the same sentence and opposite facts — the
+  // first is how a team name ended up painted onto no part of the car.
+  const { dom } = await runApp({ server: copyFixture() });
+  const answer = {
+    car: 'fixture', checked: ['overlap', 'outside-safe', 'unreadable', 'unmirrored'],
+    notChecked: ['unseen', 'off-mesh'], notPlaced: [], findings: [],
+    modelError: null,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/fitment'
+      ? { ok: true, status: 200, json: async () => answer }
+      : realFetch(path, init));
+  try {
+    await dom.querySelector('#recheck').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const shown = dom.querySelector('#fitment').innerHTML;
+  assert.match(shown, /not checked: unseen, off-mesh/, 'the skipped checks are named');
+  assert.match(shown, /class="note"/, 'and said as a warning, not as a hint');
+  assert.doesNotMatch(shown, /Nothing to report from[\s\S]*unseen/,
+    'a partial run is never summarised as covering everything');
+});
+
+test('the fitment panel names regions worst-first', async () => {
+  const { dom, calls } = await runApp({ server: copyFixture() });
+  const answer = {
+    car: 'fixture', checked: ['overlap', 'unseen', 'off-mesh'], notChecked: [], notPlaced: [],
+    findings: [
+      { kind: 'overlap', severity: 'low', ids: ['stripe'], why: 'stripe covers 40% of wash' },
+      { kind: 'off-mesh', severity: 'high', ids: ['team-left'],
+        why: 'team-left has only 11% of its area on the car' },
+    ],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/fitment'
+      ? { ok: true, status: 200, json: async () => answer }
+      : realFetch(path, init));
+  try {
+    await dom.querySelector('#recheck').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const shown = dom.querySelector('#fitment').innerHTML;
+  assert.ok(shown.indexOf('team-left') < shown.indexOf('stripe'),
+    'the high finding is above the low one, whatever order the server sent');
+  assert.match(shown, /<code>team-left<\/code>/, 'named, so there is something to go and change');
+
+  // The WORKING design and fit, not the files on disk — the same rule the
+  // other-car panel follows, for the same reason.
+  const asked = calls.find((c) => c.path === '/api/fitment');
+  assert.ok(asked === undefined || (asked.body.design && asked.body.fit),
+    'the edit in front of you is what gets checked');
+});
+
+// ---------------------------------------------------------------------------
+// Why the whole car looked fuzzy.
+//
+// Every painted surface was rasterised at a flat 512 square, justified in a
+// comment by "thirty-seven surfaces at full size is a hundred megabytes". But
+// thirty-seven is how many textures the CAR has; seven is how many this design
+// paints. The Honda's body sheet is 2048x2048, so the livery was shown at a
+// quarter of its resolution — directly beside the car's own stock artwork,
+// uploaded from the kn5 at full size. No filtering fixes that: the detail was
+// gone before the GPU saw it.
+// ---------------------------------------------------------------------------
+
+test('a painted surface is rasterised at the size of the texture it replaces', async () => {
+  const { textureSizes } = await import('../src/ui/view3d.js');
+
+  // The real seven, at their real sizes.
+  const honda = [
+    { role: 'ext_skin_sponsors', width: 2048, height: 2048 },
+    { role: 'rims', width: 1024, height: 1024 },
+    { role: 'tyres', width: 2048, height: 512 },
+    { role: 'interior', width: 1024, height: 1024 },
+    { role: 'belts', width: 512, height: 512 },
+    { role: 'steeringWheel', width: 512, height: 512 },
+    { role: 'ext_banner_colour', width: 1024, height: 512 },
+  ];
+  const sizes = textureSizes(honda);
+  assert.deepEqual(sizes[0], { w: 2048, h: 2048 }, 'the body sheet at full resolution');
+  assert.deepEqual(sizes[2], { w: 2048, h: 512 },
+    'and a non-square texture is not squashed into a square');
+
+  // The budget the old flat 512 was defending. Seven real textures cost about
+  // 33 MB, so there was never anything to defend against.
+  const mb = sizes.reduce((n, s) => n + s.w * s.h * 4, 0) / (1024 * 1024);
+  assert.ok(mb < 64, `seven surfaces at full size is ${mb.toFixed(0)} MB, not a hundred`);
+});
+
+test('the texture budget is shared out, not spent per surface', async () => {
+  const { textureSizes, capped } = await import('../src/ui/view3d.js');
+
+  // A design that really does paint forty surfaces gets halved rather than
+  // exhausting the GPU — and halving is what keeps every texture a power of
+  // two, which is what generateMipmap requires. Asking for a mip chain on a
+  // non-power-of-two texture renders it black.
+  const many = Array.from({ length: 40 }, () => ({ width: 2048, height: 2048 }));
+  const sizes = textureSizes(many, { budget: 64 * 1024 * 1024 });
+  const total = sizes.reduce((n, s) => n + s.w * s.h * 4, 0);
+  assert.ok(total <= 64 * 1024 * 1024, `${(total / 1048576).toFixed(0)} MB is over budget`);
+  for (const s of sizes) {
+    assert.equal(s.w & (s.w - 1), 0, `${s.w} is not a power of two`);
+    assert.equal(s.h & (s.h - 1), 0, `${s.h} is not a power of two`);
+  }
+
+  // And a card that will not accept 4096 gets something it will. Asking for a
+  // texture larger than MAX_TEXTURE_SIZE is an error, not a slow path.
+  assert.deepEqual(capped(4096, 4096, 2048), [2048, 2048]);
+  assert.deepEqual(capped(2048, 512, 4096), [2048, 512], 'and nothing is shrunk needlessly');
+});
+
+test('a texture is clamped on both axes, and the budget measures what it returns', async () => {
+  const { capped, textureSizes } = await import('../src/ui/view3d.js');
+
+  // Halving stopped when EITHER side reached 1, so a very wide, very short
+  // sheet bottomed out with the long side still over the limit — which is the
+  // texImage2D error this exists to prevent.
+  assert.deepEqual(capped(8192, 2, 4096), [4096, 1]);
+  assert.deepEqual(capped(8192, 2, 1024), [1024, 1]);
+  for (const [w, h] of [[8192, 2], [16384, 1], [4096, 4096], [5000, 3]]) {
+    const [a, b] = capped(w, h, 2048);
+    assert.ok(a <= 2048 && b <= 2048, `${w}x${h} -> ${a}x${b} is still over the limit`);
+  }
+  assert.deepEqual(capped(2048, 512, 4096), [2048, 512], 'and nothing shrinks needlessly');
+
+  // The budget check divided without rounding while the result rounded up, so
+  // a set could pass the check and then exceed the budget it passed.
+  const many = Array.from({ length: 40 }, () => ({ width: 2048, height: 2048 }));
+  for (const budget of [64, 32, 16].map((mb) => mb * 1024 * 1024)) {
+    const sizes = textureSizes(many, { budget });
+    const total = sizes.reduce((n, s) => n + s.w * s.h * 4, 0);
+    assert.ok(total <= budget,
+      `${(total / 1048576).toFixed(1)} MB returned against a ${budget / 1048576} MB budget`);
+  }
+});
