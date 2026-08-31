@@ -26,6 +26,12 @@ import { resolveTargets, expandRegions, resolveRect, texture, metresAcross } fro
 import { applyFit } from './fit.mjs';
 import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
+// From the editor's op module, because the BROWSER needs this list too — to
+// build the controls and to refuse a constraint nothing enforces — and
+// `fitment.mjs` is not one of the files served to it. One list, so the thing
+// the editor lets you write and the thing this checks cannot drift apart.
+export { CONSTRAINTS } from './ui/ops.js';
+import { CONSTRAINTS } from './ui/ops.js';
 
 /**
  * How little of a placement may be visible before it is worth saying so.
@@ -86,15 +92,6 @@ const BLEED_IS_FINE_BELOW = 0.15;
  *               replacing the default. A background fill is meant to bleed off
  *               an island; a name is not.
  */
-export const CONSTRAINTS = {
-  keepClear: 'boolean — nothing may be painted across this region, whatever the ' +
-    'treatment. Without it the overlap check only speaks up for text on text, so a ' +
-    'stripe drawn over a team name goes unmentioned.',
-  minMm: 'number — the shortest side this must not go below ON THE CAR, in millimetres, ' +
-    'replacing the global 25 mm floor. Applies to any treatment, not just text.',
-  minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
-    'A background fill is meant to bleed off an island; a name is not.',
-};
 
 /**
  * A region's declared constraints, or a complaint that it tried and failed.

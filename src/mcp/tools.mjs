@@ -383,14 +383,21 @@ export function createToolHandler(client) {
     },
     {
       name: 'propose_design',
-      description: `Propose design changes (palette, regions, options, identity, adopt-surface) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
+      description:
+        'Propose design changes (palette, regions, options, identity, constraints, ' +
+        "adopt-surface) to the running editor's inbox for human review. Use " +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar — ' +
+        'which is often the right proposal when check_fitment reports the same problem ' +
+        'twice: the constraint states the requirement once, on the design, for every car, ' +
+        'rather than being re-fixed per car. Call list_constraints first; a name that is ' +
+        `not on that list is refused, not ignored. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
           why: { type: 'string', description: 'Required justification for the proposal' },
           design: {
             type: 'array',
-            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region, adopt-surface)',
+            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-constraint, set-identity, set-region, adopt-surface). set-constraint takes { op, id, key, value }, where key is one of the names list_constraints returns and value null removes it.',
             items: { type: 'object' },
           },
         },
