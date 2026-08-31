@@ -58,7 +58,10 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
         const body = await res.json().catch(() => ({}));
         throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);
       }
-      return Buffer.from(await res.arrayBuffer());
+      return {
+        png: Buffer.from(await res.arrayBuffer()),
+        skipped: Number(res.headers.get('x-liverykit-skipped') ?? 0),
+      };
     },
     previewSurfaces: async (seed) => request('api/preview', {
       method: 'POST',

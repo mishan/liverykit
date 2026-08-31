@@ -37,7 +37,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
+import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
@@ -181,7 +181,18 @@ export function wholeModelGeometry(model, files) {
       }
       for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
     }
-    if (indices.length > start) groups.push({ ...group, start, count: indices.length - start });
+    if (indices.length > start) {
+      // Whether this group composites, taken from the MATERIAL rather than from
+      // the texture. A group is one draw call and one texture, and in practice
+      // one shader — but `some` rather than `every`, because a blended mesh
+      // drawn in the opaque pass is a black slab and an opaque one drawn in the
+      // blended pass merely sorts oddly. Wrong in the cheaper direction.
+      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
+      groups.push({
+        ...group, start, count: indices.length - start, blend,
+        add: blend && additive(group.file),
+      });
+    }
   };
 
   for (const { role, file } of files) {
@@ -1014,13 +1025,20 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
         }));
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
-        const png = await shoot(g, g.groups, surfaces, {
+        const shot = await shoot(g, g.groups, surfaces, {
           view,
           width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
           height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
         });
-        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
-        return res.end(png);
+        res.writeHead(200, {
+          'content-type': 'image/png',
+          'cache-control': 'no-store',
+          // Said in a header rather than swallowed: transparent surfaces this
+          // renderer has no artwork for are not drawn, and the caller should
+          // know how much of the car that was.
+          'x-liverykit-skipped': String(shot.skipped),
+        });
+        return res.end(shot.png);
       }
 
       // What is wrong with the design where it actually sits.

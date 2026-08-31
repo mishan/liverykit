@@ -163,7 +163,48 @@ export function rasterise(model, groups, sheets, {
     };
   };
 
-  for (const g of groups) {
+  // Opaque first, then blended back to front, because compositing reads what
+  // is already there. `skipped` counts what could not be drawn rather than
+  // drawing something plausible instead.
+  let skipped = 0;
+  const order = [...groups].filter((g) => {
+    if (!g.blend) return true;
+    // A blended group with no artwork is glass, or an emissive mask, and this
+    // renderer has no stock textures to show. Grey would be a LIE about it —
+    // grey is opaque, and the whole point of these surfaces is that they are
+    // not. Skipping says "not shown" and leaves the bodywork visible through
+    // the hole, which is nearer the truth than a slab.
+    if (!sheets.has(g.role)) { skipped++; return false; }
+    return true;
+  });
+
+  // BACK TO FRONT among the blended ones, which the comment above claimed and
+  // the code did not do: the sort only pushed blended after opaque, so two
+  // overlapping transparent surfaces composited in whatever order the groups
+  // happened to arrive. The viewer sorts by group centroid and this did not,
+  // which is the two renderers drifting again.
+  //
+  // Per group, so triangles inside one are still unordered. Enough to stop an
+  // emissive mask compositing before the plate it sits on.
+  const centre = (g) => {
+    let x = 0, y = 0, z = 0, n = 0;
+    for (let i = g.start; i < g.start + g.count; i += 8) {
+      const v = indices[i] * 3;
+      x += positions[v]; y += positions[v + 1]; z += positions[v + 2]; n++;
+    }
+    return n ? [x / n, y / n, z / n] : [0, 0, 0];
+  };
+  const far = new Map(order.filter((g) => g.blend).map((g) => {
+    const c = centre(g);
+    return [g, (c[0] - eye[0]) ** 2 + (c[1] - eye[1]) ** 2 + (c[2] - eye[2]) ** 2];
+  }));
+  order.sort((a, b) => {
+    if (!a.blend && !b.blend) return 0;
+    if (a.blend !== b.blend) return a.blend ? 1 : -1;
+    return far.get(b) - far.get(a);
+  });
+
+  for (const g of order) {
     const art = sheets.get(g.role) ?? null;
     for (let t = g.start; t < g.start + g.count; t += 3) {
       const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
@@ -190,9 +231,13 @@ export function rasterise(model, groups, sheets, {
           const z = w0 * A.z + w1 * B.z + w2 * C.z;
           const at = y * width + x;
           if (z >= depth[at]) continue;
-          depth[at] = z;
+          // Depth WRITE only for opaque groups, so two blended surfaces do not
+          // occlude each other. Depth TEST still applies to both, so bodywork
+          // hides what is behind it.
+          if (!g.blend) depth[at] = z;
 
           let rgb = BARE;
+          let alpha = 1;
           if (art) {
             // Nearest, not bilinear. The shot is small, the artwork is large,
             // and a blurred sample would hide exactly the hard edge — a name
@@ -203,7 +248,9 @@ export function rasterise(model, groups, sheets, {
             const sy = Math.min(art.h - 1, Math.max(0, Math.floor(v * art.h)));
             const o = (sy * art.w + sx) * 4;
             rgb = [art.data[o], art.data[o + 1], art.data[o + 2]];
+            alpha = art.data[o + 3] / 255;
           }
+          if (g.blend && alpha <= 0.01) continue;      // nothing to composite
 
           let n = norm([
             w0 * normals[ia * 3] + w1 * normals[ib * 3] + w2 * normals[ic * 3],
@@ -216,12 +263,27 @@ export function rasterise(model, groups, sheets, {
           if (dot(n, toEye) < 0) n = [-n[0], -n[1], -n[2]];
 
           const c = shade(rgb, n, toEye);
-          px[at * 4] = c[0]; px[at * 4 + 1] = c[1]; px[at * 4 + 2] = c[2];
+          // ADDITIVE for emissive sheets, alpha for everything else — the same
+          // rule the viewer follows, and for the same reason. An emissive
+          // texture is a glow map, black where nothing glows; alpha-compositing
+          // an opaque black one puts a black rectangle over whatever it was
+          // meant to light. `add` was already on the group and this ignored it,
+          // so the shot could still show the failure it was built to catch.
+          if (g.add) {
+            for (let k = 0; k < 3; k++) {
+              px[at * 4 + k] = Math.min(255, px[at * 4 + k] + Math.round(c[k] * alpha));
+            }
+          } else {
+            const a = g.blend ? alpha : 1;
+            for (let k = 0; k < 3; k++) {
+              px[at * 4 + k] = Math.round(c[k] * a + px[at * 4 + k] * (1 - a));
+            }
+          }
         }
       }
     }
   }
-  return { data: px, width, height };
+  return { data: px, width, height, skipped };
 }
 
 /** Render and encode. `surfaces` is [{ role, svg }] as /api/preview returns. */
@@ -230,6 +292,7 @@ export async function shoot(model, groups, surfaces, opts = {}) {
   for (const s of surfaces) {
     if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
   }
-  const { data, width, height } = rasterise(model, groups, sheets, opts);
-  return sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  const { data, width, height, skipped } = rasterise(model, groups, sheets, opts);
+  const png = await sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  return { png, skipped };
 }
