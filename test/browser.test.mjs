@@ -1414,7 +1414,7 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
       // it still grey and pass for the wrong reason.
       viewer.setGeometry(model);
       await viewer.setTexture(magenta, 64);
-      await viewer.setWholeCar(model, [{ role: 'body', svg: magenta }], 64);
+      await viewer.setWholeCar(model, [{ role: 'body', svg: magenta, width: 64, height: 64 }]);
 
       // preserveDrawingBuffer is false, so the pixels are gone by the next
       // composite. Orbiting by one pixel redraws synchronously inside the
@@ -1518,7 +1518,7 @@ test('the car supplies its own artwork for the parts a design does not paint', {
 
       viewer.setGeometry(model);
       await viewer.setTexture(magenta, 64);
-      await viewer.setWholeCar(model, [{ role: 'body', svg: magenta }], 64);
+      await viewer.setWholeCar(model, [{ role: 'body', svg: magenta, width: 64, height: 64 }]);
       window.fetch = realFetch;
 
       const box = canvas.getBoundingClientRect();
