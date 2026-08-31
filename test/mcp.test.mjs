@@ -528,6 +528,27 @@ test('check_fitment: the worst finding leads, and is counted', async () => {
   }
 });
 
+test('list_constraints: the vocabulary is discoverable, not folklore', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const listed = (await tools.listTools()).find((t) => t.name === 'list_constraints');
+    assert.ok(listed, 'the tool is offered');
+
+    const out = JSON.parse((await tools.callTool('list_constraints', {})).content[0].text);
+    // The names have to match what fitment actually enforces, or the tool is
+    // documentation that lies — worse than none, because it will be believed.
+    const { CONSTRAINTS } = await import('../src/fitment.mjs');
+    assert.deepEqual(Object.keys(out), Object.keys(CONSTRAINTS));
+    for (const [k, v] of Object.entries(out)) {
+      assert.equal(typeof v, 'string', `${k} explains itself`);
+      assert.ok(v.length > 40, `${k} says what it means, not just its type`);
+    }
+  } finally {
+    await stop();
+  }
+});
+
 test('render_view tells an empty role apart from no role at all', async () => {
   // `if (args.role)` sent an empty string, a stray space or a null down the
   // render-everything path, so a caller that computed a role and got nothing
