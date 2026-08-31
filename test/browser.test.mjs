@@ -1577,6 +1577,65 @@ test('the car supplies its own artwork for the parts a design does not paint', {
     `picking must say which surface is under the pointer: ${report.join(' | ')}`);
 });
 
+test('the fitment panel measures the real car, in a real browser', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The fake DOM has hidden four bugs in this project, and the fitment panel is
+  // exactly the shape that fools it: a fetch, a sort, and innerHTML built from
+  // the answer.
+  //
+  // The first version of this test hung for ninety seconds in CI and reported
+  // nothing, which is a worse outcome than a plain failure. `topAt` is
+  // `elementFromPoint`, which returns NULL for a point outside the viewport —
+  // and #recheck lives at the bottom of the right sidebar, below Palette,
+  // Identity, Fit and Design, so it is off-screen at 1400x900. Calling
+  // `.closest()` on that null threw, `done()` never ran, and the harness sat
+  // waiting for a report nobody was going to send.
+  //
+  // Two lessons, both applied below: scroll to a thing before pointing at it,
+  // and make `done()` unconditional. A test that cannot fail cleanly cannot be
+  // trusted when it passes.
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      try {
+        if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+        const btn = document.querySelector('#recheck');
+        if (!btn) { say('THREW no #recheck button'); return done(); }
+
+        btn.scrollIntoView({ block: 'center' });
+        await settle(200);
+        const [x, y] = centre(btn);
+        const inView = x >= 0 && y >= 0 && x < innerWidth && y < innerHeight;
+        say('in view: ' + inView);
+        const hit = inView ? topAt(x, y) : null;
+        say('topmost at button: #' + (hit ? (hit.closest('[id]')?.id ?? 'nothing') : 'off-screen'));
+
+        // A real event either way. The pointer path is the interesting one when
+        // the button is reachable; when it is not, dispatching on the element
+        // still exercises the handler, the fetch and the rendering, which is
+        // what the fake DOM is untrustworthy about.
+        if (inView) clickAt(x, y); else btn.click();
+        await settle(3000);
+
+        const el = document.querySelector('#fitment');
+        say('panel filled: ' + (el.innerHTML.trim().length > 0));
+        say('still measuring: ' + el.textContent.includes('measuring'));
+        say('says what it skipped: ' + /not checked|not placed/.test(el.textContent));
+      } catch (e) {
+        say('THREW ' + (e && e.stack ? e.stack : e));
+      }
+      done();
+    })();
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.ok(!report.some((l) => l.startsWith('THREW')), report.join(' | '));
+  assert.equal(find('panel filled: '), 'panel filled: true', report.join(' | '));
+  assert.equal(find('still measuring: '), 'still measuring: false',
+    `the request never came back: ${report.join(' | ')}`);
+  // No model is loaded in this harness, so the geometry checks cannot run — and
+  // the panel has to say so rather than showing a reassuring blank.
+  assert.equal(find('says what it skipped: '), 'says what it skipped: true', report.join(' | '));
+});
+
 // The PRELUDE is a template literal, so a backtick anywhere inside it ends the
 // literal and the whole file stops parsing. That has happened four times in
 // this project, and every time it reached CI, because a syntax error in one

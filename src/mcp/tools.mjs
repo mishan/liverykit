@@ -160,6 +160,49 @@ async function toolReport(client) {
   };
 }
 
+/**
+ * What is wrong with the design where it sits.
+ *
+ * Shaped so the worst news is impossible to skim past. An agent handed a flat
+ * list will read the first few entries and act; the counts and the `verdict`
+ * line are there so that "nine low findings and one high" cannot be summarised
+ * as "some minor findings", and so that a run which skipped the geometry checks
+ * cannot be reported as a clean one.
+ *
+ * This tool exists because of a specific failure. Asked to improve a fit, I
+ * moved a team name into a part of the texture that no triangle uses — it
+ * rendered perfectly and was on no part of the car — and every number available
+ * to me at the time said the move was fine.
+ */
+async function toolCheckFitment(client) {
+  const r = await client.checkFitment();
+  const findings = r.findings ?? [];
+  const count = (sev) => findings.filter((f) => f.severity === sev).length;
+
+  const partial = (r.notChecked?.length ?? 0) > 0 || (r.notPlaced?.length ?? 0) > 0;
+  const worst = count('fatal') ? 'fatal' : count('high') ? 'high' : count('low') ? 'low' : 'none';
+
+  const verdict = worst === 'none'
+    ? (partial
+        ? 'Nothing found BY THE CHECKS THAT RAN. Some did not run — see notChecked and notPlaced.'
+        : 'Every check ran and found nothing.')
+    : `Worst finding is ${worst}. ${count('fatal')} fatal, ${count('high')} high, ` +
+      `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      verdict,
+      car: r.car,
+      checked: r.checked ?? [],
+      notChecked: r.notChecked ?? [],
+      notPlaced: r.notPlaced ?? [],
+      // Worst first, so truncation loses the least important end.
+      findings: [...findings].sort((a, b) =>
+        ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
+    }, null, 2) }],
+  };
+}
+
 async function toolRenderView(client, args = {}) {
   // OMITTED and EMPTY are different questions.
   //
@@ -302,6 +345,21 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'check_fitment',
+      description:
+        'Measure what is WRONG with the working design on this car: text landing on text, ' +
+        'artwork outside a panel\'s readable area, text too small to read at the car\'s real ' +
+        'scale, broken left/right mirroring, placements painted into texture space no triangle ' +
+        'uses, and placements the bodywork hides. Call this BEFORE proposing a fit change and ' +
+        'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
+        'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
+        `findings list from a partial run does not mean the design is good. ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
       name: 'render_view',
       description: `Render texture SVG and region placement data for a surface role or the whole car. ${PROMPT_NOTE}`,
       inputSchema: {
@@ -365,6 +423,7 @@ export function createToolHandler(client) {
       case 'read_design': return toolReadDesign(client);
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
+      case 'check_fitment': return toolCheckFitment(client);
       case 'render_view': return toolRenderView(client, args);
       case 'propose_design': return toolProposeDesign(client, args);
       case 'propose_fit': return toolProposeFit(client, args);
