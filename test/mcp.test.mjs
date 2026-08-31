@@ -740,3 +740,59 @@ test('render_view tells an empty role apart from no role at all', async () => {
     await stop();
   }
 });
+
+test('the shot composites blended surfaces the way the viewer does', async () => {
+  // Two ways the rasteriser drifted from the viewer it exists to check.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Two quads facing the camera, the second nearer. Both blended.
+  const quad = (x) => ({
+    positions: [x, -1, -1, x, -1, 1, x, 1, 1, x, 1, -1],
+    uvs: [0, 1, 1, 1, 1, 0, 0, 0],
+    normals: [-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0],
+  });
+  // The `left` camera sits at NEGATIVE x looking toward +x, so smaller x is
+  // nearer. Getting this backwards is how the first version of this test
+  // asserted that the far quad should win.
+  const back = quad(0), front = quad(-0.4);
+  const model = {
+    positions: new Float32Array([...back.positions, ...front.positions]),
+    uvs: new Float32Array([...back.uvs, ...front.uvs]),
+    normals: new Float32Array([...back.normals, ...front.normals]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  const sheet = (r, g, b, a) => ({ w: 1, h: 1, data: Buffer.from([r, g, b, a]) });
+  const at = (img) => [0, 1, 2].map((k) => img.data[((img.height >> 1) * img.width + (img.width >> 1)) * 4 + k]);
+
+  // ADDITIVE: a black emissive sheet must add nothing, leaving the magenta
+  // behind it visible. Alpha-composited it would be a black rectangle — the
+  // exact failure this renderer is meant to catch.
+  const withGlow = rasterise(model, [
+    { role: 'plate', start: 0, count: 6, blend: true },
+    { role: 'glow', start: 6, count: 6, blend: true, add: true },
+  ], new Map([['plate', sheet(255, 0, 255, 255)], ['glow', sheet(0, 0, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  const [r, g, b] = at(withGlow);
+  assert.ok(r > 40 && b > 40 && g < r / 2,
+    `a black emissive sheet hid the plate under it: ${r},${g},${b}`);
+
+  // SORTED: the nearer blended quad composites last. Given a fully opaque one
+  // in front, its colour is what survives — which only holds if the two are
+  // ordered by distance rather than by however the groups arrived.
+  const ordered = rasterise(model, [
+    { role: 'far', start: 0, count: 6, blend: true },
+    { role: 'near', start: 6, count: 6, blend: true },
+  ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  const [nr, ng, nb] = at(ordered);
+  assert.ok(ng > nr && ng > nb, `the nearer surface should win: ${nr},${ng},${nb}`);
+
+  // And the same two groups listed the other way round give the same picture.
+  const reversed = rasterise(model, [
+    { role: 'near', start: 6, count: 6, blend: true },
+    { role: 'far', start: 0, count: 6, blend: true },
+  ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  assert.deepEqual(at(reversed), [nr, ng, nb],
+    'group order must not change the picture; that is what sorting is for');
+});

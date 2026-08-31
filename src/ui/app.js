@@ -2862,7 +2862,7 @@ async function loadWholeCar() {
   // Keyed by file, which is what both sides agree on: a group carries the
   // texture its meshes use, and a surface carries the texture it writes.
   const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
-  await state.viewer.setWholeCar(g, surfaces);
+  const drew = await state.viewer.setWholeCar(g, surfaces);
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
   const bare = g.groups.filter((x) => !x.role).reduce((s, x) => s + x.count / 3, 0);
@@ -2870,6 +2870,14 @@ async function loadWholeCar() {
     `${(g.indices.length / 3).toLocaleString()} triangles · ${painted.size} painted surface` +
     `${painted.size === 1 ? '' : 's'}` +
     (bare ? ` · ${bare.toLocaleString()} triangles unpainted, shown grey` : '') +
+    // What the VIEWER actually managed, not what it was handed. Those two
+    // diverged silently for three rounds of "I still cannot see the plate":
+    // an upload that threw abandoned the rest of the loop and left the previous
+    // frame on screen, with nothing in the console because the throw never
+    // reached one.
+    (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
+      drew.failed.join('; ')}` : '') +
+    ` · ${drew?.blended ?? 0} blended, ${drew?.additive ?? 0} additive` +
     ' — drag to orbit, wheel to zoom';
 }
 

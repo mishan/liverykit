@@ -470,8 +470,18 @@ export function createToolHandler(client) {
         // useful answer is "no model" — a blank image would look like a car
         // wearing nothing, which is a lie about the design rather than a gap.
         try {
-          const png = await client.shoot(args.view ?? 'left', args.width, args.height);
-          return { content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }] };
+          const { png, skipped } = await client.shoot(args.view ?? 'left', args.width, args.height);
+          const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
+          // Named, not silently absent. Transparent surfaces with no artwork —
+          // glass, emissive masks — are left out rather than drawn as grey
+          // slabs, and a caller reading the picture should know that a part of
+          // the car is missing on purpose.
+          if (skipped) {
+            content.push({ type: 'text', text:
+              `${skipped} transparent surface(s) are not drawn: this renderer has no stock ` +
+              'car textures, and grey would misrepresent something that is see-through.' });
+          }
+          return { content };
         } catch (e) {
           return { content: [{ type: 'text', text: e.message }], isError: true };
         }
