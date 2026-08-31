@@ -39,6 +39,13 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ role, seed }),
     }),
+    // No design or fit in the body: the editor answers about the working ones
+    // it already holds, which are the ones a proposal would land on top of.
+    checkFitment: async () => request('api/fitment', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
     previewSurfaces: async (seed) => request('api/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

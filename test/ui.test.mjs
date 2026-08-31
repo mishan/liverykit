@@ -3119,3 +3119,65 @@ test('a texture named like a special key is a texture, not a prototype', async (
       `${file} is a key off the prototype, not a texture this car has`);
   }
 });
+
+test('the fitment panel leads with what it could not check', async () => {
+  // The panel's whole value is that bad news reaches you. An empty findings
+  // list from a run that skipped the geometry checks and an empty list from a
+  // run that did all of them are the same sentence and opposite facts — the
+  // first is how a team name ended up painted onto no part of the car.
+  const { dom } = await runApp({ server: copyFixture() });
+  const answer = {
+    car: 'fixture', checked: ['overlap', 'outside-safe', 'unreadable', 'unmirrored'],
+    notChecked: ['unseen', 'off-mesh'], notPlaced: [], findings: [],
+    modelError: null,
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/fitment'
+      ? { ok: true, status: 200, json: async () => answer }
+      : realFetch(path, init));
+  try {
+    await dom.querySelector('#recheck').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const shown = dom.querySelector('#fitment').innerHTML;
+  assert.match(shown, /not checked: unseen, off-mesh/, 'the skipped checks are named');
+  assert.match(shown, /class="note"/, 'and said as a warning, not as a hint');
+  assert.doesNotMatch(shown, /Nothing to report from[\s\S]*unseen/,
+    'a partial run is never summarised as covering everything');
+});
+
+test('the fitment panel names regions worst-first', async () => {
+  const { dom, calls } = await runApp({ server: copyFixture() });
+  const answer = {
+    car: 'fixture', checked: ['overlap', 'unseen', 'off-mesh'], notChecked: [], notPlaced: [],
+    findings: [
+      { kind: 'overlap', severity: 'low', ids: ['stripe'], why: 'stripe covers 40% of wash' },
+      { kind: 'off-mesh', severity: 'high', ids: ['team-left'],
+        why: 'team-left has only 11% of its area on the car' },
+    ],
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (path, init) =>
+    (path === '/api/fitment'
+      ? { ok: true, status: 200, json: async () => answer }
+      : realFetch(path, init));
+  try {
+    await dom.querySelector('#recheck').onclick();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const shown = dom.querySelector('#fitment').innerHTML;
+  assert.ok(shown.indexOf('team-left') < shown.indexOf('stripe'),
+    'the high finding is above the low one, whatever order the server sent');
+  assert.match(shown, /<code>team-left<\/code>/, 'named, so there is something to go and change');
+
+  // The WORKING design and fit, not the files on disk — the same rule the
+  // other-car panel follows, for the same reason.
+  const asked = calls.find((c) => c.path === '/api/fitment');
+  assert.ok(asked === undefined || (asked.body.design && asked.body.fit),
+    'the edit in front of you is what gets checked');
+});
