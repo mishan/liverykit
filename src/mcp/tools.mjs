@@ -1,3 +1,5 @@
+import { CONSTRAINTS } from '../fitment.mjs';
+
 const PROMPT_NOTE = '(Note: as an AI model, you cannot visually see the 3D car or rendered artwork. Your proposals are presented to a human user in the fitting editor, who will inspect and accept/discard them.)';
 
 async function toolDescribeCar(client) {
@@ -11,6 +13,33 @@ async function toolDescribeCar(client) {
     panelCount: s.panels?.length ?? 0,
   }));
   const totalPanels = state.surfaces.reduce((sum, s) => sum + (s.panels?.length ?? 0), 0);
+
+  // From `paintedRoles`, not from `surfaces`. A vocabulary term may bind to
+  // several textures — the RSS4 spreads its bodywork across two — and
+  // `surfaces` holds one entry per term, the primary, because that is the one
+  // you edit. Reading painted roles off it marks every secondary as unpainted
+  // and offers it for adoption, which would claim a role the design already
+  // paints and produce a livery that refuses to resolve.
+  //
+  // The fallback keeps this working against an editor older than the field
+  // rather than reporting every role on the car as free.
+  const paintedRoles = new Set(state.paintedRoles ?? state.surfaces.map((s) => s.role));
+  const unpaintedSurfaces = [];
+  const unpaintable = [];
+
+  for (const info of Object.values(state.roles ?? {})) {
+    if (!info.paintable) {
+      unpaintable.push({ file: info.file, why: info.why });
+    } else if (info.role && !paintedRoles.has(info.role) && !state.design?.paint?.[info.role]) {
+      unpaintedSurfaces.push({
+        role: info.role,
+        file: info.file,
+        width: info.width,
+        height: info.height,
+      });
+    }
+  }
+
   return {
     content: [{
       type: 'text',
@@ -19,6 +48,8 @@ async function toolDescribeCar(client) {
         textureCount: textures.length,
         totalPanels,
         textures,
+        unpaintedSurfaces,
+        unpaintable,
       }, null, 2),
     }],
   };
@@ -131,6 +162,81 @@ async function toolReport(client) {
   };
 }
 
+/**
+ * What is wrong with the design where it sits.
+ *
+ * Shaped so the worst news is impossible to skim past. An agent handed a flat
+ * list will read the first few entries and act; the counts and the `verdict`
+ * line are there so that "nine low findings and one high" cannot be summarised
+ * as "some minor findings", and so that a run which skipped the geometry checks
+ * cannot be reported as a clean one.
+ *
+ * This tool exists because of a specific failure. Asked to improve a fit, I
+ * moved a team name into a part of the texture that no triangle uses — it
+ * rendered perfectly and was on no part of the car — and every number available
+ * to me at the time said the move was fine.
+ */
+async function toolCheckFitment(client) {
+  const r = await client.checkFitment();
+  const findings = r.findings ?? [];
+  const count = (sev) => findings.filter((f) => f.severity === sev).length;
+
+  const partial = (r.notChecked?.length ?? 0) > 0 || (r.notPlaced?.length ?? 0) > 0;
+  const worst = count('fatal') ? 'fatal' : count('high') ? 'high' : count('low') ? 'low' : 'none';
+
+  const verdict = worst === 'none'
+    ? (partial
+        ? 'Nothing found BY THE CHECKS THAT RAN. Some did not run — see notChecked and notPlaced.'
+        : 'Every check ran and found nothing.')
+    : `Worst finding is ${worst}. ${count('fatal')} fatal, ${count('high')} high, ` +
+      `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify({
+      verdict,
+      car: r.car,
+      checked: r.checked ?? [],
+      notChecked: r.notChecked ?? [],
+      notPlaced: r.notPlaced ?? [],
+      // Worst first, so truncation loses the least important end.
+      findings: [...findings].sort((a, b) =>
+        ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
+    }, null, 2) }],
+  };
+}
+
+async function toolRenderView(client, args = {}) {
+  // OMITTED and EMPTY are different questions.
+  //
+  // `if (args.role)` sent an empty string, a stray space or a null down the
+  // render-everything path — so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  // Omitting `role` is a real request; supplying one that is not a usable name
+  // is a mistake, and worth saying so.
+  //
+  // `undefined` is absence; JSON `null` is a value somebody sent, and sending
+  // it is the mistake this catches.
+  if ('role' in args && args.role !== undefined) {
+    const role = typeof args.role === 'string' ? args.role.trim() : '';
+    if (!role) {
+      return {
+        content: [{ type: 'text', text:
+          `render_view got role: ${JSON.stringify(args.role)}, which is not a texture role. ` +
+          'Omit `role` entirely to render every painted surface.' }],
+        isError: true,
+      };
+    }
+    const res = await client.renderSurface(role, args.seed);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+    };
+  }
+  const res = await client.previewSurfaces(args.seed);
+  return {
+    content: [{ type: 'text', text: JSON.stringify(res, null, 2) }],
+  };
+}
+
 async function toolProposeDesign(client, args) {
   if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
     return {
@@ -187,7 +293,7 @@ export function createToolHandler(client) {
   const tools = [
     {
       name: 'describe_car',
-      description: `Describe the car profile including texture roles, panel counts, bind table, and axes. ${PROMPT_NOTE}`,
+      description: `Describe the car profile including texture roles, panel counts, bind table, axes, and unpainted/unpaintable surfaces. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {},
@@ -207,6 +313,15 @@ export function createToolHandler(client) {
           hasMirror: { type: 'boolean', description: 'Filter to panels with a mirror panel' },
         },
       },
+    },
+    {
+      name: 'list_constraints',
+      description:
+        'List the placement constraints a design region may declare, and what each one ' +
+        'means. Constraints live on the DESIGN, not the fit, so they travel to every car. ' +
+        'A constraint name that is not on this list is refused rather than ignored, so ' +
+        `read this before writing one. ${PROMPT_NOTE}`,
+      inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'list_treatments',
@@ -241,15 +356,41 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'check_fitment',
+      description:
+        'Measure what is WRONG with the working design on this car: text landing on text, ' +
+        'artwork outside a panel\'s readable area, text too small to read at the car\'s real ' +
+        'scale, broken left/right mirroring, placements painted into texture space no triangle ' +
+        'uses, and placements the bodywork hides. Call this BEFORE proposing a fit change and ' +
+        'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
+        'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
+        `findings list from a partial run does not mean the design is good. ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'render_view',
+      description: `Render texture SVG and region placement data for a surface role or the whole car. ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', description: 'Texture role to render (e.g. "ext_skin_sponsors" or "surfaces.body"). Omit for all painted surfaces.' },
+          seed: { type: 'string', description: 'Optional render seed string' },
+        },
+      },
+    },
+    {
       name: 'propose_design',
-      description: `Propose design changes (palette, regions, options, identity) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
+      description: `Propose design changes (palette, regions, options, identity, adopt-surface) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
           why: { type: 'string', description: 'Required justification for the proposal' },
           design: {
             type: 'array',
-            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region)',
+            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region, adopt-surface)',
             items: { type: 'object' },
           },
         },
@@ -293,6 +434,10 @@ export function createToolHandler(client) {
       case 'read_design': return toolReadDesign(client);
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
+      case 'check_fitment': return toolCheckFitment(client);
+      case 'list_constraints':
+        return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };
+      case 'render_view': return toolRenderView(client, args);
       case 'propose_design': return toolProposeDesign(client, args);
       case 'propose_fit': return toolProposeFit(client, args);
       default:

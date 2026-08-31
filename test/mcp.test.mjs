@@ -110,6 +110,32 @@ test('mcp tools: describe_car', async () => {
     assert.equal(data.car.id, 'rss_formula_rss_4');
     assert.ok(data.textureCount > 0);
     assert.ok(data.totalPanels > 0);
+    assert.ok(Array.isArray(data.unpaintedSurfaces));
+    assert.ok(Array.isArray(data.unpaintable));
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: render_view', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+
+    // Single surface render
+    const resSurface = await handler.callTool('render_view', { role: 'body' });
+    assert.ok(!resSurface.isError);
+    const dataSurface = JSON.parse(resSurface.content[0].text);
+    assert.ok(dataSurface.svg);
+    assert.ok(Array.isArray(dataSurface.placed));
+
+    // Preview all surfaces
+    const resAll = await handler.callTool('render_view', {});
+    assert.ok(!resAll.isError);
+    const dataAll = JSON.parse(resAll.content[0].text);
+    assert.ok(Array.isArray(dataAll.surfaces));
+    assert.ok(dataAll.surfaces.length > 0);
   } finally {
     await stop();
   }
@@ -232,6 +258,65 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
 
     const cleared = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
     assert.equal(cleared.proposal, null);
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: propose_design with adopt-surface', async () => {
+  // `grips`, not `wing`. On the RSS4 `wing` is a vocabulary TERM bound to no
+  // roles at all — `bind.wing` is an empty array, which is the profile saying
+  // this car has no such surface — so `paint.wing` names a texture that does
+  // not exist and could never be adopted. `grips` is a real texture role on
+  // this profile that the design does not paint, which is the case the tool is
+  // actually for.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+
+    const propRes = await handler.callTool('propose_design', {
+      why: 'adopt the grip texture into the design',
+      design: [
+        { op: 'adopt-surface', role: 'grips' },
+      ],
+    });
+
+    assert.ok(!propRes.isError);
+    const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
+    assert.equal(pending.proposal.why, 'adopt the grip texture into the design');
+    assert.equal(pending.proposal.design[0].op, 'adopt-surface');
+    assert.equal(pending.proposal.design[0].role, 'grips');
+  } finally {
+    await stop();
+  }
+});
+
+test('mcp tools: a secondary bound role is not offered as unpainted', async () => {
+  // A vocabulary term may bind to several textures: on the RSS4 `body` binds to
+  // `body` AND `bodyRear`. The editor's `surfaces` list holds one entry per
+  // term — the primary — because that is the one you edit, so reading painted
+  // roles off it marks every secondary as free.
+  //
+  // Offering `bodyRear` for adoption would then produce `paint.bodyRear`
+  // alongside `surfaces.body`, two claims on one texture, which
+  // `resolveTargets` refuses outright. The design would stop resolving on the
+  // next request.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const handler = createToolHandler(client);
+    const res = await handler.callTool('describe_car', {});
+    const text = res.content.map((c) => c.text).join('\n');
+    const described = JSON.parse(text);
+
+    const offered = (described.unpaintedSurfaces ?? []).map((s) => s.role);
+    assert.ok(!offered.includes('bodyRear'),
+      `bodyRear is already painted via surfaces.body; offered: ${offered.join(', ')}`);
+    assert.ok(!offered.includes('body'), 'nor the primary');
+    // And it still offers the ones that genuinely are free, or the check above
+    // would pass on a tool that offered nothing at all.
+    assert.ok(offered.length > 0, 'some textures on this car really are unpainted');
   } finally {
     await stop();
   }
@@ -381,5 +466,172 @@ test('integrity: tool descriptions declare agent has no eyes', async () => {
       t.description.includes('cannot visually see') || t.description.includes('cannot see'),
       `Tool "${t.name}" description must state that agent cannot see the car`
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// check_fitment — the tool that exists because of a specific mistake.
+//
+// Asked to improve a fit, I moved a team name into a part of the texture no
+// triangle uses. It rendered perfectly, it was on no part of the car, and every
+// number available to me said the move was fine. The value of this tool is
+// entirely in whether the bad news survives the trip to an agent intact.
+// ---------------------------------------------------------------------------
+
+test('check_fitment: a run that skipped checks cannot read as a clean one', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const client = createEditorClient(url);
+    const tools = createToolHandler(client);
+
+    const listed = (await tools.listTools()).find((t) => t.name === 'check_fitment');
+    assert.ok(listed, 'the tool is offered');
+    assert.match(listed.description, /notChecked/,
+      'and the description tells the caller to read it');
+
+    const res = await tools.callTool('check_fitment', {});
+    const out = JSON.parse(res.content[0].text);
+
+    // No model is loaded in this test, so the geometry checks cannot run. That
+    // is the common case and the dangerous one: an empty findings list here
+    // means "nothing found by the checks that ran", and an agent that reads it
+    // as "the design is good" makes exactly my mistake.
+    assert.ok(out.notChecked.includes('unseen'), 'the skipped checks are named');
+    assert.ok(out.notChecked.includes('off-mesh'));
+    assert.ok(!out.checked.includes('unseen'), 'and not also counted as passed');
+    assert.match(out.verdict, /did not run/,
+      `the verdict says so in words, not just in a field: ${out.verdict}`);
+  } finally {
+    await stop();
+  }
+});
+
+test('check_fitment: the worst finding leads, and is counted', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const out = JSON.parse((await tools.callTool('check_fitment', {})).content[0].text);
+
+    const rank = { fatal: 0, high: 1, low: 2 };
+    const order = out.findings.map((f) => rank[f.severity]);
+    assert.deepEqual(order, [...order].sort((a, b) => a - b),
+      'worst first, so truncation loses the least important end');
+
+    // A count and a sorted list, because "some minor findings" is how nine low
+    // and one high gets summarised by anything reading in a hurry.
+    if (out.findings.length) {
+      assert.match(out.verdict, /Worst finding is (fatal|high|low)\./, out.verdict);
+      assert.match(out.verdict, /\d+ fatal, \d+ high, \d+ low/, out.verdict);
+    }
+  } finally {
+    await stop();
+  }
+});
+
+test('list_constraints: the vocabulary is discoverable, not folklore', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const listed = (await tools.listTools()).find((t) => t.name === 'list_constraints');
+    assert.ok(listed, 'the tool is offered');
+
+    const out = JSON.parse((await tools.callTool('list_constraints', {})).content[0].text);
+    // The names have to match what fitment actually enforces, or the tool is
+    // documentation that lies — worse than none, because it will be believed.
+    const { CONSTRAINTS } = await import('../src/fitment.mjs');
+    assert.deepEqual(Object.keys(out), Object.keys(CONSTRAINTS));
+    for (const [k, v] of Object.entries(out)) {
+      assert.equal(typeof v, 'string', `${k} explains itself`);
+      assert.ok(v.length > 40, `${k} says what it means, not just its type`);
+    }
+  } finally {
+    await stop();
+  }
+});
+
+test('render_view tells an empty role apart from no role at all', async () => {
+  // `if (args.role)` sent an empty string, a stray space or a null down the
+  // render-everything path, so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+
+    for (const role of ['', '   ', null, 42]) {
+      const res = await tools.callTool('render_view', { role });
+      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
+      assert.match(res.content[0].text, /not a texture role/);
+      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
+    }
+
+    // Omitting it is a real request and still renders everything.
+    const all = await tools.callTool('render_view', {});
+    assert.ok(!all.isError, all.content[0].text);
+    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
+
+    // And a real role is trimmed rather than refused.
+    const one = await tools.callTool('render_view', { role: ' body ' });
+    assert.ok(!one.isError, one.content[0].text);
+  } finally {
+    await stop();
+  }
+});
+
+test('check_fitment answers about the working fit, not the file on disk', async () => {
+  // Found by doing the before/after the tool's own description asks for. A fit
+  // change went in, `read_fit` showed it, and `check_fitment` reported the
+  // identical findings as before — because the endpoint read `sent.fit ?? fit`
+  // and the MCP client deliberately sends nothing, asking the editor about its
+  // own state. So it fell through to the file loaded at startup and reported
+  // confidently on a fit nobody was looking at.
+  //
+  // It agreed with reality whenever the two happened to match, which is the
+  // worst way for this to be wrong: it reads as a verified comparison.
+  //
+  // Two text regions that do not overlap, then a working fit that puts one on
+  // the other. Overlap is the one check that needs neither a car model nor a
+  // regenerated profile, so this stays a test about plumbing.
+  const profile = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  const livery = {
+    name: 'Two Names', folder: 'two_names', packs: ['core'],
+    identity: { driver: 'Tester', team: 'Team', number: '7' },
+    palette: { ink: '#101014' },
+    surfaces: { body: { regions: [
+      { id: 'a-name', treatment: 'text', panel: 'centre_mid', at: [0.1, 0.1, 0.8, 0.2], text: '{driver}' },
+      { id: 'b-name', treatment: 'text', panel: 'centre_mid', at: [0.1, 0.7, 0.8, 0.2], text: '{team}' },
+    ] } },
+  };
+  const { server, url } = await startUi({
+    livery, profile, fitPath: join(ROOT, 'fits/neon-grid@rss_formula_rss_4.json'),
+    liveryId: 'neon-grid', liveryPath: join(ROOT, 'liveries/neon-grid.json'),
+    port: 0, log: () => {},
+  });
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const ask = async () => JSON.parse((await tools.callTool('check_fitment', {})).content[0].text);
+
+    const before = await ask();
+    assert.deepEqual(before.findings.filter((f) => f.kind === 'overlap'), [],
+      'the two names start apart');
+
+    // The door the browser and an accepted proposal both use.
+    await fetch(new URL('api/preview', url).href, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ fit: { livery: 'neon-grid', car: profile.id, regions: {
+        'b-name': { panel: 'centre_mid', at: [0.1, 0.12, 0.8, 0.2] },
+      } } }),
+    });
+
+    const after = await ask();
+    const hit = after.findings.filter((f) => f.kind === 'overlap');
+    assert.ok(hit.length >= 1, `the working fit is what gets checked: ${
+      JSON.stringify(after.findings)}`);
+    assert.deepEqual(hit[0].ids.sort(), ['a-name', 'b-name']);
+    assert.match(hit[0].why, /both are text/);
+
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
   }
 });

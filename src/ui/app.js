@@ -253,6 +253,72 @@ async function checkAgainst(car) {
   ].join('');
 }
 
+// --- what is wrong with this design ON THIS car ------------------------------
+//
+// The panel above asks whether the placements FIND anything somewhere else.
+// This asks whether the somewhere they found here is any good, which is a
+// different question and the one you cannot answer by looking.
+//
+// You can see the car in the next tab and judge for yourself whether it looks
+// right. What you cannot see, from any angle, is that a name is painted into
+// the gap between two uv islands and exists on no triangle at all — it renders
+// perfectly in the UV view and is simply not on the car. That is measurable and
+// nothing was measuring it.
+//
+// Run on demand rather than on every edit. The geometry checks cast rays for
+// every region and take about a second on a real car, and a panel that stalls
+// the editor after each drag is a panel people turn off.
+$('#recheck').onclick = () => checkFitment();
+
+async function checkFitment() {
+  const el = $('#fitment');
+  el.innerHTML = '<p class="hint">measuring…</p>';
+
+  const r = await fetch('/api/fitment', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ design: state.design, fit: state.fit }),
+  }).then(async (x) => {
+    const body = await x.json().catch(() => ({}));
+    if (!x.ok) return { fatal: body.error ?? `the editor answered ${x.status}` };
+    if (!Array.isArray(body.findings)) return { fatal: 'the answer had no findings in it' };
+    return body;
+  }).catch((e) => ({ fatal: e.message }));
+
+  if (r.fatal) { el.innerHTML = `<div class="note">! ${esc(r.fatal)}</div>`; return; }
+
+  const rank = { fatal: 0, high: 1, low: 2 };
+  const found = [...r.findings].sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3));
+
+  // What was NOT checked comes first, and is stated even when the news is good.
+  // "No findings" from a run that skipped the geometry is the same sentence as
+  // "no findings" from a run that did all of it, and the two mean opposite
+  // things — this is the whole reason the module reports `notChecked` at all.
+  const skipped = r.notChecked?.length
+    ? `<div class="note">! not checked: ${esc(r.notChecked.join(', '))}${
+        r.modelError ? ` — ${esc(r.modelError)}` : ' — the car model is still loading; ask again'}</div>`
+    : '';
+  const unplaced = r.notPlaced?.length
+    ? `<div class="note">! not placed at all: ${esc(r.notPlaced.join(', '))}</div>`
+    : '';
+
+  el.innerHTML = [
+    skipped,
+    unplaced,
+    found.length
+      ? ''
+      : `<div class="hint">Nothing to report from ${esc((r.checked ?? []).join(', '))}.</div>`,
+    // Named one at a time, worst first, because the useful next action is to go
+    // and move a particular region and a count cannot tell you which.
+    ...found.map((f) => {
+      const cls = f.severity === 'low' ? 'hint' : 'note';
+      const mark = f.severity === 'low' ? '' : '! ';
+      const ids = (f.ids ?? []).map((i) => `<code>${esc(i)}</code>`).join(' ');
+      return `<div class="${cls}">${mark}${ids} ${esc(f.why)}</div>`;
+    }),
+  ].join('');
+}
+
 $('#adoptsurface').onclick = () => adoptSurface($('#adoptsurface').dataset.role);
 
 $('#tab-uv').onclick = () => showView('uv');
@@ -1439,7 +1505,12 @@ async function livePreview() {
     // `placed` too: a drag that crosses onto another panel changes where the
     // MIRRORED half landed, and its highlight is drawn from this.
     state.placed = out.placed;
-    if (state.view === '3d') await state.viewer?.setTexture(out.svg, 512);
+    // The surface's own size, not a guess. This is the view you judge a
+    // placement in, and 512 for a 2048 sheet is where the fuzziness came from.
+    if (state.view === '3d') {
+      const t = state.data.surfaces.find((x) => x.role === state.surface.role);
+      await state.viewer?.setTexture(out.svg, t?.width ?? 1024, t?.height ?? t?.width ?? 1024);
+    }
     else $('#texture').innerHTML = out.svg;
     // Cheap, and the numbers changing under the cursor is how you learn what a
     // panel-relative coordinate actually means.
@@ -2778,7 +2849,8 @@ function highlightOnCar(abs, panelName, twinId) {
 async function paintCar() {
   if (!state.viewer || !state.svg) return;
   try {
-    await state.viewer.setTexture(state.svg);
+    const t = state.data.surfaces.find((x) => x.role === state.surface?.role);
+    await state.viewer.setTexture(state.svg, t?.width ?? 1024, t?.height ?? t?.width ?? 1024);
   } catch (e) {
     $('#viewnote').textContent = `texture: ${e.message}`;
   }
