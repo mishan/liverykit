@@ -3288,6 +3288,234 @@ test('packModel says what is missing instead of dying on undefined', async () =>
     'a builder that has not caught up is told so, at the call that did it');
 });
 
+test('an op the editor does not know is refused, not silently dropped', async () => {
+  const { applyDesignOp, applyFitOp, opSetConstraint } = await import('../src/ui/ops.js');
+
+  // The default case used to `break`, so an unknown op did nothing and said
+  // nothing — which looks exactly like an accepted proposal that changed the
+  // design. It is also how a `set-constraint` reaching an editor loaded before
+  // constraints existed would behave: banner says accepted, design untouched.
+  assert.throws(() => applyDesignOp({}, { op: 'set-constrait', id: 'a', key: 'minMm' }),
+    /No design op called "set-constrait"/);
+  assert.throws(() => applyFitOp({}, { op: 'nudge' }), /No fit op called "nudge"/);
+  assert.throws(() => applyDesignOp({}, { op: 'x' }), /reload the editor/,
+    'and it suggests the likely cause');
+
+  // A misspelled CONSTRAINT is refused at the point of writing, rather than
+  // written and reported later by fitment. A constraint is invisible until
+  // something violates it, so a typo reads as a rule in force.
+  const design = { surfaces: { body: { regions: [{ id: 'team', treatment: 'text' }] } } };
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'keepclear', value: true }),
+    /No constraint called "keepclear"/);
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'minMm', value: 'big' }),
+    /takes a number/);
+  assert.throws(() => opSetConstraint(design, { id: 'team', key: 'minOnCar', value: 90 }),
+    /fraction between 0 and 1/);
+  assert.equal(design.surfaces.body.regions[0].constraints, undefined,
+    'and nothing was written on the way to refusing');
+
+  // The real thing round-trips, and removing the last one takes the object away
+  // rather than leaving `constraints: {}` behind in a saved design.
+  opSetConstraint(design, { id: 'team', key: 'keepClear', value: true });
+  assert.deepEqual(design.surfaces.body.regions[0].constraints, { keepClear: true });
+  opSetConstraint(design, { id: 'team', key: 'keepClear', value: null });
+  assert.equal(design.surfaces.body.regions[0].constraints, undefined);
+});
+
+test('what blends is decided by the material, not by the texture', async () => {
+  // My first attempt at this used the profile's `alpha` flag, which means
+  // "this DDS carries an alpha channel" — true of a DXT5 body texture that is
+  // entirely opaque. 62 of the Honda's 75 textures are flagged, so nearly every
+  // panel went into the blended pass with depth write off, and a car whose
+  // bodywork does not write depth cannot hide its own interior. It came back as
+  // a screenshot of a see-through car.
+  const { blends } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(blends('ksPerPixelAlpha'), true, 'the number plates');
+  assert.equal(blends('ksWindscreen'), true);
+  assert.equal(blends('ksPerPixelReflection'), true, 'side glass and mirrors');
+
+  // The bodywork, which is what went wrong.
+  assert.equal(blends('ksPerPixelMultiMap_damage_dirt'), false, 'the doors');
+  assert.equal(blends('ksPerPixelNM'), false);
+  assert.equal(blends('ksPerPixel'), false);
+
+  // Alpha TEST is a hard cutout: it neither blends nor needs sorting, and
+  // treating it as blended would put grilles and bolt heads in the sorted pass
+  // for nothing.
+  assert.equal(blends('ksPerPixelAT'), false, 'alpha test is not alpha blend');
+  assert.equal(blends('ksPerPixelAT_NM'), false);
+
+  assert.equal(blends(undefined), false, 'and an unknown shader is opaque');
+  assert.equal(blends('ksSomethingNobodyHasWrittenYet'), false,
+    'unknown means opaque: a wrongly opaque surface looks solid, a wrongly ' +
+    'blended one can disappear');
+});
+
+test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
+  // The shot has no stock car textures. Drawing glass or an emissive mask as
+  // grey would be a lie — grey is opaque and the whole point of those surfaces
+  // is that they are not — so they are left out and the count is reported.
+  // Silence would let a missing third of the car read as a design that paints
+  // nothing there.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const opaque = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map(), { width: 60, height: 60 });
+  assert.equal(opaque.skipped, 0, 'an opaque group with no artwork is drawn grey');
+
+  const glass = rasterise(quad, [{ role: 'glass', start: 0, count: 6, blend: true }],
+    new Map(), { width: 60, height: 60 });
+  assert.equal(glass.skipped, 1, 'a blended group with no artwork is not drawn');
+  const at = (img) => [0, 1, 2].map((k) => img.data[(30 * img.width + 30) * 4 + k]);
+  assert.deepEqual(at(glass), [0x10, 0x10, 0x16], 'and the background shows through');
+  assert.notDeepEqual(at(opaque), at(glass));
+});
+
+test('the whole-car view never paints grey where a transparent surface belongs', async () => {
+  // Asked whether my MCP render was the same thing as the editor's Whole car
+  // view. It is not — it is a separate CPU rasteriser in Node that shares the
+  // geometry and the artwork and nothing else. So a picture from it proves the
+  // design paints the plate, and proves nothing about the browser.
+  //
+  // The browser had its own version of the bug. In the blended pass a group
+  // with no texture fell through to `unpainted`, which is OPAQUE GREY. The
+  // number plate's emissive twin has no painted role, so a failed stock fetch
+  // put a grey slab in front of the plate — sorted against it and co-planar
+  // with it, so roughly half the time.
+  //
+  // I had already applied this exact reasoning to the Node renderer and not to
+  // the viewer, which is what the question exposed.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // Read out of the source because the alternative is a GPU. Crude, and it
+  // holds the one invariant that matters: nothing opaque stands in for
+  // something transparent.
+  const paintBody = src.slice(src.indexOf('const paint = (g) =>'),
+    src.indexOf('for (const g of groups) if (!g.blend) paint(g);'));
+  assert.match(paintBody, /if \(!tex && g\.blend\) return;/,
+    'a blended group with no texture is skipped, not drawn grey');
+  assert.ok(paintBody.indexOf('if (!tex && g.blend) return;')
+    < paintBody.indexOf('gl.bindTexture'),
+    'and skipped BEFORE it binds the grey fallback');
+
+  // The opaque path still falls back to grey, which is right: an unpainted
+  // solid surface should read as unpainted rather than vanish.
+  assert.match(paintBody, /tex \?\? unpainted/);
+});
+
+test('an emissive sheet adds light instead of covering what is behind it', async () => {
+  // The black rectangle over the number plates, finally. Both the plate and its
+  // twin are ksPerPixelAlpha, so both go into the blended pass — and the twin
+  // is a 32x32 DXT5 glow map whose RGB is black. Composited with SRC_ALPHA an
+  // opaque black texture is simply a black rectangle, drawn co-planar with the
+  // plate and sorted against it.
+  //
+  // Assetto Corsa draws emissive sheets ADDITIVELY: black adds nothing, so the
+  // plate shows through. That is the difference, and no amount of getting the
+  // alpha pass right would have found it.
+  const { additive } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(additive('IGT_Numberplate_Emissive.dds'), true);
+  assert.equal(additive('honda_emissive.dds'), true);
+  assert.equal(additive('EXT_Glass_Emissive_Headlights.dds'), true);
+
+  // The plate itself is NOT additive — it is the thing being lit.
+  assert.equal(additive('IGT_Numberplate_Colour.dds'), false);
+  assert.equal(additive('EXT_Skin_Sponsors.dds'), false);
+  assert.equal(additive(undefined), false);
+
+  // Detected by name, which is weaker than reading a shader and is what the
+  // model gives: the two meshes share a shader and differ only in what their
+  // texture is called. If that ever stops holding, this is the line to doubt.
+  assert.equal(additive('anything_EMISSIVE_uppercase.dds'), true, 'case-insensitive');
+
+  // And the viewer has to pick the blend mode per group, not once for the pass.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const pass = src.slice(src.indexOf('for (const g of blended)'));
+  assert.match(pass, /if \(g\.add\) gl\.blendFunc\(gl\.ONE, gl\.ONE\);/);
+  assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
+});
+
+test('a surface the browser cannot rasterise fails loudly and alone', async () => {
+  // Three rounds of "I still cannot see the plate, no errors in console", and
+  // this is why the console was clean. setWholeCar awaited each upload in
+  // sequence, so one surface whose svg would not rasterise threw, abandoned the
+  // remaining uploads AND the stock-texture pass, and returned before `groups`
+  // was assigned — leaving the previous frame on screen. Indistinguishable from
+  // "the new surface did not render", and silent, because the throw was
+  // swallowed by the caller.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const loop = src.slice(src.indexOf('const failed = [];'),
+    src.indexOf('// The parts the design does NOT paint'));
+
+  assert.match(loop, /try \{[\s\S]*await uploadSvg[\s\S]*\} catch/,
+    'each upload is attempted on its own');
+  assert.match(loop, /failed\.push/, 'and a failure is recorded rather than thrown');
+
+  // The report has to reach the person, not a console they have no reason to
+  // open. The viewer hands it back; the editor puts it in #viewnote.
+  assert.match(src, /return \{\s*uploaded:/, 'setWholeCar reports what it managed');
+  const app = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
+  assert.match(app, /const drew = await state\.viewer\.setWholeCar/);
+  assert.match(app, /FAILED TO UPLOAD/, 'and says so on screen');
+});
+
+test('a design can name surfaces the car should not draw', async () => {
+  // A GT3 car ships one set of number plate meshes per racing series and
+  // renders ALL of them. The Honda has eight on the left flank alone — IGT,
+  // IMSA and two Blancpain variants, each with an emissive twin — stacked in
+  // one patch of door. In the game a skin makes the unused ones transparent;
+  // here they wore their stock 32x32 black textures and were drawn over the
+  // plate the design had just painted.
+  //
+  // This is a CHOICE and not something to infer. I tried inferring it twice:
+  // "unpainted geometry inside painted geometry" hid half the car, because a
+  // group is a whole texture and the body's box encloses the mirrors and the
+  // radiator; adding a size-similarity test hid the hood lining and the nets.
+  // Bounding boxes cannot tell an alternate from a part, which I had already
+  // concluded once while building the fitment checker and then ignored.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+
+  // No painted files, so every mesh arrives as a roleless leftover — the same
+  // shape the plate sets have on the real car.
+  const shown = wholeModelGeometry(model, []);
+  const other = shown.groups.find((g) => !g.role && g.file);
+  assert.ok(other, `something unpainted to hide: ${JSON.stringify(shown.groups)}`);
+
+  const profile = { textures: { spare: { file: other.file } } };
+  const hidden = wholeModelGeometry(model, [], { livery: { hide: ['spare'] }, profile });
+
+  assert.ok(!hidden.groups.some((g) => g.file === other.file),
+    'the named surface is not emitted at all — not drawn, not fetched, not counted');
+  assert.equal(hidden.groups.length, shown.groups.length - 1);
+
+  // Painted surfaces are never hidden this way: `hide` names things the design
+  // does not paint, and silently dropping its own artwork would be far worse
+  // than leaving an unwanted plate on screen.
+  const stillPainted = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }], {
+    livery: { hide: ['body'] },
+    profile: { textures: { body: { file: CAR.texture } } },
+  });
+  assert.ok(stillPainted.groups.some((g) => g.role === 'body'),
+    'a surface the design paints survives being named');
+
+  // An unknown role is ignored rather than throwing: a design travels between
+  // cars, and naming a plate set this car does not have is not an error.
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: ['no_such_role_on_this_car'] }, profile: {},
+  }));
+});
+
 test('a texture is clamped on both axes, and the budget measures what it returns', async () => {
   const { capped, textureSizes } = await import('../src/ui/view3d.js');
 
@@ -3311,6 +3539,29 @@ test('a texture is clamped on both axes, and the budget measures what it returns
     assert.ok(total <= budget,
       `${(total / 1048576).toFixed(1)} MB returned against a ${budget / 1048576} MB budget`);
   }
+});
+
+test('hide is guarded, because a design is hand-edited', async () => {
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const model = parseKn5Buffer(carKn5());
+  const all = wholeModelGeometry(model, []).groups.length;
+
+  // A string iterates as characters — five roles named i, m, s, a — so a
+  // plausible typo would silently hide whatever single-letter role existed.
+  assert.equal(wholeModelGeometry(model, [], {
+    livery: { hide: 'imsa' }, profile: { textures: { i: { file: 'x.dds' } } },
+  }).groups.length, all, 'a string hides nothing rather than hiding by letter');
+
+  // And a profile entry whose file is not a string must not throw inside
+  // toLowerCase halfway through building the car.
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: ['odd'] }, profile: { textures: { odd: { file: 42 } } },
+  }));
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: null }, profile: {},
+  }));
 });
 
 test('the single-surface payload carries normals too, at the right offset', async () => {

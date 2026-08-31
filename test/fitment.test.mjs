@@ -67,7 +67,7 @@ test('a check that did not run is named, not counted as passed', () => {
     { id: 'a', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: 'X' },
   ]), profile);
 
-  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh'],
+  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh', 'unpainted-twin'],
     'it says which checks it could not make');
   assert.ok(!r.checked.includes('unseen'));
   assert.ok(r.checked.includes('overlap'), 'and which it did');
@@ -390,6 +390,75 @@ test('a misspelled constraint is refused, not quietly ignored', () => {
   // And the rule it was trying to state is genuinely not in force.
   assert.deepEqual(r.findings.filter((f) => f.kind === 'crossed'), [],
     'nothing pretends the typo worked');
+});
+
+test('a painted sheet with an unpainted twin on top of it is reported', () => {
+  // The black slab. Asked where the race number should go, I measured every
+  // candidate plate and recommended the one scoring 69% visible and 100% on the
+  // mesh. Both true. Painting it put a black rectangle across the door, because
+  // the car carries FOUR number plate sets at once and each has an emissive
+  // duplicate at identical coordinates — paint the colour sheet and the
+  // unpainted emissive one draws the car's own artwork over the top.
+  //
+  // Every other check here asks about a rectangle in a texture. This one cannot
+  // be asked that way: the problem is not in the texture at all, it is that two
+  // textures are painted onto geometry standing in the same place.
+  const base = plane({ rows: 4, cols: 4 });
+  const twinned = withPlate(base, 0.0005);      // same place, same facing
+  const r = fitment(design([
+    { id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' },
+  ]), profile, null, { model: twinned });
+
+  const hit = r.findings.filter((f) => f.kind === 'unpainted-twin');
+  assert.equal(hit.length, 1, JSON.stringify(r.findings));
+  assert.equal(hit[0].severity, 'high');
+  assert.match(hit[0].why, /the same place/);
+  assert.match(hit[0].why, /which this design does not paint/);
+  assert.ok(r.checked.includes('unpainted-twin'));
+
+  // And silent when the design paints BOTH sheets. Two surfaces in one place is
+  // only a problem when one of them is the car's own artwork — if your livery
+  // is on both, which one wins matters far less, and reporting it would be the
+  // kind of noise that teaches you to skip the whole section.
+  const bothPainted = fitment({
+    ...design([{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }]),
+    paint: { plate: { regions: [{ treatment: 'fill', color: 'ink' }] } },
+  }, {
+    ...profile,
+    textures: { ...profile.textures, plate: { file: 'plate.dds', width: 64, height: 64 } },
+    bind: { ...profile.bind, plate: { roles: ['plate'], source: 'human' } },
+    panels: { ...profile.panels, plate: { P: { rect: [0, 0, 1, 1], anisotropy: 1, visible: 1 } } },
+  }, null, { model: twinned });
+  assert.deepEqual(bothPainted.findings.filter((f) => f.kind === 'unpainted-twin'), [],
+    'both sheets carry your artwork, so there is nothing to warn about');
+});
+
+test('the back of a panel is not a twin', () => {
+  // The two false positives that survived every other filter: DOOR_Left against
+  // DOOR_Left_INT, and the hood's outer shell against its inner. Same bounding
+  // box to within a percent, because they are the two sides of one panel — and
+  // not a problem, since you cannot see both at once.
+  //
+  // A colour sheet and its emissive twin face the SAME way, being one surface
+  // drawn twice. An inner shell faces the other way. Structural, not tuned.
+  const base = plane({ rows: 4, cols: 4 });
+  const m = base.meshes[0];
+  // Negate the 3x3 and translate back, which flips every normal while leaving
+  // the bounding box exactly where it was. `vertex` applies the world matrix to
+  // normals, so this is the one place a flip can be expressed — the two meshes
+  // share a vertex block, and editing it in the buffer flips both.
+  const backed = {
+    ...base,
+    materials: [...base.materials, { slots: { txDiffuse: 'back.dds' } }],
+    meshes: [m, { ...m, materialId: 1,
+      world: [-1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 1.6, 1.6, 0.0005, 1] }],
+  };
+  const r = fitment(design([
+    { id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' },
+  ]), profile, null, { model: backed });
+
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'unpainted-twin'), [],
+    'the back of a panel is how a car is modelled, not a mistake');
 });
 
 test('a profile that disagrees with the model is fatal, not quietly skipped', () => {

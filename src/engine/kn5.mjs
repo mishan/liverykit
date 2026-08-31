@@ -422,6 +422,52 @@ export function triangles(model, mesh) {
   return out;
 }
 
+/**
+ * Shaders that BLEND, by name.
+ *
+ * The property I need is "does this material composite against what is behind
+ * it", and it lives on the material, not on the texture. My first attempt used
+ * the profile's `alpha` flag instead — which means "this DDS carries an alpha
+ * channel", true of a DXT5 body texture that is entirely opaque. 62 of 75
+ * textures on the Honda are flagged, so nearly every panel went transparent and
+ * the car stopped being able to hide its own interior.
+ *
+ * This list is 48 of that car's 151 meshes and the bodywork is not among them.
+ *
+ * `ksPerPixelAT` and `ksPerPixelAT_NM` are deliberately absent: AT is alpha
+ * TEST, a hard cutout that neither blends nor needs sorting, and treating it as
+ * blended would put grilles and bolt heads into the sorted pass for nothing.
+ */
+const BLENDS = new Set([
+  'ksPerPixelAlpha',        // number plates, decals, banners
+  'ksPerPixelReflection',   // side glass, mirrors
+  'ksWindscreen',
+  'ksBrokenGlass',
+]);
+
+/**
+ * Whether a surface ADDS light rather than covering what is behind it.
+ *
+ * An emissive sheet is a glow map: black where nothing glows. Assetto Corsa
+ * draws these additively, so the black contributes nothing and you see the
+ * plate underneath. Composited with SRC_ALPHA instead, an opaque black texture
+ * is simply a black rectangle — which is what has been standing in front of
+ * this car's number plates all along.
+ *
+ * Detected by NAME, which is weaker than reading a shader and is what the model
+ * gives us: both the plate and its twin are ksPerPixelAlpha, and the only thing
+ * distinguishing them is that one is called `_Emissive`. Worth saying plainly
+ * rather than hiding behind the helper.
+ */
+export function additive(file) {
+  return /emissive/i.test(String(file ?? ''));
+}
+
+/** Whether a material composites against what is behind it. */
+export function blends(shader) {
+  return BLENDS.has(String(shader ?? ''));
+}
+
 /** Meshes whose material's txDiffuse is `textureName`. */
 export function meshesUsingTexture(model, textureName) {
   const want = textureName.toLowerCase();

@@ -24,6 +24,7 @@
 //   GET  /api/cars         the other profiles this design could be pointed at
 //   POST /api/portability  what the working design would find on one of them
 //   POST /api/fitment      what is wrong with the working design ON THIS car
+//   GET  /api/shot         a PNG of the car, for a caller with no browser
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   GET  /api/stock        the car's own texture for a surface the design skips
@@ -36,7 +37,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseKn5, meshesUsingTexture, vertex, triangles } from '../engine/kn5.mjs';
+import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
@@ -46,6 +47,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
+import { shoot, VIEWS } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -149,7 +151,7 @@ export function modelGeometry(model, file) {
  * bug: a grey rectangle across a door panel looks like a sticker somebody left
  * on, and it was reported as a fault twice.
  */
-export function wholeModelGeometry(model, files) {
+export function wholeModelGeometry(model, files, { livery = {}, profile = {} } = {}) {
   const positions = [];
   const uvs = [];
   // The surface normals were always in the kn5 and were always thrown away
@@ -179,8 +181,49 @@ export function wholeModelGeometry(model, files) {
       }
       for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
     }
-    if (indices.length > start) groups.push({ ...group, start, count: indices.length - start });
+    if (indices.length > start) {
+      // Whether this group composites, taken from the MATERIAL rather than from
+      // the texture. A group is one draw call and one texture, and in practice
+      // one shader — but `some` rather than `every`, because a blended mesh
+      // drawn in the opaque pass is a black slab and an opaque one drawn in the
+      // blended pass merely sorts oddly. Wrong in the cheaper direction.
+      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
+      groups.push({
+        ...group, start, count: indices.length - start, blend,
+        add: blend && additive(group.file),
+      });
+    }
   };
+
+  // Surfaces the design explicitly does not want drawn.
+  //
+  // A GT3 car ships one set of number plate meshes per racing series and
+  // renders them ALL — this Honda has eight on the left flank: IGT, IMSA and
+  // two Blancpain variants, each with an emissive twin, stacked in one patch of
+  // door. In the game a skin makes the unused ones transparent. Here they wore
+  // their stock 32x32 black textures and were drawn over the plate the design
+  // had just painted.
+  //
+  // This is a CHOICE, not something to infer. I tried inferring it from
+  // geometry twice — first "unpainted things inside painted things", which hid
+  // half the car because a group is a whole texture and the body's box encloses
+  // the mirrors; then with a size-similarity test, which hid the hood lining
+  // and the radiator. Bounding boxes cannot tell an alternate from a part, and
+  // I had already written that conclusion down once while building the fitment
+  // checker and then ignored it.
+  //
+  // So the design says which ones. `hide` is a list of texture roles, matched
+  // by their file, and it means exactly what it says.
+  //
+  // Guarded, because a design is a file somebody edits by hand. `hide: 'imsa'`
+  // is a string, and iterating a string yields characters — five roles named
+  // i, m, s, a — while a profile entry whose `file` is not a string would throw
+  // inside toLowerCase. Neither is worth a stack trace or a wrong car.
+  const hidden = new Set();
+  for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
+    const f = profile.textures?.[role]?.file;
+    if (typeof f === 'string' && f) hidden.add(f.toLowerCase());
+  }
 
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter((m) => !claimed.has(m));
@@ -205,6 +248,9 @@ export function wholeModelGeometry(model, files) {
     leftover.get(file).push(m);
   }
   for (const file of [...leftover.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
+    // Named on the `hide` list: not emitted at all, so it is not drawn, not
+    // fetched, and not counted as unpainted geometry.
+    if (file && hidden.has(String(file).toLowerCase())) continue;
     // `role: null` still means "the design does not paint this", which is what
     // the viewer keys its grey off. `file` is new, and says what to draw instead
     // when the car itself can supply it.
@@ -973,6 +1019,61 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         return json(200, portability(design, other));
       }
 
+      // A PICTURE, for a caller that has no browser.
+      //
+      // The editor draws with WebGL and an MCP tool cannot reach it, so an
+      // agent proposing changes to this livery has been working blind — three
+      // changes in a row shipped unverified and came back as screenshots from
+      // the person they were supposed to be helping, one of which had made the
+      // whole car see-through.
+      //
+      // Rendered from the WORKING design and fit, like everything else here,
+      // and from the same geometry the browser gets.
+      if (req.method === 'GET' && url.pathname === '/api/shot') {
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const view = url.searchParams.get('view') ?? 'left';
+        // hasOwn, not a truthy lookup: `VIEWS['toString']` is a function from
+        // the prototype, so it passed the check and then destructured to
+        // undefined yaw and pitch — NaN camera, blank picture, 200 OK.
+        if (!Object.hasOwn(VIEWS, view)) {
+          return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
+            `Known views: ${Object.keys(VIEWS).join(', ')}` });
+        }
+        const design = workingDesign ?? livery;
+        const useFit = workingFit ?? fit;
+        // EVERY role, not just the primary one per term. `editorState` returns
+        // one entry per vocabulary term — right for a surface picker, wrong
+        // here: `surfaces.body` on a formula car binds body AND bodyRear, the
+        // design paints both, and taking only the first drew half the car grey
+        // and called it unpainted.
+        const roles = [];
+        for (const t of resolveTargets(profile, design).targets) {
+          if (roles.some((r) => r.role === t.role)) continue;
+          roles.push({ role: t.role, file: texture(profile, t.role).file });
+        }
+        const g = wholeModelGeometry(m, roles, { livery: design, profile });
+        const surfaces = roles.map((r) => ({
+          role: r.role,
+          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
+        }));
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
+        const shot = await shoot(g, g.groups, surfaces, {
+          view,
+          width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
+          height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
+        });
+        res.writeHead(200, {
+          'content-type': 'image/png',
+          'cache-control': 'no-store',
+          // Said in a header rather than swallowed: transparent surfaces this
+          // renderer has no artwork for are not drawn, and the caller should
+          // know how much of the car that was.
+          'x-liverykit-skipped': String(shot.skipped),
+        });
+        return res.end(shot.png);
+      }
+
       // What is wrong with the design where it actually sits.
       //
       // POST for the same reason portability is: the interesting design and the
@@ -986,13 +1087,22 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // already says plainly that the answer is partial.
       if (req.method === 'POST' && url.pathname === '/api/fitment') {
         const sent = await body();
-        // THREE sources, in this order. `sent` is the browser posting what it
-        // holds; `workingDesign`/`workingFit` are what the editor holds, which
-        // is where an accepted proposal lands; the files on disk are last.
+        // THREE sources, in this order, and the middle one was missing.
         //
-        // The MCP client deliberately sends nothing — it asks the editor about
-        // its own state — so omitting the middle pair made this answer about
-        // the file loaded at startup and agree with reality only by luck.
+        // `sent` is the browser posting what it currently holds. `workingFit` is
+        // what the editor holds server-side — which is where an accepted
+        // proposal lands, and where the browser's own edits land. `fit` is the
+        // file on disk at startup.
+        //
+        // Written as `sent.fit ?? fit`, this endpoint answered about the FILE
+        // whenever the caller sent nothing — which is exactly what the MCP tool
+        // does, since it asks about the editor's own working state rather than
+        // supplying one. So check_fitment reported confidently on a fit nobody
+        // was looking at, and agreed with reality only while the two happened
+        // to match. It read as a verified before/after and was neither.
+        //
+        // A query, so nothing is assigned: unlike /api/preview this does not
+        // adopt what it was sent as the new working state.
         const found = fitment(
           sent.design ?? workingDesign ?? livery,
           profile,
@@ -1066,7 +1176,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const files = editorState({ livery, profile, fit })
           .surfaces.map((s) => ({ role: s.role, file: s.file }));
-        const g = wholeModelGeometry(m, files);
+        const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packModel(g));
