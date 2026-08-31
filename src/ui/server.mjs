@@ -151,7 +151,7 @@ export function modelGeometry(model, file) {
  * bug: a grey rectangle across a door panel looks like a sticker somebody left
  * on, and it was reported as a fault twice.
  */
-export function wholeModelGeometry(model, files) {
+export function wholeModelGeometry(model, files, { livery = {}, profile = {} } = {}) {
   const positions = [];
   const uvs = [];
   // The surface normals were always in the kn5 and were always thrown away
@@ -195,6 +195,36 @@ export function wholeModelGeometry(model, files) {
     }
   };
 
+  // Surfaces the design explicitly does not want drawn.
+  //
+  // A GT3 car ships one set of number plate meshes per racing series and
+  // renders them ALL — this Honda has eight on the left flank: IGT, IMSA and
+  // two Blancpain variants, each with an emissive twin, stacked in one patch of
+  // door. In the game a skin makes the unused ones transparent. Here they wore
+  // their stock 32x32 black textures and were drawn over the plate the design
+  // had just painted.
+  //
+  // This is a CHOICE, not something to infer. I tried inferring it from
+  // geometry twice — first "unpainted things inside painted things", which hid
+  // half the car because a group is a whole texture and the body's box encloses
+  // the mirrors; then with a size-similarity test, which hid the hood lining
+  // and the radiator. Bounding boxes cannot tell an alternate from a part, and
+  // I had already written that conclusion down once while building the fitment
+  // checker and then ignored it.
+  //
+  // So the design says which ones. `hide` is a list of texture roles, matched
+  // by their file, and it means exactly what it says.
+  //
+  // Guarded, because a design is a file somebody edits by hand. `hide: 'imsa'`
+  // is a string, and iterating a string yields characters — five roles named
+  // i, m, s, a — while a profile entry whose `file` is not a string would throw
+  // inside toLowerCase. Neither is worth a stack trace or a wrong car.
+  const hidden = new Set();
+  for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
+    const f = profile.textures?.[role]?.file;
+    if (typeof f === 'string' && f) hidden.add(f.toLowerCase());
+  }
+
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter((m) => !claimed.has(m));
     for (const m of meshes) claimed.add(m);
@@ -218,6 +248,9 @@ export function wholeModelGeometry(model, files) {
     leftover.get(file).push(m);
   }
   for (const file of [...leftover.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
+    // Named on the `hide` list: not emitted at all, so it is not drawn, not
+    // fetched, and not counted as unpainted geometry.
+    if (file && hidden.has(String(file).toLowerCase())) continue;
     // `role: null` still means "the design does not paint this", which is what
     // the viewer keys its grey off. `file` is new, and says what to draw instead
     // when the car itself can supply it.
@@ -1010,10 +1043,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const design = workingDesign ?? livery;
         const useFit = workingFit ?? fit;
         // EVERY role, not just the primary one per term. `editorState` returns
-        // one entry per vocabulary term — that is right for a surface picker
-        // and wrong here: `surfaces.body` on a formula car binds body AND
-        // bodyRear, the design paints both, and taking only the first drew half
-        // the car grey and called it unpainted.
+        // one entry per vocabulary term — right for a surface picker, wrong
+        // here: `surfaces.body` on a formula car binds body AND bodyRear, the
+        // design paints both, and taking only the first drew half the car grey
+        // and called it unpainted.
         const roles = [];
         for (const t of resolveTargets(profile, design).targets) {
           if (roles.some((r) => r.role === t.role)) continue;
@@ -1143,7 +1176,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const files = editorState({ livery, profile, fit })
           .surfaces.map((s) => ({ role: s.role, file: s.file }));
-        const g = wholeModelGeometry(m, files);
+        const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packModel(g));

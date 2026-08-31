@@ -3466,6 +3466,56 @@ test('a surface the browser cannot rasterise fails loudly and alone', async () =
   assert.match(app, /FAILED TO UPLOAD/, 'and says so on screen');
 });
 
+test('a design can name surfaces the car should not draw', async () => {
+  // A GT3 car ships one set of number plate meshes per racing series and
+  // renders ALL of them. The Honda has eight on the left flank alone — IGT,
+  // IMSA and two Blancpain variants, each with an emissive twin — stacked in
+  // one patch of door. In the game a skin makes the unused ones transparent;
+  // here they wore their stock 32x32 black textures and were drawn over the
+  // plate the design had just painted.
+  //
+  // This is a CHOICE and not something to infer. I tried inferring it twice:
+  // "unpainted geometry inside painted geometry" hid half the car, because a
+  // group is a whole texture and the body's box encloses the mirrors and the
+  // radiator; adding a size-similarity test hid the hood lining and the nets.
+  // Bounding boxes cannot tell an alternate from a part, which I had already
+  // concluded once while building the fitment checker and then ignored.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(carKn5());
+
+  // No painted files, so every mesh arrives as a roleless leftover — the same
+  // shape the plate sets have on the real car.
+  const shown = wholeModelGeometry(model, []);
+  const other = shown.groups.find((g) => !g.role && g.file);
+  assert.ok(other, `something unpainted to hide: ${JSON.stringify(shown.groups)}`);
+
+  const profile = { textures: { spare: { file: other.file } } };
+  const hidden = wholeModelGeometry(model, [], { livery: { hide: ['spare'] }, profile });
+
+  assert.ok(!hidden.groups.some((g) => g.file === other.file),
+    'the named surface is not emitted at all — not drawn, not fetched, not counted');
+  assert.equal(hidden.groups.length, shown.groups.length - 1);
+
+  // Painted surfaces are never hidden this way: `hide` names things the design
+  // does not paint, and silently dropping its own artwork would be far worse
+  // than leaving an unwanted plate on screen.
+  const stillPainted = wholeModelGeometry(model, [{ role: 'body', file: CAR.texture }], {
+    livery: { hide: ['body'] },
+    profile: { textures: { body: { file: CAR.texture } } },
+  });
+  assert.ok(stillPainted.groups.some((g) => g.role === 'body'),
+    'a surface the design paints survives being named');
+
+  // An unknown role is ignored rather than throwing: a design travels between
+  // cars, and naming a plate set this car does not have is not an error.
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: ['no_such_role_on_this_car'] }, profile: {},
+  }));
+});
+
 test('a texture is clamped on both axes, and the budget measures what it returns', async () => {
   const { capped, textureSizes } = await import('../src/ui/view3d.js');
 
@@ -3489,6 +3539,29 @@ test('a texture is clamped on both axes, and the budget measures what it returns
     assert.ok(total <= budget,
       `${(total / 1048576).toFixed(1)} MB returned against a ${budget / 1048576} MB budget`);
   }
+});
+
+test('hide is guarded, because a design is hand-edited', async () => {
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const model = parseKn5Buffer(carKn5());
+  const all = wholeModelGeometry(model, []).groups.length;
+
+  // A string iterates as characters — five roles named i, m, s, a — so a
+  // plausible typo would silently hide whatever single-letter role existed.
+  assert.equal(wholeModelGeometry(model, [], {
+    livery: { hide: 'imsa' }, profile: { textures: { i: { file: 'x.dds' } } },
+  }).groups.length, all, 'a string hides nothing rather than hiding by letter');
+
+  // And a profile entry whose file is not a string must not throw inside
+  // toLowerCase halfway through building the car.
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: ['odd'] }, profile: { textures: { odd: { file: 42 } } },
+  }));
+  assert.doesNotThrow(() => wholeModelGeometry(model, [], {
+    livery: { hide: null }, profile: {},
+  }));
 });
 
 test('the single-surface payload carries normals too, at the right offset', async () => {

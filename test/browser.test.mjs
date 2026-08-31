@@ -475,28 +475,22 @@ const done = () => {
   // becomes async activity after the test ended — which Node 22 fails the
   // whole file for, while Node 24 quietly tolerates it.
   clearTimeout(watchdog);
-  // NOTHING IS RETURNED and nothing may reject.
-  //
-  // This used to hand back the fetch promise. Callers write return done()
-  // inside an async IIFE, so a failed post — the harness closing the socket the
-  // moment it has the report, most often — became an unhandled rejection, which
-  // the listener above dutifully recorded as an error and failed the test on.
+  // NOTHING IS RETURNED and nothing may reject. Handing back the fetch promise
+  // turned a failed post — the harness closing the socket the moment it has the
+  // report — into an unhandled rejection, recorded as an error and failed on.
   // The report had already arrived; the test failed for having delivered it.
-  //
-  // NO BACKTICKS in here: this whole block lives inside a template literal, and
-  // a stray one ends it. That has broken this file four times.
   fetch('/report', { method: 'POST', body: JSON.stringify(out) }).catch(() => {});
 };
 // A REPORT ALWAYS COMES BACK.
 //
 // A test that hangs costs ninety seconds and tells you nothing; the same test
-// failing at twenty-five tells you what it managed first. CI has no GPU and its
+// failing at twenty tells you what it managed first. CI has no GPU and its
 // compositor sometimes never maps a framebuffer, so a page can sit in a state
 // where nothing throws and nothing finishes — and every path to done() runs
 // after the thing that stalled.
 //
 // This one does not. Whatever the page got to is what comes back.
-watchdog = watchdog = setTimeout(() => { say('WATCHDOG fired — the page never finished'); done(); }, 25000);
+watchdog = setTimeout(() => { say('WATCHDOG fired — the page never finished'); done(); }, 25000);
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 const centre = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; };
 // What a MOUSE would hit at this point — not the node we happen to hold.
