@@ -24,6 +24,7 @@
 //   GET  /api/cars         the other profiles this design could be pointed at
 //   POST /api/portability  what the working design would find on one of them
 //   POST /api/fitment      what is wrong with the working design ON THIS car
+//   GET  /api/shot         a PNG of the car, for a caller with no browser
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   GET  /api/stock        the car's own texture for a surface the design skips
@@ -46,6 +47,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
+import { shoot, VIEWS } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -971,6 +973,54 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!want) return json(404, { error: `no profile called ${JSON.stringify(sent.car)}` });
         const other = await loadProfile(join(CARS, `${want.id}.json`));
         return json(200, portability(design, other));
+      }
+
+      // A PICTURE, for a caller that has no browser.
+      //
+      // The editor draws with WebGL and an MCP tool cannot reach it, so an
+      // agent proposing changes to this livery has been working blind — three
+      // changes in a row shipped unverified and came back as screenshots from
+      // the person they were supposed to be helping, one of which had made the
+      // whole car see-through.
+      //
+      // Rendered from the WORKING design and fit, like everything else here,
+      // and from the same geometry the browser gets.
+      if (req.method === 'GET' && url.pathname === '/api/shot') {
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const view = url.searchParams.get('view') ?? 'left';
+        // hasOwn, not a truthy lookup: `VIEWS['toString']` is a function from
+        // the prototype, so it passed the check and then destructured to
+        // undefined yaw and pitch — NaN camera, blank picture, 200 OK.
+        if (!Object.hasOwn(VIEWS, view)) {
+          return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
+            `Known views: ${Object.keys(VIEWS).join(', ')}` });
+        }
+        const design = workingDesign ?? livery;
+        const useFit = workingFit ?? fit;
+        // EVERY role, not just the primary one per term. `editorState` returns
+        // one entry per vocabulary term — that is right for a surface picker
+        // and wrong here: `surfaces.body` on a formula car binds body AND
+        // bodyRear, the design paints both, and taking only the first drew half
+        // the car grey and called it unpainted.
+        const roles = [];
+        for (const t of resolveTargets(profile, design).targets) {
+          if (roles.some((r) => r.role === t.role)) continue;
+          roles.push({ role: t.role, file: texture(profile, t.role).file });
+        }
+        const g = wholeModelGeometry(m, roles, { livery: design, profile });
+        const surfaces = roles.map((r) => ({
+          role: r.role,
+          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
+        }));
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
+        const png = await shoot(g, g.groups, surfaces, {
+          view,
+          width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
+          height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
+        });
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+        return res.end(png);
       }
 
       // What is wrong with the design where it actually sits.

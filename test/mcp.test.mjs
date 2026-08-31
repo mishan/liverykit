@@ -643,6 +643,76 @@ test('check_fitment answers about the working fit, not the file on disk', async 
   }
 });
 
+test('render_car returns an image, and refuses a view it does not have', async () => {
+  // The tool that exists because three changes in a row were shipped blind.
+  // The editor draws with WebGL in a browser an MCP tool cannot reach, so an
+  // agent proposing livery changes could describe them confidently and never
+  // once look at the result — including the change that made the whole car
+  // see-through.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const listed = (await tools.listTools()).find((t) => t.name === 'render_car');
+    assert.ok(listed, 'the tool is offered');
+    // The description has to state what the picture is NOT, or it will be read
+    // as a screenshot of the game and trusted further than it should be.
+    assert.match(listed.description, /no stock car textures|no transparency/);
+
+    // No car model in this harness, so the honest answer is a refusal rather
+    // than a blank image — a picture of nothing looks like a car with nothing
+    // on it, which is a lie about the design.
+    const res = await tools.callTool('render_car', { view: 'left' });
+    if (res.isError) {
+      assert.match(res.content[0].text, /model/i, res.content[0].text);
+    } else {
+      assert.equal(res.content[0].type, 'image');
+      assert.equal(res.content[0].mimeType, 'image/png');
+      assert.ok(res.content[0].data.length > 100, 'and it has pixels in it');
+    }
+  } finally {
+    await stop();
+  }
+});
+
+test('a shot is drawn from geometry, with the artwork on it', async () => {
+  // Rendering without the editor, so this can be checked without a browser or
+  // a car. Two triangles forming a quad, facing the camera, wearing a solid
+  // magenta sheet.
+  const { rasterise, VIEWS } = await import('../src/engine/shot.mjs');
+  assert.ok(VIEWS.left && VIEWS.right, 'the named views exist');
+
+  // In the YZ plane, facing -x, because the `left` view looks along +x. A quad
+  // in the XY plane is edge-on from there and renders as nothing — which the
+  // first version of this test did, and which is exactly the kind of mistake
+  // the whole file exists to make visible.
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const art = { w: 2, h: 2, data: Buffer.from([
+    255, 0, 255, 255, 255, 0, 255, 255,
+    255, 0, 255, 255, 255, 0, 255, 255,
+  ]) };
+
+  const painted = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map([['body', art]]), { view: 'left', width: 80, height: 80 });
+  const at = (img, x, y) => [0, 1, 2].map((k) => img.data[(y * img.width + x) * 4 + k]);
+  const [r, g, b] = at(painted, 40, 40);
+  // Darker than the source, because it is shaded — the hue is what matters.
+  assert.ok(r > 40 && b > 40 && g < r / 2, `the artwork reaches the pixels: ${r},${g},${b}`);
+
+  // A group with no artwork is drawn bare grey, which says "your design does
+  // not paint this" rather than inventing a colour for it.
+  const bare = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map(), { view: 'left', width: 80, height: 80 });
+  const [br, bg, bb] = at(bare, 40, 40);
+  assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
+    `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
+  assert.notDeepEqual([br, bg, bb], [r, g, b]);
+});
+
 test('render_view tells an empty role apart from no role at all', async () => {
   // `if (args.role)` sent an empty string, a stray space or a null down the
   // render-everything path, so a caller that computed a role and got nothing

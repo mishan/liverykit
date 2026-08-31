@@ -46,6 +46,20 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
     }),
+    /** A PNG of the car. Binary, so it cannot go through `request`. */
+    shoot: async (view = 'left', width, height) => {
+      const q = new URLSearchParams({ view });
+      if (width) q.set('width', String(width));
+      if (height) q.set('height', String(height));
+      const res = await fetch(new URL(`api/shot?${q}`, url).href, {
+        headers: { connection: 'close' },
+      }).catch(() => { throw new Error(`No fitting editor is listening at ${url}.`); });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);
+      }
+      return Buffer.from(await res.arrayBuffer());
+    },
     previewSurfaces: async (seed) => request('api/preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
