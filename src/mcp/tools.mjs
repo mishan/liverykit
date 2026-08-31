@@ -163,11 +163,12 @@ async function toolReport(client) {
 async function toolRenderView(client, args = {}) {
   // OMITTED and EMPTY are different questions.
   //
-  // `if (args.role)` sent an empty string, a stray space, or a null down the
+  // `if (args.role)` sent an empty string, a stray space or a null down the
   // render-everything path — so a caller that computed a role and got nothing
   // received a whole-car preview and no hint that its role had evaporated.
   // Omitting `role` is a real request; supplying one that is not a usable name
   // is a mistake, and worth saying so.
+  //
   // `undefined` is absence; JSON `null` is a value somebody sent, and sending
   // it is the mistake this catches.
   if ('role' in args && args.role !== undefined) {
