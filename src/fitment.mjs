@@ -25,7 +25,7 @@
 import { resolveTargets, expandRegions, resolveRect, texture, metresAcross } from './profile.mjs';
 import { applyFit } from './fit.mjs';
 import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
-import { meshesUsingTexture } from './engine/kn5.mjs';
+import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
 // From the editor's op module, because the BROWSER needs this list too — to
 // build the controls and to refuse a constraint nothing enforces — and
 // `fitment.mjs` is not one of the files served to it. One list, so the thing
@@ -179,6 +179,18 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   for (const t of targets) {
     const spec = t.spec ?? {};
 
+    // WHICH TEXTURE, not just which surface.
+    //
+    // One surface term can bind several texture roles — `surfaces.body` on a
+    // formula car resolves to `body` AND `bodyRear` — and the design paints
+    // every one of them, so a region really does land more than once, on
+    // different parts of the car. That is two problems, not a double-counted
+    // one. But every finding carried only `surface`, which is the same string
+    // for both, so they arrived as exact duplicates and read like a bug in the
+    // checker. The role is what tells them apart, and it is also what somebody
+    // needs in order to go and look at the right sheet.
+    const sayHere = (f) => say({ role: t.role, ...f });
+
     // Per TARGET, so one broken surface does not hide the findings on the rest
     // — and so the run says which surface went unchecked instead of returning a
     // short list of findings that reads like a clean bill of health.
@@ -197,21 +209,24 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
     // Parsed once, before any check reads them, so a misspelled constraint is
     // reported rather than quietly enforcing nothing.
-    for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, say);
+    for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, sayHere);
 
-    overlaps(placed, t, say);
-    outsideSafe(placed, profile, t, say);
-    unreadable(placed, profile, t, say);
-    unmirrored(placed, profile, t, say);
-    if (seen) unseen(placed, profile, t, seen, say);
+    overlaps(placed, t, sayHere);
+    outsideSafe(placed, profile, t, sayHere);
+    unreadable(placed, profile, t, sayHere);
+    unmirrored(placed, profile, t, sayHere);
+    if (seen) unseen(placed, profile, t, seen, sayHere);
   }
+
+  // Across surfaces rather than within one, so it cannot live in the loop above.
+  if (model) stacked(model, profile, targets, say);
 
   return {
     car: profile.id,
     name: profile.name || profile.id,
-    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => c !== 'unseen' && c !== 'off-mesh'),
+    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin'].includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: model ? [] : ['unseen', 'off-mesh'],
+    notChecked: model ? [] : ['unseen', 'off-mesh', 'unpainted-twin'],
     // Surfaces that threw. Empty is the answer callers want; non-empty means
     // the findings below cover less of the car than they appear to.
     notPlaced: failed,
@@ -219,7 +234,8 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen', 'off-mesh', 'crossed', 'bad-constraint'];
+const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen',
+  'off-mesh', 'crossed', 'bad-constraint', 'unpainted-twin'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -544,4 +560,164 @@ function intersect(a, b) {
   const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
   const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
   return x * y;
+}
+
+// ---------------------------------------------------------------------------
+// Surfaces that occupy the same piece of car.
+//
+// The failure that produced this. Asked where the race number should go, I
+// measured every candidate plate and recommended the one scoring 69% visible
+// and 100% on the mesh. Both numbers were true. Painting it put a black slab
+// across the door, because this car ships FOUR number plate sets — IGT, IMSA
+// and two Blancpain variants — all rendering at once in the same patch of
+// bodywork, each with an emissive duplicate at identical coordinates.
+//
+// Every check above asks about a rectangle in a texture: can it be seen, is it
+// on the mesh, does other artwork cross it. None of them can see this, because
+// the problem is not in the texture at all. It is that two textures are painted
+// onto geometry standing in the same place, and which one you get is a draw
+// order nobody controls.
+//
+// Cheap to detect and, once you have the model, obvious: compare world bounds.
+// ---------------------------------------------------------------------------
+
+/** Mean surface normal, which says which way a sheet looks. */
+function facing(model, mesh) {
+  let x = 0, y = 0, z = 0;
+  for (let i = 0; i < mesh.vertexCount; i++) {
+    const p = vertex(model, mesh, i);
+    x += p.nx; y += p.ny; z += p.nz;
+  }
+  const l = Math.hypot(x, y, z) || 1;
+  return [x / l, y / l, z / l];
+}
+
+/** Padded world AABB. Padded because plates are FLAT — a zero-thickness box has
+ *  zero volume, and every overlap against it would divide by nothing. */
+function bounds(model, mesh, pad = 0.005) {
+  let lo = [Infinity, Infinity, Infinity];
+  let hi = [-Infinity, -Infinity, -Infinity];
+  // Unrolled. The tidy version allocated a three-element array of pairs per
+  // vertex, and a GT3 car is a quarter of a million vertices per pass.
+  for (let i = 0; i < mesh.vertexCount; i++) {
+    const p = vertex(model, mesh, i);
+    if (p.x < lo[0]) lo[0] = p.x; if (p.x > hi[0]) hi[0] = p.x;
+    if (p.y < lo[1]) lo[1] = p.y; if (p.y > hi[1]) hi[1] = p.y;
+    if (p.z < lo[2]) lo[2] = p.z; if (p.z > hi[2]) hi[2] = p.z;
+  }
+  for (let k = 0; k < 3; k++) { lo[k] -= pad; hi[k] += pad; }
+  return { lo, hi };
+}
+
+const volume = (b) => (b.hi[0] - b.lo[0]) * (b.hi[1] - b.lo[1]) * (b.hi[2] - b.lo[2]);
+
+/** How much of the SMALLER box sits inside the larger one, 0 to 1. */
+function share(a, b) {
+  let overlap = 1;
+  for (let k = 0; k < 3; k++) {
+    const d = Math.min(a.hi[k], b.hi[k]) - Math.max(a.lo[k], b.lo[k]);
+    if (d <= 0) return 0;
+    overlap *= d;
+  }
+  const smaller = Math.min(volume(a), volume(b));
+  return smaller > 0 ? overlap / smaller : 0;
+}
+
+/**
+ * NEAR-IDENTICAL, and nothing weaker.
+ *
+ * Two earlier versions of this check are worth recording, because both failed
+ * the same way and the second failure is what fixed the design.
+ *
+ * First: report any painted surface whose bounds overlap another texture's by
+ * half. Thirty-odd findings on a real design, nearly all of them a bounding box
+ * doing what bounding boxes do — a steering wheel sits INSIDE the cockpit's
+ * box, a roof banner's box reaches the windshield.
+ *
+ * Second: add "both must be thin sheets of similar size", on the reasoning that
+ * the offending surfaces are plates and decals rather than solids. Still noisy,
+ * and the reason is the important part: a car is BUILT from co-located sheets.
+ * Decals sit on the bumper. Headlight glass sits in the bumper shell. Damage
+ * overlays sit on everything. Geometrically those are indistinguishable from
+ * four number plate sets stacked on a door, because geometrically they are the
+ * same arrangement. One is how a car is modelled and one is a mistake, and no
+ * amount of box comparison can tell you which.
+ *
+ * So the broad check is not shipped. What is shipped is the narrow one, which
+ * has a signal the broad one lacks: a colour sheet and its emissive twin are
+ * not overlapping, they are the SAME surface twice, to within a millimetre. If
+ * you paint one and not the other, the car's own artwork is drawn over yours.
+ * That is the black slab, and it is the specific thing that went wrong.
+ */
+const A_TWIN = 0.92;           // shared volume, over the smaller box
+const SAME_SIZE = 0.9;         // smaller volume over larger
+/**
+ * And they must FACE THE SAME WAY.
+ *
+ * The last two false positives were DOOR_Left against DOOR_Left_INT, and the
+ * hood's outer shell against its inner. Same box to within a percent, because
+ * they are the two sides of one panel — and not the problem at all, since you
+ * cannot see both at once.
+ *
+ * A colour sheet and its emissive twin face the same way, being the same
+ * surface drawn twice. An inner shell faces the other way. That is structural
+ * rather than tuned, and it is the difference between "this panel has a back"
+ * and "this panel is drawn twice and you only painted one of them".
+ */
+const SAME_FACING = 0.5;
+
+function stacked(model, profile, targets, say) {
+  const painted = new Map();                    // texture file -> role that paints it
+  for (const t of targets) {
+    const file = texture(profile, t.role)?.file;
+    if (file) painted.set(file.toLowerCase(), { role: t.role, from: t.from });
+  }
+
+  // Bounds once per mesh, keyed by the texture it wears.
+  const byFile = new Map();
+  for (const mesh of model.meshes ?? []) {
+    const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
+    if (!file) continue;
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push({ mesh, box: bounds(model, mesh), face: facing(model, mesh) });
+  }
+
+  // Reported once per PAIR OF TEXTURES, not per pair of meshes. Four plate sets
+  // with emissive twins is forty-odd overlapping mesh pairs and four facts.
+  const said = new Set();
+  for (const [file, { role, from }] of painted) {
+    for (const mine of byFile.get(file) ?? []) {
+      for (const [other, theirs] of byFile) {
+        if (other === file) continue;
+        const pair = `${file}|${other}`;
+        if (said.has(pair)) continue;
+        // Hoisted: whether the OTHER texture is painted is a fact about the
+        // texture, and testing it once per mesh walked the whole list to reach
+        // the same answer every time.
+        if (painted.has(other)) continue;
+        for (const q of theirs) {
+          const va = volume(mine.box), vb = volume(q.box);
+          if (Math.min(va, vb) / Math.max(va, vb) < SAME_SIZE) continue;
+          const s = share(mine.box, q.box);
+          if (s < A_TWIN) continue;
+          const dot = mine.face[0] * q.face[0] + mine.face[1] * q.face[1] + mine.face[2] * q.face[2];
+          if (dot < SAME_FACING) continue;      // an inner shell, not a twin
+          said.add(pair);
+
+          say({
+            kind: 'unpainted-twin',
+            severity: 'high',
+            role, surface: from, ids: [],
+            share: Math.round(s * 100) / 100,
+            with: other,
+            why: `${role} is painted onto ${mine.mesh.name}, and ${q.mesh.name} sits in the ` +
+              `same place — ${Math.round(s * 100)}% of the same volume — wearing ${other}, ` +
+              'which this design does not paint. The car\'s own artwork is drawn over yours ' +
+              'there, and which of the two shows is not yours to decide.',
+          });
+          break;
+        }
+      }
+    }
+  }
 }

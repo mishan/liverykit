@@ -579,34 +579,6 @@ test('propose_design can record what a region needs, and refuses a name nothing 
   }
 });
 
-test('render_view tells an empty role apart from no role at all', async () => {
-  // `if (args.role)` sent an empty string, a stray space or a null down the
-  // render-everything path, so a caller that computed a role and got nothing
-  // received a whole-car preview and no hint that its role had evaporated.
-  const { url, stop } = await setupTestEditor();
-  try {
-    const tools = createToolHandler(createEditorClient(url));
-
-    for (const role of ['', '   ', null, 42]) {
-      const res = await tools.callTool('render_view', { role });
-      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
-      assert.match(res.content[0].text, /not a texture role/);
-      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
-    }
-
-    // Omitting it is a real request and still renders everything.
-    const all = await tools.callTool('render_view', {});
-    assert.ok(!all.isError, all.content[0].text);
-    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
-
-    // And a real role is trimmed rather than refused.
-    const one = await tools.callTool('render_view', { role: ' body ' });
-    assert.ok(!one.isError, one.content[0].text);
-  } finally {
-    await stop();
-  }
-});
-
 test('check_fitment answers about the working fit, not the file on disk', async () => {
   // Found by doing the before/after the tool's own description asks for. A fit
   // change went in, `read_fit` showed it, and `check_fitment` reported the
@@ -660,8 +632,41 @@ test('check_fitment answers about the working fit, not the file on disk', async 
     assert.deepEqual(hit[0].ids.sort(), ['a-name', 'b-name']);
     assert.match(hit[0].why, /both are text/);
 
+    // This car's `surfaces.body` binds two texture roles, so the collision is
+    // real on both sheets. They used to arrive as exact duplicates, which reads
+    // as a bug in the checker rather than as two places to go and look.
+    assert.equal(new Set(hit.map((f) => f.role)).size, hit.length,
+      `each names its own texture: ${JSON.stringify(hit.map((f) => f.role))}`);
   } finally {
     if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
     await new Promise((ok) => server.close(ok));
+  }
+});
+
+test('render_view tells an empty role apart from no role at all', async () => {
+  // `if (args.role)` sent an empty string, a stray space or a null down the
+  // render-everything path, so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+
+    for (const role of ['', '   ', null, 42]) {
+      const res = await tools.callTool('render_view', { role });
+      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
+      assert.match(res.content[0].text, /not a texture role/);
+      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
+    }
+
+    // Omitting it is a real request and still renders everything.
+    const all = await tools.callTool('render_view', {});
+    assert.ok(!all.isError, all.content[0].text);
+    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
+
+    // And a real role is trimmed rather than refused.
+    const one = await tools.callTool('render_view', { role: ' body ' });
+    assert.ok(!one.isError, one.content[0].text);
+  } finally {
+    await stop();
   }
 });
