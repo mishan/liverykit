@@ -410,6 +410,11 @@ Three views, because the sheet is not the question:
 - **Whole car** — every painted surface at once. A stripe can meet the bodywork
   perfectly and miss the sidepod beside it.
 
+Both car views are **lit** — a hemisphere for sky and ground, one key light and a
+clearcoat highlight — because an unlit slab cannot show how a stripe crosses a
+curve. Shading distorts colour, though, so the **lit** tick turns it off when you
+need to read the paint as it is. The UV view is always the honest one.
+
 The Car views need the car's `.kn5`, which is yours and not shipped here — see
 [You supply the game's files](#you-supply-the-games-files). The profile records
 which model it was generated from, so setting `AC_ROOT` is usually enough; `--model`
@@ -447,6 +452,62 @@ Full reasoning in [docs/fitting.md](docs/fitting.md). Turning the editor into
 something that can create design elements rather than only move them is
 planned in [docs/authoring.md](docs/authoring.md).
 
+### What is wrong with it, measured
+
+The editor shows you the car and you can judge whether it looks right. What you
+cannot see, from any angle, is that a name is painted into the gap between two UV
+islands and exists on no triangle at all — it renders perfectly on the sheet and
+is simply not on the car. **Check the fit** in the right-hand panel measures that
+and several other things:
+
+| finding | what it means |
+|---|---|
+| `overlap` | two placements share space, and at least one is text |
+| `crossed` | something is painted across a region that asked to be kept clear |
+| `off-mesh` | the box lands on texture space no triangle uses |
+| `unseen` | the bodywork hides it from trackside |
+| `unreadable` | too small in millimetres at the car's real scale |
+| `outside-safe` | outside the part of the panel measurement found readable |
+| `unpainted-twin` | a sheet you paint has an unpainted duplicate on top of it |
+| `bad-constraint` | a constraint nothing enforces — refused, not ignored |
+
+The panel leads with what it could **not** check. "No findings" from a run that
+skipped the geometry and "no findings" from a run that did all of it are the same
+sentence and opposite facts, so the two are never allowed to look alike.
+
+### Saying what a region needs
+
+Placement rules say where artwork goes. Constraints say what it needs wherever it
+ends up, and they live on the **design** so they travel to every car:
+
+```jsonc
+{ "id": "team-left", "treatment": "text", "text": "{team}",
+  "constraints": { "keepClear": true, "minMm": 40, "minOnCar": 0.9 } }
+```
+
+`keepClear` closes a real gap: the overlap check speaks up for text on text,
+because layering is how a livery is built — but a stripe running the length of a
+flank is artwork by that measure, and the team name under it is still lost.
+`minMm` replaces the global 25 mm floor for this region and applies to any
+treatment. `minOnCar` does the same for how much of the box must land on
+geometry, since a background fill is meant to bleed off an island and a name is
+not. A misspelled constraint is refused rather than ignored: it would otherwise
+read as a rule in force and enforce nothing.
+
+### Surfaces the car should not draw
+
+A GT3 car ships one set of number plate meshes per racing series and renders all
+of them — this Honda has eight on the left flank alone, stacked in one patch of
+door. Painting one leaves the others wearing their stock artwork on top of yours.
+`hide` names the ones you are not using, by texture role:
+
+```jsonc
+"hide": ["imsa_numberplate_l", "blancpain_numberplate_silver_colour"]
+```
+
+A role the car does not have is ignored, because designs travel, and a surface
+the design paints is never hidden.
+
 ### Two honest limits
 
 A fit adjusts placement, so two things it cannot rescue. A portable design cannot
@@ -479,13 +540,33 @@ design written for one car will always look better on it.
 
 ### Available MCP Tools
 
+**Knowing.**
+
 - **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
 - **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
 - **`list_treatments`**: Catalogue of all loaded treatment options and schemas.
+- **`list_constraints`**: The constraints a region may declare, and what each enforces.
 - **`read_design`**: Read working design data held in the running editor.
 - **`read_fit`**: Read working fit overrides and copies, including stale region IDs.
 - **`report`**: Detailed report of which surfaces and textures this design paints on this car.
-- **`propose_design`**: Propose design changes (palette, regions, options, identity) to the editor's inbox.
+
+**Measuring and seeing.**
+
+- **`check_fitment`**: What is *wrong* with the working design on this car — text
+  landing on text, artwork outside a panel's readable area, text too small at the
+  car's real scale, broken mirroring, placements painted into texture space no
+  triangle uses, and placements the bodywork hides. Read `notChecked`: it names
+  checks that could not run, and an empty findings list from a partial run does
+  not mean the design is good.
+- **`render_view`**: Texture SVG and placement data for one surface, or all of them.
+- **`render_car`**: A picture of the working design on the car, returned as an
+  image. Seven named views. Its limits are in the tool description rather than
+  left to be discovered: no transparency, no stock car textures — unpainted parts
+  are flat grey — and one fixed light rig.
+
+**Proposing.**
+
+- **`propose_design`**: Propose design changes (palette, regions, options, identity, constraints) to the editor's inbox.
 - **`propose_fit`**: Propose fit placement overrides or copies to the editor's inbox.
 
 Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect, drag, and **Accept** or **Discard** them using the undo stack. The MCP server never writes directly to disk.

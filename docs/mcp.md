@@ -154,9 +154,25 @@ Two groups, and the boundary between them is the point.
 | `read_design` | the working design as the editor currently holds it |
 | `read_fit` | the working fit, and which ids the build would report as stale |
 | `report` | what this design would and would not paint on this car, from `resolveTargets` |
+| `list_constraints` | the constraints a region may declare, and what each one enforces |
 
 `read_design` and `read_fit` come from the editor rather than from disk, so the
 agent sees what the person is looking at, including their unsaved work.
+
+**Measuring, and seeing.** Also read-only, and the second of these was an open
+question when this was written — see below.
+
+| tool | answers |
+|---|---|
+| `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimetres, mirroring, coverage, occlusion |
+| `render_view` | the rendered texture and placements for one surface, or all of them |
+| `render_car` | a picture of the working design on the car |
+
+`check_fitment` reports `checked` and `notChecked` separately, because a run that
+skipped the geometry checks and a run that passed them produce the same empty
+findings list and mean opposite things. Its reply opens with a verdict naming the
+worst severity and the counts: "nine low and one high" is otherwise summarised as
+"some minor findings" by anything reading in a hurry.
 
 **Proposing.** Everything here goes to the inbox and nowhere else.
 
@@ -164,6 +180,10 @@ agent sees what the person is looking at, including their unsaved work.
 |---|---|
 | `propose_design` | add, change or reorder regions; palette and identity |
 | `propose_fit` | placement overrides for this car — `panel`, `at`, `rotate`, `drop` |
+
+`propose_design` also carries `set-constraint`, which is often the right proposal
+when `check_fitment` reports the same problem twice: a constraint states the
+requirement once, on the design, for every car, instead of being re-fixed per car.
 
 Two tools, not ten. The operations are data inside them, so adding a kind of
 change does not add a tool, and the agent cannot be confused about which file it
@@ -193,33 +213,64 @@ lose by accident later:
 4. **Nothing a save would refuse.** Run `designRefusal` and `validateFit` at
    proposal time, so a bad proposal fails in front of the agent that can fix it
    rather than in front of the person who did not make it.
-5. **No claim to have looked.** The tool descriptions must say plainly that the
-   agent cannot see the car, because those descriptions are the model's entire
-   understanding of what it is doing. This is the one place where a prompt is
-   part of the software.
+5. **No claim to have looked.** Originally: the descriptions must say the agent
+   cannot see the car. Now that `render_car` exists they must say what it CAN
+   see and what that picture leaves out — no transparency, no stock textures,
+   one light rig. The point is unchanged and is the stronger half of it: those
+   descriptions are the model's entire understanding of what it is doing, so an
+   overstated capability is a lie told to the only reader that cannot check it.
+   This is the one place where a prompt is part of the software.
 
-## Seeing: the open question
+## Seeing: the question, and how it was answered
 
-The obvious next thought is to hand the agent a picture. It is worth writing down
-why that is not in this plan rather than leaving it to be re-proposed.
+This section argued against giving the agent a picture. It is kept, corrected,
+because the reasoning was careful and wrong in a way worth recording.
 
-A rendered **texture** is cheap — `renderTexture` already produces one in about
-two milliseconds — and is precisely the artefact the README opens by saying you
-cannot judge from. Giving a model the flat sheet would be giving it the exact
-misleading view the project was built to replace.
+**The original argument.** A rendered *texture* is the flat sheet the README
+opens by saying you cannot judge from — giving a model that would be giving it
+the exact misleading view the project exists to replace. A rendered *car* lives
+in the browser's WebGL viewport, and the marginal value looked small precisely
+because the architecture already puts a person in front of that image. The better
+framing seemed to be: **the profile is the agent's eyes**, and for questions with
+answers it is better than a screenshot. `visible` is a ray-cast fraction,
+`anisotropy` is measured from the UV-to-3D Jacobian, `adjacent` says which panels
+touch. A model reasoning about measurements beats a model guessing at pixels.
 
-A rendered **car** is the one that would answer the question, and it lives in the
-browser's WebGL viewport. The editor could plausibly hand back a canvas capture
-on request, and the browser test harness already proves a headless GL stack is
-achievable. But the marginal value is small precisely because the architecture
-above already put a person in front of that exact image, and the cost is an
-invitation to the failure mode this whole document is arranged against.
+**What happened.** All of that is true and none of it was sufficient.
 
-The better framing: **the profile is the agent's eyes, and for the questions that
-have answers it is better than a screenshot.** `visible` is a ray-cast fraction.
-`anisotropy` is measured from the UV-to-3D Jacobian. `adjacent` says which panels
-touch on the car. A model reasoning about those is reasoning about measurements;
-a model looking at a render is guessing, with more confidence.
+Asked to improve a fit, the agent moved a team name off a race number and into a
+part of the same panel where 11% of the box was on the car. Every number said the
+move was fine: the panel was 88% visible, had no `safe` rectangle, anisotropy 1.0.
+The measurements were about the panel; the mistake was in a rectangle. That is
+what `check_fitment` now exists to catch, and building it was the right response.
+
+Then three changes to the viewer shipped unverified — a lighting model, a texture
+resolution fix, and an alpha pass that made the whole car see-through — and every
+one came back as a screenshot from the person the agent was supposed to be
+helping. No measurement in the profile says "the car is transparent now".
+
+**So `render_car` exists.** Not a canvas capture from the browser: a small
+software rasteriser in Node, about two hundred lines, no new dependency. It
+projects the triangles, keeps a depth buffer, interpolates uv and normal, samples
+the design's own artwork and shades it the way the viewer does.
+
+It found two of its own bugs in the first minute — an upside-down car, then
+mirrored text — both invisible in the algebra and unmissable in a picture. That
+is the argument for it, and it is not an argument the original section could have
+made.
+
+**The original worry stands, and is handled by saying what the picture is not.**
+The tool description lists the limits rather than leaving them to be discovered:
+no transparency, no stock car textures, one fixed light rig. It answers "does the
+artwork land where I said it would", not "is this exactly the game". And
+`PROMPT_NOTE` was updated at the same time: it used to tell the agent it could not
+see the car, which became false, and an agent that believes it cannot see will
+not call the tool built so that it can.
+
+**What did not change.** Seeing is still not deciding. `render_car` reads; it
+proposes nothing and writes nothing. The person in front of the editor is still
+the one who accepts. The rule this document is arranged around — propose, never
+commit — is untouched by giving the proposer eyes.
 
 ## Implementation notes
 
@@ -277,9 +328,16 @@ editor learning to receive one.
 **3. Proposing. (Done)** `propose_design` and `propose_fit`, with every refusal in place
 and a test each.
 
-**4. Judgement.** Only after using it: whether the agent should ever be handed a
-car render, and whether `find_panels` grew the right filters. Both are questions
-that a plan cannot answer and a week of use can.
+**4. Judgement. (Answered by use.)** Whether the agent should ever be handed a car
+render, and whether `find_panels` grew the right filters. The first was answered
+yes, for reasons a plan could not have produced — see *Seeing*, above. The second
+is still open: `find_panels` has not been the bottleneck, `check_fitment` has.
+
+**5. Measuring. (Done, and unplanned.)** `check_fitment`, the constraint
+vocabulary, and `render_car`. None of these were in this document when it was
+written, and the shape of the work was right about that: they came out of using
+the thing, not out of designing it. What the plan got wrong was assuming the
+profile made them unnecessary.
 
 The order is deliberate. Step 1 is the whole protocol surface with none of the
 risk, and if it turns out an agent asking questions about a car profile is the
