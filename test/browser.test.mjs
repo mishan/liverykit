@@ -397,7 +397,11 @@ async function inBrowser(driver, {
   // browser start on two shared cores is several times slower than here, and a
   // timeout that only fails on the slow machine is the worst kind. Overridable
   // for anyone whose box is slower still.
-  const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 90000;
+  // 40s, down from 90. The page carries a 25s watchdog that reports whatever
+  // it managed, so anything still silent at 40 is a browser that never ran the
+  // script at all — and waiting another fifty seconds to learn that costs a
+  // minute per run and tells you nothing extra.
+  const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 40000;
   const deadline = Date.now() + limit;
   // `child.done` too, so a browser that exits without loading the page fails in
   // a second with its own error message rather than after the full timeout with
@@ -439,7 +443,32 @@ const PRELUDE = `
 const out = []; const say = (m) => out.push(String(m));
 addEventListener('error', (e) => say('ERROR ' + e.message));
 addEventListener('unhandledrejection', (e) => say('REJECT ' + (e.reason?.stack || e.reason)));
-const done = () => fetch('/report', { method: 'POST', body: JSON.stringify(out) });
+let reported = false;
+const done = () => {
+  if (reported) return;                 // a watchdog and a real finish can race
+  reported = true;
+  // NOTHING IS RETURNED and nothing may reject.
+  //
+  // This used to hand back the fetch promise. Callers write return done()
+  // inside an async IIFE, so a failed post — the harness closing the socket the
+  // moment it has the report, most often — became an unhandled rejection, which
+  // the listener above dutifully recorded as an error and failed the test on.
+  // The report had already arrived; the test failed for having delivered it.
+  //
+  // NO BACKTICKS in here: this whole block lives inside a template literal, and
+  // a stray one ends it. That has broken this file four times.
+  fetch('/report', { method: 'POST', body: JSON.stringify(out) }).catch(() => {});
+};
+// A REPORT ALWAYS COMES BACK.
+//
+// A test that hangs costs ninety seconds and tells you nothing; the same test
+// failing at twenty-five tells you what it managed first. CI has no GPU and its
+// compositor sometimes never maps a framebuffer, so a page can sit in a state
+// where nothing throws and nothing finishes — and every path to done() runs
+// after the thing that stalled.
+//
+// This one does not. Whatever the page got to is what comes back.
+setTimeout(() => { say('WATCHDOG fired — the page never finished'); done(); }, 25000);
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 const centre = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; };
 // What a MOUSE would hit at this point — not the node we happen to hold.
@@ -1546,4 +1575,21 @@ test('the car supplies its own artwork for the parts a design does not paint', {
     `nothing should be left grey when the car supplied a texture: ${report.join(' | ')}`);
   assert.equal(find('picked: '), 'picked: INTERNAL_glass.dds,body.dds',
     `picking must say which surface is under the pointer: ${report.join(' | ')}`);
+});
+
+// The PRELUDE is a template literal, so a backtick anywhere inside it ends the
+// literal and the whole file stops parsing. That has happened four times in
+// this project, and every time it reached CI, because a syntax error in one
+// test file is invisible until the file is loaded.
+//
+// Not skipped on a machine with no browser: this is about the source, and it
+// costs nothing.
+test('the browser preamble contains no stray backticks', async () => {
+  const src = await readFile(new URL(import.meta.url), 'utf8');
+  const open = src.indexOf('const PRELUDE = ') + 'const PRELUDE = '.length;
+  const body = src.slice(open + 1, src.indexOf(String.fromCharCode(96) + ';', open));
+
+  assert.ok(body.length > 200, 'found the preamble');
+  assert.equal(body.indexOf(String.fromCharCode(96)), -1,
+    'a backtick inside PRELUDE ends the template literal and breaks the file');
 });
