@@ -1,6 +1,12 @@
 import { CONSTRAINTS } from '../fitment.mjs';
+import { VIEWS } from '../engine/shot.mjs';
 
-const PROMPT_NOTE = '(Note: as an AI model, you cannot visually see the 3D car or rendered artwork. Your proposals are presented to a human user in the fitting editor, who will inspect and accept/discard them.)';
+// Updated when render_car arrived. The old wording — "you cannot visually see
+// the 3D car" — became false and, worse, discouraging: an agent that believes
+// it cannot see will not call the tool built so that it can.
+const PROMPT_NOTE = '(Note: you cannot see the fitting editor directly, and your proposals '
+  + 'go to a human there who accepts or discards them. You CAN see the car: call render_car, '
+  + 'which returns a picture of the working design on the model.)';
 
 async function toolDescribeCar(client) {
   const state = await client.getState();
@@ -356,6 +362,24 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'render_car',
+      description:
+        'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
+        'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
+        'to. Call this after proposing a change and before claiming it is an improvement. ' +
+        'Views: ' + Object.keys(VIEWS).join(', ') + '. Note the limits — no transparency, ' +
+        'no stock car textures (unpainted parts are flat grey), and one fixed light rig, so ' +
+        `it answers "does the artwork land where I said" and not "is this exactly the game". ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          view: { type: 'string', description: `One of: ${Object.keys(VIEWS).join(', ')}` },
+          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760)' },
+          height: { type: 'number', description: 'Pixels down, 150-900 (default 460)' },
+        },
+      },
+    },
+    {
       name: 'check_fitment',
       description:
         'Measure what is WRONG with the working design on this car: text landing on text, ' +
@@ -383,14 +407,21 @@ export function createToolHandler(client) {
     },
     {
       name: 'propose_design',
-      description: `Propose design changes (palette, regions, options, identity, adopt-surface) to the running editor's inbox for human review. ${PROMPT_NOTE}`,
+      description:
+        'Propose design changes (palette, regions, options, identity, constraints, ' +
+        "adopt-surface) to the running editor's inbox for human review. Use " +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar — ' +
+        'which is often the right proposal when check_fitment reports the same problem ' +
+        'twice: the constraint states the requirement once, on the design, for every car, ' +
+        'rather than being re-fixed per car. Call list_constraints first; a name that is ' +
+        `not on that list is refused, not ignored. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
           why: { type: 'string', description: 'Required justification for the proposal' },
           design: {
             type: 'array',
-            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-identity, set-region, adopt-surface)',
+            description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-constraint, set-identity, set-region, adopt-surface). set-constraint takes { op, id, key, value }, where key is one of the names list_constraints returns and value null removes it.',
             items: { type: 'object' },
           },
         },
@@ -434,6 +465,27 @@ export function createToolHandler(client) {
       case 'read_design': return toolReadDesign(client);
       case 'read_fit': return toolReadFit(client);
       case 'report': return toolReport(client);
+      case 'render_car': {
+        // Reported, not thrown. Without a car model there is no picture, and the
+        // useful answer is "no model" — a blank image would look like a car
+        // wearing nothing, which is a lie about the design rather than a gap.
+        try {
+          const { png, skipped } = await client.shoot(args.view ?? 'left', args.width, args.height);
+          const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
+          // Named, not silently absent. Transparent surfaces with no artwork —
+          // glass, emissive masks — are left out rather than drawn as grey
+          // slabs, and a caller reading the picture should know that a part of
+          // the car is missing on purpose.
+          if (skipped) {
+            content.push({ type: 'text', text:
+              `${skipped} transparent surface(s) are not drawn: this renderer has no stock ` +
+              'car textures, and grey would misrepresent something that is see-through.' });
+          }
+          return { content };
+        } catch (e) {
+          return { content: [{ type: 'text', text: e.message }], isError: true };
+        }
+      }
       case 'check_fitment': return toolCheckFitment(client);
       case 'list_constraints':
         return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };

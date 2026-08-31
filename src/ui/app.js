@@ -18,7 +18,7 @@ import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
 import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColour } from './uses.js';
-import { applyDesignOp, applyFitOp } from './ops.js';
+import { applyDesignOp, applyFitOp, opSetConstraint } from './ops.js';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -1818,6 +1818,74 @@ function readControl(el) {
   return { ok: true, value: raw };
 }
 
+/**
+ * What this region needs, wherever it ends up.
+ *
+ * On the DESIGN, beside the treatment options, and not in the fit — which is
+ * the whole point of them. "This is a team name, keep artwork off it and never
+ * shrink it below 40 mm" is true of the design on every car; a fit that
+ * restated it per car would be three cars from wrong.
+ *
+ * Only offered for a region the design actually owns. A copy created by a fit
+ * has no design entry to write to, and a control that silently wrote nowhere
+ * would be worse than no control.
+ */
+function constraintControls(id) {
+  const region = designRegion(id);
+  if (!region) return '';
+  const c = region.constraints ?? {};
+  const has = (k) => c[k] !== undefined;
+
+  return `<label>needs</label>
+    <p class="hint">Checked by the fit report, on this car and every other one.</p>
+    <div class="row">
+      <label><input type="checkbox" data-con="keepClear"${c.keepClear ? ' checked' : ''}>
+        keep clear</label>
+    </div>
+    <div class="row">
+      <label>at least <input data-con="minMm" size="4"
+        value="${has('minMm') ? esc(c.minMm) : ''}" placeholder="mm"> mm on the car</label>
+    </div>
+    <div class="row">
+      <label>at least <input data-con="minOnCar" size="4"
+        value="${has('minOnCar') ? esc(Math.round(c.minOnCar * 100)) : ''}"
+        placeholder="%"> % on bodywork</label>
+    </div>`;
+}
+
+function wireConstraintControls(id) {
+  const inspector = $('#inspector');
+  for (const el of inspector.querySelectorAll?.('[data-con]') ?? []) {
+    const key = el.dataset.con;
+    const write = (value) => {
+      remember(`${key} on ${id}`);
+      // The op VALIDATES and throws, rather than writing a constraint nothing
+      // enforces. A misspelled or out-of-range one is invisible until something
+      // violates it, so it has to be refused where it is typed.
+      try {
+        opSetConstraint(state.design, { id, key, value });
+      } catch (e) {
+        return status(e.message);
+      }
+      setDesignDirty();
+      return refresh();
+    };
+    if (key === 'keepClear') {
+      el.onchange = () => write(el.checked ? true : null);
+      continue;
+    }
+    el.onchange = () => {
+      const raw = String(el.value ?? '').trim();
+      if (!raw) return write(null);                    // cleared means no constraint
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return status(`${key}: ${JSON.stringify(raw)} is not a number`);
+      // Shown as a percentage because that is how the finding reads back;
+      // stored as the fraction the checker actually compares against.
+      return write(key === 'minOnCar' ? n / 100 : n);
+    };
+  }
+}
+
 function wireOptionControls(id) {
   const inspector = $('#inspector');
   const region = designRegion(id);
@@ -2033,7 +2101,8 @@ function drawInspector() {
              <button id="reset">Reset</button>`}
       </div>
       <p class="hint">Or click a panel on the right to place it there.</p>
-      ${optionControls(id)}`;
+      ${optionControls(id)}
+    ${constraintControls(id)}`;
     wireInspectorButtons(id);
     // The options too. A region with no placement is exactly where you might
     // need them: its treatment may be why it is not on the car, and the
@@ -2057,6 +2126,7 @@ function drawInspector() {
     <div class="row">${rotationChoices(id, def, o)}</div>
     ${mirrorControl(id)}
     ${optionControls(id)}
+    ${constraintControls(id)}
     <div class="row" style="margin-top:10px">
       ${def?.fromFit
         ? '<button id="delete">Delete</button>'
@@ -2074,6 +2144,7 @@ function drawInspector() {
 
   wireInspectorButtons(sel.id);
   wireOptionControls(sel.id);
+  wireConstraintControls(sel.id);
 }
 
 /**
@@ -2791,7 +2862,7 @@ async function loadWholeCar() {
   // Keyed by file, which is what both sides agree on: a group carries the
   // texture its meshes use, and a surface carries the texture it writes.
   const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
-  await state.viewer.setWholeCar(g, surfaces);
+  const drew = await state.viewer.setWholeCar(g, surfaces);
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
   const bare = g.groups.filter((x) => !x.role).reduce((s, x) => s + x.count / 3, 0);
@@ -2799,6 +2870,14 @@ async function loadWholeCar() {
     `${(g.indices.length / 3).toLocaleString()} triangles · ${painted.size} painted surface` +
     `${painted.size === 1 ? '' : 's'}` +
     (bare ? ` · ${bare.toLocaleString()} triangles unpainted, shown grey` : '') +
+    // What the VIEWER actually managed, not what it was handed. Those two
+    // diverged silently for three rounds of "I still cannot see the plate":
+    // an upload that threw abandoned the rest of the loop and left the previous
+    // frame on screen, with nothing in the console because the throw never
+    // reached one.
+    (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
+      drew.failed.join('; ')}` : '') +
+    ` · ${drew?.blended ?? 0} blended, ${drew?.additive ?? 0} additive` +
     ' — drag to orbit, wheel to zoom';
 }
 
@@ -2914,14 +2993,27 @@ function esc(s) {
 // --- proposal polling --------------------------------------------------------
 let currentProposal = null;
 
+/**
+ * Apply a proposal, and report the ops that would not go on.
+ *
+ * The ops throw now rather than ignoring a name they do not know, so this has
+ * to catch — but it catches PER OP and keeps going, because a proposal is
+ * several changes and losing the four that worked because the fifth was
+ * misspelled helps nobody. What it will not do is let a rejected op pass for an
+ * applied one: the refusals come back and go on screen.
+ */
 function applyProposalDiffInApp(p) {
-  if (Array.isArray(p?.design)) {
-    for (const op of p.design) applyDesignOp(state.design, op);
+  const refused = [];
+  for (const [ops, apply, target] of [
+    [p?.design, applyDesignOp, state.design],
+    [p?.fit, applyFitOp, state.fit],
+  ]) {
+    if (!Array.isArray(ops)) continue;
+    for (const op of ops) {
+      try { apply(target, op); } catch (e) { refused.push(e.message); }
+    }
   }
-
-  if (Array.isArray(p?.fit)) {
-    for (const op of p.fit) applyFitOp(state.fit, op);
-  }
+  return refused;
 }
 
 async function checkProposals() {
@@ -2932,23 +3024,35 @@ async function checkProposals() {
     if (p && p.id && p.id !== currentProposal?.id) {
       currentProposal = p;
       remember(`proposal: ${p.why}`);
-      applyProposalDiffInApp(p);
+      const refused = applyProposalDiffInApp(p);
+      if (refused.length) status(`${refused.length} of the proposal's changes were refused`);
       if (Array.isArray(p.fit) && p.fit.length > 0) setDirty(true);
       if (Array.isArray(p.design) && p.design.length > 0) setDesignDirty();
       await reloadState();
       await refresh();
-      showProposalBanner(p);
+      showProposalBanner(p, refused);
     }
   } catch {
     // server down or network glitch
   }
 }
 
-function showProposalBanner(p) {
+/**
+ * The banner, and any part of the proposal that did not go on.
+ *
+ * The refusals belong HERE rather than wherever they were caught, because this
+ * function runs last and sets `why` unconditionally — writing them earlier put
+ * them on screen for one frame and then overwrote them, which is the same as
+ * not reporting them. Accept/Discard is a decision about what the proposal did,
+ * so what it failed to do has to be in front of you when you make it.
+ */
+function showProposalBanner(p, refused = []) {
   const banner = $('#proposal-banner');
   const why = $('#proposal-why');
   if (!banner || !why) return;
-  why.textContent = p.why;
+  why.textContent = refused.length
+    ? `${p.why}  —  NOT APPLIED: ${refused.join(' ')}`
+    : p.why;
   banner.hidden = false;
 }
 

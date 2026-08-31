@@ -549,29 +549,31 @@ test('list_constraints: the vocabulary is discoverable, not folklore', async () 
   }
 });
 
-test('render_view tells an empty role apart from no role at all', async () => {
-  // `if (args.role)` sent an empty string, a stray space or a null down the
-  // render-everything path, so a caller that computed a role and got nothing
-  // received a whole-car preview and no hint that its role had evaporated.
+test('propose_design can record what a region needs, and refuses a name nothing enforces', async () => {
   const { url, stop } = await setupTestEditor();
   try {
     const tools = createToolHandler(createEditorClient(url));
 
-    for (const role of ['', '   ', null, 42]) {
-      const res = await tools.callTool('render_view', { role });
-      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
-      assert.match(res.content[0].text, /not a texture role/);
-      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
-    }
+    // The tool has to point at list_constraints, because guessing a constraint
+    // name is the one thing that cannot work: the vocabulary is closed and a
+    // near-miss is refused rather than ignored.
+    const listed = (await tools.listTools()).find((t) => t.name === 'propose_design');
+    assert.match(listed.description, /list_constraints/);
+    assert.match(listed.inputSchema.properties.design.description, /set-constraint/);
 
-    // Omitting it is a real request and still renders everything.
-    const all = await tools.callTool('render_view', {});
-    assert.ok(!all.isError, all.content[0].text);
-    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
+    const res = await tools.callTool('propose_design', {
+      why: 'the team name is being crossed by a stripe on both flanks',
+      design: [{ op: 'set-constraint', id: 'stripe-centre', key: 'keepClear', value: true }],
+    });
+    assert.ok(!res.isError, res.content[0].text);
 
-    // And a real role is trimmed rather than refused.
-    const one = await tools.callTool('render_view', { role: ' body ' });
-    assert.ok(!one.isError, one.content[0].text);
+    // And the whole point: it lands in the INBOX for a human, not on the design.
+    const { applyDesignOp, opSetConstraint } = await import('../src/ui/ops.js');
+    assert.throws(() => opSetConstraint({}, { id: 'x', key: 'keepClose', value: true }),
+      /No constraint called "keepClose"/);
+    assert.throws(() => applyDesignOp({}, { op: 'set-constraints', id: 'x' }),
+      /No design op called "set-constraints"/,
+      'a near-miss op name is refused too, rather than quietly doing nothing');
   } finally {
     await stop();
   }
@@ -630,8 +632,167 @@ test('check_fitment answers about the working fit, not the file on disk', async 
     assert.deepEqual(hit[0].ids.sort(), ['a-name', 'b-name']);
     assert.match(hit[0].why, /both are text/);
 
+    // This car's `surfaces.body` binds two texture roles, so the collision is
+    // real on both sheets. They used to arrive as exact duplicates, which reads
+    // as a bug in the checker rather than as two places to go and look.
+    assert.equal(new Set(hit.map((f) => f.role)).size, hit.length,
+      `each names its own texture: ${JSON.stringify(hit.map((f) => f.role))}`);
   } finally {
     if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
     await new Promise((ok) => server.close(ok));
   }
+});
+
+test('render_car returns an image, and refuses a view it does not have', async () => {
+  // The tool that exists because three changes in a row were shipped blind.
+  // The editor draws with WebGL in a browser an MCP tool cannot reach, so an
+  // agent proposing livery changes could describe them confidently and never
+  // once look at the result — including the change that made the whole car
+  // see-through.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const listed = (await tools.listTools()).find((t) => t.name === 'render_car');
+    assert.ok(listed, 'the tool is offered');
+    // The description has to state what the picture is NOT, or it will be read
+    // as a screenshot of the game and trusted further than it should be.
+    assert.match(listed.description, /no stock car textures|no transparency/);
+
+    // No car model in this harness, so the honest answer is a refusal rather
+    // than a blank image — a picture of nothing looks like a car with nothing
+    // on it, which is a lie about the design.
+    const res = await tools.callTool('render_car', { view: 'left' });
+    if (res.isError) {
+      assert.match(res.content[0].text, /model/i, res.content[0].text);
+    } else {
+      assert.equal(res.content[0].type, 'image');
+      assert.equal(res.content[0].mimeType, 'image/png');
+      assert.ok(res.content[0].data.length > 100, 'and it has pixels in it');
+    }
+  } finally {
+    await stop();
+  }
+});
+
+test('a shot is drawn from geometry, with the artwork on it', async () => {
+  // Rendering without the editor, so this can be checked without a browser or
+  // a car. Two triangles forming a quad, facing the camera, wearing a solid
+  // magenta sheet.
+  const { rasterise, VIEWS } = await import('../src/engine/shot.mjs');
+  assert.ok(VIEWS.left && VIEWS.right, 'the named views exist');
+
+  // In the YZ plane, facing -x, because the `left` view looks along +x. A quad
+  // in the XY plane is edge-on from there and renders as nothing — which the
+  // first version of this test did, and which is exactly the kind of mistake
+  // the whole file exists to make visible.
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const art = { w: 2, h: 2, data: Buffer.from([
+    255, 0, 255, 255, 255, 0, 255, 255,
+    255, 0, 255, 255, 255, 0, 255, 255,
+  ]) };
+
+  const painted = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map([['body', art]]), { view: 'left', width: 80, height: 80 });
+  const at = (img, x, y) => [0, 1, 2].map((k) => img.data[(y * img.width + x) * 4 + k]);
+  const [r, g, b] = at(painted, 40, 40);
+  // Darker than the source, because it is shaded — the hue is what matters.
+  assert.ok(r > 40 && b > 40 && g < r / 2, `the artwork reaches the pixels: ${r},${g},${b}`);
+
+  // A group with no artwork is drawn bare grey, which says "your design does
+  // not paint this" rather than inventing a colour for it.
+  const bare = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+    new Map(), { view: 'left', width: 80, height: 80 });
+  const [br, bg, bb] = at(bare, 40, 40);
+  assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
+    `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
+  assert.notDeepEqual([br, bg, bb], [r, g, b]);
+});
+
+test('render_view tells an empty role apart from no role at all', async () => {
+  // `if (args.role)` sent an empty string, a stray space or a null down the
+  // render-everything path, so a caller that computed a role and got nothing
+  // received a whole-car preview and no hint that its role had evaporated.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+
+    for (const role of ['', '   ', null, 42]) {
+      const res = await tools.callTool('render_view', { role });
+      assert.ok(res.isError, `role: ${JSON.stringify(role)} should be refused`);
+      assert.match(res.content[0].text, /not a texture role/);
+      assert.match(res.content[0].text, /Omit `role`/, 'and says what to do instead');
+    }
+
+    // Omitting it is a real request and still renders everything.
+    const all = await tools.callTool('render_view', {});
+    assert.ok(!all.isError, all.content[0].text);
+    assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
+
+    // And a real role is trimmed rather than refused.
+    const one = await tools.callTool('render_view', { role: ' body ' });
+    assert.ok(!one.isError, one.content[0].text);
+  } finally {
+    await stop();
+  }
+});
+
+test('the shot composites blended surfaces the way the viewer does', async () => {
+  // Two ways the rasteriser drifted from the viewer it exists to check.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Two quads facing the camera, the second nearer. Both blended.
+  const quad = (x) => ({
+    positions: [x, -1, -1, x, -1, 1, x, 1, 1, x, 1, -1],
+    uvs: [0, 1, 1, 1, 1, 0, 0, 0],
+    normals: [-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0],
+  });
+  // The `left` camera sits at NEGATIVE x looking toward +x, so smaller x is
+  // nearer. Getting this backwards is how the first version of this test
+  // asserted that the far quad should win.
+  const back = quad(0), front = quad(-0.4);
+  const model = {
+    positions: new Float32Array([...back.positions, ...front.positions]),
+    uvs: new Float32Array([...back.uvs, ...front.uvs]),
+    normals: new Float32Array([...back.normals, ...front.normals]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  const sheet = (r, g, b, a) => ({ w: 1, h: 1, data: Buffer.from([r, g, b, a]) });
+  const at = (img) => [0, 1, 2].map((k) => img.data[((img.height >> 1) * img.width + (img.width >> 1)) * 4 + k]);
+
+  // ADDITIVE: a black emissive sheet must add nothing, leaving the magenta
+  // behind it visible. Alpha-composited it would be a black rectangle — the
+  // exact failure this renderer is meant to catch.
+  const withGlow = rasterise(model, [
+    { role: 'plate', start: 0, count: 6, blend: true },
+    { role: 'glow', start: 6, count: 6, blend: true, add: true },
+  ], new Map([['plate', sheet(255, 0, 255, 255)], ['glow', sheet(0, 0, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  const [r, g, b] = at(withGlow);
+  assert.ok(r > 40 && b > 40 && g < r / 2,
+    `a black emissive sheet hid the plate under it: ${r},${g},${b}`);
+
+  // SORTED: the nearer blended quad composites last. Given a fully opaque one
+  // in front, its colour is what survives — which only holds if the two are
+  // ordered by distance rather than by however the groups arrived.
+  const ordered = rasterise(model, [
+    { role: 'far', start: 0, count: 6, blend: true },
+    { role: 'near', start: 6, count: 6, blend: true },
+  ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  const [nr, ng, nb] = at(ordered);
+  assert.ok(ng > nr && ng > nb, `the nearer surface should win: ${nr},${ng},${nb}`);
+
+  // And the same two groups listed the other way round give the same picture.
+  const reversed = rasterise(model, [
+    { role: 'near', start: 6, count: 6, blend: true },
+    { role: 'far', start: 0, count: 6, blend: true },
+  ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
+    { view: 'left', width: 60, height: 60 });
+  assert.deepEqual(at(reversed), [nr, ng, nb],
+    'group order must not change the picture; that is what sorting is for');
 });
