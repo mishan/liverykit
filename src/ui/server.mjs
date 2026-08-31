@@ -96,6 +96,7 @@ export function modelGeometry(model, file) {
   const meshes = meshesUsingTexture(model, file);
   const positions = [];
   const uvs = [];
+  const normals = [];
   const indices = [];
   let lo = [Infinity, Infinity, Infinity];
   let hi = [-Infinity, -Infinity, -Infinity];
@@ -108,6 +109,7 @@ export function modelGeometry(model, file) {
       // Texture space, the same convention the renderer uses: AC stores V
       // negative and image y is 1 + v, which `vertex` has already applied.
       uvs.push(v.u, v.v);
+      normals.push(v.nx, v.ny, v.nz);
       for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
         if (n < lo[k]) lo[k] = n;
         if (n > hi[k]) hi[k] = n;
@@ -121,6 +123,7 @@ export function modelGeometry(model, file) {
   return {
     positions: Float32Array.from(positions),
     uvs: Float32Array.from(uvs),
+    normals: Float32Array.from(normals),
     indices: Uint32Array.from(indices),
     bounds: { lo, hi },
     meshes: meshes.length,
@@ -149,6 +152,11 @@ export function modelGeometry(model, file) {
 export function wholeModelGeometry(model, files) {
   const positions = [];
   const uvs = [];
+  // The surface normals were always in the kn5 and were always thrown away
+  // here, so the viewer had nothing to light with and drew the raw texture. A
+  // livery on an unlit slab does not look like a livery on a car, and you
+  // cannot judge how artwork sits over a curve you cannot see.
+  const normals = [];
   const indices = [];
   const groups = [];
   let lo = [Infinity, Infinity, Infinity];
@@ -163,6 +171,7 @@ export function wholeModelGeometry(model, files) {
         const v = vertex(model, mesh, i);
         positions.push(v.x, v.y, v.z);
         uvs.push(v.u, v.v);
+        normals.push(v.nx, v.ny, v.nz);
         for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
           if (n < lo[k]) lo[k] = n;
           if (n > hi[k]) hi[k] = n;
@@ -205,6 +214,7 @@ export function wholeModelGeometry(model, files) {
   return {
     positions: Float32Array.from(positions),
     uvs: Float32Array.from(uvs),
+    normals: Float32Array.from(normals),
     indices: Uint32Array.from(indices),
     groups,
     bounds: { lo, hi },
@@ -220,6 +230,16 @@ export function wholeModelGeometry(model, files) {
  * of megabytes and stays readable when something goes wrong with it.
  */
 export function packModel(g) {
+  // Named, because the alternative is a TypeError reading byteLength of
+  // undefined forty lines away from the caller that forgot it. Normals became
+  // part of this format when the viewer learned to light the car, and a
+  // geometry builder that has not caught up should be told so.
+  for (const k of ['positions', 'uvs', 'normals', 'indices']) {
+    if (!ArrayBuffer.isView(g[k])) {
+      throw new Error(`packModel needs a typed array for "${k}"; got ${typeof g[k]}. ` +
+        'Normals are part of this payload — the viewer lights the car with them.');
+    }
+  }
   const json = Buffer.from(JSON.stringify({
     vertexCount: g.positions.length / 3,
     indexCount: g.indices.length,
@@ -232,24 +252,35 @@ export function packModel(g) {
   // out of four, which is a maddening way to find out about an alignment rule.
   const header = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)]);
   const out = Buffer.alloc(4 + header.length + g.positions.byteLength
-    + g.uvs.byteLength + g.indices.byteLength);
+    + g.uvs.byteLength + g.normals.byteLength + g.indices.byteLength);
   out.writeUInt32LE(header.length, 0);
   let o = 4;
   const put = (b) => { b.copy(out, o); o += b.length; };
   put(header);
-  for (const ta of [g.positions, g.uvs, g.indices]) {
+  for (const ta of [g.positions, g.uvs, g.normals, g.indices]) {
     put(Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength));
   }
   return out;
 }
 
-/** Two counts, then positions, UVs and indices back to back. */
+/** Two counts, then positions, UVs, normals and indices back to back. */
 export function packGeometry(g) {
+  // The same guard packModel carries, for the same reason: normals joined this
+  // format when the viewer learned to light the car, and without this a builder
+  // that has not caught up dies on `undefined.byteLength` far from the call
+  // that forgot them.
+  for (const k of ['positions', 'uvs', 'normals', 'indices']) {
+    if (!ArrayBuffer.isView(g[k])) {
+      throw new Error(`packGeometry needs a typed array for "${k}"; got ${typeof g[k]}. ` +
+        'Normals are part of this payload — the viewer lights the car with them.');
+    }
+  }
   const head = new Uint32Array([g.positions.length / 3, g.indices.length]);
-  const out = Buffer.alloc(8 + g.positions.byteLength + g.uvs.byteLength + g.indices.byteLength);
+  const out = Buffer.alloc(8 + g.positions.byteLength + g.uvs.byteLength
+    + g.normals.byteLength + g.indices.byteLength);
   let o = 0;
   const put = (ta) => { Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength).copy(out, o); o += ta.byteLength; };
-  put(head); put(g.positions); put(g.uvs); put(g.indices);
+  put(head); put(g.positions); put(g.uvs); put(g.normals); put(g.indices);
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
