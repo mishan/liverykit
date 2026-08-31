@@ -2062,3 +2062,29 @@ test('the texture index is a map, not an object with a prototype', async () => {
   assert.equal(roles.toString, undefined);
   assert.equal(roles.hasOwnProperty, undefined);
 });
+
+test('every MCP tool is documented, in both places', async () => {
+  // Doc drift is invisible until somebody reads the docs looking for a tool
+  // that exists. render_car, check_fitment and list_constraints all shipped
+  // without reaching either file, and render_view had been missing from
+  // docs/mcp.md since it was written.
+  //
+  // Matched against the REGISTERED tools rather than a hand-kept list, so a new
+  // tool fails this the moment it is added and not whenever somebody notices.
+  const { createToolHandler } = await import('../src/mcp/tools.mjs');
+  const names = (await createToolHandler({}).listTools()).map((t) => t.name);
+  assert.ok(names.length >= 10, `expected the full tool set, got ${names.length}`);
+
+  for (const file of ['README.md', 'docs/mcp.md']) {
+    const text = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
+    const missing = names.filter((n) => !text.includes(`\`${n}\``));
+    assert.deepEqual(missing, [], `${file} does not mention: ${missing.join(', ')}`);
+  }
+});
+
+test('every constraint is documented where somebody would look for it', async () => {
+  const { CONSTRAINTS } = await import('../src/ui/ops.js');
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const missing = Object.keys(CONSTRAINTS).filter((k) => !readme.includes(k));
+  assert.deepEqual(missing, [], `README does not mention: ${missing.join(', ')}`);
+});
