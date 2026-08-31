@@ -238,7 +238,15 @@ async function inBrowser(driver, {
   const realPort = real.server.address().port;
 
   let report = null;
+  // Every request the proxy is part-way through, so teardown can wait for them.
+  // A forward that rejects after the test has ended is reported by Node as
+  // "asynchronous activity after the test ended" and pinned on whichever test
+  // was running, which is why this looked like three different flaky tests.
+  const inFlight = new Set();
   const proxy = createServer(async (req, res) => {
+    const finished = new Promise((done) => res.on('close', done));
+    inFlight.add(finished);
+    finished.then(() => inFlight.delete(finished));
     if (req.url === '/report') {
       const c = []; for await (const x of req) c.push(x);
       report = JSON.parse(Buffer.concat(c).toString());
@@ -250,11 +258,19 @@ async function inBrowser(driver, {
     }
     const body = [];
     for await (const x of req) body.push(x);
-    const upstream = await fetch(`http://127.0.0.1:${realPort}${req.url}`, {
-      method: req.method,
-      headers: { 'content-type': req.headers['content-type'] ?? 'application/json' },
-      body: body.length ? Buffer.concat(body) : undefined,
-    });
+    // Tolerated, not thrown. Once the real server is closing, a forward in
+    // flight fails — and that is teardown happening, not the page misbehaving.
+    let upstream;
+    try {
+      upstream = await fetch(`http://127.0.0.1:${realPort}${req.url}`, {
+        method: req.method,
+        headers: { 'content-type': req.headers['content-type'] ?? 'application/json' },
+        body: body.length ? Buffer.concat(body) : undefined,
+      });
+    } catch {
+      if (!res.writableEnded) res.writeHead(503).end('closing');
+      return;
+    }
     const type = upstream.headers.get('content-type') ?? 'text/plain';
     let out = Buffer.from(await upstream.arrayBuffer());
     if (req.url === '/') {
@@ -410,9 +426,15 @@ async function inBrowser(driver, {
     await new Promise((r) => setTimeout(r, 200));
   }
   const waited = Date.now() - (deadline - limit);
+  // ORDER AND AWAIT. The browser goes first so nothing new arrives, then the
+  // forwards already running are allowed to finish, then both servers are
+  // closed and WAITED for. Firing all three and returning left rejected fetches
+  // landing after the test had ended.
   child.kill();
-  proxy.close();
-  real.server.close();
+  await Promise.allSettled([...inFlight]);
+  await new Promise((ok) => proxy.close(ok));
+  if (typeof real.server.closeAllConnections === 'function') real.server.closeAllConnections();
+  await new Promise((ok) => real.server.close(ok));
 
   assert.ok(report, 'the browser never reported back. ' + child.why(waited));
   const failures = report.filter((l) => /^(ERROR|REJECT|THREW)/.test(l));
@@ -444,9 +466,15 @@ const out = []; const say = (m) => out.push(String(m));
 addEventListener('error', (e) => say('ERROR ' + e.message));
 addEventListener('unhandledrejection', (e) => say('REJECT ' + (e.reason?.stack || e.reason)));
 let reported = false;
+let watchdog = 0;
 const done = () => {
   if (reported) return;                 // a watchdog and a real finish can race
   reported = true;
+  // CANCEL THE WATCHDOG. Left running it fires long after the page has
+  // reported and the harness has torn its server down, and the late POST
+  // becomes async activity after the test ended — which Node 22 fails the
+  // whole file for, while Node 24 quietly tolerates it.
+  clearTimeout(watchdog);
   // NOTHING IS RETURNED and nothing may reject.
   //
   // This used to hand back the fetch promise. Callers write return done()
@@ -468,7 +496,7 @@ const done = () => {
 // after the thing that stalled.
 //
 // This one does not. Whatever the page got to is what comes back.
-setTimeout(() => { say('WATCHDOG fired — the page never finished'); done(); }, 25000);
+watchdog = watchdog = setTimeout(() => { say('WATCHDOG fired — the page never finished'); done(); }, 25000);
 const settle = (ms = 400) => new Promise((r) => setTimeout(r, ms));
 const centre = (el) => { const r = el.getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)]; };
 // What a MOUSE would hit at this point — not the node we happen to hold.
@@ -1382,6 +1410,9 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
 
       let viewer;
       try { viewer = createViewer(canvas); } catch (e) { say('webgl: absent'); return done(); }
+      // True colour: this test counts pixels by threshold, and shading moves
+      // them. What is under test is which texture reaches which geometry.
+      viewer?.setLit(false);
       if (!viewer) { say('webgl: absent'); return done(); }
       say('webgl: present');
 
@@ -1476,6 +1507,9 @@ test('the car supplies its own artwork for the parts a design does not paint', {
 
       let viewer;
       try { viewer = createViewer(canvas); } catch { say('webgl: absent'); return done(); }
+      // True colour: this test counts pixels by threshold, and shading moves
+      // them. What is under test is which texture reaches which geometry.
+      viewer?.setLit(false);
       if (!viewer) { say('webgl: absent'); return done(); }
       const s3tc = canvas.getContext('webgl').getExtension('WEBGL_compressed_texture_s3tc');
       say('webgl: ' + (s3tc ? 'present' : 'absent'));
