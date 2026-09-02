@@ -5,9 +5,11 @@
 
 import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import { join, isAbsolute, resolve } from 'node:path';
+import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
+import { blends } from './engine/kn5.mjs';
 import { packageZip, makePreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -30,6 +32,66 @@ const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {
   return MISSING.has(note.status);
+}
+
+/**
+ * What to do about each role the design says to `hide`.
+ *
+ * `hide` used to reach the editor's whole-car view and nothing else: the build
+ * wrote no file for a hidden role, so in the game the part kept its stock
+ * artwork. On the car this was built against nobody noticed, because that
+ * car's own CSP config hides every number plate mesh already — which is a
+ * fact about one car, not a property of the feature.
+ *
+ * The honest tool is a transparent texture, and it only works when the
+ * material composites alpha. So this is a decision per role, and every branch
+ * is reported, because the one that would be silent — a transparent file for
+ * an opaque shader, encoded without complaint — is a part that still shows.
+ *
+ *   car-hides         the car's config hides every mesh wearing it: ship nothing
+ *   ship-transparent  alpha-blended material at an encodable size: ship a clear sheet
+ *   cannot            an opaque shader, or a size DDS cannot carry; the game will show it
+ *   painted           the design also paints it, and painting wins
+ *   absent            this car has no such role — designs travel, so not an error
+ *
+ * Pure, so a test can ask about every branch without ImageMagick in the room.
+ */
+export function hidePlan(profile, livery) {
+  if (!Array.isArray(livery.hide)) return [];
+  const painted = new Set(Object.keys(livery.paint ?? {}));
+  return livery.hide.map((role) => {
+    const tex = profile.textures?.[role];
+    if (!tex) return { role, action: 'absent', why: `${role}: this car has no texture by that role` };
+    const base = { role, file: tex.file, width: tex.width, height: tex.height };
+    if (painted.has(role)) {
+      return { ...base, action: 'painted', why: `${role} is both painted and hidden by this design; painting wins` };
+    }
+    if (tex.hiddenByCar) {
+      return { ...base, action: 'car-hides', why: `${role}: the car's own config already hides every mesh wearing ${tex.file}` };
+    }
+    if (isPngTexture(tex.file)) {
+      return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent` };
+    }
+    if (!isPow2(tex.width) || !isPow2(tex.height)) {
+      return { ...base, action: 'cannot',
+        why: `${role}: ${tex.file} is ${tex.width}x${tex.height}, and DDS needs powers of two — nothing can be shipped, so the game will show it` };
+    }
+    // Unknown shaders — a profile from before this was recorded — are treated
+    // as opaque. Wrong in the cheaper direction: a needless warning, rather
+    // than a file that claims to hide something and does not.
+    const opaque = (tex.shaders ?? ['(shader not recorded — regenerate the profile)']).filter((s) => !blends(s));
+    if (opaque.length) {
+      return { ...base, action: 'cannot',
+        why: `${role}: ${tex.file} is drawn by ${opaque.join(', ')}, which ignores alpha — a transparent texture would not hide it, so the game will show it` };
+    }
+    return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent` };
+  });
+}
+
+/** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
+async function transparentPng(width, height) {
+  return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .png().toBuffer();
 }
 
 /**
@@ -161,6 +223,32 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
+  }
+
+  // Surfaces the design hides. A transparent sheet where one will work; a note
+  // in every other case, because "hidden in the editor" and "hidden in the
+  // game" were two different things for longer than anybody knew.
+  for (const h of hidePlan(profile, livery)) {
+    if (h.action === 'ship-transparent') {
+      const outPath = join(outDir, h.file);
+      const png = await transparentPng(h.width, h.height);
+      if (isPngTexture(h.file)) {
+        await writeFile(outPath, png);
+      } else {
+        const pngPath = join(pngDir ?? outDir, h.file.replace(/\.dds$/i, '.png'));
+        await writeFile(pngPath, png);
+        await toDDS(pngPath, outPath, { width: h.width, height: h.height, alpha: true });
+        if (!pngDir) await rm(pngPath);
+      }
+      written.push(h.file);
+      log(`  ${h.file.padEnd(24)} ${h.width}x${h.height}`.padEnd(46) + `${isPngTexture(h.file) ? 'PNG ' : 'DXT5'}  transparent (hidden)`);
+    } else if (h.action === 'cannot' || h.action === 'painted') {
+      notes.push({ term: h.role, status: 'hide-' + h.action, text: h.why });
+    } else {
+      // `car-hides` and `absent` are the quiet outcomes, and even those get a
+      // line: a hide that did nothing should be visibly nothing.
+      log(`  ${h.role.padEnd(24)} ${h.action === 'car-hides' ? 'hidden by the car\'s own config' : 'not on this car'}`);
+    }
   }
 
   // A fit naming a region the livery no longer declares is the other half of
