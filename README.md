@@ -512,6 +512,24 @@ door. Painting one leaves the others wearing their stock artwork on top of yours
 A role the car does not have is ignored, because designs travel, and a surface
 the design paints is never hidden.
 
+In the editor a hidden surface is simply not drawn. In the game there is no such
+switch, so the build ships a **fully transparent texture** for it — which works
+when the part's material composites alpha, and not otherwise. The profile records
+each texture's `shaders` so the build can tell, and it says which of four things
+happened to every hidden role: shipped transparent; already hidden by the car's
+own config; cannot be hidden this way (an opaque shader, or a size DDS cannot
+carry), in which case the game will show it; or not on this car at all.
+
+That "car's own config" is `extension/ext_config.ini` beside the model, where a
+Custom Shaders Patch `MODEL_REPLACEMENT` can hide meshes — the usual arrangement
+on cars converted from ACC is that every plate set is hidden there and a skin
+un-hides one. `--from-kn5` reads it and writes `hiddenByCar` into the profile:
+the meshes hidden, how each was matched, and any pattern that matched nothing.
+A texture worn only by hidden meshes carries `hiddenByCar: true`; the editor
+stops drawing it, the fitment check stops reporting it as an unpainted twin,
+and a design that paints it is told so, since it is painting a part the game
+never shows.
+
 ### Two honest limits
 
 A fit adjusts placement, so two things it cannot rescue. A portable design cannot
