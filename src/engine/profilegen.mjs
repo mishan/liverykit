@@ -26,6 +26,7 @@ import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
 import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
+import { measureWheels } from './wheels.mjs';
 
 /**
  * A texture the model does not really contain.
@@ -377,6 +378,10 @@ export async function profileFromKn5(path, {
     // And HOW they touch: the map from each island's sheet to its neighbour's,
     // so artwork can be continued across the seam. See findSeams.
     const seams = findSeams(model, keep, adj);
+    // Which islands are tyre parts, and how each was unwrapped. A sidewall
+    // rolled out as a strip and one laid out as a disc want different
+    // artwork, and the texture cannot say which it is. See wheels.mjs.
+    const wheels = measureWheels(model, keep);
     // Every mesh occludes, not just the painted ones — a wheel hides bodywork
     // as effectively as bodywork does.
     if (visibility) {
@@ -427,6 +432,8 @@ export async function profileFromKn5(path, {
       if (i.mirrorOf) p.mirrorOf = i.mirrorOf;
       const touching = [...(adj.get(i.name) ?? [])].sort();
       if (touching.length) p.adjacent = touching;
+      const wheel = wheels.get(i);
+      if (wheel) p.wheel = wheel;
       const across = seams.get(i.name);
       if (across?.size) {
         p.seams = Object.fromEntries([...across].sort(([a], [b]) => a.localeCompare(b)));
