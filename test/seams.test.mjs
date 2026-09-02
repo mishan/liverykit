@@ -141,10 +141,13 @@ test('an island outline is its boundary, simplified, in sheet fractions', async 
 test('a seam records where it sits in the sheet', () => {
   const { seams, face } = fixture();
   const seam = seams.get(face('left').name).get(face('roof').name);
-  // The left face's top edge: full width, zero height, at v = top.
+  // The left face's top edge: a straight line, so two points, the full
+  // width, at v = top.
   const [x, y, w, h] = CAR.faces.left;
-  assert.ok(Math.abs(seam.here[0] - x) < 0.002 && Math.abs(seam.here[2] - w) < 0.002, `along u: ${seam.here}`);
-  assert.ok(Math.abs(seam.here[1] - (y + h)) < 0.002 && seam.here[3] < 0.002, `at the top: ${seam.here}`);
+  assert.equal(seam.here.length, 2, `a straight seam simplifies to its ends: ${JSON.stringify(seam.here)}`);
+  const us = seam.here.map((p) => p[0]).sort((a, b) => a - b);
+  assert.ok(Math.abs(us[0] - x) < 0.002 && Math.abs(us[1] - (x + w)) < 0.002, `along u: ${JSON.stringify(seam.here)}`);
+  assert.ok(seam.here.every((p) => Math.abs(p[1] - (y + h)) < 0.002), `at the top: ${JSON.stringify(seam.here)}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -214,4 +217,20 @@ test('the fitment check sees a spanning region as one placement per panel', asyn
   // — which is what somebody needs to go and look at the right sheet.
   const hit = r.findings.filter((f) => f.kind === 'overlap' && f.ids.includes(`band@${roof}`) && f.ids.includes('name'));
   assert.equal(hit.length, 1, JSON.stringify(r.findings.map((f) => [f.kind, f.ids])));
+});
+
+test('a spanning region may select its home by tags, so it travels', async () => {
+  // The portable design cannot name a panel. `tags` picks the home panel on
+  // whatever car this is, and the spill follows that car's seams.
+  await import('../src/index.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const { profile, role, left } = await spanProfile();
+  const tags = profile.panels[role][left].tags;
+  const out = renderTexture({
+    profile, role, treatments: resolveTreatments(['core']), palette: {}, rng: Math.random, font: 'sans-serif', tokens: {},
+    regions: [{ id: 'band', treatment: 'stripe', tags, limit: 1, span: true, at: [0.1, 0.6, 0.8, 0.7], color: '#fff' }],
+  });
+  const copies = [...out.base.matchAll(/<g clip-path="url\(#lk-span-[^"]+\)"><g transform="matrix\(/g)];
+  assert.ok(copies.length >= 2, `spilled from the tag-selected home: ${copies.length} copies`);
 });

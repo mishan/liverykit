@@ -626,12 +626,75 @@ export function composeMatrix(first, second) {
 
 const IDENTITY = [1, 0, 0, 1, 0, 0];
 
-/** Bounding box, as {x,y,w,h}, of a rect's four corners under a matrix. */
-function mappedBox(m, r) {
-  const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]].map((p) => applyMatrix(m, p));
-  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+/** A rect's four corners under a matrix, as a polygon. */
+function mappedQuad(m, r) {
+  return [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].map((p) => applyMatrix(m, p));
+}
+
+/**
+ * A polygon clipped to a rectangle (Sutherland-Hodgman), or null if nothing
+ * is left. Polygons rather than boxes throughout, because a band mapped
+ * through a seam at -17 degrees is a parallelogram whose bounding box is
+ * mostly not band — and tested as a box it crossed seams it never touched
+ * and reached the roof from the door.
+ */
+function clipPoly(poly, [bx, by, bw, bh]) {
+  const edges = [
+    (p) => p[0] >= bx, (p) => p[0] <= bx + bw, (p) => p[1] >= by, (p) => p[1] <= by + bh,
+  ];
+  const cross = [
+    (a, b) => { const t = (bx - a[0]) / (b[0] - a[0]); return [bx, a[1] + t * (b[1] - a[1])]; },
+    (a, b) => { const t = (bx + bw - a[0]) / (b[0] - a[0]); return [bx + bw, a[1] + t * (b[1] - a[1])]; },
+    (a, b) => { const t = (by - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), by]; },
+    (a, b) => { const t = (by + bh - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), by + bh]; },
+  ];
+  let out = poly;
+  for (let e = 0; e < 4 && out.length; e++) {
+    const inside = edges[e], at = cross[e];
+    const next = [];
+    for (let i = 0; i < out.length; i++) {
+      const a = out[i], b = out[(i + 1) % out.length];
+      const ia = inside(a), ib = inside(b);
+      if (ia) next.push(a);
+      if (ia !== ib) next.push(at(a, b));
+    }
+    out = next;
+  }
+  return out.length >= 3 ? out : null;
+}
+
+function polyBox(poly) {
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
   const x0 = Math.min(...xs), y0 = Math.min(...ys);
   return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+}
+
+function polyArea(poly) {
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    a += p[0] * q[1] - q[0] * p[1];
+  }
+  return Math.abs(a) / 2;
+}
+
+function inPoly(poly, [x, y]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** A convex polygon pushed outward by `d` from its centroid, roughly. */
+function grow(poly, d) {
+  const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
+  const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
+  return poly.map(([x, y]) => {
+    const l = Math.hypot(x - cx, y - cy) || 1;
+    return [x + ((x - cx) / l) * d, y + ((y - cy) / l) * d];
+  });
 }
 
 function overlap(a, [bx, by, bw, bh]) {
@@ -667,16 +730,38 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
   const rect = { x: home.x, y: home.y, w: home.w, h: home.h };
   // A seam box is a line for a straight seam; pad it so a rectangle whose
   // edge sits exactly on it still counts as crossing.
+  // How much of the seam, in metres, lies inside the piece. The seam is a
+  // polyline through the shared points; each segment is sampled and the
+  // samples inside the piece (grown by a texel or two, so a rectangle whose
+  // edge sits exactly on the seam still counts) are what crosses. Sampling
+  // rather than clipping, because it is a few dozen points per seam and a
+  // closed form for a segment against a polygon is more code than this
+  // question deserves.
   const PAD = 0.003;
-  const crossing = (r, seam, name) => {
-    const [sx, sy, sw, sh] = seam.here;
-    const o = overlap(r, [sx - PAD, sy - PAD, sw + 2 * PAD, sh + 2 * PAD]);
-    if (!o) return 0;
+  const crossing = (piece, seam, name) => {
+    if (!Array.isArray(seam.here) || !seam.here.length || !Array.isArray(seam.here[0])) return 0;
     const per = panels[name].metresPerUv ?? [1, 1];
-    return Math.max(o.w * per[0], o.h * per[1]);
+    const grown = grow(piece, PAD);
+    let inside = 0;
+    for (let i = 0; i + 1 < seam.here.length; i++) {
+      const [a, b] = [seam.here[i], seam.here[i + 1]];
+      const len = Math.hypot((b[0] - a[0]) * per[0], (b[1] - a[1]) * per[1]);
+      const n = Math.max(2, Math.ceil(len / 0.01));            // a sample per centimetre
+      let hit = 0;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        if (inPoly(grown, [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])])) hit++;
+      }
+      inside += (len * hit) / (n + 1);
+    }
+    // A seam that is a single point has no length and cannot be crossed.
+    return inside;
   };
+  // The piece of the region on a panel: the mapped quad clipped to the panel.
+  const pieceOn = (matrix, name) => clipPoly(mappedQuad(matrix, rect), panels[name].rect);
 
-  const best = new Map([[start, { panel: start, matrix: IDENTITY, on: overlap(rect, panels[start].rect) ?? rect, hops: 0, crossed: Infinity }]]);
+  const homePiece = pieceOn(IDENTITY, start) ?? mappedQuad(IDENTITY, rect);
+  const best = new Map([[start, { panel: start, matrix: IDENTITY, piece: homePiece, on: polyBox(homePiece), hops: 0, crossed: Infinity }]]);
   let frontier = [best.get(start)];
   for (let hop = 1; hop <= depth && frontier.length; hop++) {
     const next = [];
@@ -684,14 +769,15 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
       for (const [there, seam] of Object.entries(panels[here.panel]?.seams ?? {})) {
         if (!panels[there] || !seam.here) continue;
         // Only the piece of the region that is on THIS panel can cross out.
-        const crossed = crossing(here.on, seam, here.panel);
+        const crossed = crossing(here.piece, seam, here.panel);
         if (crossed < minCross) continue;
         const matrix = composeMatrix(here.matrix, seam.matrix);
-        const on = overlap(mappedBox(matrix, rect), panels[there].rect);
-        if (!on) continue;
+        const piece = pieceOn(matrix, there);
+        if (!piece || polyArea(piece) < 1e-7) continue;
+        const on = polyBox(piece);
         const prior = best.get(there);
         if (prior && (prior.hops < hop || prior.crossed >= crossed)) continue;
-        const entry = { panel: there, matrix, on, hops: hop, crossed: Math.round(crossed * 1000) / 1000, rmsMm: seam.rmsMm };
+        const entry = { panel: there, matrix, piece, on, hops: hop, via: here.panel, crossed: Math.round(crossed * 1000) / 1000, rmsMm: seam.rmsMm };
         best.set(there, entry);
         // Reached, but not a way through. An island nobody can see — a wheel
         // arch liner, the inside of a sill — is where a band physically goes
@@ -708,5 +794,5 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
     }
     frontier = next;
   }
-  return [...best.values()];
+  return [...best.values()].map(({ piece, ...p }) => p);
 }

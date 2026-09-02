@@ -578,22 +578,66 @@ function rigidSeam(A, B, list, model) {
   const d = (best.cs * mva) / mvb;
   const e = (-(best.cs * best.fx * ca[0]) + best.sn * ca[1] + cb[0]) / mub;
   const f = (-(best.sn * best.fx * ca[0]) - best.cs * ca[1] + cb[1]) / mvb;
-  // Where the seam sits in THIS island's sheet: the box around the shared
-  // points. A spanning region reaches the neighbour only if it crosses this,
-  // which is what stops a band on the door reaching the bonnet through a
-  // seam it never touches.
-  let hx0 = Infinity, hy0 = Infinity, hx1 = -Infinity, hy1 = -Infinity;
-  for (const { a: [u, v] } of list) {
-    if (u < hx0) hx0 = u; if (u > hx1) hx1 = u; if (v < hy0) hy0 = v; if (v > hy1) hy1 = v;
-  }
+  // Where the seam sits in THIS island's sheet, as a polyline through the
+  // shared points. A spanning region reaches the neighbour only if it
+  // crosses this, which is what stops a band on the door reaching the
+  // bonnet through a seam it never touches. A polyline and not a box: the
+  // front clip meets the roof along the windscreen base and down both
+  // A-pillars, an L whose box is mostly sheet the seam is nowhere near,
+  // and a band at the foot of one pillar "crossed" the whole of it.
   const r4 = (n) => Math.round(n * 1e4) / 1e4;
   const r5 = (n) => Math.round(n * 1e5) / 1e5;
   return {
     matrix: [a, b, c, d, e, f].map(r5),
-    here: [r4(hx0), r4(hy0), r4(hx1 - hx0), r4(hy1 - hy0)],
+    here: seamLine(list.map(({ a: uv }) => uv)).map(([u, v]) => [r4(u), r4(v)]),
     points: list.length,
     rmsMm: Math.round(best.rms * 1000 * 10) / 10,
   };
+}
+
+/**
+ * Shared points, chained into a line and simplified. Nearest-neighbour from
+ * the point farthest from the middle, which follows a straight seam and an
+ * L alike; a seam that forks would come out as one branch, which is a limit
+ * worth knowing and not one any car has shown yet.
+ */
+function seamLine(pts) {
+  if (pts.length < 2) return pts;
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  let start = 0, far = -1;
+  pts.forEach((p, i) => { const d = Math.hypot(p[0] - cx, p[1] - cy); if (d > far) { far = d; start = i; } });
+  const left = new Set(pts.map((_, i) => i));
+  const chain = [];
+  let at = start;
+  while (left.size) {
+    left.delete(at);
+    chain.push(pts[at]);
+    let nextI = -1, nd = Infinity;
+    for (const i of left) {
+      const d = Math.hypot(pts[i][0] - pts[at][0], pts[i][1] - pts[at][1]);
+      if (d < nd) { nd = d; nextI = i; }
+    }
+    at = nextI;
+  }
+  return simplifyOpen(chain, 0.002);
+}
+
+/** Douglas-Peucker on an open line. */
+function simplifyOpen(list, tol) {
+  if (list.length < 3) return list;
+  const a = list[0], b = list[list.length - 1];
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-12;
+  let farI = 0, farD = 0;
+  for (let i = 1; i < list.length - 1; i++) {
+    const p = list[i];
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+    const d = Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+    if (d > farD) { farD = d; farI = i; }
+  }
+  if (farD <= tol) return [a, b];
+  const l = simplifyOpen(list.slice(0, farI + 1), tol), r = simplifyOpen(list.slice(farI), tol);
+  return [...l.slice(0, -1), ...r];
 }
 
 /**
