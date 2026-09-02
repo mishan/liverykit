@@ -403,8 +403,13 @@ export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
       const v = vertex(model, mesh, i); x += v.x; y += v.y; z += v.z;
     }
     const c = { x: x / mesh.vertexCount, y: y / mesh.vertexCount, z: z / mesh.vertexCount };
-    // Steering wheels sit near the centreline; anything far off it is a road wheel.
-    if (Math.abs(c.x) > 0.25) continue;
+    // A steering wheel sits by the driver; a steering ARM sits by a road
+    // wheel, 70-80 cm out. The line between them was drawn at 25 cm, which
+    // is where a centre-seat formula car keeps its wheel and nowhere else: a
+    // road car's is 35-40 cm off, and the NSX GT3's 34 cm left because the
+    // driver is. That car got no cockpit visibility at all, and no panel of
+    // its interior could be tagged `cockpit`, for want of 9 cm.
+    if (Math.abs(c.x) > 0.55) continue;
     if (!best || mesh.vertexCount > best.n) best = { ...c, n: mesh.vertexCount, from: mesh.name };
   }
   if (!best) return null;
