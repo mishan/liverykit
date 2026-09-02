@@ -312,11 +312,16 @@ export function resolveTargets(profile, livery) {
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
 
-function checkRect(r, what, err) {
+function checkRect(r, what, err, { loose = false } = {}) {
   if (!Array.isArray(r) || r.length !== 4) err(`${what} must be [x, y, w, h]`);
-  if (r.some((n) => typeof n !== 'number' || n < 0 || n > 1)) {
-    err(`${what} must be fractions in 0..1, got [${r}]`);
+  if (r.some((n) => typeof n !== 'number' || !Number.isFinite(n))) err(`${what} must be numbers, got [${r}]`);
+  // A spanning region is ALLOWED past its panel's edge: that is the point of
+  // it, and the part past the edge is what continues onto the neighbour.
+  if (loose) {
+    if (r[2] <= 0 || r[3] <= 0) err(`${what} must have positive width and height, got [${r}]`);
+    return;
   }
+  if (r.some((n) => n < 0 || n > 1)) err(`${what} must be fractions in 0..1, got [${r}]`);
   if (r[0] + r[2] > 1.0001 || r[1] + r[3] > 1.0001) err(`${what} extends past the texture edge`);
 }
 
@@ -539,9 +544,12 @@ export function metresAcross(frac) {
 
 export function resolveRect(profile, role, spec) {
   const at = spec.at ?? [0, 0, 1, 1];
-  checkRect(at, `region "at"`, (m) => { throw new Error(m); });
+  checkRect(at, `region "at"`, (m) => { throw new Error(m); }, { loose: spec.span === true });
 
-  if (!spec.panel) return { x: at[0], y: at[1], w: at[2], h: at[3], anisotropy: 1 };
+  if (!spec.panel) {
+    if (spec.span) throw new Error(`A spanning region needs a panel to start from; "${spec.treatment ?? 'region'}" on role "${role}" has none.`);
+    return { x: at[0], y: at[1], w: at[2], h: at[3], anisotropy: 1 };
+  }
 
   const pan = panel(profile, role, spec.panel);
   const [bx, by, bw, bh] = pan.rect;
@@ -574,4 +582,131 @@ export function resolveRect(profile, role, spec) {
 /** Textures the profile explicitly warns against painting, with reasons. */
 export function doNotPaint(profile) {
   return profile.doNotPaint ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Spanning: one region, several islands.
+//
+// A panel is a UV island, and a rectangle is a rectangle in ONE island's
+// sheet. Nothing about that stops a design wanting a band that runs from the
+// door onto the rear quarter, and until now the answer was two regions, two
+// rectangles, and a seam that never quite lined up.
+//
+// `span: true` lets a region's `at` run past its panel's edge. The part past
+// the edge is continued onto whichever neighbouring islands it reaches,
+// through the SEAM MAPS the profile measured — an affine from one island's
+// sheet to its neighbour's, fitted in metres from the vertices the two share
+// (see findSeams). The artwork is drawn once, in the home panel's frame, and
+// drawn again on each reached panel under that panel's map, clipped to it.
+//
+// Islands are reached by walking `seams` outward from the home panel and
+// keeping any whose rectangle the mapped region overlaps. A panel reached by
+// two routes takes the SHORTER one, and this is not a tidy-up: each seam map
+// is exact at its own seam and approximate away from it, so on a curved
+// island two routes disagree by the curvature between them — on the NSX the
+// door meets the quarter directly at -17 degrees and through the intake
+// surround at -49, and both are right where they were measured.
+// ---------------------------------------------------------------------------
+
+/** [a,b,c,d,e,f] applied to a point, SVG order. */
+export function applyMatrix([a, b, c, d, e, f], [x, y]) {
+  return [a * x + c * y + e, b * x + d * y + f];
+}
+
+/** second AFTER first: (M2 ∘ M1). */
+export function composeMatrix(first, second) {
+  const [a1, b1, c1, d1, e1, f1] = first;
+  const [a2, b2, c2, d2, e2, f2] = second;
+  return [
+    a2 * a1 + c2 * b1, b2 * a1 + d2 * b1,
+    a2 * c1 + c2 * d1, b2 * c1 + d2 * d1,
+    a2 * e1 + c2 * f1 + e2, b2 * e1 + d2 * f1 + f2,
+  ];
+}
+
+const IDENTITY = [1, 0, 0, 1, 0, 0];
+
+/** Bounding box, as {x,y,w,h}, of a rect's four corners under a matrix. */
+function mappedBox(m, r) {
+  const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]].map((p) => applyMatrix(m, p));
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+}
+
+function overlap(a, [bx, by, bw, bh]) {
+  const w = Math.min(a.x + a.w, bx + bw) - Math.max(a.x, bx);
+  const h = Math.min(a.y + a.h, by + bh) - Math.max(a.y, by);
+  return w > 0 && h > 0 ? { x: Math.max(a.x, bx), y: Math.max(a.y, by), w, h } : null;
+}
+
+/**
+ * Where a spanning region lands: the home panel and every neighbour it
+ * reaches, each with the matrix that takes the home sheet's fractions to
+ * that panel's, and the part of the mapped rectangle that lies on it.
+ *
+ * A neighbour is reached only when the part of the region ON the panel it
+ * is leaving crosses the seam to it — overlaps the seam's own box, by at
+ * least `minCross` metres. Two mistakes are ruled out by that sentence, and
+ * both were made first. Asking only whether the unfolded rectangle overlapped
+ * the neighbour's box let a band on the NSX's door reach the bonnet, which
+ * the door touches at one corner the band never crosses. And testing the
+ * WHOLE unfolded band for crossings, rather than the piece on the current
+ * panel, let an 8 cm spill onto the fender strip carry the band's other
+ * three metres across every seam the strip has.
+ *
+ * Panels are reached breadth-first — fewest seams wins, since every seam
+ * crossed is an approximation — and among routes of equal length the one
+ * crossing more seam. The door meets the rear quarter along a corner a
+ * centimetre and a half across and the intake surround along its whole rear
+ * edge; `minCross` is what sends a band through the surround.
+ */
+export function spanPlacements(profile, role, homeName, home, { depth = 3, minCross = 0.03 } = {}) {
+  const panels = profile.panels?.[role] ?? {};
+  const start = panelName(profile, role, homeName);
+  const rect = { x: home.x, y: home.y, w: home.w, h: home.h };
+  // A seam box is a line for a straight seam; pad it so a rectangle whose
+  // edge sits exactly on it still counts as crossing.
+  const PAD = 0.003;
+  const crossing = (r, seam, name) => {
+    const [sx, sy, sw, sh] = seam.here;
+    const o = overlap(r, [sx - PAD, sy - PAD, sw + 2 * PAD, sh + 2 * PAD]);
+    if (!o) return 0;
+    const per = panels[name].metresPerUv ?? [1, 1];
+    return Math.max(o.w * per[0], o.h * per[1]);
+  };
+
+  const best = new Map([[start, { panel: start, matrix: IDENTITY, on: overlap(rect, panels[start].rect) ?? rect, hops: 0, crossed: Infinity }]]);
+  let frontier = [best.get(start)];
+  for (let hop = 1; hop <= depth && frontier.length; hop++) {
+    const next = [];
+    for (const here of frontier) {
+      for (const [there, seam] of Object.entries(panels[here.panel]?.seams ?? {})) {
+        if (!panels[there] || !seam.here) continue;
+        // Only the piece of the region that is on THIS panel can cross out.
+        const crossed = crossing(here.on, seam, here.panel);
+        if (crossed < minCross) continue;
+        const matrix = composeMatrix(here.matrix, seam.matrix);
+        const on = overlap(mappedBox(matrix, rect), panels[there].rect);
+        if (!on) continue;
+        const prior = best.get(there);
+        if (prior && (prior.hops < hop || prior.crossed >= crossed)) continue;
+        const entry = { panel: there, matrix, on, hops: hop, crossed: Math.round(crossed * 1000) / 1000, rmsMm: seam.rmsMm };
+        best.set(there, entry);
+        // Reached, but not a way through. An island nobody can see — a wheel
+        // arch liner, the inside of a sill — is where a band physically goes
+        // when it runs off a fender, and it costs nothing to paint it there.
+        // But a route that continues THROUGH it comes out somewhere else
+        // entirely: door, fender, front arch liner, rear arch liner, quarter,
+        // under the car and back up, with three seams' worth of unfolding
+        // error and a band on the quarter at an angle nobody asked for.
+        const through = typeof panels[there].visible !== 'number' || panels[there].visible >= 0.3;
+        if (!through) continue;
+        if (!prior) next.push(entry);
+        else next[next.findIndex((e) => e.panel === there)] = entry;
+      }
+    }
+    frontier = next;
+  }
+  return [...best.values()];
 }

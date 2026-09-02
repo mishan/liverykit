@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
-import { findIslands, nameIslands, findMirrorPairs, findAdjacency, carBounds } from './islands.mjs';
+import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
@@ -374,6 +374,9 @@ export async function profileFromKn5(path, {
     nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
+    // And HOW they touch: the map from each island's sheet to its neighbour's,
+    // so artwork can be continued across the seam. See findSeams.
+    const seams = findSeams(model, keep, adj);
     // Every mesh occludes, not just the painted ones — a wheel hides bodywork
     // as effectively as bodywork does.
     if (visibility) {
@@ -424,6 +427,17 @@ export async function profileFromKn5(path, {
       if (i.mirrorOf) p.mirrorOf = i.mirrorOf;
       const touching = [...(adj.get(i.name) ?? [])].sort();
       if (touching.length) p.adjacent = touching;
+      const across = seams.get(i.name);
+      if (across?.size) {
+        p.seams = Object.fromEntries([...across].sort(([a], [b]) => a.localeCompare(b)));
+      }
+      // The island's actual shape, for clipping artwork that spans onto it.
+      // Only where it has seams: an island nothing continues onto has no
+      // use for it, and a profile is long enough.
+      if (across?.size) {
+        const outline = islandOutline(model, i);
+        if (outline) p.outline = outline;
+      }
       panels[role][i.name] = p;
     }
     adjacencyOut[role] = Object.fromEntries([...adj].map(([k, v]) => [k, [...v].sort()]));

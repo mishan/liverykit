@@ -9,7 +9,7 @@
 // so the emissive layer is rendered on its own, blurred, and screened back on.)
 // ---------------------------------------------------------------------------
 
-import { resolveRect, texture, expandRegions } from './profile.mjs';
+import { resolveRect, texture, expandRegions, spanPlacements } from './profile.mjs';
 import { r2 } from './engine/rng.mjs';
 
 const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
@@ -119,10 +119,16 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   // stay off it has said all it needs to.
   const lettering = expanded.regions
     .filter((r) => r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear)
-    .map((r) => {
+    .flatMap((r) => {
       const f = resolveRect(profile, role, r);
-      return { x: f.x, y: f.y, w: f.w, h: f.h };
+      // A spanning name is on every panel it reaches, not only its home.
+      if (r.span === true && f.panel) return spanPlacements(profile, role, r.panel, f).map((p) => p.on);
+      return [{ x: f.x, y: f.y, w: f.w, h: f.h }];
     });
+
+  // Clip paths for spanning regions, one per (region, panel), collected
+  // here and written into <defs> of both documents.
+  const clips = [];
 
   for (const region of expanded.regions) {
     const entry = treatments.get(region.treatment);
@@ -215,13 +221,57 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
+
+    // A spanning region is drawn ONCE, above, in its home panel's frame, and
+    // then placed on every panel it reaches under that panel's seam map —
+    // the same artwork, so a stripe's edge and a word's letters continue
+    // across the seam rather than being re-rolled on the far side. Each copy
+    // is clipped to its panel's rectangle, including the home copy: the part
+    // of the rectangle past the home panel's edge is texture that belongs to
+    // some other island, or to nobody, and painting it there would put a
+    // stray band on whatever the unwrapper packed alongside.
+    //
+    // Maps are in fractions; SVG wants texels. u' = a u + c v + e becomes
+    // x' = a x + (c W/H) y + e W, and likewise for y.
+    if (region.span === true && frac.panel) {
+      const placed = spanPlacements(profile, role, region.panel, frac);
+      placed.forEach((p, k) => {
+        const [a, b, c, d, e, f] = p.matrix;
+        const m = [a, (b * height) / width, (c * width) / height, d, e * width, f * height].map(r2);
+        // Clipped to the island's OUTLINE where the profile has one, and to
+        // its box otherwise. Islands are not boxes: unwrappers pack a small
+        // island into the concave corner of a big one, and a copy clipped to
+        // the box paints texels that belong to the neighbour.
+        const pan = profile.panels[role][p.panel];
+        const id = `lk-span-${base.length}-${emissive.length}-${k}`;
+        if (Array.isArray(pan.outline) && pan.outline.length >= 3) {
+          const pts = pan.outline.map(([u, v]) => `${r2(u * width)},${r2(v * height)}`).join(' ');
+          clips.push(`<clipPath id="${id}"><polygon points="${pts}"/></clipPath>`);
+        } else {
+          const [px, py, pw, ph] = pan.rect;
+          clips.push(`<clipPath id="${id}"><rect x="${r2(px * width)}" y="${r2(py * height)}" ` +
+            `width="${r2(pw * width)}" height="${r2(ph * height)}"/></clipPath>`);
+        }
+        // Two groups, not one: a clip-path on an element is evaluated in that
+        // element's OWN coordinate system, transform included, so putting
+        // both on one <g> would carry the clip rectangle along with the
+        // artwork and clip to the wrong place on every panel but the home.
+        const place = (svg) =>
+          `<g clip-path="url(#${id})"><g transform="matrix(${m.join(' ')})">${spin(svg)}</g></g>`;
+        if (out.base) base.push(place(out.base));
+        if (out.emissive) emissive.push(place(out.emissive));
+      });
+      continue;
+    }
+
     if (out.base) base.push(spin(out.base));
     if (out.emissive) emissive.push(spin(out.emissive));
   }
 
+  const defs = clips.length ? `<defs>${clips.join('')}</defs>` : '';
   const doc = (body) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-    `viewBox="0 0 ${width} ${height}">` + body + '</svg>';
+    `viewBox="0 0 ${width} ${height}">` + defs + body + '</svg>';
 
   return {
     base: doc(base.join('')),
