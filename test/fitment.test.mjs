@@ -433,6 +433,39 @@ test('a painted sheet with an unpainted twin on top of it is reported', () => {
     'both sheets carry your artwork, so there is nothing to warn about');
 });
 
+test('a twin nobody draws is not a twin', () => {
+  // The NSX's IGT emissive plate was reported as an unpainted twin while the
+  // design hid it AND the car's own config hid its mesh: a high finding about
+  // a part the game never shows. Two ways for a twin to be out of the picture,
+  // and both have to silence the check, because each is what a person will
+  // reasonably have done about it.
+  const twinned = withPlate(plane({ rows: 4, cols: 4 }), 0.0005);
+  const art = [{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }];
+  const withPlateRole = {
+    ...profile,
+    textures: { ...profile.textures, plate: { file: 'plate.dds', width: 64, height: 64 } },
+  };
+
+  // The design hides it, so the build ships it transparent.
+  const hiddenByDesign = fitment({ ...design(art), hide: ['plate', 'not_a_role_here'] },
+    withPlateRole, null, { model: twinned });
+  assert.deepEqual(hiddenByDesign.findings.filter((f) => f.kind === 'unpainted-twin'), [],
+    'a role the design hides ships transparent and draws over nothing');
+
+  // The car hides it, as the profile recorded from the car's own config.
+  const named = { ...twinned, meshes: [twinned.meshes[0], { ...twinned.meshes[1], name: 'PLATE_L' }] };
+  const hiddenByCar = fitment(design(art), {
+    ...withPlateRole,
+    hiddenByCar: { source: 'extension/ext_config.ini', meshes: { PLATE_L: { by: 'name', pattern: 'PLATE_L' } }, unmatched: [] },
+  }, null, { model: named });
+  assert.deepEqual(hiddenByCar.findings.filter((f) => f.kind === 'unpainted-twin'), [],
+    'a mesh the car hides is not in the game to draw over anything');
+
+  // And the check is still live: the same model with neither says so.
+  const bare = fitment(design(art), withPlateRole, null, { model: twinned });
+  assert.equal(bare.findings.filter((f) => f.kind === 'unpainted-twin').length, 1);
+});
+
 test('the back of a panel is not a twin', () => {
   // The two false positives that survived every other filter: DOOR_Left against
   // DOOR_Left_INT, and the hood's outer shell against its inner. Same bounding

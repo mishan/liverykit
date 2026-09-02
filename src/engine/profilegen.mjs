@@ -25,6 +25,7 @@ import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibi
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
+import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
 
 /**
  * A texture the model does not really contain.
@@ -151,6 +152,28 @@ export async function profileFromKn5(path, {
   }
   const diffuseUsed = new Set([...boundAs].filter(([, s]) => s.has('txDiffuse')).map(([t]) => t));
 
+  // Which shaders draw each texture. A build that wants to make a part vanish
+  // by shipping a transparent texture needs to know whether the material will
+  // honour the alpha, and by then there is no model to ask — only the profile.
+  const shadersOf = new Map();
+  for (const mesh of model.meshes) {
+    const mat = model.materials[mesh.materialId];
+    const t = mat?.slots?.txDiffuse;
+    if (!t) continue;
+    if (!shadersOf.has(t)) shadersOf.set(t, new Set());
+    shadersOf.get(t).add(mat.shader);
+  }
+
+  // What the car's own CSP config hides. Meshes, not textures: a mesh is what
+  // MODEL_REPLACEMENT names, and a texture is hidden only when nothing that
+  // wears it is drawn. See carconfig.mjs for why this is worth reading.
+  const carConfig = await carConfigBeside(path);
+  const hides = carConfig ? hiddenMeshes(model, hidePatterns(carConfig.text, basename(path))) : null;
+  if (hides) {
+    log(`  ${CAR_CONFIG}: hides ${hides.hidden.size} mesh(es)` +
+        (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : ''));
+  }
+
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
   // the one carrying the bodywork should get the plain role name rather than
@@ -231,6 +254,15 @@ export async function profileFromKn5(path, {
 
     const skin = realSize.get(tex.name.toLowerCase());
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
+    const shaders = [...(shadersOf.get(tex.name) ?? [])].sort();
+    if (shaders.length) entry.shaders = shaders;
+    // `true` only when EVERY mesh wearing it is hidden. A texture half on a
+    // hidden plate and half on a visible sill is still a texture somebody can
+    // see, and the per-mesh list at the top of the profile carries the detail.
+    if (hides) {
+      const wearers = meshesUsingTexture(model, tex.name);
+      if (wearers.length && wearers.every((m) => hides.hidden.has(m.name))) entry.hiddenByCar = true;
+    }
 
     // On an encrypted model every embedded texture is a 1x1 placeholder, so the
     // model's own dimensions are not merely low-resolution — they are fiction.
@@ -472,6 +504,14 @@ export async function profileFromKn5(path, {
     textures,
     doNotPaint,
     ...(caseCollisions.length ? { caseCollisions } : {}),
+    // Only when the car has a config, so an absent block means "no config was
+    // found" and not "the config hides nothing" — two different facts, and a
+    // reader deserves to be able to tell them apart.
+    ...(hides ? { hiddenByCar: {
+      source: CAR_CONFIG,
+      meshes: Object.fromEntries([...hides.hidden].sort(([a], [b]) => a.localeCompare(b))),
+      unmatched: hides.unmatched,
+    } } : {}),
     panels,
   };
 

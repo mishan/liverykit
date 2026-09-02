@@ -219,7 +219,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   }
 
   // Across surfaces rather than within one, so it cannot live in the loop above.
-  if (model) stacked(model, profile, targets, say);
+  if (model) stacked(model, profile, targets, say, { design });
 
   return {
     car: profile.id,
@@ -666,18 +666,29 @@ const SAME_SIZE = 0.9;         // smaller volume over larger
  */
 const SAME_FACING = 0.5;
 
-function stacked(model, profile, targets, say) {
+function stacked(model, profile, targets, say, { design = {} } = {}) {
   const painted = new Map();                    // texture file -> role that paints it
   for (const t of targets) {
     const file = texture(profile, t.role)?.file;
     if (file) painted.set(file.toLowerCase(), { role: t.role, from: t.from });
   }
 
+  // A twin that is not drawn draws over nothing. Two ways for that to be so:
+  // the design hides its texture, which the build now ships transparent; or
+  // the car's own config hides the mesh, as the profile recorded. This check
+  // used to report the NSX's IGT emissive plate as an unpainted twin with both
+  // of those true — a high finding about a part the game never shows, and the
+  // kind of noise that teaches people to stop reading the list.
+  const designHides = new Set((Array.isArray(design.hide) ? design.hide : [])
+    .map((role) => profile.textures?.[role]?.file?.toLowerCase()).filter(Boolean));
+  const carHides = new Set(Object.keys(profile.hiddenByCar?.meshes ?? {}));
+
   // Bounds once per mesh, keyed by the texture it wears.
   const byFile = new Map();
   for (const mesh of model.meshes ?? []) {
+    if (carHides.has(mesh.name)) continue;
     const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
-    if (!file) continue;
+    if (!file || designHides.has(file)) continue;
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push({ mesh, box: bounds(model, mesh), face: facing(model, mesh) });
   }

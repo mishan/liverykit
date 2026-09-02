@@ -225,8 +225,16 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     if (typeof f === 'string' && f) hidden.add(f.toLowerCase());
   }
 
+  // And the meshes the CAR hides, by its own CSP config, as the profile
+  // recorded them. These are skipped for painted surfaces too: a design that
+  // paints a plate the game never draws is painting nothing, and the picture
+  // should say so rather than show artwork on a part that does not exist in
+  // the game. The build's report names the contradiction in words.
+  const carHides = new Set(Object.keys(profile.hiddenByCar?.meshes ?? {}));
+  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name);
+
   for (const { role, file } of files) {
-    const meshes = meshesUsingTexture(model, file).filter((m) => !claimed.has(m));
+    const meshes = meshesUsingTexture(model, file).filter(drawn);
     for (const m of meshes) claimed.add(m);
     emit(meshes, { role, file });
   }
@@ -242,7 +250,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // Sorted, so the group order does not depend on mesh order in the file and a
   // test can say what it expects.
   const leftover = new Map();
-  for (const m of (model.meshes ?? []).filter((x) => !claimed.has(x))) {
+  for (const m of (model.meshes ?? []).filter(drawn)) {
     const file = model.materials?.[m.materialId]?.slots?.txDiffuse ?? null;
     if (!leftover.has(file)) leftover.set(file, []);
     leftover.get(file).push(m);
