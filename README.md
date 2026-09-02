@@ -4,6 +4,10 @@
 
 Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 
+![The fitting editor: a Neon Doll livery on the Honda NSX GT3 Evo. Regions and the selected surface on the left, the lit 3D model in the middle, palette, identity and fit on the right.](docs/images/editor.png)
+
+*The fitting editor: a design described as named regions over a palette, fitted onto the car's own model.*
+
 ```sh
 # Linux:  sudo apt install imagemagick fonts-dejavu-core
 # macOS:  brew install imagemagick
@@ -38,8 +42,8 @@ liverykit reads the car's model to find out. A `.kn5` (Assetto Corsa's model
 format) stores a 3D position *and* a UV coordinate for every vertex, which is
 precisely the mapping a livery needs.
 
-<!-- TODO: an in-game screenshot of a generated livery belongs here, and one of
-     the calibration grid on bodywork further down. -->
+<!-- TODO: an in-game screenshot of a built livery belongs here, and one of the
+     calibration grid on bodywork further down. -->
 
 ---
 
