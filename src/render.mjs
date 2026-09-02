@@ -105,6 +105,25 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   const expanded = expandRegions(profile, role, regions ?? []);
   regionNotes.push(...expanded.notes);
 
+  // Where the words are, as fractions of the whole sheet, before anything is
+  // drawn. The emissive layer composites above the base, so decoration that
+  // scatters itself — sparkles — lands on top of lettering unless it is told
+  // where the lettering is. `avoid` says so by hand, in texture fractions,
+  // per name per car, and the first time nobody wrote it a sparkle sat on the
+  // driver's name. The renderer knows every text rectangle already; handing
+  // the list over costs nothing and removes a chore that was only ever going
+  // to be forgotten.
+  //
+  // Text and arc text, plus anything a design marked keepClear — the same
+  // declaration the fitment check honours, and a region that asks artwork to
+  // stay off it has said all it needs to.
+  const lettering = expanded.regions
+    .filter((r) => r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear)
+    .map((r) => {
+      const f = resolveRect(profile, role, r);
+      return { x: f.x, y: f.y, w: f.w, h: f.h };
+    });
+
   for (const region of expanded.regions) {
     const entry = treatments.get(region.treatment);
     if (!entry) {
@@ -193,7 +212,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // values they are given are safe. A rule with an unmarked exception in it
     // is not a rule anybody can follow.
     const out = entry.fn(drawn,
-      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens });
+      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
     if (out.base) base.push(spin(out.base));
