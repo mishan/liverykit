@@ -22,7 +22,7 @@
 // the editor, the MCP and a test all read the same ones.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, resolveRect, texture, metresAcross } from './profile.mjs';
+import { resolveTargets, expandRegions, resolveRect, texture, metresAcross, spanPlacements, panel as panelOf } from './profile.mjs';
 import { applyFit } from './fit.mjs';
 import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
 import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
@@ -259,18 +259,33 @@ function placements(profile, t, spec, fit) {
   // swallowing this here made a livery that cannot be resolved at all look
   // identical to one that is clean. The caller turns the throw into a `fatal`.
   const expanded = expandRegions(profile, t.role, fitted);
-  const out = expanded.regions.filter((r) => r.panel).map((r, i) => {
+  const out = expanded.regions.filter((r) => r.panel).flatMap((r, i) => {
     let frac = null;
     try {
       frac = resolveRect(profile, t.role, r);
     } catch { /* a panel this car lacks; portability reports that one */ }
+    if (!frac) return [];
     // A region with no `id` is addressed by position, and a TAG selection
     // becomes one entry per matching panel — so position alone is not unique
     // once expanded, and two different placements can print the same name. The
     // panel disambiguates them, which is also what somebody would need in order
     // to go and find the thing being complained about.
-    return { region: r, key: r.id ?? r.__key ?? `${t.from}#${i}`, frac, constraints: {} };
-  }).filter((p) => p.frac);
+    const key = r.id ?? r.__key ?? `${t.from}#${i}`;
+    // A spanning region is several placements: the piece on each panel it
+    // reaches, each checked where it actually lies. Checking the home
+    // rectangle alone would report the part past the panel's edge as
+    // off-mesh, which is the one place it is meant to be.
+    if (r.span === true && frac.panel) {
+      return spanPlacements(profile, t.role, r.panel, frac).map((p) => ({
+        region: { ...r, panel: p.panel },
+        key,
+        spilled: p.hops > 0,
+        frac: { ...p.on, anisotropy: panelOf(profile, t.role, p.panel).anisotropy ?? 1, panel: panelOf(profile, t.role, p.panel) },
+        constraints: {},
+      }));
+    }
+    return [{ region: r, key, frac, constraints: {} }];
+  });
 
   // `expandRegions` runs AFTER `applyFit`, so one region selecting by TAG
   // becomes several placements all carrying the key that was stamped before
@@ -527,9 +542,17 @@ function unseen(placed, profile, t, seen, say) {
       continue;
     }
     if (answer.fraction >= BARELY_SEEN) continue;
+    // A band that runs off a fender continues into the wheel arch liner,
+    // because that is where the bodywork goes. The piece a spanning region
+    // leaves on a panel it merely spilled onto is not a placement anybody
+    // chose, and out of sight is exactly where such a piece is allowed to
+    // be; it is only worth a word when it is words. The home piece is held
+    // to the usual standard.
+    const spilled = p.region.span === true && p.spilled;
+    if (spilled && !carries) continue;
     say({
       kind: 'unseen',
-      severity: answer.fraction < 0.1 ? 'high' : 'low',
+      severity: answer.fraction < 0.1 && !spilled ? 'high' : 'low',
       surface: t.from,
       panel: p.region.panel,
       ids: [p.id],

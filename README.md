@@ -479,6 +479,29 @@ The panel leads with what it could **not** check. "No findings" from a run that
 skipped the geometry and "no findings" from a run that did all of it are the same
 sentence and opposite facts, so the two are never allowed to look alike.
 
+### One region across several panels
+
+A rectangle lives in one island's sheet. A band that runs from the door onto
+the panel behind it is one region with `span: true`, whose `at` may run past
+its panel's edge:
+
+```js
+{ id: 'band', treatment: 'stripe', panel: 'left_mid', span: true,
+  at: [-0.3, 0.62, 2.2, 0.10], color: 'white' }
+```
+
+The part past the edge is continued onto whichever adjacent islands it crosses
+a seam into, through the seam maps the profile measured — drawn once, placed
+under each panel's map, clipped to each panel's outline, so a stripe's edge and
+a word's letters carry straight across. It stops where the bodywork does: on
+the NSX a band across the door runs onto the fender strip ahead and the intake
+surround behind, and not across the intake, because that is a hole. The
+fitment check reports each piece where it lands (`band@left_rear_upper`).
+
+The editor draws the home rectangle only and a drag stays inside the panel, so
+for now a spanning region is written by hand or proposed over MCP.
+[docs/spanning.md](docs/spanning.md) has the reasoning and the limits.
+
 ### Saying what a region needs
 
 Placement rules say where artwork goes. Constraints say what it needs wherever it
@@ -649,6 +672,8 @@ Per panel:
 | `anisotropy` | how much wider than tall a square of texture lands on the bodywork. The `text` treatment cancels it for you |
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
+| `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in metres from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
+| `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
