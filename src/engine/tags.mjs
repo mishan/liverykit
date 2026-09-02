@@ -14,6 +14,7 @@
 //   visible   readable from trackside
 //   cockpit   readable from the driver's seat
 //   mirrored  has a mirror-image partner on the other side
+//   sidewall  a tyre's sidewall; tread, its tread — from the wheel measurement
 //
 // A livery then says `{ tags: ['left', 'mid'] }` and gets whatever this car has
 // there, or nothing, reported.
@@ -99,6 +100,7 @@ export function computeTags(profile) {
   const ySpan = (yMax - yMin) || 1;
   const zSpan = (zMax - zMin) || 1;
 
+  const tyreRoles = Array.isArray(profile.bind?.tyres?.roles) ? profile.bind.tyres.roles : null;
   const out = {};
   for (const [role, panels] of Object.entries(profile.panels ?? {})) {
     out[role] = {};
@@ -124,6 +126,17 @@ export function computeTags(profile) {
       if (typeof p.visible === 'number' && p.visible >= 0.5) tags.push('visible');
       if (typeof p.visibleFromCockpit === 'number' && p.visibleFromCockpit >= 0.3) tags.push('cockpit');
       if (p.mirrorOf) tags.push('mirrored');
+      // Tyre parts, from the wheel measurement. `sidewall` is what a design
+      // means by "the tyre": the part with the lettering, that a spectator
+      // sees. The tread is the other part, and a design painting it is
+      // painting the road.
+      // Only on the texture bound as the tyres: a rim's face and a brake
+      // disc sit by a wheel and face along the axle too, and would otherwise
+      // be called sidewalls. The `wheel` measurement stays on all of them.
+      if (tyreRoles === null || tyreRoles.includes(role)) {
+        if (p.wheel?.part === 'sidewall') tags.push('sidewall');
+        if (p.wheel?.part === 'tread') tags.push('tread');
+      }
 
       perPanel[name] = tags;
     }

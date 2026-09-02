@@ -308,8 +308,28 @@ derived from rounding error.
 
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
-trackside), `cockpit` (readable from the driver's seat), `mirrored`, and
-`shared`.
+trackside), `cockpit` (readable from the driver's seat), `mirrored`,
+`shared`, and on the tyre texture `sidewall` and `tread`.
+
+Tyres deserve a word. A sidewall is a disc, and an unwrapper lays it out either
+as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
+once and rolled out as a strip, u round the circumference and v from rim to
+shoulder. The Abarth's is a disc; the NSX's and the RSS4's are strips. A design
+that draws rings is right on the first and draws one big circle across the
+second, which on the car is a few stray arcs where the circle crosses the
+strip. The profile measures which it is, from the wheel centres AC requires
+every car to name, and writes it on the panel as `wheel`; the `band` treatment
+reads that and draws a band round the tyre `along` the sidewall — 0 at the rim,
+1 at the shoulder — whichever way it was unwrapped:
+
+```js
+tyres: { regions: [
+  { treatment: 'band', tags: ['sidewall'], along: 0.9, width: 0.08, color: 'accent', glow: true },
+] }
+```
+
+On a profile generated before this measurement existed there is no `sidewall`
+tag and `band` draws as `ring` did; regenerate with `--from-kn5` to get it.
 
 `shared` is the one that surprises people. A *part* is a thing on the car; a
 *panel* is a region of a texture, and across a sample of eight cars 42.8% of
@@ -672,6 +692,7 @@ Per panel:
 | `anisotropy` | how much wider than tall a square of texture lands on the bodywork. The `text` treatment cancels it for you |
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
+| `wheel` | on a tyre part: `part` (sidewall or tread), `unwrap` (strip or annulus), `radiusM` [rim, shoulder]; for a strip `around` (which coordinate runs round the circumference), `rim` (which panel edge is the rim) and `across` [at rim, at shoulder]; for an annulus `hub` and `radiusUv`. `fit` is the correlation the verdict rests on |
 | `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in metres from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
 | `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
 | `visible` | fraction of the panel readable from trackside |

@@ -217,8 +217,11 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // write `fill="${c.palette.accent}"`, reasonably, having been told the
     // values they are given are safe. A rule with an unmarked exception in it
     // is not a rule anybody can follow.
+    // `panel` is the resolved panel this region landed on, measurements and
+    // all, for a treatment that draws differently depending on what it is
+    // on — `band` reads the wheel measurement. Null for an absolute region.
     const out = entry.fn(drawn,
-      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering });
+      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering, panel: frac.panel ?? null });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
 
