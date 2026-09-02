@@ -1456,6 +1456,28 @@ test('the editor is told the profile\'s panel name, not the livery\'s', async ()
   assert.deepEqual(placed.abs, [0.3, 0.2, 0.2, 0.4]);
 });
 
+test('painting a texture the car hides is reported, not shipped in silence', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  // The profile knows which meshes the car's own CSP config hides. A design
+  // that paints one of those textures gets a file in the skin and nothing on
+  // the car, which is the silent failure this project exists to refuse.
+  const profile = {
+    id: 'c', textures: {
+      body: { file: 'b.dds', width: 64, height: 64 },
+      plate: { file: 'p.dds', width: 64, height: 64, hiddenByCar: true },
+    },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: {}, plate: {} },
+  };
+  const { notes } = resolveTargets(profile, {
+    name: 'L', surfaces: { body: { regions: [] } }, paint: { plate: { regions: [] } },
+  });
+  assert.deepEqual(notes.map((n) => [n.term, n.status]), [['paint.plate', 'car-hidden']]);
+  assert.match(notes[0].text, /hides every mesh wearing it/);
+  // Painted and reported, not dropped: the file still ships, because a skin's
+  // own ext_config may un-hide the part, and that is the person's call.
+});
+
 test('the editor and the build agree on what a region without an id is called', async () => {
   // A region the design gave no id is addressed by POSITION, and the key is made
   // from the surface it sits on. The editor passed the surface and the build did

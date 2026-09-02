@@ -286,6 +286,21 @@ export function resolveTargets(profile, livery) {
     }
   }
 
+  // Painted onto a part the game never draws. The profile records which meshes
+  // the car's own CSP config hides; a design painting one of those textures
+  // is painting nothing, and the texture it ships is dead weight. This design
+  // did exactly that with a number plate for a month, and the only reason it
+  // did not matter is that it could not be seen not to.
+  for (const t of targets) {
+    const tex = profile.textures[t.role];
+    if (tex?.hiddenByCar) {
+      notes.push({
+        term: t.from, status: 'car-hidden',
+        text: `${t.from} -> ${tex.file}: the car's own config hides every mesh wearing it, so this paints nothing the game shows`,
+      });
+    }
+  }
+
   if (!targets.length) {
     throw new Error(
       `Livery "${livery.name}" paints nothing on car "${profile.id}". ` +
