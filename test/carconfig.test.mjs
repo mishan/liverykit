@@ -22,33 +22,67 @@ FILE = other_car.kn5
 HIDE = NOT_THIS_ONE
 
 [MODEL_REPLACEMENT_...]
-HIDE = SPOTTER_*
+HIDE = SPOTTER_?
+
+[MODEL_REPLACEMENT_...]
+ACTIVE = 0
+HIDE = SWITCHED_OFF
+
+[MODEL_REPLACEMENT_...]
+SKINS = red?
+HIDE = ONLY_FOR_SOME_SKINS
 
 [LIGHT_HEADLIGHTS_0]
 HIDE = a_key_in_another_section
 `;
 
-test('HIDE patterns are taken from MODEL_REPLACEMENT sections that name this model', () => {
+test('HIDE patterns are taken from MODEL_REPLACEMENT sections that apply to this model', () => {
   const got = hidePatterns(NSX_STYLE, 'CAR.kn5');
   // The section for another car is skipped; one with no FILE applies to all;
+  // ACTIVE=0 is off; a SKINS filter means "some skins, not the car", and this
+  // tool cannot know which skin will be worn, so it does not apply either;
   // HIDE outside MODEL_REPLACEMENT is some other feature's key.
-  assert.deepEqual(got, ['IGT_NUMBERPLATE_LEFT', 'IGT_NUMBERPLATE_RIGHT', 'Blancpain_Silver2_Colour.dds', 'SPOTTER_*']);
-  assert.deepEqual(hidePatterns(NSX_STYLE, 'other_car.kn5'), ['NOT_THIS_ONE', 'SPOTTER_*']);
+  assert.deepEqual(got, ['IGT_NUMBERPLATE_LEFT', 'IGT_NUMBERPLATE_RIGHT', 'Blancpain_Silver2_Colour.dds', 'SPOTTER_?']);
+  assert.deepEqual(hidePatterns(NSX_STYLE, 'other_car.kn5'), ['NOT_THIS_ONE', 'SPOTTER_?']);
   assert.deepEqual(hidePatterns('', 'car.kn5'), []);
 });
 
-test('patterns resolve to mesh names, by name or by the texture they wear, and say which', async () => {
+test("patterns resolve the way CSP's filtering page says, and say how", () => {
+  // CSP's wildcard is `?` and it means "any symbols in any quantity" — the
+  // Windows `*`, kept as `?` for compatibility — and a HIDE entry names a mesh
+  // OR a node, hiding everything beneath the node. Properties are matched
+  // with a prefix: `texture:X.dds`, `material:M`, `shader:S`, `parent:N`. A
+  // bare `Foo.dds` with no prefix is therefore a NAME, and on a car with no
+  // mesh called that it hides nothing, whatever the config's author meant.
+  const tri = [vert(0, 0, 0, 0, 0), vert(1, 0, 0, 1, 0), vert(0, 1, 0, 0, 1)];
   const model = parseKn5Buffer(buildKn5({ extraMeshes: [
-    { name: 'IGT_NUMBERPLATE_LEFT', verts: [vert(0, 0, 0, 0, 0), vert(1, 0, 0, 1, 0), vert(0, 1, 0, 0, 1)], indices: [0, 1, 2] },
-    { name: 'SPOTTER_L', verts: [vert(0, 0, 0, 0, 0), vert(1, 0, 0, 1, 0), vert(0, 1, 0, 0, 1)], indices: [0, 1, 2] },
+    { name: 'IGT_NUMBERPLATE_LEFT', verts: tri, indices: [0, 1, 2] },
+    { name: 'SPOTTER_L', verts: tri, indices: [0, 1, 2] },
+    { name: 'SPOTTER_R', verts: tri, indices: [0, 1, 2] },
   ] }));
-  const { hidden, unmatched } = hiddenMeshes(model, ['igt_numberplate_left', 'SPOTTER_*', 'NOWHERE', 'body.dds']);
+  const { hidden, unmatched } = hiddenMeshes(model, [
+    'igt_numberplate_left', 'SPOTTER_?', 'NOWHERE', 'body.dds', 'texture:BODY.dds', 'shader:ksPerPixel',
+  ]);
   assert.equal(hidden.get('IGT_NUMBERPLATE_LEFT')?.by, 'name');
   assert.equal(hidden.get('SPOTTER_L')?.by, 'name');
-  // Every mesh in the fixture wears body.dds, so the texture pattern reaches
-  // the body mesh too — and is labelled as a texture match, not a name match.
+  assert.equal(hidden.get('SPOTTER_R')?.by, 'name');
+  // First match wins the label: body_mesh is reached by texture: before shader:.
   assert.equal(hidden.get('body_mesh')?.by, 'texture');
-  assert.deepEqual(unmatched, ['NOWHERE']);
+  assert.equal(hidden.get('body_mesh')?.pattern, 'texture:BODY.dds');
+  // A bare .dds is a name pattern and there is no such mesh.
+  assert.deepEqual(unmatched, ['NOWHERE', 'body.dds']);
+});
+
+test('a node name hides every mesh beneath it', () => {
+  // The fixture puts every mesh directly under `root`, so `root` is the node
+  // and everything hides; `parent:root` says the same thing the property way.
+  const model = parseKn5Buffer(buildKn5());
+  assert.equal(hiddenMeshes(model, ['ROOT']).hidden.get('body_mesh')?.by, 'node');
+  assert.equal(hiddenMeshes(model, ['parent:ro?']).hidden.get('body_mesh')?.by, 'parent');
+  // An extended `{ ... }` filter is beyond this reader and is reported as
+  // unmatched rather than half-understood.
+  assert.deepEqual(hiddenMeshes(model, ['{ body_mesh & !shader:ksPerPixel }']).unmatched,
+    ['{ body_mesh & !shader:ksPerPixel }']);
 });
 
 test('a profile records what the car hides, and a texture worn only by hidden meshes says so', async () => {
@@ -64,6 +98,7 @@ test('a profile records what the car hides, and a texture worn only by hidden me
     source: join('extension', 'ext_config.ini'),
     meshes: { BODY_SHELL: { by: 'name', pattern: 'BODY_SHELL' } },
     unmatched: ['GHOST'],
+    skinOnly: [],
   });
   // The only mesh wearing body.dds is hidden, so the texture is too.
   const body = Object.values(profile.textures).find((t) => t.file === 'body.dds');

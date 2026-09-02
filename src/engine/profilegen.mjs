@@ -168,10 +168,14 @@ export async function profileFromKn5(path, {
   // MODEL_REPLACEMENT names, and a texture is hidden only when nothing that
   // wears it is drawn. See carconfig.mjs for why this is worth reading.
   const carConfig = await carConfigBeside(path);
-  const hides = carConfig ? hiddenMeshes(model, hidePatterns(carConfig.text, basename(path))) : null;
+  const skinOnly = [];
+  const hides = carConfig
+    ? hiddenMeshes(model, hidePatterns(carConfig.text, basename(path), { skinOnly }))
+    : null;
   if (hides) {
     log(`  ${CAR_CONFIG}: hides ${hides.hidden.size} mesh(es)` +
-        (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : ''));
+        (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : '') +
+        (skinOnly.length ? `; ${skinOnly.length} apply only to some skins and were not applied` : ''));
   }
 
   // How much geometry each texture actually covers. Two textures can both look
@@ -511,6 +515,9 @@ export async function profileFromKn5(path, {
       source: CAR_CONFIG,
       meshes: Object.fromEntries([...hides.hidden].sort(([a], [b]) => a.localeCompare(b))),
       unmatched: hides.unmatched,
+      // Hidden for SOME skins. Not applied: which skin is worn is not a
+      // fact about the car, and this tool builds a skin of its own.
+      skinOnly,
     } } : {}),
     panels,
   };
