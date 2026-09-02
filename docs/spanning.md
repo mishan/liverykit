@@ -46,7 +46,7 @@ Each seam is written into the profile on both islands:
   "seams": {
     "left_rear_upper": {
       "matrix": [1.00974, 0.0082, -0.0082, 1.00979, 0.0163, -0.02051],
-      "here":   [0.4741, 0.853, 0.0321, 0.0841],
+      "here":   [[0.4741, 0.853], [0.4741, 0.9371]],
       "points": 39,
       "rmsMm":  7.1
     }
@@ -56,7 +56,10 @@ Each seam is written into the profile on both islands:
 ```
 
 `matrix` takes this island's fractions to the neighbour's, in SVG order.
-`here` is the box the shared points occupy in this sheet — where the seam is.
+`here` is the seam as a polyline through the shared points, in this sheet —
+where the seam is. A line and not a box, because the front clip meets the
+roof along the windscreen base and down both A-pillars, an L whose box is
+mostly sheet the seam is nowhere near.
 `points` and `rmsMm` say how much the fit rests on and how far the shared
 points miss under it: near zero for a crease, larger where the seam curves and
 "unfold flat" is an approximation worth knowing about.
@@ -102,7 +105,12 @@ copy but the home to the wrong place.
 The rule is easy to state and took three tries to get right:
 
 **A neighbour is reached when the part of the region on the panel it is
-leaving crosses the seam to it.**
+leaving contains at least 3 cm of the seam to it.**
+
+"The part on the panel" is the region's mapped quad clipped to the panel, as
+a polygon. Boxes were tried first and a band mapped through a seam at -17
+degrees is a parallelogram whose bounding box is mostly not band; tested as a
+box it crossed seams it never touched and reached the roof from the door.
 
 *Not* "when the unfolded rectangle overlaps the neighbour's box". A band on
 the NSX's door reached the bonnet that way: the door touches the bonnet at one
@@ -114,10 +122,10 @@ band. That let an 8 cm spill onto the fender strip carry the band's other
 three metres across every seam the strip has. Only the piece that is on the
 current panel can cross out of it.
 
-And the crossing has to be at least a few centimetres (`minCross`, 3 cm).
-The door meets the rear quarter along a corner a centimetre and a half across
-and the intake surround along its whole rear edge; without a floor, a band
-reaches the quarter through the corner, at the corner's angle.
+The 3 cm floor (`minCross`) is measured along the seam itself, so a corner
+where three islands meet — the door and the rear quarter share a centimetre
+and a half — cannot clear it however the region sits on it. Without the
+floor, a band reached the quarter through that corner, at the corner's angle.
 
 Panels are reached breadth-first: fewest seams wins, since every seam crossed
 is an approximation, and among routes of equal length the one crossing more
@@ -134,8 +142,10 @@ angle nobody asked for.
 The first real test. A band across the door at mid height, 30% past the front
 edge and 120% past the rear:
 
-- forward, it runs onto the fender strip ahead of the door, level, and 8 cm
-  further onto the fender lower;
+- forward, it runs onto the fender strip ahead of the door, level, and onto
+  the wedge of front clip at the foot of the A-pillar, which sits at the same
+  beltline height as the band's top edge and looks like a mistake until you
+  find it on the car;
 - rearward, it runs onto the intake surround, level — the seam map between
   those two is an identity to half a degree, on 39 shared points, and the
   unwrapper had in fact laid them side by side;
