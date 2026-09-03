@@ -20,11 +20,13 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
-import { findIslands, nameIslands, findMirrorPairs, findAdjacency, carBounds } from './islands.mjs';
+import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
+import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
+import { measureWheels } from './wheels.mjs';
 
 /**
  * A texture the model does not really contain.
@@ -151,6 +153,32 @@ export async function profileFromKn5(path, {
   }
   const diffuseUsed = new Set([...boundAs].filter(([, s]) => s.has('txDiffuse')).map(([t]) => t));
 
+  // Which shaders draw each texture. A build that wants to make a part vanish
+  // by shipping a transparent texture needs to know whether the material will
+  // honour the alpha, and by then there is no model to ask — only the profile.
+  const shadersOf = new Map();
+  for (const mesh of model.meshes) {
+    const mat = model.materials[mesh.materialId];
+    const t = mat?.slots?.txDiffuse;
+    if (!t) continue;
+    if (!shadersOf.has(t)) shadersOf.set(t, new Set());
+    shadersOf.get(t).add(mat.shader);
+  }
+
+  // What the car's own CSP config hides. Meshes, not textures: a mesh is what
+  // MODEL_REPLACEMENT names, and a texture is hidden only when nothing that
+  // wears it is drawn. See carconfig.mjs for why this is worth reading.
+  const carConfig = await carConfigBeside(path);
+  const skinOnly = [];
+  const hides = carConfig
+    ? hiddenMeshes(model, hidePatterns(carConfig.text, basename(path), { skinOnly }))
+    : null;
+  if (hides) {
+    log(`  ${CAR_CONFIG}: hides ${hides.hidden.size} mesh(es)` +
+        (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : '') +
+        (skinOnly.length ? `; ${skinOnly.length} apply only to some skins and were not applied` : ''));
+  }
+
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
   // the one carrying the bodywork should get the plain role name rather than
@@ -231,6 +259,15 @@ export async function profileFromKn5(path, {
 
     const skin = realSize.get(tex.name.toLowerCase());
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
+    const shaders = [...(shadersOf.get(tex.name) ?? [])].sort();
+    if (shaders.length) entry.shaders = shaders;
+    // `true` only when EVERY mesh wearing it is hidden. A texture half on a
+    // hidden plate and half on a visible sill is still a texture somebody can
+    // see, and the per-mesh list at the top of the profile carries the detail.
+    if (hides) {
+      const wearers = meshesUsingTexture(model, tex.name);
+      if (wearers.length && wearers.every((m) => hides.hidden.has(m.name))) entry.hiddenByCar = true;
+    }
 
     // On an encrypted model every embedded texture is a 1x1 placeholder, so the
     // model's own dimensions are not merely low-resolution — they are fiction.
@@ -338,6 +375,13 @@ export async function profileFromKn5(path, {
     nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
+    // And HOW they touch: the map from each island's sheet to its neighbour's,
+    // so artwork can be continued across the seam. See findSeams.
+    const seams = findSeams(model, keep, adj);
+    // Which islands are tyre parts, and how each was unwrapped. A sidewall
+    // rolled out as a strip and one laid out as a disc want different
+    // artwork, and the texture cannot say which it is. See wheels.mjs.
+    const wheels = measureWheels(model, keep);
     // Every mesh occludes, not just the painted ones — a wheel hides bodywork
     // as effectively as bodywork does.
     if (visibility) {
@@ -388,6 +432,19 @@ export async function profileFromKn5(path, {
       if (i.mirrorOf) p.mirrorOf = i.mirrorOf;
       const touching = [...(adj.get(i.name) ?? [])].sort();
       if (touching.length) p.adjacent = touching;
+      const wheel = wheels.get(i);
+      if (wheel) p.wheel = wheel;
+      const across = seams.get(i.name);
+      if (across?.size) {
+        p.seams = Object.fromEntries([...across].sort(([a], [b]) => a.localeCompare(b)));
+      }
+      // The island's actual shape, for clipping artwork that spans onto it.
+      // Only where it has seams: an island nothing continues onto has no
+      // use for it, and a profile is long enough.
+      if (across?.size) {
+        const outline = islandOutline(model, i);
+        if (outline) p.outline = outline;
+      }
       panels[role][i.name] = p;
     }
     adjacencyOut[role] = Object.fromEntries([...adj].map(([k, v]) => [k, [...v].sort()]));
@@ -472,6 +529,17 @@ export async function profileFromKn5(path, {
     textures,
     doNotPaint,
     ...(caseCollisions.length ? { caseCollisions } : {}),
+    // Only when the car has a config, so an absent block means "no config was
+    // found" and not "the config hides nothing" — two different facts, and a
+    // reader deserves to be able to tell them apart.
+    ...(hides ? { hiddenByCar: {
+      source: CAR_CONFIG,
+      meshes: Object.fromEntries([...hides.hidden].sort(([a], [b]) => a.localeCompare(b))),
+      unmatched: hides.unmatched,
+      // Hidden for SOME skins. Not applied: which skin is worn is not a
+      // fact about the car, and this tool builds a skin of its own.
+      skinOnly,
+    } } : {}),
     panels,
   };
 

@@ -5,6 +5,7 @@
 
 import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
 import { join, isAbsolute, resolve } from 'node:path';
+import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
@@ -14,6 +15,11 @@ import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
+import { hidePlan } from './hide.mjs';
+
+// Re-exported: `hidePlan` lived here first, and the build is where anybody
+// looking for what `hide` does would go.
+export { hidePlan } from './hide.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
@@ -31,6 +37,21 @@ const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
 export function isMissingNote(note) {
   return MISSING.has(note.status);
 }
+
+/** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
+async function transparentPng(width, height) {
+  return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .png().toBuffer();
+}
+
+/**
+ * The size a hidden surface's clear sheet is shipped at. A texture with no
+ * texels worth seeing needs no texels: the game stretches whatever it is given
+ * over the mesh, and nothing-times-1024 is the same nothing as nothing-times-4.
+ * At the original size the NSX's two IGT plates came to 2.8 MB of transparent
+ * DXT5; at 4x4, the smallest a DXT block allows, they are a few hundred bytes.
+ */
+const CLEAR_SHEET = 4;
 
 /**
  * Render every painted texture in a livery.
@@ -161,6 +182,37 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
+  }
+
+  // Surfaces the design hides. A transparent sheet where one will work; a note
+  // in every other case, because "hidden in the editor" and "hidden in the
+  // game" were two different things for longer than anybody knew.
+  // `targets`, not the design's `paint` keys: a surface term resolves to roles
+  // through the profile's bind table, and a role painted that way is painted
+  // just as much as one named outright. It is also the list AFTER the
+  // unencodable ones were dropped above — a surface the build could not paint
+  // is one this may still hide.
+  for (const h of hidePlan(profile, livery, { paintedRoles: new Set(targets.map((t) => t.role)) })) {
+    if (h.action === 'ship-transparent') {
+      const outPath = join(outDir, h.file);
+      const png = await transparentPng(CLEAR_SHEET, CLEAR_SHEET);
+      if (isPngTexture(h.file)) {
+        await writeFile(outPath, png);
+      } else {
+        const pngPath = join(pngDir ?? outDir, h.file.replace(/\.dds$/i, '.png'));
+        await writeFile(pngPath, png);
+        await toDDS(pngPath, outPath, { width: CLEAR_SHEET, height: CLEAR_SHEET, alpha: true });
+        if (!pngDir) await rm(pngPath);
+      }
+      written.push(h.file);
+      log(`  ${h.file.padEnd(24)} ${CLEAR_SHEET}x${CLEAR_SHEET}`.padEnd(46) + `${isPngTexture(h.file) ? 'PNG ' : 'DXT5'}  transparent (hidden)`);
+    } else if (h.action === 'cannot' || h.action === 'painted') {
+      notes.push({ term: h.role, status: 'hide-' + h.action, text: h.why });
+    } else {
+      // `car-hides` and `absent` are the quiet outcomes, and even those get a
+      // line: a hide that did nothing should be visibly nothing.
+      log(`  ${h.role.padEnd(24)} ${h.action === 'car-hides' ? 'no file; hidden by the car\'s own config (in the game only)' : 'not on this car'}`);
+    }
   }
 
   // A fit naming a region the livery no longer declares is the other half of

@@ -22,6 +22,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { VOCABULARY } from './engine/classify.mjs';
+import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
@@ -286,6 +287,21 @@ export function resolveTargets(profile, livery) {
     }
   }
 
+  // Painted onto a part the game never draws. The profile records which meshes
+  // the car's own CSP config hides; a design painting one of those textures
+  // is painting nothing, and the texture it ships is dead weight. This design
+  // did exactly that with a number plate for a month, and the only reason it
+  // did not matter is that it could not be seen not to.
+  for (const t of targets) {
+    const tex = profile.textures[t.role];
+    if (tex?.hiddenByCar) {
+      notes.push({
+        term: t.from, status: 'car-hidden',
+        text: `${t.from} -> ${tex.file}: the car's own config hides every mesh wearing it, so this paints nothing the game shows`,
+      });
+    }
+  }
+
   if (!targets.length) {
     throw new Error(
       `Livery "${livery.name}" paints nothing on car "${profile.id}". ` +
@@ -297,11 +313,16 @@ export function resolveTargets(profile, livery) {
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
 
-function checkRect(r, what, err) {
+function checkRect(r, what, err, { loose = false } = {}) {
   if (!Array.isArray(r) || r.length !== 4) err(`${what} must be [x, y, w, h]`);
-  if (r.some((n) => typeof n !== 'number' || n < 0 || n > 1)) {
-    err(`${what} must be fractions in 0..1, got [${r}]`);
+  if (r.some((n) => typeof n !== 'number' || !Number.isFinite(n))) err(`${what} must be numbers, got [${r}]`);
+  // A spanning region is ALLOWED past its panel's edge: that is the point of
+  // it, and the part past the edge is what continues onto the neighbour.
+  if (loose) {
+    if (r[2] <= 0 || r[3] <= 0) err(`${what} must have positive width and height, got [${r}]`);
+    return;
   }
+  if (r.some((n) => n < 0 || n > 1)) err(`${what} must be fractions in 0..1, got [${r}]`);
   if (r[0] + r[2] > 1.0001 || r[1] + r[3] > 1.0001) err(`${what} extends past the texture edge`);
 }
 
@@ -522,11 +543,32 @@ export function metresAcross(frac) {
   return { w: frac.w * per[0], h: frac.h * per[1] };
 }
 
+/**
+ * The narrowest a placement is on the car, in metres — the number legibility
+ * turns on.
+ *
+ * The short side of the box, until a placement stopped being a box. A region
+ * continued across a seam lands as a parallelogram, and the short side of the
+ * box around a parallelogram can be twice the width of the parallelogram: a
+ * name measured 40 mm tall and was 18 mm of lettering on a slant. Where the
+ * placement carries its polygon, that is what is measured; where it does not,
+ * the box is the shape and the two answers agree.
+ */
+export function metresNarrowest(frac) {
+  const per = frac?.panel?.metresPerUv;
+  if (!Array.isArray(per) || per.length !== 2) return null;
+  if (Array.isArray(frac.poly) && frac.poly.length >= 3) return minWidth(frac.poly, per);
+  return Math.min(frac.w * per[0], frac.h * per[1]);
+}
+
 export function resolveRect(profile, role, spec) {
   const at = spec.at ?? [0, 0, 1, 1];
-  checkRect(at, `region "at"`, (m) => { throw new Error(m); });
+  checkRect(at, `region "at"`, (m) => { throw new Error(m); }, { loose: spec.span === true });
 
-  if (!spec.panel) return { x: at[0], y: at[1], w: at[2], h: at[3], anisotropy: 1 };
+  if (!spec.panel) {
+    if (spec.span) throw new Error(`A spanning region needs a panel to start from; "${spec.treatment ?? 'region'}" on role "${role}" has none.`);
+    return { x: at[0], y: at[1], w: at[2], h: at[3], anisotropy: 1 };
+  }
 
   const pan = panel(profile, role, spec.panel);
   const [bx, by, bw, bh] = pan.rect;
@@ -559,4 +601,195 @@ export function resolveRect(profile, role, spec) {
 /** Textures the profile explicitly warns against painting, with reasons. */
 export function doNotPaint(profile) {
   return profile.doNotPaint ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Spanning: one region, several islands.
+//
+// A panel is a UV island, and a rectangle is a rectangle in ONE island's
+// sheet. Nothing about that stops a design wanting a band that runs from the
+// door onto the rear quarter, and until now the answer was two regions, two
+// rectangles, and a seam that never quite lined up.
+//
+// `span: true` lets a region's `at` run past its panel's edge. The part past
+// the edge is continued onto whichever neighbouring islands it reaches,
+// through the SEAM MAPS the profile measured — an affine from one island's
+// sheet to its neighbour's, fitted in metres from the vertices the two share
+// (see findSeams). The artwork is drawn once, in the home panel's frame, and
+// drawn again on each reached panel under that panel's map, clipped to it.
+//
+// Islands are reached by walking `seams` outward from the home panel and
+// keeping any whose rectangle the mapped region overlaps. A panel reached by
+// two routes takes the SHORTER one, and this is not a tidy-up: each seam map
+// is exact at its own seam and approximate away from it, so on a curved
+// island two routes disagree by the curvature between them — on the NSX the
+// door meets the quarter directly at -17 degrees and through the intake
+// surround at -49, and both are right where they were measured.
+// ---------------------------------------------------------------------------
+
+/** [a,b,c,d,e,f] applied to a point, SVG order. */
+export function applyMatrix([a, b, c, d, e, f], [x, y]) {
+  return [a * x + c * y + e, b * x + d * y + f];
+}
+
+/** second AFTER first: (M2 ∘ M1). */
+export function composeMatrix(first, second) {
+  const [a1, b1, c1, d1, e1, f1] = first;
+  const [a2, b2, c2, d2, e2, f2] = second;
+  return [
+    a2 * a1 + c2 * b1, b2 * a1 + d2 * b1,
+    a2 * c1 + c2 * d1, b2 * c1 + d2 * d1,
+    a2 * e1 + c2 * f1 + e2, b2 * e1 + d2 * f1 + f2,
+  ];
+}
+
+const IDENTITY = [1, 0, 0, 1, 0, 0];
+
+/** A rect's four corners under a matrix, as a polygon. */
+function mappedQuad(m, r) {
+  return [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].map((p) => applyMatrix(m, p));
+}
+
+/**
+ * Where a spanning region lands: the home panel and every neighbour it
+ * reaches, each with the matrix that takes the home sheet's fractions to
+ * that panel's, and the part of the mapped rectangle that lies on it.
+ *
+ * A neighbour is reached only when the part of the region ON the panel it
+ * is leaving crosses the seam to it — overlaps the seam's own box, by at
+ * least `minCross` metres. Two mistakes are ruled out by that sentence, and
+ * both were made first. Asking only whether the unfolded rectangle overlapped
+ * the neighbour's box let a band on the NSX's door reach the bonnet, which
+ * the door touches at one corner the band never crosses. And testing the
+ * WHOLE unfolded band for crossings, rather than the piece on the current
+ * panel, let an 8 cm spill onto the fender strip carry the band's other
+ * three metres across every seam the strip has.
+ *
+ * Panels are reached breadth-first — fewest seams wins, since every seam
+ * crossed is an approximation — and among routes of equal length the one
+ * crossing more seam. The door meets the rear quarter along a corner a
+ * centimetre and a half across and the intake surround along its whole rear
+ * edge; `minCross` is what sends a band through the surround.
+ */
+export function spanPlacements(profile, role, homeName, home, { depth = 3, minCross = 0.03 } = {}) {
+  const panels = profile.panels?.[role] ?? {};
+  const start = panelName(profile, role, homeName);
+  const rect = { x: home.x, y: home.y, w: home.w, h: home.h };
+  // A seam box is a line for a straight seam; pad it so a rectangle whose
+  // edge sits exactly on it still counts as crossing.
+  // How much of the seam, in metres, lies inside the piece. The seam is a
+  // polyline through the shared points; each segment is sampled and the
+  // samples inside the piece (grown by a texel or two, so a rectangle whose
+  // edge sits exactly on the seam still counts) are what crosses. Sampling
+  // rather than clipping, because it is a few dozen points per seam and a
+  // closed form for a segment against a polygon is more code than this
+  // question deserves.
+  const PAD = 0.003;
+  const crossing = (piece, seam, name) => {
+    if (!Array.isArray(seam.here) || !seam.here.length || !Array.isArray(seam.here[0])) return 0;
+    const per = panels[name].metresPerUv ?? [1, 1];
+    const grown = grow(piece, PAD);
+    let inside = 0;
+    for (let i = 0; i + 1 < seam.here.length; i++) {
+      const [a, b] = [seam.here[i], seam.here[i + 1]];
+      const len = Math.hypot((b[0] - a[0]) * per[0], (b[1] - a[1]) * per[1]);
+      const n = Math.max(2, Math.ceil(len / 0.01));            // a sample per centimetre
+      let hit = 0;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        if (inPoly(grown, [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])])) hit++;
+      }
+      inside += (len * hit) / (n + 1);
+    }
+    // A seam that is a single point has no length and cannot be crossed.
+    return inside;
+  };
+  // The piece of the region on a panel: the mapped quad clipped to the panel's
+  // box, and how much of that piece is on the ISLAND rather than merely in its
+  // box. The two are different by however concave the island is, and on a door
+  // with a wheel arch bitten out of it that is a lot of empty texture.
+  //
+  // The box alone let a region "land" in that emptiness — no triangle wears
+  // those texels, so nothing is painted there — and then continue THROUGH the
+  // phantom piece to the seams on the far side of it, arriving on panels the
+  // artwork never reached. The renderer clips the phantom copy away, so the
+  // only evidence was a band appearing on a panel two seams away for no
+  // reason. `onIsland` is what a route is judged by; the piece is still the
+  // convex clip, because the crossing test grows it and an outline-shaped
+  // piece cannot be grown meaningfully.
+  const pieceOn = (matrix, name) => {
+    const poly = clipPoly(mappedQuad(matrix, rect), panels[name].rect);
+    if (!poly) return null;
+    const outline = panels[name].outline;
+    const usable = Array.isArray(outline) && outline.length >= 3;
+    return { poly, onIsland: usable ? areaInPoly(poly, outline) : polyArea(poly) };
+  };
+
+  const whole = polyArea(mappedQuad(IDENTITY, rect));
+  const homePiece = pieceOn(IDENTITY, start)?.poly ?? mappedQuad(IDENTITY, rect);
+
+  // A spanning region on a profile that has no seam maps. The region is
+  // clipped to its home panel and the rest of it is simply gone — the design
+  // asked for a band across two panels, the build wrote one panel's worth and
+  // said nothing, which is the silent pass this library exists to refuse. A
+  // profile generated before seams existed carries none; regenerating it is
+  // the fix, and it is not something anybody would guess at from a picture of
+  // a stripe that stops short.
+  const seamCount = Object.keys(panels[start]?.seams ?? {}).length;
+  if (!seamCount && polyArea(homePiece) < whole - 1e-9) {
+    throw new Error(
+      `A region with span: true on panel ${role}.${start} runs past that panel's edge, ` +
+      `and ${start} has no seam maps — so there is nowhere for the rest of it to go and it ` +
+      'would be silently clipped.\n' +
+      '  If this profile was generated before seam maps existed, regenerate it ' +
+      '(liverykit --from-kn5 <car.kn5>).\n' +
+      '  If it is current, this island has no measured neighbour: keep the region inside ' +
+      'the panel, or drop span: true.'
+    );
+  }
+
+  const best = new Map([[start, { panel: start, matrix: IDENTITY, piece: homePiece, on: polyBox(homePiece), hops: 0, crossed: Infinity }]]);
+  let frontier = [best.get(start)];
+  for (let hop = 1; hop <= depth && frontier.length; hop++) {
+    const next = [];
+    for (const here of frontier) {
+      for (const [there, seam] of Object.entries(panels[here.panel]?.seams ?? {})) {
+        if (!panels[there] || !seam.here) continue;
+        // Only the piece of the region that is on THIS panel can cross out.
+        const crossed = crossing(here.piece, seam, here.panel);
+        if (crossed < minCross) continue;
+        const matrix = composeMatrix(here.matrix, seam.matrix);
+        const landed = pieceOn(matrix, there);
+        // Judged on what is on the island, not on what is in its box: a piece
+        // that covers nothing but the empty texture between islands is painted
+        // nowhere, and is not a panel this region reached.
+        if (!landed || landed.onIsland < 1e-7) continue;
+        const piece = landed.poly;
+        const on = polyBox(piece);
+        const prior = best.get(there);
+        if (prior && (prior.hops < hop || prior.crossed >= crossed)) continue;
+        const entry = { panel: there, matrix, piece, on, hops: hop, via: here.panel, crossed: Math.round(crossed * 1000) / 1000, rmsMm: seam.rmsMm };
+        best.set(there, entry);
+        // Reached, but not a way through. An island nobody can see — a wheel
+        // arch liner, the inside of a sill — is where a band physically goes
+        // when it runs off a fender, and it costs nothing to paint it there.
+        // But a route that continues THROUGH it comes out somewhere else
+        // entirely: door, fender, front arch liner, rear arch liner, quarter,
+        // under the car and back up, with three seams' worth of unfolding
+        // error and a band on the quarter at an angle nobody asked for.
+        const through = typeof panels[there].visible !== 'number' || panels[there].visible >= 0.3;
+        if (!through) continue;
+        if (!prior) next.push(entry);
+        else next[next.findIndex((e) => e.panel === there)] = entry;
+      }
+    }
+    frontier = next;
+  }
+  // `poly` goes out with the box. A placement across a seam is a parallelogram
+  // and its box is mostly not artwork; every check that measured the box —
+  // overlap, safe area, legibility, coverage — was measuring up to twice the
+  // area the design actually paints. The box stays because plenty of things
+  // want a cheap rectangle; the polygon is there so nothing has to settle for
+  // one.
+  return [...best.values()].map(({ piece, ...p }) => ({ ...p, poly: piece }));
 }

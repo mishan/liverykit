@@ -72,12 +72,21 @@ export function halftoneDissolve({ w, h, cell = 26, angle = 0, color = '#000', m
   const ux = Math.cos(a);
   const uy = Math.sin(a);
   const span = Math.abs(w * ux) + Math.abs(h * uy) || 1;
+  // Measured from the corner the angle points AWAY from, so the projection
+  // runs 0..span whichever way it faces. Taken from the origin, any angle past
+  // 90 projected negative, the clamp below pinned it to 0, and every dot came
+  // out full size: a dissolve asked to run bottom-to-top drew a solid field,
+  // with no error and no way to tell it from one that had simply been given a
+  // large `start`. The only working spelling was `start` and `end` reversed,
+  // which is a trick nobody should have to know.
+  const ox = ux < 0 ? w : 0;
+  const oy = uy < 0 ? h : 0;
   const dots = [];
 
   for (let row = 0, cy = cell / 2; cy < h; row++, cy += cell * 0.866) {
     const off = row % 2 ? cell / 2 : 0;
     for (let cx = off + cell / 2; cx < w; cx += cell) {
-      const p = clamp((cx * ux + cy * uy) / span, 0, 1);
+      const p = clamp(((cx - ox) * ux + (cy - oy) * uy) / span, 0, 1);
       const t = clamp((p - start) / (end - start), 0, 1);
       const r = rMax * (1 - t);
       if (r > 0.35) dots.push(`<circle cx="${r2(x + cx)}" cy="${r2(y + cy)}" r="${r2(r)}"/>`);
