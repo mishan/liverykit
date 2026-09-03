@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { hidePatterns, hiddenMeshes } from '../src/engine/carconfig.mjs';
+import { hidePatterns, hiddenMeshes, carConfigBeside } from '../src/engine/carconfig.mjs';
 import { parseKn5Buffer } from '../src/engine/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
@@ -113,4 +113,25 @@ test('a profile records what the car hides, and a texture worn only by hidden me
   const plain = await profileFromKn5(join(bare, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
   assert.equal(plain.hiddenByCar, undefined);
   assert.equal(Object.values(plain.textures)[0].hiddenByCar, undefined);
+});
+
+test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {
+  // Absent is the common case and is not an error. Unreadable is a different
+  // fact wearing the same clothes: the car has hide rules, they were not
+  // applied, and the profile would say every plate is visible with nothing to
+  // suggest otherwise — which is the exact silence this module was written to
+  // end. A directory in place of the file is an EISDIR, which is any read
+  // failure that is not "there is no such file".
+  const dir = await mkdtemp(join(tmpdir(), 'lk-badcfg-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5());
+  await mkdir(join(dir, 'extension', 'ext_config.ini'), { recursive: true });
+
+  await assert.rejects(
+    () => carConfigBeside(join(dir, 'fixture.kn5')),
+    /could not be read/,
+  );
+  await assert.rejects(
+    () => profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} }),
+    /could not be read/,
+  );
 });
