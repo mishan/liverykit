@@ -9,13 +9,17 @@ import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
-import { blends } from './engine/kn5.mjs';
 import { packageZip, makePreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
+import { hidePlan } from './hide.mjs';
+
+// Re-exported: `hidePlan` lived here first, and the build is where anybody
+// looking for what `hide` does would go.
+export { hidePlan } from './hide.mjs';
 
 const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 
@@ -32,69 +36,6 @@ const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {
   return MISSING.has(note.status);
-}
-
-/**
- * What to do about each role the design says to `hide`.
- *
- * `hide` used to reach the editor's whole-car view and nothing else: the build
- * wrote no file for a hidden role, so in the game the part kept its stock
- * artwork. On the car this was built against nobody noticed, because that
- * car's own CSP config hides every number plate mesh already — which is a
- * fact about one car, not a property of the feature.
- *
- * The honest tool is a transparent texture, and it only works when the
- * material composites alpha. So this is a decision per role, and every branch
- * is reported, because the one that would be silent — a transparent file for
- * an opaque shader, encoded without complaint — is a part that still shows.
- *
- *   ship-transparent  alpha-blended material at an encodable size: ship a clear sheet
- *   car-hides         a clear sheet would not work, but the car's config hides
- *                     every mesh wearing it, so under CSP nothing shows anyway
- *   cannot            an opaque shader, or a size DDS cannot carry; the game will show it
- *   painted           the design also paints it, and painting wins
- *   absent            this car has no such role — designs travel, so not an error
- *
- * The car's own config used to settle it: `hiddenByCar` meant ship nothing.
- * Then the NSX's plate turned up on screen wearing an old build's artwork,
- * with the car config's HIDE sitting right there. A car config is applied by
- * the game with Custom Shaders Patch, and by nothing else — the Content
- * Manager showroom does not read MODEL_REPLACEMENT, and a skin is looked at
- * in the showroom at least as often as on the track. A transparent sheet is
- * honoured by whatever draws the mesh. So where one will work it is shipped
- * regardless, and `hiddenByCar` only decides what to say when one will not.
- *
- * Pure, so a test can ask about every branch without ImageMagick in the room.
- */
-export function hidePlan(profile, livery) {
-  if (!Array.isArray(livery.hide)) return [];
-  const painted = new Set(Object.keys(livery.paint ?? {}));
-  return livery.hide.map((role) => {
-    const tex = profile.textures?.[role];
-    if (!tex) return { role, action: 'absent', why: `${role}: this car has no texture by that role` };
-    const base = { role, file: tex.file, width: tex.width, height: tex.height };
-    if (painted.has(role)) {
-      return { ...base, action: 'painted', why: `${role} is both painted and hidden by this design; painting wins` };
-    }
-    const also = tex.hiddenByCar ? ` (the car's own config hides the mesh too, where that config is applied)` : '';
-    if (isPngTexture(tex.file)) {
-      return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
-    }
-    const cannot = (why) => (tex.hiddenByCar
-      ? { ...base, action: 'car-hides',
-          why: `${role}: ${why}; the car's own config hides every mesh wearing ${tex.file}, which is what will hide it in the game` }
-      : { ...base, action: 'cannot', why: `${role}: ${why}, so the game will show it` });
-    // No size check: the sheet is not shipped at the texture's size (see
-    // CLEAR_SHEET), so an odd-sized original is no obstacle.
-    // Unknown shaders — a profile from before this was recorded — are treated
-    // as opaque. Wrong in the cheaper direction: a needless warning, rather
-    // than a file that claims to hide something and does not.
-    const opaque = (tex.shaders ?? ['(shader not recorded — regenerate the profile)']).filter((s) => !blends(s));
-    if (opaque.length) {
-      return cannot(`${tex.file} is drawn by ${opaque.join(', ')}, which ignores alpha — a transparent texture would not hide it`);
-    }
-    return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
-  });
 }
 
 /** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
@@ -246,7 +187,12 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // Surfaces the design hides. A transparent sheet where one will work; a note
   // in every other case, because "hidden in the editor" and "hidden in the
   // game" were two different things for longer than anybody knew.
-  for (const h of hidePlan(profile, livery)) {
+  // `targets`, not the design's `paint` keys: a surface term resolves to roles
+  // through the profile's bind table, and a role painted that way is painted
+  // just as much as one named outright. It is also the list AFTER the
+  // unencodable ones were dropped above — a surface the build could not paint
+  // is one this may still hide.
+  for (const h of hidePlan(profile, livery, { paintedRoles: new Set(targets.map((t) => t.role)) })) {
     if (h.action === 'ship-transparent') {
       const outPath = join(outDir, h.file);
       const png = await transparentPng(CLEAR_SHEET, CLEAR_SHEET);
