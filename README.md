@@ -42,8 +42,7 @@ liverykit reads the car's model to find out. A `.kn5` (Assetto Corsa's model
 format) stores a 3D position *and* a UV coordinate for every vertex, which is
 precisely the mapping a livery needs.
 
-<!-- TODO: an in-game screenshot of a built livery belongs here, and one of the
-     calibration grid on bodywork further down. -->
+![A livery that has been fitted onto a Honda NSX GT3](docs/images/car.png)
 
 ---
 
