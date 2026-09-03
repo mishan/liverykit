@@ -48,11 +48,21 @@ export function isMissingNote(note) {
  * is reported, because the one that would be silent — a transparent file for
  * an opaque shader, encoded without complaint — is a part that still shows.
  *
- *   car-hides         the car's config hides every mesh wearing it: ship nothing
  *   ship-transparent  alpha-blended material at an encodable size: ship a clear sheet
+ *   car-hides         a clear sheet would not work, but the car's config hides
+ *                     every mesh wearing it, so under CSP nothing shows anyway
  *   cannot            an opaque shader, or a size DDS cannot carry; the game will show it
  *   painted           the design also paints it, and painting wins
  *   absent            this car has no such role — designs travel, so not an error
+ *
+ * The car's own config used to settle it: `hiddenByCar` meant ship nothing.
+ * Then the NSX's plate turned up on screen wearing an old build's artwork,
+ * with the car config's HIDE sitting right there. A car config is applied by
+ * the game with Custom Shaders Patch, and by nothing else — the Content
+ * Manager showroom does not read MODEL_REPLACEMENT, and a skin is looked at
+ * in the showroom at least as often as on the track. A transparent sheet is
+ * honoured by whatever draws the mesh. So where one will work it is shipped
+ * regardless, and `hiddenByCar` only decides what to say when one will not.
  *
  * Pure, so a test can ask about every branch without ImageMagick in the room.
  */
@@ -66,25 +76,24 @@ export function hidePlan(profile, livery) {
     if (painted.has(role)) {
       return { ...base, action: 'painted', why: `${role} is both painted and hidden by this design; painting wins` };
     }
-    if (tex.hiddenByCar) {
-      return { ...base, action: 'car-hides', why: `${role}: the car's own config already hides every mesh wearing ${tex.file}` };
-    }
+    const also = tex.hiddenByCar ? ` (the car's own config hides the mesh too, where that config is applied)` : '';
     if (isPngTexture(tex.file)) {
-      return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent` };
+      return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
     }
-    if (!isPow2(tex.width) || !isPow2(tex.height)) {
-      return { ...base, action: 'cannot',
-        why: `${role}: ${tex.file} is ${tex.width}x${tex.height}, and DDS needs powers of two — nothing can be shipped, so the game will show it` };
-    }
+    const cannot = (why) => (tex.hiddenByCar
+      ? { ...base, action: 'car-hides',
+          why: `${role}: ${why}; the car's own config hides every mesh wearing ${tex.file}, which is what will hide it in the game` }
+      : { ...base, action: 'cannot', why: `${role}: ${why}, so the game will show it` });
+    // No size check: the sheet is not shipped at the texture's size (see
+    // CLEAR_SHEET), so an odd-sized original is no obstacle.
     // Unknown shaders — a profile from before this was recorded — are treated
     // as opaque. Wrong in the cheaper direction: a needless warning, rather
     // than a file that claims to hide something and does not.
     const opaque = (tex.shaders ?? ['(shader not recorded — regenerate the profile)']).filter((s) => !blends(s));
     if (opaque.length) {
-      return { ...base, action: 'cannot',
-        why: `${role}: ${tex.file} is drawn by ${opaque.join(', ')}, which ignores alpha — a transparent texture would not hide it, so the game will show it` };
+      return cannot(`${tex.file} is drawn by ${opaque.join(', ')}, which ignores alpha — a transparent texture would not hide it`);
     }
-    return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent` };
+    return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
   });
 }
 
@@ -93,6 +102,15 @@ async function transparentPng(width, height) {
   return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .png().toBuffer();
 }
+
+/**
+ * The size a hidden surface's clear sheet is shipped at. A texture with no
+ * texels worth seeing needs no texels: the game stretches whatever it is given
+ * over the mesh, and nothing-times-1024 is the same nothing as nothing-times-4.
+ * At the original size the NSX's two IGT plates came to 2.8 MB of transparent
+ * DXT5; at 4x4, the smallest a DXT block allows, they are a few hundred bytes.
+ */
+const CLEAR_SHEET = 4;
 
 /**
  * Render every painted texture in a livery.
@@ -231,23 +249,23 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   for (const h of hidePlan(profile, livery)) {
     if (h.action === 'ship-transparent') {
       const outPath = join(outDir, h.file);
-      const png = await transparentPng(h.width, h.height);
+      const png = await transparentPng(CLEAR_SHEET, CLEAR_SHEET);
       if (isPngTexture(h.file)) {
         await writeFile(outPath, png);
       } else {
         const pngPath = join(pngDir ?? outDir, h.file.replace(/\.dds$/i, '.png'));
         await writeFile(pngPath, png);
-        await toDDS(pngPath, outPath, { width: h.width, height: h.height, alpha: true });
+        await toDDS(pngPath, outPath, { width: CLEAR_SHEET, height: CLEAR_SHEET, alpha: true });
         if (!pngDir) await rm(pngPath);
       }
       written.push(h.file);
-      log(`  ${h.file.padEnd(24)} ${h.width}x${h.height}`.padEnd(46) + `${isPngTexture(h.file) ? 'PNG ' : 'DXT5'}  transparent (hidden)`);
+      log(`  ${h.file.padEnd(24)} ${CLEAR_SHEET}x${CLEAR_SHEET}`.padEnd(46) + `${isPngTexture(h.file) ? 'PNG ' : 'DXT5'}  transparent (hidden)`);
     } else if (h.action === 'cannot' || h.action === 'painted') {
       notes.push({ term: h.role, status: 'hide-' + h.action, text: h.why });
     } else {
       // `car-hides` and `absent` are the quiet outcomes, and even those get a
       // line: a hide that did nothing should be visibly nothing.
-      log(`  ${h.role.padEnd(24)} ${h.action === 'car-hides' ? 'hidden by the car\'s own config' : 'not on this car'}`);
+      log(`  ${h.role.padEnd(24)} ${h.action === 'car-hides' ? 'no file; hidden by the car\'s own config (in the game only)' : 'not on this car'}`);
     }
   }
 

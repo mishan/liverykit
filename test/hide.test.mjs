@@ -18,30 +18,43 @@ const profile = {
     mixed:       { file: 'Mixed.dds', width: 512, height: 512, alpha: false, shaders: ['ksPerPixel', 'ksPerPixelAlpha'] },
     odd:         { file: 'Odd.dds', width: 68, height: 64, alpha: false, shaders: ['ksPerPixelAlpha'] },
     body:        { file: 'Body.dds', width: 2048, height: 2048, alpha: false, shaders: ['ksPerPixel'] },
+    // Hidden by the car's config AND drawn opaque: nothing we ship can hide
+    // it, and only the game (with CSP) will.
+    lamp:        { file: 'Lamp.dds', width: 256, height: 256, alpha: false, shaders: ['ksPerPixel'], hiddenByCar: true },
   },
 };
 
-test('each hidden role gets one of four answers, and none of them is silence', () => {
+test('each hidden role gets one of five answers, and none of them is silence', () => {
   const plan = hidePlan(profile, {
-    hide: ['igt_plate', 'imsa_plate', 'mirror', 'mixed', 'odd', 'no_such_role'],
+    hide: ['igt_plate', 'imsa_plate', 'mirror', 'mixed', 'odd', 'lamp', 'no_such_role'],
     paint: {},
   });
   const by = Object.fromEntries(plan.map((p) => [p.role, p]));
 
-  // The car's config already hides every mesh wearing it: nothing to ship.
-  assert.equal(by.igt_plate.action, 'car-hides');
+  // The car's config hides every mesh wearing it — in the game, under CSP.
+  // The showroom applies no such config, and the NSX's plate was seen there
+  // wearing an old build's number. A clear sheet works everywhere the mesh
+  // is drawn, so where one can be shipped, it is, and the config is a note.
+  assert.equal(by.igt_plate.action, 'ship-transparent');
+  assert.match(by.igt_plate.why, /car's own config/);
   // Alpha-blended material, encodable size: a transparent texture hides it.
   assert.equal(by.imsa_plate.action, 'ship-transparent');
   assert.equal(by.imsa_plate.file, 'IMSA_Plate.dds');
+  assert.doesNotMatch(by.imsa_plate.why, /car's own config/);
+  // Nothing shippable would work, but the car's config covers it in the game:
+  // reported as that, not as a failure.
+  assert.equal(by.lamp.action, 'car-hides');
+  assert.match(by.lamp.why, /ksPerPixel/);
+  assert.match(by.lamp.why, /car's own config/);
   // Opaque shader: the alpha would be ignored, so say so rather than ship a
   // file that looks like it worked.
   assert.equal(by.mirror.action, 'cannot');
   assert.match(by.mirror.why, /ksPerPixel/);
   // One opaque material among several is enough to leave the part showing.
   assert.equal(by.mixed.action, 'cannot');
-  // Non-power-of-two cannot be DDS-encoded at all.
-  assert.equal(by.odd.action, 'cannot');
-  assert.match(by.odd.why, /power/i);
+  // An odd-sized original is no obstacle: the clear sheet is shipped at its
+  // own tiny size, not the texture's.
+  assert.equal(by.odd.action, 'ship-transparent');
   // A role this car does not have: designs travel, so it is not an error, but
   // it is still a line in the report.
   assert.equal(by.no_such_role.action, 'absent');
