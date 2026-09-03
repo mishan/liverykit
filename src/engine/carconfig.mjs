@@ -169,10 +169,24 @@ export function hiddenMeshes(model, patterns) {
 /**
  * The car's config, read from beside the model. Absent is the common case and
  * is not an error: most cars have no extension folder at all.
+ *
+ * ABSENT, though, and nothing else. A config that exists and cannot be read —
+ * no permission, a bad mount, an I/O error — is a car whose hidden meshes this
+ * profile would not know about, and a profile generated in that state says
+ * every plate is visible with no sign that anything went wrong. That is the
+ * failure this whole module exists to stop, so only "there is no such file"
+ * is swallowed and everything else is thrown at the caller.
  */
 export async function carConfigBeside(kn5Path) {
   const at = join(dirname(kn5Path), CAR_CONFIG);
-  const raw = await readFile(at).catch(() => null);
+  const raw = await readFile(at).catch((e) => {
+    // ENOTDIR is the same answer as ENOENT with a directory in the path — a
+    // car with a FILE called `extension`, or no extension folder at all.
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
+    throw new Error(`${at} exists but could not be read (${e.code ?? e.message}). ` +
+      'That config may hide meshes, so a profile generated without it would be wrong.',
+      { cause: e });
+  });
   if (raw === null) return null;
   // Same UTF-16 hazard as ui_car.json: some of these were saved by tools that
   // write a BOM, and a NUL between every character matches nothing.
