@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { parseKn5Buffer, meshesUsingTexture } from '../src/engine/kn5.mjs';
 import { findIslands, findAdjacency, findSeams, nameIslands, carBounds } from '../src/engine/islands.mjs';
 import { axesFromWheels } from '../src/engine/kn5.mjs';
-import { carKn5, CAR } from './fixtures/kn5.mjs';
+import { buildKn5, carKn5, vert, CAR } from './fixtures/kn5.mjs';
 
 function fixture() {
   const m = parseKn5Buffer(carKn5());
@@ -233,4 +233,170 @@ test('a spanning region may select its home by tags, so it travels', async () =>
   });
   const copies = [...out.base.matchAll(/<g clip-path="url\(#lk-span-[^"]+\)"><g transform="matrix\(/g)];
   assert.ok(copies.length >= 2, `spilled from the tag-selected home: ${copies.length} copies`);
+});
+
+// ---------------------------------------------------------------------------
+// The two places a seam or an outline can be quietly wrong.
+// ---------------------------------------------------------------------------
+
+test('a shared vertex is found however the grid happens to fall between two cells', () => {
+  // The spatial hash buckets vertices at the tolerance, and two points 0.2 mm
+  // apart — well inside the 4 mm this is willing to call one vertex — land in
+  // different buckets whenever a cell boundary runs between them.
+  // `findAdjacency` probes the 27 cells around each point and calls them
+  // adjacent; `findSeams` compared one bucket and found nothing, so the two
+  // disagreed: islands that touch, with no map to cross between them, and a
+  // band that stopped at the seam for no visible reason.
+  const quad = (verts) => ({ verts, indices: [0, 1, 2, 1, 3, 2] });
+  const cell = 0.004;
+  const zA = cell * 1.475;                 // rounds into cell 1
+  const zB = cell * 1.525;                 // rounds into cell 2, 0.2 mm away
+  const a = quad([
+    vert(0, 0, -1, 0.05, 0.05), vert(1, 0, -1, 0.45, 0.05),
+    vert(0, 0, zA, 0.05, 0.45), vert(1, 0, zA, 0.45, 0.45),
+  ]);
+  const b = quad([
+    vert(0, 0, zB, 0.55, 0.45), vert(1, 0, zB, 0.95, 0.45),
+    vert(0, 0, 1, 0.55, 0.05), vert(1, 0, 1, 0.95, 0.05),
+  ]);
+  const m = parseKn5Buffer(buildKn5({
+    bodyMesh: { name: 'panel_a', ...a },
+    extraMeshes: [{ name: 'panel_b', ...b }],
+  }));
+  const islands = findIslands(m, meshesUsingTexture(m, 'body.dds'), { minVertices: 3 });
+  assert.equal(islands.length, 2, 'two meshes, two islands');
+  for (const isl of islands) isl.name = isl.rect[0] < 0.5 ? 'A' : 'B';
+
+  const adj = findAdjacency(m, islands);
+  assert.ok(adj.get('A').has('B'), 'they touch, to within the tolerance');
+  const seams = findSeams(m, islands, adj);
+  const seam = seams.get('A')?.get('B');
+  assert.ok(seam, 'and touching islands have a map between them');
+  assert.ok(seam.rmsMm < 1, `the two edges coincide; residual ${seam?.rmsMm} mm`);
+});
+
+test('the outer boundary is the biggest loop, not the one with the most corners', async () => {
+  // A door is a few long straight edges around a densely tessellated window
+  // cut-out. Picked by vertex count, the "outline" became the hole — and
+  // artwork clipped to it was clipped to exactly the part of the panel it must
+  // not touch, and to nothing else.
+  const { islandOutline } = await import('../src/engine/islands.mjs');
+  const corners = [[0.9, 0.9], [0.1, 0.9], [0.1, 0.1], [0.9, 0.1]];   // one per 90 degree sector
+  const N = 16, R = 0.2;
+  const hole = [...Array(N)].map((_, i) => {
+    const a = ((i + 0.5) * 2 * Math.PI) / N;
+    return [0.5 + R * Math.cos(a), 0.5 + R * Math.sin(a)];
+  });
+  const sector = (i) => Math.floor((i + 0.5) / (N / 4));
+  const uv = [...hole, ...corners];
+  const verts = uv.map(([u, v]) => vert(u * 2, 0, v * 2, u, v));
+  const C = (s) => N + s;
+  const indices = [];
+  for (let i = 0; i < N; i++) {
+    const j = (i + 1) % N, s = sector(i), t = sector(j);
+    indices.push(C(s), i, j);
+    if (s !== t) indices.push(C(s), j, C(t));
+  }
+  const m = parseKn5Buffer(buildKn5({ bodyMesh: { name: 'holed', verts, indices } }));
+  const [isl] = findIslands(m, meshesUsingTexture(m, 'body.dds'), { minVertices: 3 });
+  const outline = islandOutline(m, isl);
+
+  assert.equal(outline.length, 4, `the square, not the sixteen-gon: ${JSON.stringify(outline)}`);
+  const has = (u, v) => outline.some(([a, b]) => Math.abs(a - u) < 0.002 && Math.abs(b - v) < 0.002);
+  assert.ok(corners.every(([u, v]) => has(u, v)), JSON.stringify(outline));
+});
+
+test('a spanning region on a profile with no seam maps is refused, not silently clipped', async () => {
+  const { spanPlacements, resolveRect } = await import('../src/profile.mjs');
+  const profile = {
+    id: 'c', textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    panels: { body: { L: { rect: [0, 0, 0.5, 1] } } },
+  };
+  const over = resolveRect(profile, 'body', { panel: 'L', span: true, at: [0.5, 0, 0.8, 1] });
+  assert.throws(() => spanPlacements(profile, 'body', 'L', over), /regenerate/,
+    'the design asked for two panels and would have got one, quietly');
+
+  // A spanning rectangle that stays inside its panel asks nothing of the
+  // seams, and is as valid on this profile as on any other.
+  const within = resolveRect(profile, 'body', { panel: 'L', span: true, at: [0.1, 0.1, 0.8, 0.8] });
+  assert.deepEqual(spanPlacements(profile, 'body', 'L', within).map((p) => p.panel), ['L']);
+});
+
+test('a placement carries the shape it is, not only the box around it', async () => {
+  const { spanPlacements, resolveRect } = await import('../src/profile.mjs');
+  const { polyArea } = await import('../src/engine/poly.mjs');
+  const { profile, role, left } = await spanProfile();
+  const band = { panel: left, span: true, at: [0.1, 0.6, 1.1, 0.7], treatment: 'stripe' };
+  const placed = spanPlacements(profile, role, left, resolveRect(profile, role, band));
+  for (const p of placed) {
+    assert.ok(Array.isArray(p.poly) && p.poly.length >= 3, `${p.panel} has a shape`);
+    const box = p.on.w * p.on.h;
+    assert.ok(polyArea(p.poly) <= box + 1e-9, `${p.panel}: shape inside its box`);
+    assert.ok(polyArea(p.poly) > 0);
+  }
+});
+
+test('every spanning copy gets its own clip, including after one that drew nothing', async () => {
+  // The ids were built from the two layers' lengths, and those only advance
+  // when a treatment emits something. A spanning `radialText` with an empty
+  // string defines its clip paths and draws nothing, so the region after it
+  // started from the same numbers and reused the ids — and every copy of it
+  // was clipped to the earlier region's panels. Silent, and visible only as
+  // artwork missing from one panel and present on another.
+  await import('../src/index.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const { profile, role, left } = await spanProfile();
+  const out = renderTexture({
+    profile, role, treatments: resolveTreatments(['core', 'synthwave']),
+    palette: {}, rng: Math.random, font: 'sans-serif', tokens: {},
+    regions: [
+      { id: 'silent', treatment: 'radialText', panel: left, span: true, at: [0.1, 0.6, 0.8, 0.7], text: '' },
+      { id: 'band', treatment: 'stripe', panel: left, span: true, at: [0.1, 0.6, 0.8, 0.7], color: '#fff' },
+    ],
+  });
+
+  const defined = [...out.base.matchAll(/<clipPath id="(lk-span-[^"]+)"/g)].map(([, id]) => id);
+  assert.ok(defined.length >= 4, `two spanning regions, several panels each: ${defined.length}`);
+  assert.equal(new Set(defined).size, defined.length, `every clip id is its own: ${defined}`);
+
+  // And the band's copies refer to clips defined for the band, not to the
+  // silent region's.
+  const used = [...out.base.matchAll(/<g clip-path="url\(#(lk-span-[^"]+)\)"/g)].map(([, id]) => id);
+  assert.equal(new Set(used).size, used.length, `no copy borrows another's clip: ${used}`);
+});
+
+test('a region does not land in the empty texture inside a panel box, or travel through it', async () => {
+  // A panel's rect is the box around an irregular island, and unwrappers pack
+  // small islands into the concave corners of big ones. Routing on the box
+  // alone, a region could "land" in that emptiness — no triangle wears those
+  // texels, so nothing is painted there — and then continue THROUGH the
+  // phantom piece to the seams beyond it, arriving on panels the artwork never
+  // reached. The renderer clips the phantom copy away, so the only evidence
+  // was a band on a panel two seams from home.
+  const { spanPlacements } = await import('../src/profile.mjs');
+  const box = ([x, y, w, h]) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+  const A = [0, 0, 0.4, 1], B = [0.5, 0, 0.4, 1];
+  const near = (outline) => ({
+    id: 'c', textures: { body: { file: 'b.dds', width: 1024, height: 1024 } },
+    panels: {
+      body: {
+        A: { rect: A, metresPerUv: [1, 1], outline: box(A),
+          seams: { B: { matrix: [1, 0, 0, 1, 0.5, 0], here: [[0.4, 0], [0.4, 1]], rmsMm: 0 } } },
+        B: { rect: B, metresPerUv: [1, 1], outline, seams: {} },
+      },
+    },
+  });
+  // A band along the top of A, running past its right edge onto B.
+  const band = { x: 0.2, y: 0.6, w: 0.4, h: 0.3 };
+
+  // B's island fills its box: the band reaches it.
+  const whole = spanPlacements(near(box(B)), 'body', 'A', band);
+  assert.deepEqual(whole.map((p) => p.panel).sort(), ['A', 'B']);
+
+  // The same B, with the island occupying only the bottom of its box — the
+  // band arrives over the empty half, and lands nowhere.
+  const notched = spanPlacements(near(box([0.5, 0, 0.4, 0.4])), 'body', 'A', band);
+  assert.deepEqual(notched.map((p) => p.panel), ['A'],
+    'texture nothing wears is not a panel this region reached');
 });

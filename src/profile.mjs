@@ -22,6 +22,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { VOCABULARY } from './engine/classify.mjs';
+import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
@@ -542,6 +543,24 @@ export function metresAcross(frac) {
   return { w: frac.w * per[0], h: frac.h * per[1] };
 }
 
+/**
+ * The narrowest a placement is on the car, in metres — the number legibility
+ * turns on.
+ *
+ * The short side of the box, until a placement stopped being a box. A region
+ * continued across a seam lands as a parallelogram, and the short side of the
+ * box around a parallelogram can be twice the width of the parallelogram: a
+ * name measured 40 mm tall and was 18 mm of lettering on a slant. Where the
+ * placement carries its polygon, that is what is measured; where it does not,
+ * the box is the shape and the two answers agree.
+ */
+export function metresNarrowest(frac) {
+  const per = frac?.panel?.metresPerUv;
+  if (!Array.isArray(per) || per.length !== 2) return null;
+  if (Array.isArray(frac.poly) && frac.poly.length >= 3) return minWidth(frac.poly, per);
+  return Math.min(frac.w * per[0], frac.h * per[1]);
+}
+
 export function resolveRect(profile, role, spec) {
   const at = spec.at ?? [0, 0, 1, 1];
   checkRect(at, `region "at"`, (m) => { throw new Error(m); }, { loose: spec.span === true });
@@ -632,78 +651,6 @@ function mappedQuad(m, r) {
 }
 
 /**
- * A polygon clipped to a rectangle (Sutherland-Hodgman), or null if nothing
- * is left. Polygons rather than boxes throughout, because a band mapped
- * through a seam at -17 degrees is a parallelogram whose bounding box is
- * mostly not band — and tested as a box it crossed seams it never touched
- * and reached the roof from the door.
- */
-function clipPoly(poly, [bx, by, bw, bh]) {
-  const edges = [
-    (p) => p[0] >= bx, (p) => p[0] <= bx + bw, (p) => p[1] >= by, (p) => p[1] <= by + bh,
-  ];
-  const cross = [
-    (a, b) => { const t = (bx - a[0]) / (b[0] - a[0]); return [bx, a[1] + t * (b[1] - a[1])]; },
-    (a, b) => { const t = (bx + bw - a[0]) / (b[0] - a[0]); return [bx + bw, a[1] + t * (b[1] - a[1])]; },
-    (a, b) => { const t = (by - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), by]; },
-    (a, b) => { const t = (by + bh - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), by + bh]; },
-  ];
-  let out = poly;
-  for (let e = 0; e < 4 && out.length; e++) {
-    const inside = edges[e], at = cross[e];
-    const next = [];
-    for (let i = 0; i < out.length; i++) {
-      const a = out[i], b = out[(i + 1) % out.length];
-      const ia = inside(a), ib = inside(b);
-      if (ia) next.push(a);
-      if (ia !== ib) next.push(at(a, b));
-    }
-    out = next;
-  }
-  return out.length >= 3 ? out : null;
-}
-
-function polyBox(poly) {
-  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]);
-  const x0 = Math.min(...xs), y0 = Math.min(...ys);
-  return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
-}
-
-function polyArea(poly) {
-  let a = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const p = poly[i], q = poly[(i + 1) % poly.length];
-    a += p[0] * q[1] - q[0] * p[1];
-  }
-  return Math.abs(a) / 2;
-}
-
-function inPoly(poly, [x, y]) {
-  let inside = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j];
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
-/** A convex polygon pushed outward by `d` from its centroid, roughly. */
-function grow(poly, d) {
-  const cx = poly.reduce((s, p) => s + p[0], 0) / poly.length;
-  const cy = poly.reduce((s, p) => s + p[1], 0) / poly.length;
-  return poly.map(([x, y]) => {
-    const l = Math.hypot(x - cx, y - cy) || 1;
-    return [x + ((x - cx) / l) * d, y + ((y - cy) / l) * d];
-  });
-}
-
-function overlap(a, [bx, by, bw, bh]) {
-  const w = Math.min(a.x + a.w, bx + bw) - Math.max(a.x, bx);
-  const h = Math.min(a.y + a.h, by + bh) - Math.max(a.y, by);
-  return w > 0 && h > 0 ? { x: Math.max(a.x, bx), y: Math.max(a.y, by), w, h } : null;
-}
-
-/**
  * Where a spanning region lands: the home panel and every neighbour it
  * reaches, each with the matrix that takes the home sheet's fractions to
  * that panel's, and the part of the mapped rectangle that lies on it.
@@ -757,10 +704,50 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
     // A seam that is a single point has no length and cannot be crossed.
     return inside;
   };
-  // The piece of the region on a panel: the mapped quad clipped to the panel.
-  const pieceOn = (matrix, name) => clipPoly(mappedQuad(matrix, rect), panels[name].rect);
+  // The piece of the region on a panel: the mapped quad clipped to the panel's
+  // box, and how much of that piece is on the ISLAND rather than merely in its
+  // box. The two are different by however concave the island is, and on a door
+  // with a wheel arch bitten out of it that is a lot of empty texture.
+  //
+  // The box alone let a region "land" in that emptiness — no triangle wears
+  // those texels, so nothing is painted there — and then continue THROUGH the
+  // phantom piece to the seams on the far side of it, arriving on panels the
+  // artwork never reached. The renderer clips the phantom copy away, so the
+  // only evidence was a band appearing on a panel two seams away for no
+  // reason. `onIsland` is what a route is judged by; the piece is still the
+  // convex clip, because the crossing test grows it and an outline-shaped
+  // piece cannot be grown meaningfully.
+  const pieceOn = (matrix, name) => {
+    const poly = clipPoly(mappedQuad(matrix, rect), panels[name].rect);
+    if (!poly) return null;
+    const outline = panels[name].outline;
+    const usable = Array.isArray(outline) && outline.length >= 3;
+    return { poly, onIsland: usable ? areaInPoly(poly, outline) : polyArea(poly) };
+  };
 
-  const homePiece = pieceOn(IDENTITY, start) ?? mappedQuad(IDENTITY, rect);
+  const whole = polyArea(mappedQuad(IDENTITY, rect));
+  const homePiece = pieceOn(IDENTITY, start)?.poly ?? mappedQuad(IDENTITY, rect);
+
+  // A spanning region on a profile that has no seam maps. The region is
+  // clipped to its home panel and the rest of it is simply gone — the design
+  // asked for a band across two panels, the build wrote one panel's worth and
+  // said nothing, which is the silent pass this library exists to refuse. A
+  // profile generated before seams existed carries none; regenerating it is
+  // the fix, and it is not something anybody would guess at from a picture of
+  // a stripe that stops short.
+  const seamCount = Object.keys(panels[start]?.seams ?? {}).length;
+  if (!seamCount && polyArea(homePiece) < whole - 1e-9) {
+    throw new Error(
+      `A region with span: true on panel ${role}.${start} runs past that panel's edge, ` +
+      `and ${start} has no seam maps — so there is nowhere for the rest of it to go and it ` +
+      'would be silently clipped.\n' +
+      '  If this profile was generated before seam maps existed, regenerate it ' +
+      '(liverykit --from-kn5 <car.kn5>).\n' +
+      '  If it is current, this island has no measured neighbour: keep the region inside ' +
+      'the panel, or drop span: true.'
+    );
+  }
+
   const best = new Map([[start, { panel: start, matrix: IDENTITY, piece: homePiece, on: polyBox(homePiece), hops: 0, crossed: Infinity }]]);
   let frontier = [best.get(start)];
   for (let hop = 1; hop <= depth && frontier.length; hop++) {
@@ -772,8 +759,12 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
         const crossed = crossing(here.piece, seam, here.panel);
         if (crossed < minCross) continue;
         const matrix = composeMatrix(here.matrix, seam.matrix);
-        const piece = pieceOn(matrix, there);
-        if (!piece || polyArea(piece) < 1e-7) continue;
+        const landed = pieceOn(matrix, there);
+        // Judged on what is on the island, not on what is in its box: a piece
+        // that covers nothing but the empty texture between islands is painted
+        // nowhere, and is not a panel this region reached.
+        if (!landed || landed.onIsland < 1e-7) continue;
+        const piece = landed.poly;
         const on = polyBox(piece);
         const prior = best.get(there);
         if (prior && (prior.hops < hop || prior.crossed >= crossed)) continue;
@@ -794,5 +785,11 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
     }
     frontier = next;
   }
-  return [...best.values()].map(({ piece, ...p }) => p);
+  // `poly` goes out with the box. A placement across a seam is a parallelogram
+  // and its box is mostly not artwork; every check that measured the box —
+  // overlap, safe area, legibility, coverage — was measuring up to twice the
+  // area the design actually paints. The box stays because plenty of things
+  // want a cheap rectangle; the polygon is there so nothing has to settle for
+  // one.
+  return [...best.values()].map(({ piece, ...p }) => ({ ...p, poly: piece }));
 }

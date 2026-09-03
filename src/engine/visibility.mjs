@@ -36,6 +36,7 @@
 // ---------------------------------------------------------------------------
 
 import { vertex, triangles } from './kn5.mjs';
+import { inPoly } from './poly.mjs';
 
 /**
  * Viewing directions. Weighted towards the horizontal, because a livery is seen
@@ -300,9 +301,16 @@ export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025
  * answer from zero. Zero means measured and hidden; null means the question did
  * not land on any geometry, and reporting that as invisible would condemn a
  * placement for the wrong reason.
+ *
+ * `poly` narrows the question from the rectangle to a shape inside it, and the
+ * count of cells it returns narrows with it. A placement that crossed a seam is
+ * a parallelogram: asked as its bounding box, half the samples fall on artwork
+ * that is not there, and the answer is a coverage figure roughly half of the
+ * truth — which reads as a design painting into empty texture space and is
+ * really a design painting a diagonal.
  */
 export function rectVisibility(model, prepared, meshes, rect, {
-  minDirections = 4, across = 14,
+  minDirections = 4, across = 14, poly = null,
 } = {}) {
   const { occ, cellSize, dirs, maxSteps } = prepared;
   // Zero, and that is the point. `escapes` steps BEFORE it tests, so any lift
@@ -310,7 +318,7 @@ export function rectVisibility(model, prepared, meshes, rect, {
   // cell a flush occluder shares with it. Self-occlusion is handled by
   // ownership now, so the ray has no reason to start anywhere but the surface.
   const lift = 0;
-  const points = sampleRect(model, meshes, rect, across);
+  const { points, cells } = sampleRect(model, meshes, rect, across, poly);
   if (!points.length) return null;
 
   let seen = 0;
@@ -323,7 +331,7 @@ export function rectVisibility(model, prepared, meshes, rect, {
     }
     if (clear >= minDirections) seen++;
   }
-  return { fraction: seen / points.length, samples: points.length, of: across * across };
+  return { fraction: seen / points.length, samples: points.length, of: cells };
 }
 
 /**
@@ -342,12 +350,34 @@ export function rectVisibility(model, prepared, meshes, rect, {
  * resolution is the grid's and the answer means the same thing for a small
  * region as for a large one. A point that lands on no triangle is not a
  * sample — that part of the rectangle really is off the mesh — so the returned
- * count against `across * across` is also a coverage figure.
+ * count against the cells asked about is also a coverage figure.
+ *
+ * `poly`, when given, is the shape inside the rectangle that is really being
+ * asked about. Cells whose centre falls outside it are not sampled and are not
+ * counted, so the coverage figure stays a fraction of the artwork rather than
+ * of the box drawn around it.
  */
-function sampleRect(model, meshes, [rx, ry, rw, rh], across) {
-  if (!(rw > 0) || !(rh > 0)) return [];
+function sampleRect(model, meshes, [rx, ry, rw, rh], across, poly = null) {
+  if (!(rw > 0) || !(rh > 0)) return { points: [], cells: 0 };
   const hit = new Array(across * across).fill(null);
   const step = (n) => (n + 0.5) / across;          // cell centres, not edges
+
+  // Which cells are in play, decided once: the inner loop runs per triangle
+  // per cell, and a point-in-polygon test in there would be asked the same
+  // question thousands of times over.
+  const asked = new Array(across * across).fill(true);
+  let cells = across * across;
+  if (Array.isArray(poly) && poly.length >= 3) {
+    cells = 0;
+    for (let j = 0; j < across; j++) {
+      for (let i = 0; i < across; i++) {
+        const inside = inPoly(poly, [rx + step(i) * rw, ry + step(j) * rh]);
+        asked[j * across + i] = inside;
+        if (inside) cells++;
+      }
+    }
+  }
+  if (!cells) return { points: [], cells: 0 };
 
   for (const mesh of meshes) {
     const own = model.meshes.indexOf(mesh);
@@ -368,7 +398,7 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], across) {
       for (let j = j0; j <= j1; j++) {
         for (let i = i0; i <= i1; i++) {
           const slot = j * across + i;
-          if (hit[slot]) continue;                  // first triangle to cover it wins
+          if (hit[slot] || !asked[slot]) continue;  // first triangle to cover it wins
           const u = rx + step(i) * rw, v = ry + step(j) * rh;
           const b1 = ((u - A.u) * (C.v - A.v) - (C.u - A.u) * (v - A.v)) / d;
           const b2 = ((B.u - A.u) * (v - A.v) - (u - A.u) * (B.v - A.v)) / d;
@@ -389,7 +419,7 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], across) {
       }
     }
   }
-  return hit.filter(Boolean);
+  return { points: hit.filter(Boolean), cells };
 }
 
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
