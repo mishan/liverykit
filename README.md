@@ -559,9 +559,10 @@ In the editor a hidden surface is simply not drawn. In the game there is no such
 switch, so the build ships a **fully transparent texture** for it — which works
 when the part's material composites alpha, and not otherwise. The profile records
 each texture's `shaders` so the build can tell, and it says which of four things
-happened to every hidden role: shipped transparent; already hidden by the car's
-own config; cannot be hidden this way (an opaque shader, or a size DDS cannot
-carry), in which case the game will show it; or not on this car at all.
+happened to every hidden role: shipped transparent (a 4x4 sheet — a texture
+with nothing on it needs no resolution); an opaque shader, so no sheet would
+work, but the car's own config hides the mesh in the game; an opaque shader and
+nothing else will hide it, so the game will show it; or not on this car at all.
 
 That "car's own config" is `extension/ext_config.ini` beside the model, where a
 Custom Shaders Patch `MODEL_REPLACEMENT` can hide meshes — the usual arrangement
@@ -572,6 +573,12 @@ A texture worn only by hidden meshes carries `hiddenByCar: true`; the editor
 stops drawing it, the fitment check stops reporting it as an unpainted twin,
 and a design that paints it is told so, since it is painting a part the game
 never shows.
+
+That config is applied by the game running Custom Shaders Patch and by nothing
+else: Content Manager's showroom draws the stock model, plates and all. So the
+transparent texture is shipped whether or not the car hides the mesh — it is
+the one thing honoured by everything that draws the part — and `hiddenByCar`
+only changes what is reported when no transparent texture would work.
 
 ### Two honest limits
 
