@@ -42,8 +42,7 @@ liverykit reads the car's model to find out. A `.kn5` (Assetto Corsa's model
 format) stores a 3D position *and* a UV coordinate for every vertex, which is
 precisely the mapping a livery needs.
 
-<!-- TODO: an in-game screenshot of a built livery belongs here, and one of the
-     calibration grid on bodywork further down. -->
+![A livery that has been fitted onto a Honda NSX GT3](docs/images/car.png)
 
 ---
 
@@ -308,8 +307,28 @@ derived from rounding error.
 
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
-trackside), `cockpit` (readable from the driver's seat), `mirrored`, and
-`shared`.
+trackside), `cockpit` (readable from the driver's seat), `mirrored`,
+`shared`, and on the tyre texture `sidewall` and `tread`.
+
+Tyres deserve a word. A sidewall is a disc, and an unwrapper lays it out either
+as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
+once and rolled out as a strip, u round the circumference and v from rim to
+shoulder. The Abarth's is a disc; the NSX's and the RSS4's are strips. A design
+that draws rings is right on the first and draws one big circle across the
+second, which on the car is a few stray arcs where the circle crosses the
+strip. The profile measures which it is, from the wheel centres AC requires
+every car to name, and writes it on the panel as `wheel`; the `band` treatment
+reads that and draws a band round the tyre `along` the sidewall — 0 at the rim,
+1 at the shoulder — whichever way it was unwrapped:
+
+```js
+tyres: { regions: [
+  { treatment: 'band', tags: ['sidewall'], along: 0.9, width: 0.08, color: 'accent', glow: true },
+] }
+```
+
+On a profile generated before this measurement existed there is no `sidewall`
+tag and `band` draws as `ring` did; regenerate with `--from-kn5` to get it.
 
 `shared` is the one that surprises people. A *part* is a thing on the car; a
 *panel* is a region of a texture, and across a sample of eight cars 42.8% of
@@ -479,6 +498,29 @@ The panel leads with what it could **not** check. "No findings" from a run that
 skipped the geometry and "no findings" from a run that did all of it are the same
 sentence and opposite facts, so the two are never allowed to look alike.
 
+### One region across several panels
+
+A rectangle lives in one island's sheet. A band that runs from the door onto
+the panel behind it is one region with `span: true`, whose `at` may run past
+its panel's edge:
+
+```js
+{ id: 'band', treatment: 'stripe', panel: 'left_mid', span: true,
+  at: [-0.3, 0.62, 2.2, 0.10], color: 'white' }
+```
+
+The part past the edge is continued onto whichever adjacent islands it crosses
+a seam into, through the seam maps the profile measured — drawn once, placed
+under each panel's map, clipped to each panel's outline, so a stripe's edge and
+a word's letters carry straight across. It stops where the bodywork does: on
+the NSX a band across the door runs onto the fender strip ahead and the intake
+surround behind, and not across the intake, because that is a hole. The
+fitment check reports each piece where it lands (`band@left_rear_upper`).
+
+The editor draws the home rectangle only and a drag stays inside the panel, so
+for now a spanning region is written by hand or proposed over MCP.
+[docs/spanning.md](docs/spanning.md) has the reasoning and the limits.
+
 ### Saying what a region needs
 
 Placement rules say where artwork goes. Constraints say what it needs wherever it
@@ -511,6 +553,31 @@ door. Painting one leaves the others wearing their stock artwork on top of yours
 
 A role the car does not have is ignored, because designs travel, and a surface
 the design paints is never hidden.
+
+In the editor a hidden surface is simply not drawn. In the game there is no such
+switch, so the build ships a **fully transparent texture** for it — which works
+when the part's material composites alpha, and not otherwise. The profile records
+each texture's `shaders` so the build can tell, and it says which of four things
+happened to every hidden role: shipped transparent (a 4x4 sheet — a texture
+with nothing on it needs no resolution); an opaque shader, so no sheet would
+work, but the car's own config hides the mesh in the game; an opaque shader and
+nothing else will hide it, so the game will show it; or not on this car at all.
+
+That "car's own config" is `extension/ext_config.ini` beside the model, where a
+Custom Shaders Patch `MODEL_REPLACEMENT` can hide meshes — the usual arrangement
+on cars converted from ACC is that every plate set is hidden there and a skin
+un-hides one. `--from-kn5` reads it and writes `hiddenByCar` into the profile:
+the meshes hidden, how each was matched, and any pattern that matched nothing.
+A texture worn only by hidden meshes carries `hiddenByCar: true`; the editor
+stops drawing it, the fitment check stops reporting it as an unpainted twin,
+and a design that paints it is told so, since it is painting a part the game
+never shows.
+
+That config is applied by the game running Custom Shaders Patch and by nothing
+else: Content Manager's showroom draws the stock model, plates and all. So the
+transparent texture is shipped whether or not the car hides the mesh — it is
+the one thing honoured by everything that draws the part — and `hiddenByCar`
+only changes what is reported when no transparent texture would work.
 
 ### Two honest limits
 
@@ -631,6 +698,9 @@ Per panel:
 | `anisotropy` | how much wider than tall a square of texture lands on the bodywork. The `text` treatment cancels it for you |
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
+| `wheel` | on a tyre part: `part` (sidewall or tread), `unwrap` (strip or annulus), `radiusM` [rim, shoulder]; for a strip `around` (which coordinate runs round the circumference), `rim` (which panel edge is the rim) and `across` [at rim, at shoulder]; for an annulus `hub` and `radiusUv`. `fit` is the correlation the verdict rests on |
+| `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in metres from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
+| `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |

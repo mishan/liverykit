@@ -32,14 +32,24 @@ const BARE = [0x4a, 0x4a, 0x52];
  * "how does the flank read", and because a named view is reproducible: two
  * shots of `left` are comparable, two shots of yaw 2.31 are a coincidence.
  */
+//
+// Yaw places the eye: x = sin(yaw), z = cos(yaw), around the car. The car's
+// left is +X — a profile takes that from WHEEL_LF, and a left-hand-drive car's
+// steering wheel confirms it — so the `left` view puts the eye at +X and looks
+// across at the left flank. It sat at -X until a stripe painted on left_mid
+// alone appeared only in the `right` view: every "left" shot this renderer
+// had produced was of the right-hand side, and a nearly symmetric livery had
+// let it pass. The text-direction fix further down was tuned against those
+// pictures and is unaffected, since it is about the image plane, not the
+// side of the car.
 export const VIEWS = {
-  left: { yaw: -Math.PI / 2, pitch: 0.12 },
-  right: { yaw: Math.PI / 2, pitch: 0.12 },
+  left: { yaw: Math.PI / 2, pitch: 0.12 },
+  right: { yaw: -Math.PI / 2, pitch: 0.12 },
   front: { yaw: 0, pitch: 0.15 },
   rear: { yaw: Math.PI, pitch: 0.15 },
-  'front-left': { yaw: -Math.PI / 4, pitch: 0.22 },
-  'rear-left': { yaw: -3 * Math.PI / 4, pitch: 0.22 },
-  top: { yaw: -Math.PI / 2, pitch: 1.35 },
+  'front-left': { yaw: Math.PI / 4, pitch: 0.22 },
+  'rear-left': { yaw: 3 * Math.PI / 4, pitch: 0.22 },
+  top: { yaw: Math.PI / 2, pitch: 1.35 },
 };
 
 /**

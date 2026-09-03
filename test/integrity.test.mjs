@@ -345,6 +345,24 @@ test('cockpitEye respects which way the model calls forward', async () => {
   assert.ok(Math.abs((fwd.z - 0.4) + (rev.z - 0.4)) < 1e-6, 'offsets should mirror exactly');
 });
 
+test('an offset steering wheel is still a steering wheel', async () => {
+  // Rejecting anything more than 25 cm off the centreline was meant to skip
+  // steering ARMS out by the road wheels. It also skipped the NSX GT3's
+  // wheel, which sits 34 cm left because the driver does, so the car got no
+  // cockpit visibility at all and every interior panel lost its `cockpit`
+  // tag. A road car's wheel is 35-40 cm off centre as a matter of course.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { cockpitEye } = await import('../src/engine/visibility.mjs');
+  const offset = panelMesh('GEO_Steer_HR', 0.4, 1);
+  for (const v of offset.verts) v[0] += 0.34;
+  const arm = panelMesh('STEER_ARM_LF', 0.4, 1);
+  for (const v of arm.verts) v[0] += 0.78;
+  const m = parseKn5Buffer(buildKn5({ extraMeshes: [arm, offset] }));
+  const eye = cockpitEye(m, { front: 1 });
+  assert.equal(eye?.from, 'GEO_Steer_HR', 'the wheel by the driver, not the arm by the road wheel');
+  assert.ok(Math.abs(eye.x - 0.34) < 0.05, `eye follows the wheel sideways, got x=${eye.x}`);
+});
+
 test('cockpit visibility respects occluders between panel and eye', async () => {
   // Locks in the mechanism. It does NOT pin the exact step budget: the march
   // used to stop ~3 cm short of the eye, and no scene I could build made that
@@ -1454,6 +1472,28 @@ test('the editor is told the profile\'s panel name, not the livery\'s', async ()
   // The rectangle is still measured against that panel: `at` is the right half
   // of a panel starting at x=0.1 and 0.4 wide.
   assert.deepEqual(placed.abs, [0.3, 0.2, 0.2, 0.4]);
+});
+
+test('painting a texture the car hides is reported, not shipped in silence', async () => {
+  const { resolveTargets } = await import('../src/profile.mjs');
+  // The profile knows which meshes the car's own CSP config hides. A design
+  // that paints one of those textures gets a file in the skin and nothing on
+  // the car, which is the silent failure this project exists to refuse.
+  const profile = {
+    id: 'c', textures: {
+      body: { file: 'b.dds', width: 64, height: 64 },
+      plate: { file: 'p.dds', width: 64, height: 64, hiddenByCar: true },
+    },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: {}, plate: {} },
+  };
+  const { notes } = resolveTargets(profile, {
+    name: 'L', surfaces: { body: { regions: [] } }, paint: { plate: { regions: [] } },
+  });
+  assert.deepEqual(notes.map((n) => [n.term, n.status]), [['paint.plate', 'car-hidden']]);
+  assert.match(notes[0].text, /hides every mesh wearing it/);
+  // Painted and reported, not dropped: the file still ships, because a skin's
+  // own ext_config may un-hide the part, and that is the person's call.
 });
 
 test('the editor and the build agree on what a region without an id is called', async () => {

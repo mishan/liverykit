@@ -62,6 +62,11 @@ const treatments = {
    * They matter because the emissive layer always composites *above* the base,
    * so without them sparkles land on top of the driver name. Rejection sampling
    * rather than hand-nudged coordinates is what keeps `--seed` safe to re-roll.
+   *
+   * The renderer also hands over `lettering`: every text rectangle on the
+   * sheet, in the same units. Those are avoided as well, always — `avoid` is
+   * for things the renderer cannot know about, not a way to opt back in to
+   * sparkling over a name.
    */
   sparkles: (r, c) => ({
     base: '',
@@ -71,7 +76,7 @@ const treatments = {
       minR: c.opts.minR ?? r.h * 0.015,
       maxR: c.opts.maxR ?? r.h * 0.07,
       color: c.color(c.opts.color ?? 'white'),
-      avoid: (c.opts.avoid ?? []).map((a) => ({
+      avoid: [...(c.opts.avoid ?? []), ...(c.lettering ?? [])].map((a) => ({
         x: a.x * c.width, y: a.y * c.height, w: a.w * c.width, h: a.h * c.height,
       })),
     }),

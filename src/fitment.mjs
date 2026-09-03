@@ -22,9 +22,11 @@
 // the editor, the MCP and a test all read the same ones.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, resolveRect, texture, metresAcross } from './profile.mjs';
+import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, spanPlacements, panel as panelOf } from './profile.mjs';
 import { applyFit } from './fit.mjs';
+import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
+import { polyArea, sharedArea, rectPoly } from './engine/poly.mjs';
 import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
 // From the editor's op module, because the BROWSER needs this list too — to
 // build the controls and to refuse a constraint nothing enforces — and
@@ -219,7 +221,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   }
 
   // Across surfaces rather than within one, so it cannot live in the loop above.
-  if (model) stacked(model, profile, targets, say);
+  if (model) stacked(model, profile, targets, say, { design });
 
   return {
     car: profile.id,
@@ -259,18 +261,43 @@ function placements(profile, t, spec, fit) {
   // swallowing this here made a livery that cannot be resolved at all look
   // identical to one that is clean. The caller turns the throw into a `fatal`.
   const expanded = expandRegions(profile, t.role, fitted);
-  const out = expanded.regions.filter((r) => r.panel).map((r, i) => {
+  const out = expanded.regions.filter((r) => r.panel).flatMap((r, i) => {
     let frac = null;
     try {
       frac = resolveRect(profile, t.role, r);
     } catch { /* a panel this car lacks; portability reports that one */ }
+    if (!frac) return [];
     // A region with no `id` is addressed by position, and a TAG selection
     // becomes one entry per matching panel — so position alone is not unique
     // once expanded, and two different placements can print the same name. The
     // panel disambiguates them, which is also what somebody would need in order
     // to go and find the thing being complained about.
-    return { region: r, key: r.id ?? r.__key ?? `${t.from}#${i}`, frac, constraints: {} };
-  }).filter((p) => p.frac);
+    const key = r.id ?? r.__key ?? `${t.from}#${i}`;
+    // A spanning region is several placements: the piece on each panel it
+    // reaches, each checked where it actually lies. Checking the home
+    // rectangle alone would report the part past the panel's edge as
+    // off-mesh, which is the one place it is meant to be.
+    if (r.span === true && frac.panel) {
+      return spanPlacements(profile, t.role, r.panel, frac).map((p) => ({
+        region: { ...r, panel: p.panel },
+        key,
+        spilled: p.hops > 0,
+        // The box AND the shape. Every check below measures the shape where
+        // there is one: a piece that arrived through a seam is a parallelogram
+        // filling roughly half the box drawn around it, and the box's half
+        // that is not artwork was being reported as overlapping its
+        // neighbours, off the mesh, and big enough to read.
+        frac: {
+          ...p.on,
+          poly: p.poly,
+          anisotropy: panelOf(profile, t.role, p.panel).anisotropy ?? 1,
+          panel: panelOf(profile, t.role, p.panel),
+        },
+        constraints: {},
+      }));
+    }
+    return [{ region: r, key, frac, constraints: {} }];
+  });
 
   // `expandRegions` runs AFTER `applyFit`, so one region selecting by TAG
   // becomes several placements all carrying the key that was stamped before
@@ -404,9 +431,11 @@ function unreadable(placed, profile, t, say) {
     // size below which it is a smudge.
     const declared = typeof p.constraints.minMm === 'number' ? p.constraints.minMm : null;
     if (declared === null && p.region.treatment !== 'text') continue;
-    const m = metresAcross(p.frac);
-    if (!m) continue;
-    const mm = Math.min(m.w, m.h) * 1000;
+    // The narrowest the SHAPE is, which for a piece that crossed a seam is not
+    // the short side of the box around it.
+    const m = metresNarrowest(p.frac);
+    if (m === null) continue;
+    const mm = m * 1000;
     const floor = declared ?? TOO_SMALL_MM;
     if (mm >= floor) continue;
     say({
@@ -495,7 +524,11 @@ function unseen(placed, profile, t, seen, say) {
 
   for (const p of placed) {
     const at = [p.frac.x, p.frac.y, p.frac.w, p.frac.h];
-    const answer = rectVisibility(seen.model, seen.prepared, meshes, at);
+    // Sampled over the placement's own shape where it has one. Cast at the box
+    // instead, a piece that arrived through a seam spends half its samples on
+    // texture it does not paint, and both answers below — how much is on the
+    // car, how much can be seen — come back describing that empty half.
+    const answer = rectVisibility(seen.model, seen.prepared, meshes, at, { poly: p.frac.poly ?? null });
 
     // Nothing there at all: the rectangle is off the model entirely, which is
     // not a visibility verdict and must not be reported as one.
@@ -527,9 +560,17 @@ function unseen(placed, profile, t, seen, say) {
       continue;
     }
     if (answer.fraction >= BARELY_SEEN) continue;
+    // A band that runs off a fender continues into the wheel arch liner,
+    // because that is where the bodywork goes. The piece a spanning region
+    // leaves on a panel it merely spilled onto is not a placement anybody
+    // chose, and out of sight is exactly where such a piece is allowed to
+    // be; it is only worth a word when it is words. The home piece is held
+    // to the usual standard.
+    const spilled = p.region.span === true && p.spilled;
+    if (spilled && !carries) continue;
     say({
       kind: 'unseen',
-      severity: answer.fraction < 0.1 ? 'high' : 'low',
+      severity: answer.fraction < 0.1 && !spilled ? 'high' : 'low',
       surface: t.from,
       panel: p.region.panel,
       ids: [p.id],
@@ -552,15 +593,31 @@ function unseen(placed, profile, t, seen, say) {
  */
 const name = (t, id) => (String(id).startsWith('#') ? `${t.from}${id}` : id);
 
-const area = (r) => r.w * r.h;
 const rectOf = ([x, y, w, h]) => ({ x, y, w, h });
 const round = (n) => Math.round(n * 1000) / 1000;
 
-function intersect(a, b) {
-  const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
-  const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
-  return x * y;
-}
+/**
+ * How much texture a placement covers, and how much two of them share.
+ *
+ * A placement is a box until it crosses a seam, and then it is whatever shape
+ * the fold left. Both are handled here rather than at four call sites, because
+ * the failure of getting it wrong is quiet in both directions: measured as
+ * boxes, two diagonal bands that pass each other are reported as a collision,
+ * and a band that does cover a name is reported as covering less of it than it
+ * does. Every placement's polygon is convex — an affine image of a rectangle,
+ * clipped to rectangles — which is what `sharedArea` needs.
+ */
+const shapeOf = (r) => (Array.isArray(r.poly) && r.poly.length >= 3
+  ? r.poly
+  : rectPoly([r.x, r.y, r.w, r.h]));
+const area = (r) => (Array.isArray(r.poly) && r.poly.length >= 3 ? polyArea(r.poly) : r.w * r.h);
+const boxesMeet = (a, b) =>
+  Math.min(a.x + a.w, b.x + b.w) > Math.max(a.x, b.x) &&
+  Math.min(a.y + a.h, b.y + b.h) > Math.max(a.y, b.y);
+// Boxes first: two rectangles that miss cannot share anything, and answering
+// that with arithmetic rather than with a clip keeps this cheap for the design
+// with two hundred regions in it.
+const intersect = (a, b) => (boxesMeet(a, b) ? sharedArea(shapeOf(a), shapeOf(b)) : 0);
 
 // ---------------------------------------------------------------------------
 // Surfaces that occupy the same piece of car.
@@ -666,18 +723,39 @@ const SAME_SIZE = 0.9;         // smaller volume over larger
  */
 const SAME_FACING = 0.5;
 
-function stacked(model, profile, targets, say) {
+function stacked(model, profile, targets, say, { design = {} } = {}) {
   const painted = new Map();                    // texture file -> role that paints it
   for (const t of targets) {
     const file = texture(profile, t.role)?.file;
     if (file) painted.set(file.toLowerCase(), { role: t.role, from: t.from });
   }
 
+  // A twin that is not drawn draws over nothing. Two ways for that to be so:
+  // the design hides its texture, which the build now ships transparent; or
+  // the car's own config hides the mesh, as the profile recorded. This check
+  // used to report the NSX's IGT emissive plate as an unpainted twin with both
+  // of those true — a high finding about a part the game never shows, and the
+  // kind of noise that teaches people to stop reading the list.
+  //
+  // A hide is only worth this silence when it WORKS. Naming a role under
+  // `hide` is a request, and the build answers it five different ways: an
+  // opaque shader takes no clear sheet, and the surface is drawn in the game
+  // exactly as before. Reading the request rather than the answer, this check
+  // went quiet about a twin that is still there, still unpainted, and still
+  // putting the car's own artwork over the design's — which is the finding it
+  // exists for, silenced by the design asking for the opposite.
+  const paintedRoles = new Set(targets.map((t) => t.role));
+  const designHides = new Set(hidePlan(profile, design, { paintedRoles })
+    .filter((h) => hideTakesEffect(h.action))
+    .map((h) => h.file?.toLowerCase()).filter(Boolean));
+  const carHides = new Set(Object.keys(profile.hiddenByCar?.meshes ?? {}));
+
   // Bounds once per mesh, keyed by the texture it wears.
   const byFile = new Map();
   for (const mesh of model.meshes ?? []) {
+    if (carHides.has(mesh.name)) continue;
     const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
-    if (!file) continue;
+    if (!file || designHides.has(file)) continue;
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push({ mesh, box: bounds(model, mesh), face: facing(model, mesh) });
   }

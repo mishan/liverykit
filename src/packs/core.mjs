@@ -84,6 +84,56 @@ const treatments = {
     return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
   },
 
+  /**
+   * A band round a tyre's sidewall, `along` of the way from the rim (0) to
+   * the shoulder (1), `width` as a fraction of that distance. (`at` is taken:
+   * it is every region's rectangle.)
+   *
+   * The same thing `ring` was used for, drawn where it actually goes. A
+   * sidewall is a disc, and an unwrapper lays it out either as a disc —
+   * polar about a hub — or cut once and rolled out as a strip with u round
+   * the circumference. `ring` is right on the first and on the second draws
+   * one big circle across the sheet, which on the car is a few arcs where
+   * the circle crosses the strip. The profile measures which it is
+   * (`wheel` on the panel; see engine/wheels.mjs), and this reads that and
+   * draws a stripe across the strip or a ring about the hub.
+   *
+   * On a panel with no measurement it draws as `ring` did, radius from
+   * `at`, so an old profile is no worse off than before — and no better.
+   */
+  band: (r, c) => {
+    const color = c.color(c.opts.color ?? 'cyan');
+    const at = c.opts.along ?? 0.8;
+    const frac = c.opts.width ?? 0.06;
+    const opacity = c.opts.opacity ?? 1;
+    const w = c.panel?.wheel;
+    let g;
+    if (w?.unwrap === 'strip') {
+      const [rim, shoulder] = w.across;
+      const pos = rim + (shoulder - rim) * at;
+      const thick = Math.abs(shoulder - rim) * frac;
+      g = w.around === 'u'
+        ? `<rect x="${r2(r.x)}" y="${r2((pos - thick / 2) * c.height)}" width="${r2(r.w)}" height="${r2(thick * c.height)}" fill="${color}" opacity="${opacity}"/>`
+        : `<rect x="${r2((pos - thick / 2) * c.width)}" y="${r2(r.y)}" width="${r2(thick * c.width)}" height="${r2(r.h)}" fill="${color}" opacity="${opacity}"/>`;
+    } else if (w?.unwrap === 'annulus') {
+      const [r0, r1] = w.radiusUv;
+      const radius = r0 + (r1 - r0) * at;
+      const stroke = (r1 - r0) * frac;
+      // In u-fractions; a non-square sheet makes the ring an ellipse.
+      g = `<ellipse cx="${r2(w.hub[0] * c.width)}" cy="${r2(w.hub[1] * c.height)}" ` +
+        `rx="${r2(radius * c.width)}" ry="${r2(radius * c.width)}" fill="none" ` +
+        `stroke="${color}" stroke-width="${r2(stroke * c.width)}" opacity="${opacity}"/>`;
+    } else {
+      g = ring({
+        cx: r.x + r.w / 2, cy: r.y + r.h / 2,
+        radius: (0.25 + 0.25 * at) * Math.min(r.w, r.h),
+        width: frac * 0.25 * Math.min(r.w, r.h),
+        color, opacity,
+      });
+    }
+    return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+
   ring: (r, c) => {
     const g = ring({
       cx: r.x + r.w / 2,
@@ -190,6 +240,18 @@ export default definePack('core', treatments, {
       width: { type: 'number', min: 0.5, step: 0.5, hint: '1.2% of the region height, at least 2px', label: 'Line width (px)' },
       spacing: { type: 'number', min: 0, max: 1, step: 0.01, hint: 'evenly spread across the region' },
       angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  band: {
+    label: 'Sidewall band',
+    summary: 'A band round a tyre sidewall, placed from rim to shoulder using the profile\'s wheel measurement — a stripe on a strip unwrap, a ring on a disc.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      along: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.8 — 0 is the rim, 1 the shoulder', label: 'Position' },
+      width: { type: 'number', min: 0.005, max: 1, step: 0.01, hint: '0.06 of the sidewall height' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
       glow: { type: 'boolean', hint: 'false', label: 'Glow' },
     },
   },

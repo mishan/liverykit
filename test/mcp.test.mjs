@@ -681,14 +681,14 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
   const { rasterise, VIEWS } = await import('../src/engine/shot.mjs');
   assert.ok(VIEWS.left && VIEWS.right, 'the named views exist');
 
-  // In the YZ plane, facing -x, because the `left` view looks along +x. A quad
-  // in the XY plane is edge-on from there and renders as nothing — which the
-  // first version of this test did, and which is exactly the kind of mistake
-  // the whole file exists to make visible.
+  // In the YZ plane, facing the `left` camera at +x. A quad in the XY plane
+  // is edge-on from there and renders as nothing — which the first version of
+  // this test did, and which is exactly the kind of mistake the whole file
+  // exists to make visible.
   const quad = {
     positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
     uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
-    normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
     indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
   };
   const art = { w: 2, h: 2, data: Buffer.from([
@@ -711,6 +711,38 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
   assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
     `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
   assert.notDeepEqual([br, bg, bb], [r, g, b]);
+});
+
+test('the left view shows the left of the car', async () => {
+  // It showed the right. A profile calls +X the car's left because AC puts
+  // WHEEL_LF there, and the NSX's driver sits at +0.34 in a left-hand-drive
+  // car, so that is not in doubt. The `left` camera sat at -X and looked
+  // across at the far flank, and every "left" render this project produced
+  // was of the right-hand side. Nobody caught it because a livery is nearly
+  // symmetric, until a stripe painted on left_mid alone showed up only in
+  // the `right` view.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+  // Two slabs, one each side, each wearing its own colour. Whichever is
+  // nearer the camera wins the depth test, so the colour at the centre says
+  // which side the view is looking at.
+  const slab = (x) => [x, -1, -1, x, -1, 1, x, 1, 1, x, 1, -1];
+  const model = {
+    positions: new Float32Array([...slab(1), ...slab(-1)]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  const solid = (r, g, b) => ({ w: 1, h: 1, data: Buffer.from([r, g, b, 255]) });
+  const sheets = new Map([['leftSide', solid(255, 0, 0)], ['rightSide', solid(0, 0, 255)]]);
+  const groups = [{ role: 'leftSide', start: 0, count: 6 }, { role: 'rightSide', start: 6, count: 6 }];
+  const centre = (img) => [0, 1, 2].map((k) => img.data[(40 * img.width + 40) * 4 + k]);
+
+  const [lr, , lb] = centre(rasterise(model, groups, sheets, { view: 'left', width: 80, height: 80 }));
+  assert.ok(lr > lb * 2, `left view sees the +X slab, which is red: got ${lr},${lb}`);
+  const [rr, , rb] = centre(rasterise(model, groups, sheets, { view: 'right', width: 80, height: 80 }));
+  assert.ok(rb > rr * 2, `right view sees the -X slab, which is blue: got ${rr},${rb}`);
+  const [flr, , flb] = centre(rasterise(model, groups, sheets, { view: 'front-left', width: 80, height: 80 }));
+  assert.ok(flr > flb * 2, `front-left is a left view: got ${flr},${flb}`);
 });
 
 test('render_view tells an empty role apart from no role at all', async () => {
@@ -751,10 +783,12 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
     uvs: [0, 1, 1, 1, 1, 0, 0, 0],
     normals: [-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0],
   });
-  // The `left` camera sits at NEGATIVE x looking toward +x, so smaller x is
-  // nearer. Getting this backwards is how the first version of this test
-  // asserted that the far quad should win.
-  const back = quad(0), front = quad(-0.4);
+  // The `left` camera sits at POSITIVE x — the car's left — looking toward
+  // -x, so larger x is nearer. Getting this backwards is how the first
+  // version of this test asserted that the far quad should win; it was then
+  // written for a camera that sat on the wrong side of the car, and moved
+  // with it when that was fixed.
+  const back = quad(0), front = quad(0.4);
   const model = {
     positions: new Float32Array([...back.positions, ...front.positions]),
     uvs: new Float32Array([...back.uvs, ...front.uvs]),
