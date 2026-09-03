@@ -39,3 +39,44 @@ test('sparkles keep off lettering on the same sheet without being told', async (
   assert.ok(landedAlone > 50, `the band is a fifth of the sheet; unguarded sparkles land there (${landedAlone})`);
   assert.equal(landedWithText, 0, 'and none do once a text region occupies it');
 });
+
+test('a region is not told to avoid itself', async () => {
+  // `keepClear` is a design saying "nothing may be painted across this", and
+  // it is honoured for any treatment — so a decorative region can declare it
+  // too. Handed the whole list, that region was given its OWN rectangle to
+  // avoid: rejection sampling then had nowhere to put a sparkle, and the
+  // region rendered empty. Artwork silently absent is the failure this
+  // project exists to refuse, and it arrived through the feature that exists
+  // to protect artwork.
+  await import('../src/index.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { mulberry32 } = await import('../src/engine/rng.mjs');
+
+  const profile = { id: 't', textures: { body: { file: 'b.dds', width: 1000, height: 1000 } },
+    panels: { body: { L: { rect: [0, 0, 1, 1] } } } };
+  const render = (regions) => renderTexture({
+    profile, role: 'body', regions, treatments: resolveTreatments(['core', 'synthwave']),
+    palette: {}, rng: mulberry32(7), font: 'sans-serif', tokens: {},
+  });
+  const centres = (svg) => [...svg.matchAll(/<path d="M([\d.]+) ([\d.]+)Q/g)].map(([, x, y]) => [+x, +y]);
+
+  const sparkles = { treatment: 'sparkles', panel: 'L', n: 40, minR: 4, maxR: 8 };
+  const alone = centres(render([sparkles]).emissive).length;
+  assert.ok(alone > 0, 'sparkles without constraints land somewhere');
+  assert.equal(centres(render([{ ...sparkles, constraints: { keepClear: true } }]).emissive).length,
+    alone, 'and a region asking to be kept clear still draws itself');
+
+  // Another region's keepClear is still binding, and only when it says so
+  // with a boolean: `keepClear: 'yes'` is a design that failed to say what it
+  // meant, and changing what gets drawn on the strength of a typo is how a
+  // livery quietly renders differently than it reads.
+  const band = { treatment: 'fill', panel: 'L', at: [0, 0.4, 1, 0.2], color: '#fff' };
+  const inBand = ([, y]) => y > 400 && y < 600;
+  const on = (regions) => centres(render(regions).emissive).filter(inBand).length;
+  assert.ok(on([sparkles]) > 0, 'a fifth of the sheet catches sparkles when nothing guards it');
+  assert.equal(on([{ ...band, constraints: { keepClear: true } }, sparkles]), 0,
+    'a guarded band is left alone');
+  assert.equal(on([{ ...band, constraints: { keepClear: 'yes' } }, sparkles]), on([sparkles]),
+    'and a value that is not a boolean guards nothing');
+});
