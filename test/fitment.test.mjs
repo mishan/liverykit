@@ -170,6 +170,31 @@ test('visibility is measured across the rectangle, not at whatever vertices fall
   assert.equal(direct.samples, direct.of, 'and the whole rectangle is on the mesh');
 });
 
+test('a placement that is not a rectangle is measured over the shape it is', () => {
+  // A region continued across a seam lands as a parallelogram. Asked as the
+  // box around it, half the samples fall on texture the design does not paint
+  // — the answer comes back as a placement half off the car, which is a real
+  // finding about an imaginary shape.
+  const model = plane({ rows: 8, cols: 8 });
+  const rect = [0.05, 0.05, 0.2, 0.2];
+  const whole = probe(model, rect);
+  assert.equal(whole.samples, whole.of, 'the box is entirely on the sheet');
+
+  // The lower-left triangle of that box: half the area, so about half the
+  // cells, and every one of them still on the mesh.
+  const half = [[0.05, 0.05], [0.25, 0.05], [0.05, 0.25]];
+  const shaped = rectVisibility(model, occupancyFor(model), model.meshes, rect, { poly: half });
+  assert.ok(shaped.of < whole.of * 0.65 && shaped.of > whole.of * 0.35,
+    `about half the cells: ${shaped.of} of ${whole.of}`);
+  assert.equal(shaped.samples, shaped.of, 'and the shape is entirely on the sheet');
+  assert.equal(shaped.fraction, 1);
+
+  // A shape that lands nowhere near the sheet is still no answer at all,
+  // rather than a confident zero.
+  assert.equal(rectVisibility(model, occupancyFor(model), model.meshes, rect,
+    { poly: [[0.9, 0.9], [0.95, 0.9], [0.9, 0.95]] }), null);
+});
+
 /**
  * A flat sheet facing +z, with real triangles — the visibility cast now walks
  * them rather than standing on vertices, so an index buffer is not optional.
@@ -443,7 +468,12 @@ test('a twin nobody draws is not a twin', () => {
   const art = [{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }];
   const withPlateRole = {
     ...profile,
-    textures: { ...profile.textures, plate: { file: 'plate.dds', width: 64, height: 64 } },
+    // Drawn by a shader that composites alpha, which is what makes a clear
+    // sheet work — and the only thing that makes hiding it silence this check.
+    textures: {
+      ...profile.textures,
+      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixelAlpha'] },
+    },
   };
 
   // The design hides it, so the build ships it transparent.
@@ -464,6 +494,39 @@ test('a twin nobody draws is not a twin', () => {
   // And the check is still live: the same model with neither says so.
   const bare = fitment(design(art), withPlateRole, null, { model: twinned });
   assert.equal(bare.findings.filter((f) => f.kind === 'unpainted-twin').length, 1);
+});
+
+test('a hide that cannot work silences nothing', () => {
+  // Hiding a role is a request, and the build has five answers to it. An
+  // opaque shader takes no clear sheet: the surface is drawn in the game
+  // exactly as before, still unpainted, still putting the car's own artwork
+  // over the design's. Reading the request rather than the answer, this check
+  // went quiet about precisely the thing it exists to report — and the design
+  // asking for the opposite is what silenced it.
+  const twinned = withPlate(plane({ rows: 4, cols: 4 }), 0.0005);
+  const art = [{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }];
+  const opaquePlate = {
+    ...profile,
+    textures: {
+      ...profile.textures,
+      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixel'] },
+    },
+  };
+
+  const asked = fitment({ ...design(art), hide: ['plate'] }, opaquePlate, null, { model: twinned });
+  assert.equal(asked.findings.filter((f) => f.kind === 'unpainted-twin').length, 1,
+    'the plate is still drawn, so the twin is still a finding');
+
+  // A profile from before shaders were recorded is treated the same way, for
+  // the same reason the build refuses to claim it hid something: nobody knows
+  // that it did.
+  const unrecorded = {
+    ...profile,
+    textures: { ...profile.textures, plate: { file: 'plate.dds', width: 64, height: 64 } },
+  };
+  const old = fitment({ ...design(art), hide: ['plate'] }, unrecorded, null, { model: twinned });
+  assert.equal(old.findings.filter((f) => f.kind === 'unpainted-twin').length, 1,
+    'an unrecorded shader is not evidence that a clear sheet would work');
 });
 
 test('the back of a panel is not a twin', () => {

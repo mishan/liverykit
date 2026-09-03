@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { vertex, triangles } from './kn5.mjs';
+import { polyArea } from './poly.mjs';
 
 /**
  * Decompose the given meshes into UV islands.
@@ -459,23 +460,44 @@ export function findSeams(model, islands, adjacency, { tolerance = 0.004 } = {})
 
   // Every vertex, bucketed by position, so shared ones meet in a cell.
   const grid = new Map();
+  const all = [];
   islands.forEach((isl) => {
     for (const i of isl.vertices) {
       const p = vertex(model, isl.meshRef, i);
+      const pt = { isl, u: p.u, v: p.v, x: p.x, y: p.y, z: p.z };
       const k = key(p.x, p.y, p.z);
       let s = grid.get(k);
       if (!s) grid.set(k, (s = []));
-      s.push({ isl, u: p.u, v: p.v, x: p.x, y: p.y, z: p.z });
+      s.push(pt);
+      all.push(pt);
     }
   });
 
   // Correspondences per ordered pair, deduplicated per position: a seam
   // vertex is usually present in both meshes several times over (per
   // triangle fan), and counting it five times would weight the fit oddly.
+  //
+  // Each point is compared against the 27 cells around it, not only its own.
+  // The cell is the tolerance, so two points 3 mm apart — well inside the 4 mm
+  // this is willing to call the same vertex — land in different cells whenever
+  // the boundary happens to run between them, and a bucket-only comparison
+  // found no correspondence at all for them. `findAdjacency` probes neighbours
+  // for exactly this reason and would call such a pair adjacent, which left
+  // the two disagreeing: islands that touch, with no map to cross between
+  // them, and a spanning region that stopped at the seam for no visible cause.
+  // The distance test below is what actually decides; the cells only narrow
+  // the field.
   const pairs = new Map();          // "a|b" -> [{ a: [u,v], b: [u,v] }]
-  for (const bucket of grid.values()) {
-    if (bucket.length < 2) continue;
-    for (const p of bucket) {
+  const near = (p) => {
+    const out = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const bucket = grid.get(key(p.x + dx * cell, p.y + dy * cell, p.z + dz * cell));
+      if (bucket) out.push(bucket);
+    }
+    return out;
+  };
+  for (const p of all) {
+    for (const bucket of near(p)) {
       for (const q of bucket) {
         if (p.isl === q.isl) continue;
         if (!adjacency.get(p.isl.name)?.has(q.isl.name)) continue;
@@ -692,7 +714,7 @@ export function islandOutline(model, isl, { tolerance = 0.0015 } = {}) {
   const point = new Map();
   for (const e of edges.values()) { point.set(e.kp, e.p); point.set(e.kq, e.q); }
   const used = new Set();
-  let best = [];
+  let best = [], bestArea = -1;
   for (const start of next.keys()) {
     if (used.has(start)) continue;
     const loop = [];
@@ -703,7 +725,14 @@ export function islandOutline(model, isl, { tolerance = 0.0015 } = {}) {
       const out = (next.get(here) ?? []).find(([k]) => !used.has(k));
       here = out?.[0];
     }
-    if (loop.length > best.length) best = loop;
+    // By AREA, not by how many points it took to draw. The outer boundary is
+    // the biggest loop in the sheet; it is not always the longest list. A door
+    // is a handful of long straight edges around a densely tessellated window
+    // cut-out, and the window won on vertex count — so the "outline" became
+    // the hole, and artwork clipped to it was clipped to exactly the part of
+    // the panel it must not touch, and to nothing else.
+    const a = polyArea(loop);
+    if (a > bestArea) { best = loop; bestArea = a; }
   }
   if (best.length < 3) return null;
   return simplify(best, tolerance).map(([u, v]) => [Math.round(u * 1e4) / 1e4, Math.round(v * 1e4) / 1e4]);
