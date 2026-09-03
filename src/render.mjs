@@ -117,13 +117,27 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   // Text and arc text, plus anything a design marked keepClear — the same
   // declaration the fitment check honours, and a region that asks artwork to
   // stay off it has said all it needs to.
-  const lettering = expanded.regions
-    .filter((r) => r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear)
+  //
+  // `keepClear === true` and not merely truthy, for the same reason the fitment
+  // check refuses `keepClear: 'yes'`: a value that is not a boolean is a design
+  // that failed to say what it meant, and honouring it here would change what
+  // is drawn on the strength of a typo.
+  //
+  // Each rectangle remembers WHICH region it came from, because the list is
+  // handed to every treatment including the region that contributed to it. A
+  // `sparkles` region that declares keepClear was given its own rectangle to
+  // avoid; rejection sampling then had nowhere to put a sparkle and the region
+  // rendered empty — artwork silently absent, which is this project's oldest
+  // failure. Each treatment gets the list with its own entries removed.
+  const letteringAll = expanded.regions
+    .filter((r) => r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear === true)
     .flatMap((r) => {
       const f = resolveRect(profile, role, r);
       // A spanning name is on every panel it reaches, not only its home.
-      if (r.span === true && f.panel) return spanPlacements(profile, role, r.panel, f).map((p) => p.on);
-      return [{ x: f.x, y: f.y, w: f.w, h: f.h }];
+      const boxes = r.span === true && f.panel
+        ? spanPlacements(profile, role, r.panel, f).map((p) => p.on)
+        : [{ x: f.x, y: f.y, w: f.w, h: f.h }];
+      return boxes.map((b) => ({ ...b, from: r }));
     });
 
   // Clip paths for spanning regions, one per (region, panel), collected
@@ -220,6 +234,12 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // `panel` is the resolved panel this region landed on, measurements and
     // all, for a treatment that draws differently depending on what it is
     // on — `band` reads the wheel measurement. Null for an absolute region.
+    // Everything to keep off, EXCEPT this region's own boxes: a region cannot
+    // be told to avoid itself.
+    const lettering = letteringAll
+      .filter((l) => l.from !== region)
+      .map(({ from, ...box }) => box);
+
     const out = entry.fn(drawn,
       { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering, panel: frac.panel ?? null });
     const spin = (svg) => (rot === 0 || !svg ? svg
@@ -238,7 +258,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // x' = a x + (c W/H) y + e W, and likewise for y.
     if (region.span === true && frac.panel) {
       const placed = spanPlacements(profile, role, region.panel, frac);
-      placed.forEach((p, k) => {
+      placed.forEach((p) => {
         const [a, b, c, d, e, f] = p.matrix;
         const m = [a, (b * height) / width, (c * width) / height, d, e * width, f * height].map(r2);
         // Clipped to the island's OUTLINE where the profile has one, and to
@@ -246,7 +266,13 @@ export function renderTexture({ profile, role, regions, background, treatments, 
         // island into the concave corner of a big one, and a copy clipped to
         // the box paints texels that belong to the neighbour.
         const pan = profile.panels[role][p.panel];
-        const id = `lk-span-${base.length}-${emissive.length}-${k}`;
+        // From the number of clips written, which only ever goes up. It was the
+        // two layers' lengths, and those only advance when a treatment emits
+        // something: a spanning `radialText` with an empty string defines its
+        // clip paths and draws nothing, so the next spanning region started
+        // from the same numbers and reused the ids — every copy of it clipped
+        // to the earlier region's panels.
+        const id = `lk-span-${clips.length}`;
         if (Array.isArray(pan.outline) && pan.outline.length >= 3) {
           const pts = pan.outline.map(([u, v]) => `${r2(u * width)},${r2(v * height)}`).join(' ');
           clips.push(`<clipPath id="${id}"><polygon points="${pts}"/></clipPath>`);
