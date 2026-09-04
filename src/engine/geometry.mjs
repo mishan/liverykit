@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, isGlass, damageOnly } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -38,6 +38,11 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // livery on an unlit slab does not look like a livery on a car, and you
   // cannot judge how artwork sits over a curve you cannot see.
   const normals = [];
+  // Tangents travel for the same reason normals did: without one there is no
+  // frame to interpret a normal map in, and a normal map is what carries the
+  // grain of a material — the nap of alcantara, the weave of carbon. They were
+  // already in the kn5, sitting behind the UVs, being skipped.
+  const tangents = [];
   const indices = [];
   const groups = [];
   let lo = [Infinity, Infinity, Infinity];
@@ -53,6 +58,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         positions.push(v.x, v.y, v.z);
         uvs.push(v.u, v.v);
         normals.push(v.nx, v.ny, v.nz);
+        tangents.push(v.tx, v.ty, v.tz);
         for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
           if (n < lo[k]) lo[k] = n;
           if (n > hi[k]) hi[k] = n;
@@ -61,6 +67,23 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
     }
     if (indices.length > start) {
+      // The material's OWN lighting constants, carried so the viewer can stop
+      // lighting a seat like a wing.
+      //
+      // Taken from whichever material contributes the most triangles here. A
+      // group is one texture and usually one material, but "usually" is not
+      // "always", and averaging constants across materials would invent a
+      // surface that none of them describe.
+      const weight = new Map();
+      for (const m of meshes) {
+        weight.set(m.materialId, (weight.get(m.materialId) ?? 0) + (m.indexCount ?? 0));
+      }
+      let dominant = null;
+      let most = -1;
+      for (const [id, n] of weight) if (n > most) { most = n; dominant = id; }
+      const props = model.materials?.[dominant]?.props ?? {};
+      const num = (v) => (Number.isFinite(v) ? v : null);
+
       // Whether this group composites, taken from the MATERIAL rather than from
       // the texture. A group is one draw call and one texture, and in practice
       // one shader — but `some` rather than `every`, because a blended mesh
@@ -69,6 +92,14 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
       groups.push({
         ...group, start, count: indices.length - start, blend,
+        // `null` for anything the material does not state, so the viewer keeps
+        // its own default rather than lighting the part as pure black.
+        light: {
+          ambient: num(props.ksAmbient),
+          diffuse: num(props.ksDiffuse),
+          specular: num(props.ksSpecular),
+          exponent: num(props.ksSpecularEXP),
+        },
         add: blend && additive(group.file),
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
@@ -117,8 +148,40 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // rather than left for isGlass to shade, because at zero damage — the only
   // state this project can render — the correct picture has no crack mesh in
   // it at all, textured or bare. See damageOnly's own comment.
+  // Motion-blur rims (EXT_RIM_BLUR_*): excluded for the same reason and on the
+  // same terms as the damage glass above — the game swaps them in by wheel
+  // speed, a livery preview is a car at rest, and drawing them anyway puts a
+  // streak disc over the wheel and z-fights the design's rim paint. See
+  // motionBlurOnly's own comment.
+  //
+  // And the SECOND COCKPIT, which is the same mistake at a much larger scale.
+  //
+  // A car of this kind ships its interior twice: COCKPIT_HR for the driver's
+  // camera and COCKPIT_LR for every external one, sitting in the same space,
+  // swapped by which camera is live. Drawing both put every interior surface a
+  // fraction of a millimetre from its own duplicate, and the depth buffer
+  // cannot separate them — so the dashboard, the tub and the wheel came out as
+  // a hard-edged black and white checkerboard that survived every change to
+  // the texture work, because it was never about texture. It is z-fighting,
+  // and it looks like a shattered material.
+  //
+  // HR wins. It is what a driver actually sees, it is the half carrying the
+  // real materials (carbon, alcantara, brushed metal — see detailLayer), and
+  // one consistent answer beats a preview that changes its mind with the
+  // camera. The cost is real and worth stating: this car's `interior` role is
+  // `Cockpit_LR_Colour.dds`, which ONLY exists on the LR meshes, so a design
+  // painting `interior` paints something the cockpit view no longer shows —
+  // and, in the game, something the driver's camera never showed either.
+  //
+  // Guarded on HR actually being present, so a car that ships only the one
+  // cockpit keeps it whatever that one is named.
+  const hasHrCockpit = (model.meshes ?? []).some((m) => /(^|\/)COCKPIT_HR(\/|$)/i.test(m.path ?? ''));
+  const supersededCockpit = (m) => hasHrCockpit && /(^|\/)COCKPIT_LR(\/|$)/i.test(m.path ?? '');
+
   const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
-    && !damageOnly(model.materials?.[m.materialId]?.shader);
+    && !damageOnly(model.materials?.[m.materialId]?.shader)
+    && !motionBlurOnly(m.name)
+    && !supersededCockpit(m);
 
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter(drawn);
@@ -144,23 +207,58 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // drawn, just without a texture to claim for it, same as any other part
     // this project cannot supply artwork for.
     const file = trustworthyDiffuse(mat?.shader) ? (mat?.slots?.txDiffuse ?? null) : null;
-    if (!leftover.has(file)) leftover.set(file, []);
-    leftover.get(file).push(m);
+
+    // But "the diffuse is not the surface" and "the surface is unknowable" are
+    // different claims, and the second one cost this car its whole cockpit:
+    // door cards, instrument surround and rollcage trim are MultiMap parts, so
+    // every one of them fell in here as flat grey next to a painted interior,
+    // which reads as a checkerboard and was reported as exactly that. Their
+    // material knows better — see `detailLayer` — and says the part is a bake
+    // times a tiling material.
+    //
+    // Deliberately NOT folded into `file`. Both renderers read `file` as "this
+    // one sheet IS the surface", so putting an occlusion bake there would have
+    // the software rasteriser draw a door card as a greyscale photograph of
+    // its own shadows. A renderer that cannot composite two layers should get
+    // the grey, and does.
+    const detail = file === null ? detailLayer(mat) : null;
+
+    // Keyed by what gets DRAWN rather than by the diffuse alone: two materials
+    // tiling different details over the same bake — this car's carbon door
+    // cards and its brushed-metal instrument surround do exactly that — are
+    // two surfaces and cannot share one draw call.
+    const key = detail
+      ? ['detail', detail.diffuse, detail.detail, detail.mult,
+        detail.normal ?? '', detail.normalBlend].join('\u0000')
+      : ['file', file ?? ''].join('\u0000');
+    if (!leftover.has(key)) {
+      leftover.set(key, { meshes: [], group: detail ? { role: null, file, detail } : { role: null, file } });
+    }
+    leftover.get(key).meshes.push(m);
   }
-  for (const file of [...leftover.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
+  // Sorted by that key, for the reason the file sort had before it: group order
+  // should not depend on mesh order in the archive, so a test can say what it
+  // expects.
+  for (const key of [...leftover.keys()].sort()) {
+    const { meshes, group } = leftover.get(key);
     // Named on the `hide` list: not emitted at all, so it is not drawn, not
-    // fetched, and not counted as unpainted geometry.
-    if (file && hidden.has(String(file).toLowerCase())) continue;
+    // fetched, and not counted as unpainted geometry. Checked against the
+    // detail pair's own diffuse as well, now that a group can wear a sheet its
+    // `file` does not name — hiding a texture and then finding a part still
+    // wearing it is precisely the bug this list exists to prevent.
+    const wears = group.file ?? group.detail?.diffuse ?? null;
+    if (wears && hidden.has(String(wears).toLowerCase())) continue;
     // `role: null` still means "the design does not paint this", which is what
     // the viewer keys its grey off. `file` is new, and says what to draw instead
     // when the car itself can supply it.
-    emit(leftover.get(file), { role: null, file });
+    emit(meshes, group);
   }
 
   return {
     positions: Float32Array.from(positions),
     uvs: Float32Array.from(uvs),
     normals: Float32Array.from(normals),
+    tangents: Float32Array.from(tangents),
     indices: Uint32Array.from(indices),
     groups,
     bounds: { lo, hi },

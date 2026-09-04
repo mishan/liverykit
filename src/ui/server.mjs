@@ -148,7 +148,7 @@ export function packModel(g) {
   // undefined forty lines away from the caller that forgot it. Normals became
   // part of this format when the viewer learned to light the car, and a
   // geometry builder that has not caught up should be told so.
-  for (const k of ['positions', 'uvs', 'normals', 'indices']) {
+  for (const k of ['positions', 'uvs', 'normals', 'tangents', 'indices']) {
     if (!ArrayBuffer.isView(g[k])) {
       throw new Error(`packModel needs a typed array for "${k}"; got ${typeof g[k]}. ` +
         'Normals are part of this payload — the viewer lights the car with them.');
@@ -170,12 +170,15 @@ export function packModel(g) {
   // out of four, which is a maddening way to find out about an alignment rule.
   const header = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)]);
   const out = Buffer.alloc(4 + header.length + g.positions.byteLength
-    + g.uvs.byteLength + g.normals.byteLength + g.indices.byteLength);
+    + g.uvs.byteLength + g.normals.byteLength + g.tangents.byteLength
+    + g.indices.byteLength);
   out.writeUInt32LE(header.length, 0);
   let o = 4;
   const put = (b) => { b.copy(out, o); o += b.length; };
   put(header);
-  for (const ta of [g.positions, g.uvs, g.normals, g.indices]) {
+  // Tangents ride between the normals and the indices, and `unpackModel` reads
+  // them in this order — the two are one format and move together.
+  for (const ta of [g.positions, g.uvs, g.normals, g.tangents, g.indices]) {
     put(Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength));
   }
   return out;
@@ -761,9 +764,28 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       stock = new Map();
       try {
         const full = await parseKn5(modelPath, { keepTextureData: true });
-        const used = new Set((full.meshes ?? [])
-          .map((m) => full.materials?.[m.materialId]?.slots?.txDiffuse)
-          .filter(Boolean).map((n) => n.toLowerCase()));
+        // DIFFUSE AND DETAIL, because the viewer asks for both.
+        //
+        // This was diffuse-only, from when one texture was the whole of a
+        // surface. It is not any more: a MultiMap material is a bake times a
+        // small tiling material, and the tiling half is bound as txDetail and
+        // usually as nothing else. So the two textures that carry this car's
+        // interior — alcnt.dds for the seat and dashboard, metal_detail_2.dds
+        // for the instrument surround — were filtered out here and answered
+        // 404, and the viewer, having asked honestly and been told no, drew
+        // the bake on its own: a pale grey seat wearing its own baked shadows
+        // and an embossed NSX GT3 logo.
+        //
+        // MAT_Carbon.dds hid the bug for a while by being both — the shift
+        // paddles wear it as a diffuse — so the carbon door cards came out
+        // right while the alcantara beside them did not.
+        const used = new Set();
+        for (const m of full.meshes ?? []) {
+          const slots = full.materials?.[m.materialId]?.slots ?? {};
+          for (const name of [slots.txDiffuse, slots.txDetail]) {
+            if (name) used.add(String(name).toLowerCase());
+          }
+        }
         for (const t of full.textures ?? []) {
           // Only textures some mesh actually uses, so an unused slot in the file
           // does not cost anything. `Buffer.from` COPIES — a subarray would keep
