@@ -14,10 +14,14 @@
 // dependency that was not already here, and it turns "I cannot see it" into a
 // PNG.
 //
-// It is NOT a substitute for the editor. It has no alpha handling, no stock car
-// textures, and one light rig. What it can answer is the question I kept
-// getting wrong: does the artwork land where I said it would, and does the car
-// still look like a car.
+// It is NOT a substitute for the editor. It has one light rig and no
+// reflections, so a windscreen or a mirror never looks like glass here the
+// way it does in the game. A caller CAN hand it the car's own stock textures
+// for the parts a design does not paint — sheetKey, below, is what makes
+// that possible — but nothing requires it, and without them those parts
+// draw bare grey rather than invent something. What this can answer is the
+// question I kept getting wrong: does the artwork land where I said it
+// would, and does the car still look like a car.
 // ---------------------------------------------------------------------------
 
 import sharp from 'sharp';
@@ -88,14 +92,20 @@ function norm(v) {
  * hemisphere for sky and ground, one key light, and a white clearcoat lobe —
  * white because the highlight on a car is the sky in the lacquer, not the paint.
  */
-function shade(rgb, n, v) {
+function shade(rgb, n, v, { rim = 0 } = {}) {
   const key = norm([0.4, 0.85, 0.35]);
   const amb = (i, lo, hi) => lo + (hi - lo) * (n[1] * 0.5 + 0.5);
   const ambient = [amb(0, 0.20, 0.52), amb(1, 0.19, 0.60), amb(2, 0.18, 0.72)];
   const nl = Math.max(0, dot(n, key) * 0.75 + 0.25);
   const h = norm([key[0] + v[0], key[1] + v[1], key[2] + v[2]]);
+  // `rim` is the caller's own fresnel term — see glassFresnel — rather than a
+  // second one computed here, so a glass surface's highlight and its alpha
+  // agree about which pixels are "edge-on": recomputed independently with a
+  // different exponent, the two used to disagree right where it shows, along
+  // the curve of a window.
   const spec = Math.pow(Math.max(0, dot(n, h)), 90) * 0.55
-    + Math.pow(1 - Math.max(0, dot(n, v)), 5) * 0.10;
+    + Math.pow(1 - Math.max(0, dot(n, v)), 5) * 0.10
+    + rim * 0.7;
 
   const out = [0, 0, 0];
   for (let k = 0; k < 3; k++) {
@@ -106,11 +116,30 @@ function shade(rgb, n, v) {
 }
 
 /**
+ * How mirror-like a glass surface looks from here — 0 dead-on, toward 1 at a
+ * grazing angle. Real automotive glass is closer to a Fresnel reflector than
+ * to a translucent sheet: you see straight through the windscreen looking
+ * square at it and see mostly sky and your own reflection looking along it.
+ * `ksPerPixelReflection`/`ksWindscreen` are how AC gets that, with an actual
+ * environment map this project has no way to sample — this is the cheap
+ * stand-in, and it is what turns "invisible or a grey slab" into something
+ * that reads as glass at all.
+ */
+const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
+
+/**
+ * Which key a group's artwork is filed under in `sheets` — its role for a
+ * painted surface, its file for a part the design leaves to the car's own
+ * texture (`role` is null there; see wholeModelGeometry). A group with
+ * neither draws bare grey, which is honest: it says "nobody supplied art for
+ * this" rather than inventing something.
+ */
+const sheetKey = (g) => g.role ?? g.file;
+
+/**
  * Render the model to raw RGBA.
  *
- * `sheets` maps a group's role to rasterised artwork. A group with no entry is
- * drawn bare grey, which is honest: it says "your design does not paint this"
- * rather than inventing something.
+ * `sheets` maps a sheetKey to rasterised artwork — see above.
  */
 export function rasterise(model, groups, sheets, {
   width = 900, height = 560, view = 'left', background = [0x10, 0x10, 0x16],
@@ -179,12 +208,19 @@ export function rasterise(model, groups, sheets, {
   let skipped = 0;
   const order = [...groups].filter((g) => {
     if (!g.blend) return true;
-    // A blended group with no artwork is glass, or an emissive mask, and this
-    // renderer has no stock textures to show. Grey would be a LIE about it —
-    // grey is opaque, and the whole point of these surfaces is that they are
-    // not. Skipping says "not shown" and leaves the bodywork visible through
-    // the hole, which is nearer the truth than a slab.
-    if (!sheets.has(g.role)) { skipped++; return false; }
+    // Glass is drawn even with no artwork — see glassFresnel. Its colour
+    // barely comes from a texture in the game either; a bare surface shaded
+    // with the fresnel rim is closer to a windscreen than skipping it is.
+    if (g.glass) return true;
+    // Any other blended group with no artwork is a decal or an emissive mask
+    // this project has nothing to draw. A caller that has the car's own stock
+    // texture for it keys the entry by FILE instead of role — see sheetKey —
+    // and only when neither is on offer does this skip, rather than standing
+    // grey in for it: grey is opaque, and the whole point of these surfaces
+    // is that they are not. Skipping says "not shown" and leaves the
+    // bodywork visible through the hole, which is nearer the truth than a
+    // slab.
+    if (!sheets.has(sheetKey(g))) { skipped++; return false; }
     return true;
   });
 
@@ -215,7 +251,7 @@ export function rasterise(model, groups, sheets, {
   });
 
   for (const g of order) {
-    const art = sheets.get(g.role) ?? null;
+    const art = sheets.get(sheetKey(g)) ?? null;
     for (let t = g.start; t < g.start + g.count; t += 3) {
       const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
       const A = project(ia), B = project(ib), C = project(ic);
@@ -260,7 +296,6 @@ export function rasterise(model, groups, sheets, {
             rgb = [art.data[o], art.data[o + 1], art.data[o + 2]];
             alpha = art.data[o + 3] / 255;
           }
-          if (g.blend && alpha <= 0.01) continue;      // nothing to composite
 
           let n = norm([
             w0 * normals[ia * 3] + w1 * normals[ib * 3] + w2 * normals[ic * 3],
@@ -272,7 +307,19 @@ export function rasterise(model, groups, sheets, {
           const toEye = [-fwd[0], -fwd[1], -fwd[2]];
           if (dot(n, toEye) < 0) n = [-n[0], -n[1], -n[2]];
 
-          const c = shade(rgb, n, toEye);
+          // Glass overrides whatever the texture's alpha channel says. AC's
+          // glass shaders get their transparency from the shader (fresnel and
+          // a reflection map), not from the diffuse texture — its alpha tends
+          // to be fully opaque, which is why glass drawn with the ordinary
+          // rule read as a flat grey slab instead of a window.
+          let rim = 0;
+          if (g.glass) {
+            rim = glassFresnel(n, toEye);
+            alpha = Math.min(1, 0.15 + 0.75 * rim);
+          }
+          if (g.blend && alpha <= 0.01) continue;      // nothing to composite
+
+          const c = shade(rgb, n, toEye, { rim });
           // ADDITIVE for emissive sheets, alpha for everything else — the same
           // rule the viewer follows, and for the same reason. An emissive
           // texture is a glow map, black where nothing glows; alpha-compositing
