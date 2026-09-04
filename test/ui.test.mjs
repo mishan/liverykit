@@ -524,6 +524,7 @@ test('the whole car packs every mesh exactly once, painted or not', async () => 
   const back = unpackModel(new Uint8Array(packModel(g)).buffer);
   assert.deepEqual([...back.positions], [...g.positions]);
   assert.deepEqual([...back.uvs], [...g.uvs]);
+  assert.deepEqual([...back.tangents], [...g.tangents]);
   assert.deepEqual([...back.indices], [...g.indices]);
   assert.deepEqual(back.groups, g.groups);
 });
@@ -540,6 +541,7 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
       positions: Float32Array.from([0, 1, 2]),
       uvs: Float32Array.from([0, 1]),
       normals: Float32Array.from([0, 1, 0]),
+      tangents: Float32Array.from([1, 0, 0]),
       indices: Uint32Array.from([0]),
       groups: [{ role, file: `${role}.dds`, start: 0, count: 1 }],
       bounds: { lo: [0, 0, 0], hi: [1, 1, 1] },
@@ -548,9 +550,11 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
     const back = unpackModel(buf);          // throws on a misaligned offset
     assert.equal(back.groups[0].role, role);
     assert.deepEqual([...back.positions], [0, 1, 2]);
-    // The normals share the alignment problem and are the newest array, so they
-    // are the one most likely to be read from the wrong offset.
+    // Every array behind the header shares the alignment problem, and whichever
+    // was added last is likeliest to be read from the wrong offset — packModel
+    // and unpackModel have to agree on the order AND the widths.
     assert.deepEqual([...back.normals], [0, 1, 0]);
+    assert.deepEqual([...back.tangents], [1, 0, 0]);
   }
 });
 
@@ -3645,7 +3649,7 @@ test('an absent cockpit field and a null one stay different answers', async () =
 
   const empty = () => ({
     positions: new Float32Array([0, 0, 0]), uvs: new Float32Array([0, 0]),
-    normals: new Float32Array([0, 1, 0]),
+    normals: new Float32Array([0, 1, 0]), tangents: new Float32Array([1, 0, 0]),
     indices: new Uint32Array([0]), groups: [], bounds: null,
   });
 
