@@ -9,13 +9,15 @@ import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
-import { packageZip, makePreview } from './engine/package.mjs';
+import { packageZip, makePreview, makeShowroomPreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
+import { parseKn5 } from './engine/kn5.mjs';
+import { wholeModelGeometry } from './engine/geometry.mjs';
 
 // Re-exported: `hidePlan` lived here first, and the build is where anybody
 // looking for what `hide` does would go.
@@ -60,7 +62,7 @@ const CLEAR_SHEET = 4;
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, modelPath = null, log = console.log }) {
   await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -115,6 +117,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
 
   let firstPng = null;
   const written = [];
+  // Every painted role's finished art, kept for the showroom preview below —
+  // the same pixels that just got written to the DDS, not a re-render.
+  const pngByRole = new Map();
 
   for (const { from, role, spec, primary } of targets) {
     const tex = texture(profile, role);
@@ -178,6 +183,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     if (!pngDir && pngPath !== outPath) await rm(pngPath);
 
     firstPng ??= png;
+    pngByRole.set(role, png);
     written.push(tex.file);
     const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
@@ -246,8 +252,52 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     }
   }
 
-  await writeMetadata({ outDir, livery, firstPng });
+  await writeMetadata({ outDir, livery, firstPng, preview: await renderShowroomPreview({
+    profile, livery, targets, pngByRole, modelPath, log,
+  }) });
   return { outDir, files: written, firstPng, notes };
+}
+
+/**
+ * A real render of the car wearing the finished skin, for preview.jpg — the
+ * same picture `render_car` would take, rather than the blurred-texture
+ * placeholder. `null` when there is no model to render it from, which is not
+ * an error: plenty of people hold a profile for a car they have not unpacked,
+ * and `writeMetadata` falls back to the placeholder when this comes back
+ * empty.
+ */
+async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, log }) {
+  if (!modelPath || !targets.length) return null;
+
+  let model;
+  try {
+    model = await parseKn5(modelPath, { keepTextureData: false });
+  } catch (e) {
+    log(`  ! could not read ${modelPath} for preview.jpg: ${e.message}`);
+    return null;
+  }
+
+  const files = targets.map((t) => ({ role: t.role, file: texture(profile, t.role).file }));
+  const g = wholeModelGeometry(model, files, { livery, profile });
+
+  // Downsized before it reaches the rasteriser, same as `shot.mjs`'s own
+  // `sheet()` does for render_car: a shot is a few hundred pixels across, and
+  // sampling a 2048 sheet at that size for nothing anybody can see is seconds
+  // spent on a picture nobody asked to be that precise.
+  const sheets = new Map();
+  for (const [role, png] of pngByRole) {
+    const { data, info } = await sharp(png)
+      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    sheets.set(role, { data, w: info.width, h: info.height });
+  }
+
+  try {
+    return await makeShowroomPreview(g, g.groups, sheets);
+  } catch (e) {
+    log(`  ! could not render preview.jpg from the model: ${e.message}`);
+    return null;
+  }
 }
 
 /**
@@ -325,7 +375,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
   return { outDir, folder };
 }
 
-async function writeMetadata({ outDir, livery, firstPng, previewLabel }) {
+async function writeMetadata({ outDir, livery, firstPng, previewLabel, preview = null }) {
   const id = livery.identity ?? {};
   await writeFile(
     join(outDir, 'ui_skin.json'),
@@ -339,7 +389,11 @@ async function writeMetadata({ outDir, livery, firstPng, previewLabel }) {
   );
   if (firstPng) {
     await makeBadge(firstPng, join(outDir, 'livery.png'));
-    await makePreview(firstPng, join(outDir, 'preview.jpg'), { label: previewLabel ?? id.number ?? '' });
+    // A real render, when one was made — see renderShowroomPreview — and the
+    // placeholder otherwise. `buildCalibration` never passes `preview`: the
+    // UV-grid skin has no business claiming to show the car.
+    if (preview) await writeFile(join(outDir, 'preview.jpg'), preview);
+    else await makePreview(firstPng, join(outDir, 'preview.jpg'), { label: previewLabel ?? id.number ?? '' });
   }
 }
 

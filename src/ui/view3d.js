@@ -279,7 +279,7 @@ export function unpackModel(buffer) {
   const uvs = new Float32Array(buffer, o, meta.vertexCount * 2); o += meta.vertexCount * 8;
   const normals = new Float32Array(buffer, o, meta.vertexCount * 3); o += meta.vertexCount * 12;
   const indices = new Uint32Array(buffer, o, meta.indexCount);
-  return { positions, uvs, normals, indices, groups: meta.groups, bounds: meta.bounds };
+  return { positions, uvs, normals, indices, groups: meta.groups, bounds: meta.bounds, cockpit: meta.cockpit ?? null };
 }
 
 /** Unpack the server's blob: two counts, then positions, UVs, normals, indices. */
@@ -467,7 +467,12 @@ export function createViewer(canvas) {
   gl.disable(gl.CULL_FACE);
   gl.clearColor(0.02, 0.03, 0.04, 1);
 
-  const cam = { yaw: -0.9, pitch: 0.35, dist: 6, target: [0, 0.7, 0] };
+  // `mode` is 'orbit' (the default: drag swings around `target` at `dist`)
+  // or 'cockpit' (drag looks around from a fixed `eye`, set by setCockpit).
+  // Kept on the same object as the angles because both modes share yaw and
+  // pitch — dragging means the same thing to the user in either one, only
+  // what it orbits around changes.
+  const cam = { yaw: -0.9, pitch: 0.35, dist: 6, target: [0, 0.7, 0], mode: 'orbit', eye: [0, 0, 0] };
   let count = 0;
   let ext = null;
   // Zero width means nothing is selected, which is also the state a fresh
@@ -491,12 +496,36 @@ export function createViewer(canvas) {
     gl.viewport(0, 0, canvas.width, canvas.height);
   }
 
-  /** Where the camera is, given the orbit angles. Used to draw and to pick. */
+  /**
+   * Where the camera is, given the orbit angles. Used to draw and to pick.
+   *
+   * In cockpit mode the eye does not move — it is wherever setCockpit put it,
+   * a driver's head does not orbit the car — and yaw/pitch instead steer what
+   * lookTarget looks at, below.
+   */
   function eyePosition() {
+    if (cam.mode === 'cockpit') return cam.eye;
     return [
       cam.target[0] + cam.dist * Math.cos(cam.pitch) * Math.sin(cam.yaw),
       cam.target[1] + cam.dist * Math.sin(cam.pitch),
       cam.target[2] + cam.dist * Math.cos(cam.pitch) * Math.cos(cam.yaw),
+    ];
+  }
+
+  /**
+   * Where the camera is looking. In orbit mode this is the fixed point the
+   * eye swings around; in cockpit mode the eye is what is fixed, and this is
+   * the point yaw/pitch are currently steering it toward — one unit ahead in
+   * the same spherical direction the orbit math already uses, so yaw 0 faces
+   * the same way `front` does in the shot renderer (both read the model's own
+   * +Z as the nose) and dragging feels like the same gesture in either mode.
+   */
+  function lookTarget(eye) {
+    if (cam.mode !== 'cockpit') return cam.target;
+    return [
+      eye[0] + Math.cos(cam.pitch) * Math.sin(cam.yaw),
+      eye[1] + Math.sin(cam.pitch),
+      eye[2] + Math.cos(cam.pitch) * Math.cos(cam.yaw),
     ];
   }
 
@@ -508,7 +537,7 @@ export function createViewer(canvas) {
     const eye = eyePosition();
     const mvp = mul(
       perspective(0.8, canvas.width / canvas.height, 0.05, 100),
-      lookAt(eye, cam.target, [0, 1, 0]),
+      lookAt(eye, lookTarget(eye), [0, 1, 0]),
     );
     gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
     gl.uniform1i(loc.map, 0);
@@ -779,6 +808,11 @@ export function createViewer(canvas) {
       }
       cam.target = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
       cam.dist = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) * 1.6 || 6;
+      // New geometry gets the orbit camera framed on it, every time. Cockpit
+      // mode is opt-in per call — setCockpit, after this — so a tab switch
+      // that only wants the whole car back is never left looking out of a
+      // dashboard from the last time cockpit mode ran.
+      cam.mode = 'orbit';
       draw();
     },
 
@@ -813,6 +847,26 @@ export function createViewer(canvas) {
      */
     /** True colour, or shaded like a car. The UV tab is unaffected either way. */
     setLit(on) { lit = !!on; draw(); },
+
+    /**
+     * Switch to the cockpit camera: eye fixed at `eye` (the point the profile
+     * measured the steering wheel from), drag looks around instead of
+     * orbiting. Call after setWholeCar, which frames the orbit camera on the
+     * new geometry and would otherwise fight this.
+     *
+     * Re-entering with the same eye keeps the current look direction — a
+     * livery edit that reloads the whole car should not snap your view back
+     * to dead ahead — but the first entry, or a different eye (a different
+     * car), starts you looking forward, roughly level.
+     */
+    setCockpit(eye) {
+      const moved = cam.mode !== 'cockpit'
+        || eye.x !== cam.eye[0] || eye.y !== cam.eye[1] || eye.z !== cam.eye[2];
+      if (moved) { cam.yaw = 0; cam.pitch = 0.03; }
+      cam.mode = 'cockpit';
+      cam.eye = [eye.x, eye.y, eye.z];
+      draw();
+    },
 
     async setWholeCar(model, surfaces, { budget = 192 * 1024 * 1024 } = {}) {
       // setGeometry clears the grouping, so the groups go on afterwards. The
@@ -919,8 +973,9 @@ export function createViewer(canvas) {
       if (!r.width || !r.height) return null;
       const ndcX = ((clientX - r.left) / r.width) * 2 - 1;
       const ndcY = 1 - ((clientY - r.top) / r.height) * 2;
+      const eye = eyePosition();
       const { orig, dir } = cameraRay(
-        eyePosition(), cam.target, [0, 1, 0], 0.8, r.width / r.height, ndcX, ndcY);
+        eye, lookTarget(eye), [0, 1, 0], 0.8, r.width / r.height, ndcX, ndcY);
 
       const { positions, uvs, indices } = mesh;
       let best = null;
