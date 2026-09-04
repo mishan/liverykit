@@ -468,6 +468,62 @@ export function blends(shader) {
   return BLENDS.has(String(shader ?? ''));
 }
 
+/**
+ * Whether a material is reflective glass, specifically — a narrower question
+ * than `blends`: `ksPerPixelAlpha` composites too (a decal, a number plate)
+ * but is not glass and should not go mirror-like at a grazing angle.
+ */
+const GLASS = new Set(['ksPerPixelReflection', 'ksWindscreen', 'ksBrokenGlass']);
+export function isGlass(shader) {
+  return GLASS.has(String(shader ?? ''));
+}
+
+/**
+ * Whether a shader is a damage-only overlay, with nothing to show until the
+ * car is actually damaged.
+ *
+ * `ksBrokenGlass` is that shader by convention: a `DAMAGE_GLASS_*` mesh
+ * sits exactly over the real glass it belongs to and is how CSP's damage
+ * system draws a crack once a panel is hit — a grid of pre-cut fragment
+ * quads, invisible at zero damage.
+ *
+ * This project has no notion of damage — a livery is not a crash — so there
+ * is no value to condition on, and the only correct default is "not shown".
+ * Grouping it with real glass and giving it the same fresnel alpha drew that
+ * fragment grid on every showroom-fresh car: a faint rectangular lattice
+ * across the windscreen that looked like a rendering bug and was actually
+ * this mesh, finally visible now that blended surfaces are not forced
+ * opaque. It is excluded from `drawn` entirely rather than just kept out of
+ * `isGlass`, because there is no textured or bare-grey rendering of a crack
+ * decal that would be correct either.
+ */
+export function damageOnly(shader) {
+  return String(shader ?? '') === 'ksBrokenGlass';
+}
+
+/**
+ * Whether this shader's diffuse texture is a plausible standalone image —
+ * safe to show a part wearing, when the design does not paint it.
+ *
+ * Most shaders sample txDiffuse directly, so what the kn5 stores IS the
+ * surface. The MultiMap family is not: Kunos packs several material
+ * variants into one sheet — the NSX GT3's cockpit trim is four unrelated
+ * teams' switch panels and decals in one atlas — and blends between them at
+ * runtime with a mask this project does not read. Sampling it raw shows a
+ * fragment of every variant stitched together, which reads as a broken
+ * texture rather than as an honestly-unpainted part. `car-hides`-style
+ * honesty says grey instead.
+ *
+ * Detected by NAME, the same way `additive` is: `ksPerPixelMultiMap_damage_dirt`
+ * is also a body panel's shader (see docs/naming.md), so this only ever
+ * gates whether the CAR'S OWN stock texture is trusted for an unpainted
+ * part — a livery's own rendered artwork always overrides it regardless of
+ * the shader underneath.
+ */
+export function trustworthyDiffuse(shader) {
+  return !/multimap/i.test(String(shader ?? ''));
+}
+
 /** Meshes whose material's txDiffuse is `textureName`. */
 export function meshesUsingTexture(model, textureName) {
   const want = textureName.toLowerCase();

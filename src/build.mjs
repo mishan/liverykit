@@ -8,7 +8,7 @@ import { join, isAbsolute, resolve } from 'node:path';
 import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
+import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin, decodeDds } from './engine/pipeline.mjs';
 import { packageZip, makePreview, makeShowroomPreview } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -265,13 +265,23 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
  * an error: plenty of people hold a profile for a car they have not unpacked,
  * and `writeMetadata` falls back to the placeholder when this comes back
  * empty.
+ *
+ * Parity with the editor's Whole Car view is the goal, not a coincidence:
+ * both wear the design's own artwork on what it paints and the CAR'S OWN
+ * texture on what it does not — glass, wheels, interior trim — rather than
+ * leaving those parts flat grey. The editor gets that from the browser
+ * uploading the kn5's compressed textures straight to the GPU; this has no
+ * GPU, so `decodeDds` does in a temp file what the browser does in VRAM.
  */
 async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, log }) {
   if (!modelPath || !targets.length) return null;
 
   let model;
   try {
-    model = await parseKn5(modelPath, { keepTextureData: false });
+    // TRUE here, unlike every other model read in this project: the whole
+    // point of this pass is the texture bytes, not just the geometry they are
+    // wrapped around.
+    model = await parseKn5(modelPath, { keepTextureData: true });
   } catch (e) {
     log(`  ! could not read ${modelPath} for preview.jpg: ${e.message}`);
     return null;
@@ -290,6 +300,25 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
       .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
       .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     sheets.set(role, { data, w: info.width, h: info.height });
+  }
+
+  // The car's own artwork for whatever the design leaves unpainted — filed
+  // under FILE rather than role, which is how `rasterise`'s `sheetKey` tells
+  // "this is the car's" from "this is the design's". Only the files a group
+  // actually claims, which `wholeModelGeometry` has already narrowed to what
+  // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
+  // excluded there, before this ever sees it).
+  const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
+  const wanted = new Set(g.groups.filter((x) => x.role === null && x.file).map((x) => x.file));
+  for (const file of wanted) {
+    const t = byName.get(String(file).toLowerCase());
+    // A 1x1-ish blob is not a small texture, it is an absent one — an
+    // encrypted kn5 substitutes placeholders and keeps the real artwork
+    // somewhere this project does not decrypt. Same threshold the editor's
+    // stockTexture uses, so the two never disagree about what counts as real.
+    if (!t?.data || t.data.length <= 256) continue;
+    const decoded = await decodeDds(Buffer.from(t.data));
+    if (decoded) sheets.set(file, decoded);
   }
 
   try {

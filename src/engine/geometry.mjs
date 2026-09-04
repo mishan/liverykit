@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, isGlass, damageOnly } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -70,6 +70,9 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       groups.push({
         ...group, start, count: indices.length - start, blend,
         add: blend && additive(group.file),
+        // A narrower question than `blend`: a number plate composites too but
+        // is not glass, and should not go mirror-bright at a grazing angle.
+        glass: blend && meshes.some((m) => isGlass(model.materials?.[m.materialId]?.shader)),
       });
     }
   };
@@ -110,7 +113,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // should say so rather than show artwork on a part that does not exist in
   // the game. The build's report names the contradiction in words.
   const carHides = new Set(Object.keys(profile.hiddenByCar?.meshes ?? {}));
-  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name);
+  // Damage-only overlays (DAMAGE_GLASS_*, shader ksBrokenGlass): excluded here
+  // rather than left for isGlass to shade, because at zero damage — the only
+  // state this project can render — the correct picture has no crack mesh in
+  // it at all, textured or bare. See damageOnly's own comment.
+  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
+    && !damageOnly(model.materials?.[m.materialId]?.shader);
 
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter(drawn);
@@ -130,7 +138,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // test can say what it expects.
   const leftover = new Map();
   for (const m of (model.meshes ?? []).filter(drawn)) {
-    const file = model.materials?.[m.materialId]?.slots?.txDiffuse ?? null;
+    const mat = model.materials?.[m.materialId];
+    // `null` when the shader's diffuse is not a plausible standalone image —
+    // see trustworthyDiffuse. The mesh still gets a group and still gets
+    // drawn, just without a texture to claim for it, same as any other part
+    // this project cannot supply artwork for.
+    const file = trustworthyDiffuse(mat?.shader) ? (mat?.slots?.txDiffuse ?? null) : null;
     if (!leftover.has(file)) leftover.set(file, []);
     leftover.get(file).push(m);
   }
