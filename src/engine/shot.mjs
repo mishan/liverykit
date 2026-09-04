@@ -207,6 +207,11 @@ export function rasterise(model, groups, sheets, {
   // drawing something plausible instead.
   let skipped = 0;
   const order = [...groups].filter((g) => {
+    // A car that ships two cockpits tags them, and exactly one gets drawn:
+    // both would z-fight the interior into a checkerboard seen through the
+    // glass. The high-detail one, matching the editor — see the note beside
+    // `paint` in view3d.js for why this is not the one the game would pick.
+    if (g.lod === 'LR') return false;
     if (!g.blend) return true;
     // Glass is drawn even with no artwork — see glassFresnel. Its colour
     // barely comes from a texture in the game either; a bare surface shaded

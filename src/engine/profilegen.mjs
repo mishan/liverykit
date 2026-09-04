@@ -19,7 +19,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, axisHints, axesFromWheels } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
@@ -261,6 +261,31 @@ export async function profileFromKn5(path, {
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
     const shaders = [...(shadersOf.get(tex.name) ?? [])].sort();
     if (shaders.length) entry.shaders = shaders;
+
+    // Whether this sheet is a BAKE rather than artwork: shading that a MultiMap
+    // material multiplies its detail texture against, with no colour of its own.
+    //
+    // Written down HERE rather than decided while rendering. The viewer was
+    // deciding it from the filename, which is precisely the kind of inference
+    // this profile exists to replace — and it fails silently on the next car,
+    // because a wrong answer still looks like a surface. It is not a subtle
+    // difference either: a bake mistaken for colour renders its brightest
+    // island as a white panel, which on this car is the dashboard cowl.
+    //
+    // TWO signals, and both must agree. The NAME, because Kunos names a bake a
+    // bake. And the STRUCTURE, because a bake is only ever the base layer of a
+    // two-layer material — a texture called "occlusion" that nothing is
+    // multiplied over is a texture with an unfortunate name, not a bake.
+    //
+    // A seed, not a verdict. It is recorded so that a human who can see the car
+    // can correct it, which is the entire reason it belongs in a file rather
+    // than in a regular expression.
+    const namedLikeABake = /occlusion|_bake|bakes|_ao(_|\.)/i.test(tex.name);
+    const isABaseLayer = meshesUsingTexture(model, tex.name).some((m) => {
+      const mat = model.materials?.[m.materialId];
+      return mat?.slots?.txDiffuse === tex.name && detailLayer(mat) !== null;
+    });
+    if (namedLikeABake && isABaseLayer) entry.bake = true;
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.

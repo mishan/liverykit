@@ -132,6 +132,15 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // is a string, and iterating a string yields characters — five roles named
   // i, m, s, a — while a profile entry whose `file` is not a string would throw
   // inside toLowerCase. Neither is worth a stack trace or a wrong car.
+  // Which sheets are shading rather than artwork, as the PROFILE records it.
+  // See profilegen for how the fact is arrived at and why it is a recorded
+  // choice. The viewer used to decide this from the filename at draw time,
+  // which worked on this car and would have failed quietly on the next one.
+  const bakes = new Set();
+  for (const t of Object.values(profile.textures ?? {})) {
+    if (t?.bake && typeof t.file === 'string') bakes.add(t.file.toLowerCase());
+  }
+
   const hidden = new Set();
   for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
     const f = profile.textures?.[role]?.file;
@@ -154,39 +163,51 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // streak disc over the wheel and z-fights the design's rim paint. See
   // motionBlurOnly's own comment.
   //
-  // And the SECOND COCKPIT, which is the same mistake at a much larger scale.
+  // And the SECOND COCKPIT, which is not a mesh to drop but a choice to carry.
   //
   // A car of this kind ships its interior twice: COCKPIT_HR for the driver's
-  // camera and COCKPIT_LR for every external one, sitting in the same space,
-  // swapped by which camera is live. Drawing both put every interior surface a
-  // fraction of a millimetre from its own duplicate, and the depth buffer
-  // cannot separate them — so the dashboard, the tub and the wheel came out as
-  // a hard-edged black and white checkerboard that survived every change to
-  // the texture work, because it was never about texture. It is z-fighting,
-  // and it looks like a shattered material.
+  // camera and COCKPIT_LR for every external one, occupying the same space and
+  // swapped by whichever camera is live. Drawing both puts every interior
+  // surface a fraction of a millimetre from its own duplicate, which the depth
+  // buffer cannot separate — the dashboard and the tub come out as a hard-edged
+  // checkerboard that reads as a broken material rather than as z-fighting.
   //
-  // HR wins. It is what a driver actually sees, it is the half carrying the
-  // real materials (carbon, alcantara, brushed metal — see detailLayer), and
-  // one consistent answer beats a preview that changes its mind with the
-  // camera. The cost is real and worth stating: this car's `interior` role is
-  // `Cockpit_LR_Colour.dds`, which ONLY exists on the LR meshes, so a design
-  // painting `interior` paints something the cockpit view no longer shows —
-  // and, in the game, something the driver's camera never showed either.
+  // Both are kept and TAGGED, and each renderer picks by camera, because the
+  // game's answer depends on the camera too. Dropping LR outright — which this
+  // did first — fixes the cockpit and quietly breaks the view through the
+  // windows: outside the car the game shows LR, and LR is where this car's
+  // `interior` role lives. `Cockpit_LR_Colour.dds` is on no other mesh, so a
+  // design painting the interior was left with nothing to paint it on.
   //
-  // Guarded on HR actually being present, so a car that ships only the one
-  // cockpit keeps it whatever that one is named.
-  const hasHrCockpit = (model.meshes ?? []).some((m) => /(^|\/)COCKPIT_HR(\/|$)/i.test(m.path ?? ''));
-  const supersededCockpit = (m) => hasHrCockpit && /(^|\/)COCKPIT_LR(\/|$)/i.test(m.path ?? '');
+  // `null` for every mesh on a car that ships one cockpit or none, which the
+  // renderers read as "draw this whatever the camera".
+  const cockpitLod = (m) => {
+    const path = m.path ?? '';
+    if (/(^|\/)COCKPIT_HR(\/|$)/i.test(path)) return 'HR';
+    if (/(^|\/)COCKPIT_LR(\/|$)/i.test(path)) return 'LR';
+    return null;
+  };
 
   const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
     && !damageOnly(model.materials?.[m.materialId]?.shader)
-    && !motionBlurOnly(m.name)
-    && !supersededCockpit(m);
+    && !motionBlurOnly(m.name);
 
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter(drawn);
     for (const m of meshes) claimed.add(m);
-    emit(meshes, { role, file });
+    // Split by cockpit, because a group is one draw call and a renderer has to
+    // be able to leave one of the two out. A painted role spanning both — this
+    // car's steering wheel does — becomes two groups wearing the same texture,
+    // which costs a draw call and keeps the choice available.
+    const byLod = new Map();
+    for (const m of meshes) {
+      const lod = cockpitLod(m);
+      if (!byLod.has(lod)) byLod.set(lod, []);
+      byLod.get(lod).push(m);
+    }
+    for (const lod of [...byLod.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
+      emit(byLod.get(lod), { role, file, lod });
+    }
   }
   // Whatever is left: glass, the number plates, the Lumirank panel, the mirrors.
   //
@@ -222,17 +243,22 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // its own shadows. A renderer that cannot composite two layers should get
     // the grey, and does.
     const detail = file === null ? detailLayer(mat) : null;
+    if (detail) detail.bake = bakes.has(detail.diffuse.toLowerCase());
 
     // Keyed by what gets DRAWN rather than by the diffuse alone: two materials
     // tiling different details over the same bake — this car's carbon door
     // cards and its brushed-metal instrument surround do exactly that — are
     // two surfaces and cannot share one draw call.
+    const lod = cockpitLod(m);
     const key = detail
       ? ['detail', detail.diffuse, detail.detail, detail.mult,
-        detail.normal ?? '', detail.normalBlend].join('\u0000')
-      : ['file', file ?? ''].join('\u0000');
+        detail.normal ?? '', detail.normalBlend, lod ?? ''].join('\u0000')
+      : ['file', file ?? '', lod ?? ''].join('\u0000');
     if (!leftover.has(key)) {
-      leftover.set(key, { meshes: [], group: detail ? { role: null, file, detail } : { role: null, file } });
+      leftover.set(key, {
+        meshes: [],
+        group: detail ? { role: null, file, detail, lod } : { role: null, file, lod },
+      });
     }
     leftover.get(key).meshes.push(m);
   }
