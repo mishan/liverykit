@@ -3398,9 +3398,15 @@ test('the whole-car view never paints grey where a transparent surface belongs',
   // something transparent.
   const paintBody = src.slice(src.indexOf('const paint = (g) =>'),
     src.indexOf('for (const g of groups) if (!g.blend) paint(g);'));
-  assert.match(paintBody, /if \(!tex && g\.blend\) return;/,
-    'a blended group with no texture is skipped, not drawn grey');
-  assert.ok(paintBody.indexOf('if (!tex && g.blend) return;')
+  // Glass is the one deliberate exception, added later: it draws on
+  // `unpainted` grey plus a fresnel rim rather than being skipped, because a
+  // bare surface shaded that way reads as a windscreen and an empty hole
+  // does not. It stays a NARROWER condition than the general rule, not a
+  // replacement for it — every other blended group with no texture is still
+  // skipped, not drawn grey.
+  assert.match(paintBody, /if \(!tex && g\.blend && !g\.glass\) return;/,
+    'a blended, non-glass group with no texture is skipped, not drawn grey');
+  assert.ok(paintBody.indexOf('if (!tex && g.blend && !g.glass) return;')
     < paintBody.indexOf('gl.bindTexture'),
     'and skipped BEFORE it binds the grey fallback');
 

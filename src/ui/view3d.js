@@ -62,6 +62,7 @@ uniform vec4 twin;        // its opposite number, which moves with it
 uniform vec4 twinPanel;   // and where that one lives
 uniform float border;     // border thickness, in UV units
 uniform float lit;        // 0 = true colour, 1 = shaded like a car
+uniform float glass;      // 1 = this group is reflective glass
 uniform vec3 eye;         // camera position, for the specular lobes
 varying vec2 vUv;
 varying vec3 vN;
@@ -90,7 +91,7 @@ float edgeDist(vec4 r, vec2 p) {
  * three are what make a car read as a curved metal object rather than a decal
  * sheet, and none of them needs an asset.
  */
-vec3 shade(vec3 albedo, vec3 n, vec3 v) {
+vec3 shade(vec3 albedo, vec3 n, vec3 v, float glassRim) {
   vec3 key = normalize(vec3(0.4, 0.85, 0.35));
   vec3 rim = normalize(vec3(-0.6, 0.25, -0.7));
 
@@ -112,7 +113,11 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v) {
   vec3 h = normalize(key + v);
   float spec = pow(max(0.0, dot(n, h)), 90.0) * 0.55;
   float fres = pow(1.0 - max(0.0, dot(n, v)), 5.0);
-  spec += fres * 0.10;
+  // glassRim is the caller's own fresnel term, the same one alpha is built
+  // from in main() — computed once there rather than twice here, so a
+  // window's highlight and its transparency agree about which pixels are
+  // edge-on.
+  spec += fres * 0.10 + glassRim * 0.7;
 
   vec3 c = diffuse + vec3(spec);
   // A gentle shoulder so the highlight rolls off instead of clipping to a flat
@@ -122,16 +127,28 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v) {
 
 void main() {
   vec3 c = texture2D(map, vUv).rgb;
+  float alpha = 1.0;
 
-  if (lit > 0.5) {
-    // Both faces are drawn, because car meshes are not reliably wound, so a
-    // normal can point away from the camera on a perfectly visible surface.
-    // Flipping it is what stops the far side of a shell rendering black.
-    vec3 v = normalize(eye - vP);
-    vec3 n = normalize(vN);
-    if (dot(n, v) < 0.0) n = -n;
-    c = shade(c, n, v);
+  // Both faces are drawn, because car meshes are not reliably wound, so a
+  // normal can point away from the camera on a perfectly visible surface.
+  // Flipping it is what stops the far side of a shell rendering black.
+  // Computed unconditionally — glass needs it for alpha even in true-colour
+  // mode, where lit never reaches shade() at all.
+  vec3 v = normalize(eye - vP);
+  vec3 n = normalize(vN);
+  if (dot(n, v) < 0.0) n = -n;
+
+  // Glass gets its transparency from THIS, not from the texture's alpha
+  // channel — AC's glass shaders build it from a reflection map this project
+  // has no way to sample, and the diffuse alpha they ship tends to be fully
+  // opaque. Without it, glass painted the ordinary way is a flat, solid slab.
+  float glassRim = 0.0;
+  if (glass > 0.5) {
+    glassRim = pow(1.0 - max(0.0, dot(n, v)), 2.5);
+    alpha = min(1.0, 0.15 + 0.75 * glassRim);
   }
+
+  if (lit > 0.5) c = shade(c, n, v, glassRim);
 
   // AFTER the shading, deliberately. The highlight is UI, not artwork: a
   // selection outline that dims when the panel turns away from the light is a
@@ -161,7 +178,7 @@ void main() {
       c = mix(c, dark, 0.82);
     }
   }
-  gl_FragColor = vec4(c, 1.0);
+  gl_FragColor = vec4(c, alpha);
 }`;
 
 function compile(gl, type, src) {
@@ -414,6 +431,7 @@ export function createViewer(canvas) {
     twinPanel: gl.getUniformLocation(prog, 'twinPanel'),
     border: gl.getUniformLocation(prog, 'border'),
     lit: gl.getUniformLocation(prog, 'lit'),
+    glass: gl.getUniformLocation(prog, 'glass'),
     eye: gl.getUniformLocation(prog, 'eye'),
   };
 
@@ -553,6 +571,12 @@ export function createViewer(canvas) {
       gl.uniform4fv(loc.panel, panel);
       gl.uniform4fv(loc.twin, twin);
       gl.uniform4fv(loc.twinPanel, twinPanel);
+      // Explicit, not left over from a previous frame: uniforms persist
+      // across draw calls, and the whole-car pass below sets this to 1 for
+      // glass. Without this reset, switching from whole-car to the
+      // per-surface view straight off a glass group left THIS texture
+      // rendering through the fresnel alpha it never asked for.
+      gl.uniform1f(loc.glass, 0);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.drawElements(gl.TRIANGLES, count, type, 0);
       return;
@@ -587,19 +611,24 @@ export function createViewer(canvas) {
       // edited put the body artwork on the glass.
       const tex = byRole.get(g.role) ?? byFile.get(g.file) ?? null;
 
-      // A BLENDED group with no texture is not drawn at all.
+      // A BLENDED group with no texture is not drawn at all — UNLESS it is
+      // glass. Glass draws on `unpainted` grey plus the fresnel rim the
+      // fragment shader adds when `glass` is set: real automotive glass gets
+      // most of its look from reflection, not from its diffuse texture, so a
+      // bare surface shaded that way is closer to a windscreen than an empty
+      // hole is.
       //
-      // `unpainted` is opaque grey, and an opaque grey slab standing where a
-      // transparent surface belongs is the whole bug this pass exists to fix.
-      // The number plate's emissive twin is the case: it has no role, so if its
-      // stock DDS fails to fetch or upload it falls through to the grey — and
-      // being co-planar with the plate and sorted against it, that grey lands
-      // in front of the number about half the time.
-      //
-      // Not drawing it is the honest answer. The plate behind is real; the grey
-      // never was.
-      if (!tex && g.blend) return;
+      // For everything else, `unpainted` is opaque grey, and an opaque grey
+      // slab standing where a transparent surface belongs is the whole bug
+      // this pass exists to fix. The number plate's emissive twin is the
+      // case: it has no role, so if its stock DDS fails to fetch or upload it
+      // falls through to the grey — and being co-planar with the plate and
+      // sorted against it, that grey lands in front of the number about half
+      // the time. Not drawing it is the honest answer. The plate behind is
+      // real; the grey never was.
+      if (!tex && g.blend && !g.glass) return;
 
+      gl.uniform1f(loc.glass, g.glass ? 1 : 0);
       gl.bindTexture(gl.TEXTURE_2D, tex ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     };
