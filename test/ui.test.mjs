@@ -3594,3 +3594,63 @@ test('the single-surface payload carries normals too, at the right offset', asyn
     /needs a typed array for "normals"/,
     'a builder that has not caught up is told so at the call that did it');
 });
+
+test('every concurrent request for a stock texture gets it, on a cold server', async () => {
+  // The viewer asks for a car's own textures fifty at a time, six in flight, and
+  // the first of those arrives while the server has not read the kn5 yet.
+  //
+  // `stock` used to be assigned an empty Map on the line before the parse
+  // started, so every request that landed during those seconds saw it truthy,
+  // skipped the load, looked up the empty map, and got a 404 — "no such texture
+  // in this model" — for a texture the model has. The client believed it, drew
+  // grey, and reported success. A refresh after a server restart came up with
+  // most of the car untextured; a second refresh, against a warm server, was
+  // fine. Nothing was ever still loading when the picture was drawn. The answers
+  // had been wrong.
+  //
+  // So: concurrency, and a real HTTP server, because that race lives between two
+  // requests and cannot be seen from inside one.
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-cold-'));
+  const modelPath = join(dir, 'fixture.kn5');
+  // Bigger than the 256-byte floor, or the server would decline to serve it for
+  // the honest reason and this would pass without testing anything.
+  await writeFile(modelPath, carKn5({ textureBytes: 1024 }));
+
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server, url } = await startUi({
+    livery, profile, liveryId: 'neon-grid-any',
+    fitPath: join(dir, 'fit.json'), modelPath, port: 0, log: () => {},
+  });
+
+  try {
+    // node:http rather than fetch: the boot test in this file replaces the
+    // global fetch with a recorder, and a test that quietly talks to that
+    // instead of to the server would pass whatever the server did.
+    const { get } = await import('node:http');
+    const asked = `${url}api/stock?file=${encodeURIComponent(CAR.texture)}`;
+    const answers = await Promise.all(Array.from({ length: 8 }, () =>
+      new Promise((ok, no) => {
+        get(asked, (res) => {
+          let bytes = 0;
+          res.on('data', (c) => { bytes += c.length; });
+          res.on('end', () => ok({ status: res.statusCode, bytes }));
+        }).on('error', no);
+      })));
+    for (const [i, a] of answers.entries()) {
+      assert.equal(a.status, 200,
+        `request ${i} of 8 was told the model has no ${CAR.texture}; ` +
+        `statuses were ${answers.map((x) => x.status).join(', ')}`);
+      assert.ok(a.bytes > 256, `request ${i} got ${a.bytes} bytes`);
+    }
+  } finally {
+    await new Promise((ok) => server.close(ok));
+  }
+});
