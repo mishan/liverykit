@@ -3787,10 +3787,15 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   assert.equal(noNormal.normal, null);
 });
 
-test('the whole car draws one cockpit, and each texture once', async () => {
+test('the whole car keeps both cockpits and tags which is which', async () => {
   // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
   // same coordinates. Drawing both z-fights the interior into a checkerboard
   // seen through the glass, which is exactly how it was reported.
+  //
+  // This used to drop LR on the way through, and the geometry lost a fact the
+  // rest of the editor needs — LR is where a car's `interior` role can live,
+  // and a design painting it had nothing to paint on. So both survive, tagged,
+  // and choosing between them is the renderer's job.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
   const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
   const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
@@ -3822,12 +3827,18 @@ test('the whole car draws one cockpit, and each texture once', async () => {
   assert.ok((model.meshes ?? []).some((m) => m.name === 'EXT_RIM_BLUR_LF'),
     'and a motion-blur alternate, so all three rules have something to exclude');
 
-  // Every triangle drawn, counted against the meshes that should survive: the
-  // fixture's own body, ONE of the two cockpit quads, and neither of the two
-  // things that must not be drawn.
+  // The fixture's own body and BOTH cockpit quads survive; the motion-blur
+  // alternate does not.
   const drawn = g.indices.length / 3;
-  assert.equal(drawn, 2,
-    `the body plus one cockpit quad, no LR twin and no blur alternate — got ${drawn}`);
+  assert.equal(drawn, 3,
+    `the body and both cockpit quads, and no blur alternate — got ${drawn}`);
+
+  // Tagged, and tagged separately: a group is one draw call, so a group that
+  // mixed the two cockpits could not have one of them left out.
+  const lods = g.groups.map((x) => x.lod ?? null);
+  assert.equal(lods.filter((l) => l === 'HR').length, 1, `one HR group: ${lods}`);
+  assert.equal(lods.filter((l) => l === 'LR').length, 1, `one LR group: ${lods}`);
+  assert.ok(lods.includes(null), 'and the body, which belongs to neither');
 
   // And the groups must not overlap: a triangle drawn by two groups is drawn
   // twice, which is the z-fight this is here to prevent.

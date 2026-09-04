@@ -848,7 +848,22 @@ export function createViewer(canvas) {
     // textures were flagged, nearly every panel went into the blended pass with
     // depth write off, and the car stopped being able to hide its own interior.
     // By shader it is 20 groups of 54, and the bodywork is not among them.
+    // A car that ships two cockpits gets exactly one of them drawn — drawing
+    // both z-fights the interior into a checkerboard seen through the glass.
+    //
+    // The high-detail one, from every angle, and NOT the one the game would
+    // pick. The game swaps to the low-detail cockpit for an external camera,
+    // and this view was briefly faithful about that; it is not any more,
+    // because faithful was worse. LR is a different mesh with its own
+    // materials, and on this car those state ksAmbient and ksDiffuse of 0.1 —
+    // sensible in AC, which lights an interior with an ambient term this
+    // viewer does not model, and near-black here. It also carries none of the
+    // bakes, so the lettering printed on the seat disappears with it.
+    //
+    // This view exists to show someone what they painted. Showing them the
+    // mesh the game would show, unlit and unlettered, does not serve that.
     const paint = (g) => {
+      if (g.lod === 'LR') return;
       // In order: the design's own render for a painted role, then the car's
       // own texture for a part the design skips, then grey.
       //
@@ -895,13 +910,11 @@ export function createViewer(canvas) {
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform1f(loc.hasDetailNormal, grain ? 1 : 0);
       gl.uniform1f(loc.detailNormalBlend, grain ? g.detail.normalBlend : 1);
-      // Read off the sheet's NAME, which is weaker than reading its contents
-      // and is what the rest of this project already does for shaders — see
-      // additive and trustworthyDiffuse, which say the same thing about
-      // themselves. Kunos names a bake a bake, and the two on this car
-      // (INT_HR_Occlusion, INT_Bakes_2) both say so on the tin.
-      gl.uniform1f(loc.detailOnly,
-        det && /occlusion|bake/i.test(g.detail.diffuse) ? 1 : 0);
+      // A RECORDED FACT, not a guess about a filename. The profile says which
+      // sheets are shading rather than artwork; see profilegen, where the
+      // choice is made once against the model and written down where a human
+      // can correct it.
+      gl.uniform1f(loc.detailOnly, det && g.detail.bake ? 1 : 0);
 
       // GLASS KEEPS THE TUNED DEFAULTS, and does not get its material's own
       // constants. It already has a treatment of its own — the fresnel rim
