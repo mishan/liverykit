@@ -34,6 +34,11 @@ const IDENTITY = translation(0, 0, 0);
 export function buildKn5({
   version = 6, extraMeshes = [], dummies = [],
   placeholderTexture = false, encrypted = false, bodyMesh = null,
+  // A header and nothing else is enough for every test that only parses. The
+  // server refuses to SERVE a blob of 256 bytes or less, on the grounds that an
+  // encrypted kn5 substitutes 1x1 placeholders, so a test that wants the stock
+  // texture route to hand back real bytes asks for a bigger one.
+  textureBytes = 128,
 } = {}) {
   const parts = [];
 
@@ -41,7 +46,7 @@ export function buildKn5({
   if (version > 5) parts.push(u32(0));
 
   // textures: one null slot (type 0, no further fields) then one real DDS
-  const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
+  const dds = Buffer.alloc(Math.max(128, textureBytes)); dds.write('DDS ', 0, 'ascii');
   // An encrypted model substitutes a 1x1 image for every texture; the real one
   // lives in the protected blob appended after the node tree.
   dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
@@ -147,7 +152,7 @@ export const CAR = {
  * friends, the axes are derived from them, and a fixture without them exercises
  * only the fallback path.
  */
-export function carKn5() {
+export function carKn5(rest = {}) {
   const x0 = -CAR.width / 2, x1 = CAR.width / 2;
   const y0 = 0, y1 = CAR.height;
   const z0 = -CAR.length / 2, z1 = CAR.length / 2;
@@ -196,6 +201,7 @@ export function carKn5() {
 
   const hx = CAR.track / 2, hz = CAR.wheelbase / 2;
   return buildKn5({
+    ...rest,
     bodyMesh: { name: 'BODY_SHELL', verts, indices },
     dummies: [
       // +X is the car's left and +Z its front, which is the common convention
