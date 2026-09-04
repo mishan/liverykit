@@ -368,6 +368,18 @@ if (values.ui) {
   console.log(`\n  Reference PNGs: ${pngDir}`);
 } else {
   const size = values.size ? num(values.size, 'size', { min: 64, max: 8192, integer: true }) : null;
+
+  // Same lookup --ui does, and the same trade: a missing model costs
+  // preview.jpg a real render and nothing else, so it is reported rather than
+  // treated as an error. Most builds — CI among them — have no reason to have
+  // the game installed at all.
+  const { path: modelPath, looked } = await findCarModel(profile, values.model);
+  if (!modelPath) {
+    console.log('  no car model found, so preview.jpg will be a placeholder. Looked in:');
+    for (const p of looked) console.log(`    ${p}`);
+    console.log('  Point --model at the car\'s .kn5, or set AC_ROOT to your Assetto Corsa install.');
+  }
+
   await buildSkin({
     profile,
     livery,
@@ -379,6 +391,7 @@ if (values.ui) {
     // Never inside outDir: packaging zips whatever it finds there.
     pngDir: values['keep-png'] ? join(values.out, `${folder}_png`) : null,
     liveryDir: dirname(liveryPath),
+    modelPath,
   });
   if (values['keep-png']) console.log(`\n  Intermediate PNGs: ${join(values.out, `${folder}_png`)}`);
 
@@ -394,7 +407,17 @@ if (values.ui) {
 }
 
 // --- package ----------------------------------------------------------------
-if (!values['no-zip']) {
+//
+// Not in --ui mode. startUi never returns — it starts a server and hands back
+// once it is listening, with nothing after this point ever calling
+// process.exit — so control used to fall straight through to here on every
+// launch of the editor and zip whatever was already sitting in outDir: stale
+// output from a previous build, or nothing at all if this livery had never
+// been built, which packSkin threw on. Either way the "Drag onto Content
+// Manager" message that followed was describing a zip that did not reflect
+// what the editor had just opened, or that did not exist. The editor writes
+// fits, not skins; there is nothing here for this section to package.
+if (!values.ui && !values['no-zip']) {
   await mkdir(values.out, { recursive: true });
   const zipPath = join(values.out, `${folder}.zip`);
   const n = await packSkin({ skinDir: outDir, zipPath, carId: profile.id, folder });
@@ -402,7 +425,7 @@ if (!values['no-zip']) {
   console.log(`\n  ${zipPath}  (${n} files, ${kb.toFixed(0)} KB)`);
   console.log(`  Drag onto Content Manager — the archive carries the full`);
   console.log(`  content/cars/${profile.id}/skins/${folder}/ path, so it installs without asking.`);
-} else {
+} else if (!values.ui) {
   console.log(`\n  Copy ${outDir} into content/cars/${profile.id}/skins/`);
 }
 
