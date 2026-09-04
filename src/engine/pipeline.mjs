@@ -1,8 +1,10 @@
 import sharp from 'sharp';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { access, constants, copyFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { access, constants, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomBytes } from 'node:crypto';
 
 const run = promisify(execFile);
 
@@ -97,6 +99,37 @@ export const isPngTexture = (file) => /\.png$/i.test(file);
 export async function toPNG(srcPath, outPath) {
   if (resolve(srcPath) === resolve(outPath)) return;
   await copyFile(srcPath, outPath);
+}
+
+/**
+ * The reverse of toDDS: the car's own compressed texture, as raw RGBA — for a
+ * renderer that has no GPU to hand a DDS to directly, the way the browser
+ * does. ImageMagick decodes it same as it encodes it; downsized on the way
+ * out, since a 2048 sheet is far more than a few hundred pixels of car can
+ * show and decoding it at full size is seconds spent on nothing anybody
+ * would see.
+ *
+ * `null` on anything ImageMagick cannot make sense of — an unsupported DXT
+ * variant, a corrupt blob — rather than throwing: one texture a renderer
+ * cannot decode is a part drawn grey, not a build that stops.
+ */
+export async function decodeDds(buffer, { maxSize = 512 } = {}) {
+  const bin = await magickBin();
+  const id = randomBytes(8).toString('hex');
+  const src = join(tmpdir(), `liverykit-dds-${id}.dds`);
+  const dst = join(tmpdir(), `liverykit-dds-${id}.png`);
+  try {
+    await writeFile(src, buffer);
+    await run(bin, [src, '-resize', `${maxSize}x${maxSize}>`, dst]);
+    const { data, info } = await sharp(await readFile(dst))
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    return { data, w: info.width, h: info.height };
+  } catch {
+    return null;
+  } finally {
+    await unlink(src).catch(() => {});
+    await unlink(dst).catch(() => {});
+  }
 }
 
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {
