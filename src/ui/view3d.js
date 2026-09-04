@@ -1662,6 +1662,13 @@ export function createViewer(canvas) {
       const LANES = 6;
       const bytes = new Array(wanted.length).fill(null);
       const arrived = new Array(wanted.length).fill(false);
+      // A 404 is an ANSWER: an encrypted kn5 keeps its artwork in a blob this
+      // project does not decrypt, and the grey is the honest picture of that.
+      // Anything else is the server failing to answer, which used to look
+      // exactly the same on screen — see the note on `loadStock` in server.mjs
+      // for the load-order bug that made a cold server 404 things it had.
+      // Silence is what let that ship, so these are counted and reported.
+      const stockFailed = [];
       let next = 0;
       let cursor = 0;
 
@@ -1706,7 +1713,8 @@ export function createViewer(canvas) {
           try {
             const res = await fetch(`/api/stock?file=${encodeURIComponent(wanted[i].file)}`);
             if (res.ok) bytes[i] = await res.arrayBuffer();
-          } catch { /* the grey is a fine answer */ }
+            else if (res.status !== 404) stockFailed.push(`${wanted[i].file} (${res.status})`);
+          } catch (e) { stockFailed.push(`${wanted[i].file} (${e.message})`); }
           arrived[i] = true;
           drain();
         }
@@ -1726,6 +1734,7 @@ export function createViewer(canvas) {
       return {
         uploaded: surfaces.length - failed.length,
         failed,
+        stockFailed,
         groups: groups?.length ?? 0,
         blended: (groups ?? []).filter((g) => g.blend).length,
         additive: (groups ?? []).filter((g) => g.add).length,

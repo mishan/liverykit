@@ -2971,6 +2971,12 @@ async function loadCockpit() {
     `${painted.size} painted surface${painted.size === 1 ? '' : 's'}` +
     (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
       drew.failed.join('; ')}` : '') +
+    // The car's own textures, as opposed to the design's renders above. A
+    // missing one shows as grey on a part nobody painted, which reads as a
+    // finished picture rather than a hole in it.
+    (drew?.stockFailed?.length ? ` · ${drew.stockFailed.length} CAR TEXTURE${
+      drew.stockFailed.length === 1 ? '' : 'S'} NOT SERVED: ${
+      drew.stockFailed.join('; ')}` : '') +
     ' — drag to look around';
 }
 

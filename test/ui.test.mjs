@@ -3850,3 +3850,117 @@ test('the whole car keeps both cockpits and tags which is which', async () => {
     }
   }
 });
+
+test('every concurrent request for a stock texture gets it, on a cold server', async () => {
+  // The viewer asks for a car's own textures fifty at a time, six in flight, and
+  // the first of those arrives while the server has not read the kn5 yet.
+  //
+  // `stock` used to be assigned an empty Map on the line before the parse
+  // started, so every request that landed during those seconds saw it truthy,
+  // skipped the load, looked up the empty map, and got a 404 — "no such texture
+  // in this model" — for a texture the model has. The client believed it, drew
+  // grey, and reported success. A refresh after a server restart came up with
+  // most of the car untextured; a second refresh, against a warm server, was
+  // fine. Nothing was ever still loading when the picture was drawn. The answers
+  // had been wrong.
+  //
+  // So: concurrency, and a real HTTP server, because that race lives between two
+  // requests and cannot be seen from inside one.
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-cold-'));
+  const modelPath = join(dir, 'fixture.kn5');
+  // Bigger than the 256-byte floor, or the server would decline to serve it for
+  // the honest reason and this would pass without testing anything.
+  await writeFile(modelPath, carKn5({ textureBytes: 1024 }));
+
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server, url } = await startUi({
+    livery, profile, liveryId: 'neon-grid-any',
+    fitPath: join(dir, 'fit.json'), modelPath, port: 0, log: () => {},
+  });
+
+  try {
+    // node:http rather than fetch: the boot test in this file replaces the
+    // global fetch with a recorder, and a test that quietly talks to that
+    // instead of to the server would pass whatever the server did.
+    const { get } = await import('node:http');
+    const asked = `${url}api/stock?file=${encodeURIComponent(CAR.texture)}`;
+    const answers = await Promise.all(Array.from({ length: 8 }, () =>
+      new Promise((ok, no) => {
+        get(asked, (res) => {
+          let bytes = 0;
+          res.on('data', (c) => { bytes += c.length; });
+          res.on('end', () => ok({ status: res.statusCode, bytes }));
+        }).on('error', no);
+      })));
+    for (const [i, a] of answers.entries()) {
+      assert.equal(a.status, 200,
+        `request ${i} of 8 was told the model has no ${CAR.texture}; ` +
+        `statuses were ${answers.map((x) => x.status).join(', ')}`);
+      assert.ok(a.bytes > 256, `request ${i} got ${a.bytes} bytes`);
+    }
+  } finally {
+    await new Promise((ok) => server.close(ok));
+  }
+});
+
+test('a model that cannot be read is a 500, not "no such texture"', async () => {
+  // The viewer takes a 404 at its word and draws the grey without a word,
+  // because an encrypted kn5 genuinely has none of these textures. That makes
+  // 404 the wrong answer for a model nobody could read at all — the same
+  // failure as the load-order race above, wearing different clothes: a request
+  // that could not be served answered with a confident fact about the car.
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { get } = await import('node:http');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-unreadable-'));
+  const good = join(dir, 'fixture.kn5');
+  await writeFile(good, carKn5({ textureBytes: 1024 }));
+  const profile = await profileFromKn5(good, { id: 'fixture_car', log: () => {} });
+
+  // Profiled from the real thing, then pointed at something that is not a kn5
+  // at all — which is what a truncated download or a half-written file is.
+  const broken = join(dir, 'broken.kn5');
+  await writeFile(broken, Buffer.from('not a kn5, not even close'));
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server, url } = await startUi({
+    livery, profile, liveryId: 'neon-grid-any',
+    fitPath: join(dir, 'fit.json'), modelPath: broken, port: 0, log: () => {},
+  });
+
+  try {
+    const ask = () => new Promise((ok, no) => {
+      get(`${url}api/stock?file=body.dds`, (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => ok({ status: res.statusCode, body }));
+      }).on('error', no);
+    });
+
+    const first = await ask();
+    assert.equal(first.status, 500,
+      `an unreadable model is a server failure, not a missing texture: ${first.status} ${first.body}`);
+    assert.match(first.body, /could not read textures/);
+
+    // And it stays 500. The rejected load is cached like a successful one --
+    // a kn5 that would not parse once will not parse differently on the
+    // fiftieth request, and every caller should hear the same answer.
+    const again = await ask();
+    assert.equal(again.status, 500, 'the same answer, not a retry that reports differently');
+  } finally {
+    await new Promise((ok) => server.close(ok));
+  }
+});

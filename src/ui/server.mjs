@@ -727,16 +727,24 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   // has a profile but not the car.
   let model = null;
   let modelError = null;
+  // Single-flight, for the same reason as the stock textures below: the page
+  // can have the whole-car geometry, a shot and the surface list all in the air
+  // at once on a cold server, and without this each one parses the 45 MB file
+  // for itself.
+  let modelLoading = null;
   const getModel = async () => {
     if (model || modelError) return model;
     if (!modelPath) { modelError = 'no model path given'; return null; }
-    try {
-      model = await parseKn5(modelPath, { keepTextureData: false });
-      log(`  model loaded: ${modelPath}`);
-    } catch (e) {
-      modelError = e.message;
-      log(`  ! could not read ${modelPath}: ${e.message}`);
-    }
+    modelLoading ??= (async () => {
+      try {
+        model = await parseKn5(modelPath, { keepTextureData: false });
+        log(`  model loaded: ${modelPath}`);
+      } catch (e) {
+        modelError = e.message;
+        log(`  ! could not read ${modelPath}: ${e.message}`);
+      }
+    })();
+    await modelLoading;
     return model;
   };
 
@@ -760,51 +768,77 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
    * hundred megabytes kept alive to show a wing mirror. So the file is parsed a
    * second time, the wanted blobs are COPIED out, and the big buffer goes.
    */
-  let stock = null;
+  // ONE promise, not one flag. `stock` used to be set to an empty Map on the
+  // line before the parse started, so every request that arrived during those
+  // few seconds saw it truthy, skipped the load, looked up an empty map and was
+  // told 404 — "this model has no such texture" — for textures the model does
+  // have. The viewer asks for fifty of these six at a time on a cold server, so
+  // a refresh right after a restart drew most of the car grey, and a second
+  // refresh fixed it. Nothing was still loading by then; the answers had been
+  // wrong the first time. Holding the in-flight promise makes the second caller
+  // WAIT for the first one's work instead of racing past it.
+  let stockLoading = null;
+  const loadStock = async () => {
+    const stock = new Map();
+    try {
+      const full = await parseKn5(modelPath, { keepTextureData: true });
+      // EVERY slot a material binds, not a list of the ones we happen to
+      // want today.
+      //
+      // This was diffuse-only, from when one texture was the whole of a
+      // surface. The first correction added txDetail, which fixed the seat's
+      // colour and left its normal map answering 404 — that one is bound as
+      // txNormalDetail. An allowlist of slot names goes stale every time the
+      // viewer learns to read one more of them, and it fails SILENTLY: the
+      // viewer asks, is told no, and draws something plausible with a layer
+      // missing. Normal mapping shipped that way and nobody could see it,
+      // because a lit surface with no grain still looks like a surface.
+      //
+      // So: whatever the model binds is fetchable. The filtering that earns
+      // its place is skipping textures no mesh references at all — it was
+      // the per-slot allowlist inside it that had no business existing.
+      const used = new Set();
+      for (const m of full.meshes ?? []) {
+        for (const name of Object.values(full.materials?.[m.materialId]?.slots ?? {})) {
+          if (name) used.add(String(name).toLowerCase());
+        }
+      }
+      for (const t of full.textures ?? []) {
+        // Only textures some mesh actually uses, so an unused slot in the file
+        // does not cost anything. `Buffer.from` COPIES — a subarray would keep
+        // the whole model alive and defeat the point of parsing twice.
+        if (!t.data || !used.has(t.name.toLowerCase())) continue;
+        // A 1x1 blob is not a small texture, it is an absent one: an encrypted
+        // kn5 substitutes placeholders and keeps the real artwork in a blob
+        // this project does not decrypt. Storing them would put a single grey
+        // texel on the bodywork and call it the car.
+        if (t.data.length <= 256) continue;
+        stock.set(t.name.toLowerCase(), Buffer.from(t.data));
+      }
+      log(`  stock textures available: ${stock.size}`);
+    } catch (e) {
+      log(`  ! could not read textures from ${modelPath}: ${e.message}`);
+      // THROWN ON, not swallowed into an empty map.
+      //
+      // Returning the empty map made every request answer 404 — "no such
+      // texture in this model" — for a model nobody could read at all, which
+      // is the same failure this whole change is about: a request that cannot
+      // be served must not be answered with a confident fact about the car.
+      // It matters more now that the viewer trusts a 404, which it does
+      // because an encrypted kn5 legitimately has none of these.
+      throw new Error(`could not read textures from ${modelPath}: ${e.message}`);
+    }
+    return stock;
+  };
   const stockTexture = async (file) => {
     if (!modelPath) return null;
-    if (!stock) {
-      stock = new Map();
-      try {
-        const full = await parseKn5(modelPath, { keepTextureData: true });
-        // EVERY slot a material binds, not a list of the ones we happen to
-        // want today.
-        //
-        // This was diffuse-only, from when one texture was the whole of a
-        // surface. The first correction added txDetail, which fixed the seat's
-        // colour and left its normal map answering 404 — that one is bound as
-        // txNormalDetail. An allowlist of slot names goes stale every time the
-        // viewer learns to read one more of them, and it fails SILENTLY: the
-        // viewer asks, is told no, and draws something plausible with a layer
-        // missing. Normal mapping shipped that way and nobody could see it,
-        // because a lit surface with no grain still looks like a surface.
-        //
-        // So: whatever the model binds is fetchable. The filtering that earns
-        // its place is skipping textures no mesh references at all — it was
-        // the per-slot allowlist inside it that had no business existing.
-        const used = new Set();
-        for (const m of full.meshes ?? []) {
-          for (const name of Object.values(full.materials?.[m.materialId]?.slots ?? {})) {
-            if (name) used.add(String(name).toLowerCase());
-          }
-        }
-        for (const t of full.textures ?? []) {
-          // Only textures some mesh actually uses, so an unused slot in the file
-          // does not cost anything. `Buffer.from` COPIES — a subarray would keep
-          // the whole model alive and defeat the point of parsing twice.
-          if (!t.data || !used.has(t.name.toLowerCase())) continue;
-          // A 1x1 blob is not a small texture, it is an absent one: an encrypted
-          // kn5 substitutes placeholders and keeps the real artwork in a blob
-          // this project does not decrypt. Storing them would put a single grey
-          // texel on the bodywork and call it the car.
-          if (t.data.length <= 256) continue;
-          stock.set(t.name.toLowerCase(), Buffer.from(t.data));
-        }
-        log(`  stock textures available: ${stock.size}`);
-      } catch (e) {
-        log(`  ! could not read textures from ${modelPath}: ${e.message}`);
-      }
-    }
+    // Assigned before the await, and it is a PROMISE this time, so the racing
+    // caller awaits the same load rather than reading a half-built map. A
+    // REJECTED promise is cached the same way, deliberately: a kn5 that could
+    // not be read once will not read differently on the fiftieth request, and
+    // every caller should hear the same answer.
+    stockLoading ??= loadStock();
+    const stock = await stockLoading;
     return stock.get(String(file).toLowerCase()) ?? null;
   };
 
@@ -874,7 +908,16 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // The name is resolved by LOOKUP and never joined onto a path, so this can
       // only ever answer with something the model itself contains.
       if (req.method === 'GET' && url.pathname === '/api/stock') {
-        const data = await stockTexture(url.searchParams.get('file') ?? '');
+        // 404 means THIS MODEL HAS NO SUCH TEXTURE, and the viewer takes it at
+        // its word — draws the grey and says nothing, because an encrypted car
+        // really does have none of these. So a model that could not be read is
+        // a 500 and not a 404: it is a fact about the server, not about the car.
+        let data;
+        try {
+          data = await stockTexture(url.searchParams.get('file') ?? '');
+        } catch (e) {
+          return json(500, { error: e.message });
+        }
         if (!data) return send(404, 'text/plain', 'no such texture in this model');
         return send(200, 'application/octet-stream', data);
       }
