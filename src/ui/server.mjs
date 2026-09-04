@@ -764,25 +764,24 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       stock = new Map();
       try {
         const full = await parseKn5(modelPath, { keepTextureData: true });
-        // DIFFUSE AND DETAIL, because the viewer asks for both.
+        // EVERY slot a material binds, not a list of the ones we happen to
+        // want today.
         //
         // This was diffuse-only, from when one texture was the whole of a
-        // surface. It is not any more: a MultiMap material is a bake times a
-        // small tiling material, and the tiling half is bound as txDetail and
-        // usually as nothing else. So the two textures that carry this car's
-        // interior — alcnt.dds for the seat and dashboard, metal_detail_2.dds
-        // for the instrument surround — were filtered out here and answered
-        // 404, and the viewer, having asked honestly and been told no, drew
-        // the bake on its own: a pale grey seat wearing its own baked shadows
-        // and an embossed NSX GT3 logo.
+        // surface. The first correction added txDetail, which fixed the seat's
+        // colour and left its normal map answering 404 — that one is bound as
+        // txNormalDetail. An allowlist of slot names goes stale every time the
+        // viewer learns to read one more of them, and it fails SILENTLY: the
+        // viewer asks, is told no, and draws something plausible with a layer
+        // missing. Normal mapping shipped that way and nobody could see it,
+        // because a lit surface with no grain still looks like a surface.
         //
-        // MAT_Carbon.dds hid the bug for a while by being both — the shift
-        // paddles wear it as a diffuse — so the carbon door cards came out
-        // right while the alcantara beside them did not.
+        // So: whatever the model binds is fetchable. The filtering that earns
+        // its place is skipping textures no mesh references at all — it was
+        // the per-slot allowlist inside it that had no business existing.
         const used = new Set();
         for (const m of full.meshes ?? []) {
-          const slots = full.materials?.[m.materialId]?.slots ?? {};
-          for (const name of [slots.txDiffuse, slots.txDetail]) {
+          for (const name of Object.values(full.materials?.[m.materialId]?.slots ?? {})) {
             if (name) used.add(String(name).toLowerCase());
           }
         }
