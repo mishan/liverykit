@@ -114,9 +114,21 @@ export const PREVIEW_QUALITY = 98;
 export async function previewFrame(modelPath, { log = () => {} } = {}) {
   if (!modelPath) return null;
   const skins = join(dirname(modelPath), 'skins');
+  let dirs;
   try {
-    const dirs = (await readdir(skins, { withFileTypes: true }))
+    dirs = (await readdir(skins, { withFileTypes: true }))
       .filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  } catch (e) {
+    // NO SKINS FOLDER is the expected case and says nothing: plenty of cars
+    // ship none, and the conventional frame is the right answer. Anything else
+    // — a permission wall, a folder that is really a file, an IO error — is a
+    // real problem with a real cause, and silently producing a 1022x575 preview
+    // for a car whose own skins are 1555x835 is the kind of quiet wrong answer
+    // this project keeps having to hunt down.
+    if (e.code !== 'ENOENT') log(`  ! could not read ${skins}: ${e.message}`);
+    return null;
+  }
+  try {
     const seen = new Map();
     // A handful, not all of them: this is a vote, and a car with two hundred
     // skins does not need two hundred header reads to settle it.
@@ -137,7 +149,11 @@ export async function previewFrame(modelPath, { log = () => {} } = {}) {
     const [width, height] = best[0].split('x').map(Number);
     log(`  preview frame from the car's own skins: ${width}x${height}`);
     return { width, height };
-  } catch {
+  } catch (e) {
+    // Reading the headers should not throw — each one is already guarded — so
+    // arriving here means something unforeseen. Falling back is still right;
+    // doing it silently is not.
+    log(`  ! could not read a preview frame from ${skins}: ${e.message}`);
     return null;
   }
 }

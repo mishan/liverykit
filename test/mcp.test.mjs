@@ -909,9 +909,23 @@ test('the preview frame is taken from the car\'s own skins, by vote', async () =
   assert.deepEqual(await previewFrame(modelPath), { width: 1555, height: 835 });
 
   // A car with no skins at all is not an error — plenty ship none — and the
-  // caller falls back to the conventional frame.
+  // caller falls back to the conventional frame, QUIETLY.
   const bare = await mkdtemp(join(tmpdir(), 'lk-bare-'));
   await writeFile(join(bare, 'car.kn5'), Buffer.alloc(8));
-  assert.equal(await previewFrame(join(bare, 'car.kn5')), null);
+  const quiet = [];
+  assert.equal(await previewFrame(join(bare, 'car.kn5'), { log: (m) => quiet.push(m) }), null);
+  assert.deepEqual(quiet, [], 'no skins folder is the ordinary case and says nothing');
   assert.deepEqual(PREVIEW_FRAME, { width: 1022, height: 575 });
+
+  // Anything OTHER than "there is no skins folder" is a real problem with a
+  // real cause, and falling back without a word means shipping a preview at the
+  // wrong size for a car whose own skins state one. A file where the folder
+  // should be is the cheapest way to produce a not-ENOENT error.
+  const odd = await mkdtemp(join(tmpdir(), 'lk-odd-'));
+  await writeFile(join(odd, 'car.kn5'), Buffer.alloc(8));
+  await writeFile(join(odd, 'skins'), 'not a directory');
+  const loud = [];
+  assert.equal(await previewFrame(join(odd, 'car.kn5'), { log: (m) => loud.push(m) }), null);
+  assert.equal(loud.length, 1, `it should say what went wrong: ${JSON.stringify(loud)}`);
+  assert.match(loud[0], /could not read/);
 });
