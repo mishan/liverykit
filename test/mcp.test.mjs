@@ -1121,3 +1121,83 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
   assert.ok(asBake < asColour - 20,
     `a bake must NOT double, so it comes out darker: ${asBake} vs ${asColour}`);
 });
+
+test('the framed camera is actually centred, and fills the frame', async () => {
+  // The CONTRACT, not the bug. frameCamera used to return on the pass where the
+  // distance settled while the recentring it had just worked out was still
+  // sitting in `target` and not in `eye`, so the camera came back framed but
+  // off-centre. Requiring the pan to have settled too — and bracketing the
+  // distance rather than stepping at it — converges well enough that the old
+  // fault can no longer be provoked from outside this function, so this asserts
+  // what the camera must BE rather than reproducing how it once failed.
+  //
+  // Which is still worth having: centred, outside the model, filling the frame
+  // and not overflowing it are the four things every caller depends on, and
+  // three of them have been wrong at some point.
+  const { frameCamera, VIEWS } = await import('../src/engine/shot.mjs');
+
+  // Car-shaped enough to be a fair test: solid rather than a curve, longer than
+  // it is wide, and lower than it is long. A thin curve seen down its own
+  // length is a different problem — the camera cannot get far enough from the
+  // near end and close enough to the far one at once — and asserting a full
+  // frame for one would be asserting something untrue.
+  const pts = [];
+  for (let i = 0; i <= 6; i++) {
+    for (let j = 0; j <= 4; j++) {
+      for (let k = 0; k <= 4; k++) {
+        pts.push(-2.2 + (4.4 * i) / 6, (1.2 * j) / 4, -0.95 + (1.9 * k) / 4);
+      }
+    }
+  }
+  const positions = new Float32Array(pts);
+
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], positions[i + k]);
+      hi[k] = Math.max(hi[k], positions[i + k]);
+    }
+  }
+  const width = 400;
+  const height = 300;
+  const focal = (height / 2) / Math.tan(0.32);
+  const shape = {
+    width,
+    height,
+    focal,
+    span: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]),
+    centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
+  };
+
+  for (const [name, angles] of Object.entries(VIEWS)) {
+    const { eye, fwd, right, up } = frameCamera(positions, angles, shape);
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const d = [positions[i] - eye[0], positions[i + 1] - eye[1], positions[i + 2] - eye[2]];
+      const z = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2];
+      assert.ok(z > 0, `${name}: the camera must be outside the model`);
+      const sx = ((d[0] * right[0] + d[1] * right[1] + d[2] * right[2]) * focal) / z;
+      const sy = ((d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) * focal) / z;
+      minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+      minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+    }
+
+    // Horizontally centred within a pixel. Vertically the frame is deliberately
+    // off-centre — room is left below for the reflection — so the assertion is
+    // that the shape sits ABOVE the middle, by about that allowance.
+    assert.ok(Math.abs((minX + maxX) / 2) < 1.5,
+      `${name}: not centred across, off by ${((minX + maxX) / 2).toFixed(1)}px`);
+    assert.ok((minY + maxY) / 2 > 0,
+      `${name}: the reflection's room belongs below the shape, not above it`);
+
+    // And it fills the frame: one axis has to be at the fit, or the camera is
+    // simply further away than it needs to be, which is the whole bug this
+    // replaced.
+    const fill = Math.max((maxX - minX) / width, (maxY - minY) / height);
+    assert.ok(fill > 0.55, `${name}: only fills ${(fill * 100).toFixed(0)}% of the frame`);
+    assert.ok((maxX - minX) <= width && (maxY - minY) <= height,
+      `${name}: overflows the frame`);
+  }
+});

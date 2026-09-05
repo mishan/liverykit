@@ -179,11 +179,44 @@ export function frameCamera(positions, { yaw, pitch }, { width, height, focal, s
   const fitH = (height / 2) * 0.94;     // previews a car ships with leave
   const SETTLED = 0.002;
 
+  // The camera must stay OUTSIDE the model, and nothing about fitting the frame
+  // says so on its own: the fit constrains the two extents across the view and
+  // says nothing about the one along it. A long model viewed down its length
+  // lets the solver pull the camera in through the bodywork, at which point a
+  // vertex a hair in front of the lens projects to thousands of pixels, `need`
+  // explodes, and the next pass flings the camera far enough away that the one
+  // after it comes back in — an oscillation that ends wherever the pass count
+  // happens to stop it.
+  //
+  // Bounding SPHERE about the centre, so the floor holds whichever way the
+  // camera is pointing. A car never reaches it — the width binds long before —
+  // which is exactly why this had to be looked for rather than noticed.
+  let radius = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const dx = positions[i] - centre[0];
+    const dy = positions[i + 1] - centre[1];
+    const dz = positions[i + 2] - centre[2];
+    const r2 = dx * dx + dy * dy + dz * dz;
+    if (r2 > radius) radius = r2;
+  }
+  const minDist = Math.sqrt(radius) * 1.05 + 1e-3;
+
   let target = [...centre];
-  let dist = span * 1.15;
+  let dist = Math.max(minDist, span * 1.15);
   let eye; let fwd; let right; let up;
 
-  for (let pass = 0; pass < 8; pass++) {
+  // A BRACKET, because `dist *= need` is not as safe as it looks. It assumes
+  // projected size goes as 1/distance, which holds while the model is far
+  // compared to its own depth and stops holding when it is not: a long thin
+  // model seen down its length has vertices near the lens and vertices far
+  // from it, the near ones dominate the measurement, and the step overshoots.
+  // It then overshoots back, and the answer is wherever the pass count leaves
+  // it. Once a distance is known too close and another known too far, the
+  // answer is between them and bisection gets there instead of guessing again.
+  let tooClose = 0;
+  let tooFar = Infinity;
+
+  for (let pass = 0; pass < 12; pass++) {
     eye = [
       target[0] + dist * Math.cos(pitch) * Math.sin(yaw),
       target[1] + dist * Math.sin(pitch),
@@ -231,16 +264,48 @@ export function frameCamera(positions, { yaw, pitch }, { width, height, focal, s
 
     // Centred FIRST. The projected outline is not symmetric about the
     // projection of the model's centre, so measuring the fit before recentring
-    // reserves room for an offset that is about to go away. Moving the TARGET
-    // pans the eye with it, which leaves the view direction exactly as asked.
-    const panX = ((minX + maxX) / 2) * dist / focal;
-    const panY = ((minY + maxY) / 2) * dist / focal;
-    target = [0, 1, 2].map((k) => target[k] + right[k] * panX + up[k] * panY);
+    // reserves room for an offset that is about to go away.
+    //
+    // BOTH the target and the eye, by the same vector. Translating the pair is
+    // what leaves the view direction alone — fwd is norm(target - eye), and a
+    // shared translation cancels out of the difference. Moving only the target
+    // would have swung the camera, and, worse, the eye recomputed from it at
+    // the top of the NEXT pass is a pass that may never run: on the iteration
+    // where the distance settles, this loop breaks a few lines below, and the
+    // recentring it just worked out would have been thrown away with it.
+    const offX = (minX + maxX) / 2;
+    const offY = (minY + maxY) / 2;
+    const panX = offX * dist / focal;
+    const panY = offY * dist / focal;
+    const pan = [0, 1, 2].map((k) => right[k] * panX + up[k] * panY);
+    target = [0, 1, 2].map((k) => target[k] + pan[k]);
+    eye = [0, 1, 2].map((k) => eye[k] + pan[k]);
 
     const need = Math.max((maxX - minX) / 2 / fitW, (maxY - minY) / 2 / fitH);
     if (!Number.isFinite(need) || need <= 0) break;
-    if (Math.abs(need - 1) < SETTLED) break;
-    dist *= need;
+    if (need > 1) tooClose = Math.max(tooClose, dist);
+    else tooFar = Math.min(tooFar, dist);
+    // Geometric, not arithmetic: distance acts on projected size multiplicatively,
+    // so the midpoint that matters is the one in the ratio.
+    const step = tooClose > 0 && tooFar < Infinity
+      ? Math.sqrt(tooClose * tooFar)
+      : dist * need;
+    const next = Math.max(minDist, step);
+
+    // BOTH have to have settled, and the distance counts as settled when it
+    // has stopped moving for either reason — it is where it wants to be, or it
+    // is against the floor that keeps the camera outside the model and cannot
+    // go further.
+    //
+    // The pan matters just as much. It is a correction measured before it is
+    // applied, and under perspective applying it moves the outline by not
+    // quite the amount asked for, so stopping the moment the scale settles
+    // returns a camera carrying whatever of the last pan did not land. One
+    // more pass measures the remainder; that is the whole method, and leaving
+    // the pan out of the test made the loop stop just before it did its job.
+    const held = Math.abs(need - 1) < SETTLED || next === dist;
+    if (held && Math.hypot(offX, offY) < 0.5) break;
+    dist = next;
   }
   return { eye, fwd, right, up };
 }
