@@ -7,20 +7,22 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
-## The preview has no ground plane, and frames the car loosely
+## The preview frames the car loosely
 
-Two things still separate `preview.jpg` from the ones a car ships with, now
-that the frame, the quality and the aliasing match.
+`dist = span * 1.15` sets the camera distance from the model's LONGEST axis,
+and for a car that is its length — which from any three-quarter view is the
+axis most foreshortened. So the distance is set by an extent that barely
+appears, and the car sits small in a frame with a lot of empty sky above it.
+The stock previews crop tight.
 
-AC's showroom previews sit on a reflective floor: a contact shadow under the
-car and a mirrored copy below it. Ours floats on flat #101016, which is what
-makes it read as a render rather than a photograph of the car. A floor is a
-plane, a second pass with the geometry flipped in y, and a vertical fade.
+The fix is to frame by what is actually on screen: project the eight corners of
+the bounding box, and pull the camera in until that rectangle fits the frame
+with a small margin. It is a couple of iterations of a cheap loop, and it also
+removes the fudge factor.
 
-And the framing is loose — `dist = span * 1.15` with the focal length taken
-from the frame height leaves a lot of empty sky above a car, which is long and
-low. The stock previews crop tight. Fitting the projected bounding box to the
-frame rather than guessing from the bounding sphere would do it.
+Note for whoever does it: the contact shadow will become visible when this
+lands. It is currently placed correctly and almost entirely hidden behind the
+car, because at this distance the car covers its own footprint.
 
 ## The CLI renderer draws none of the detail materials
 
