@@ -597,12 +597,20 @@ export function createViewer(canvas) {
       gl.uniform4fv(loc.panel, panel);
       gl.uniform4fv(loc.twin, twin);
       gl.uniform4fv(loc.twinPanel, twinPanel);
-      // Explicit, not left over from a previous frame: uniforms persist
-      // across draw calls, and the whole-car pass below sets this to 1 for
-      // glass. Without this reset, switching from whole-car to the
-      // per-surface view straight off a glass group left THIS texture
-      // rendering through the fresnel alpha it never asked for.
+      // Explicit, not left over from a previous frame: uniforms persist across
+      // draw calls, and the whole-car pass below sets both of these per group.
+      // Without the reset, switching from whole-car to the per-surface view
+      // straight off a glass group left THIS texture rendering through the
+      // fresnel alpha it never asked for.
+      //
+      // `texAlpha` is the same trap and worse. The whole-car pass turns it on
+      // for alpha-blended groups; left on here it makes this pass — which is
+      // opaque and does not blend — write the texture's alpha into a canvas
+      // that HAS an alpha channel, and the page shows through the car. Every
+      // per-group uniform belongs in this list, and the next one added will
+      // belong in it too.
       gl.uniform1f(loc.glass, 0);
+      gl.uniform1f(loc.texAlpha, 0);
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.drawElements(gl.TRIANGLES, count, type, 0);
       return;
