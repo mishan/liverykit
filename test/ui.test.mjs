@@ -3719,3 +3719,111 @@ test('layers are hidden by attribute, so an SVG can be unhidden too', async () =
   // was already guarded at every call site.
   assert.doesNotThrow(() => setHidden(null, true));
 });
+
+test('a rim drawn twice, a cockpit drawn twice, and a material with two layers', async () => {
+  // Three exclusion and grouping rules arrived together here, and none of them
+  // had a test. All three are string- or property-matching heuristics over
+  // somebody else's model, which is the kind of rule that is wrong quietly:
+  // too broad and geometry vanishes, too narrow and it draws twice. Both have
+  // happened on this project, and both were found by looking at a picture.
+  const { motionBlurOnly, detailLayer, trustworthyDiffuse } = await import('../src/engine/kn5.mjs');
+
+  // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
+  // two blurred stand-ins it swaps in with speed — and all three are in the
+  // model at once, co-planar. Drawn together they z-fight into a mess.
+  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF']) {
+    assert.equal(motionBlurOnly(yes), true, `${yes} is an alternate`);
+  }
+  // And it must not eat a part whose name merely CONTAINS the letters. This is
+  // the half that goes wrong: a pattern loose enough to catch the rims is
+  // loose enough to delete a blurred-glass panel or a "Blurton" sponsor decal.
+  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', '', null]) {
+    assert.equal(motionBlurOnly(no), false, `${JSON.stringify(no)} is a real part`);
+  }
+
+  // TWO-LAYER MATERIALS. Only when the shader says its diffuse cannot stand
+  // alone, the material asks for detail, both textures are real, and the tiling
+  // is a usable number — anything less and the group is better off with the
+  // honest grey than with half a material.
+  const multi = {
+    shader: 'ksPerPixelMultiMap',
+    slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds', txNormalDetail: 'carbon_nm.dds' },
+    props: { useDetail: 1, detailUVMultiplier: 377, detailNormalBlend: 2 },
+  };
+  assert.equal(trustworthyDiffuse(multi.shader), false, 'a MultiMap diffuse is an atlas');
+  assert.deepEqual(detailLayer(multi), {
+    diffuse: 'bake.dds', detail: 'carbon.dds', mult: 377,
+    normal: 'carbon_nm.dds', normalBlend: 2,
+  });
+
+  const without = (patch) => detailLayer({ ...multi, ...patch });
+  assert.equal(without({ props: { ...multi.props, useDetail: 0 } }), null,
+    'the material has to ask for the layer');
+  assert.equal(without({ shader: 'ksPerPixel' }), null,
+    'a shader whose diffuse IS the surface needs no second layer');
+  assert.equal(without({ slots: { ...multi.slots, txDetail: 'NULL.dds' } }), null,
+    'NULL.dds is how a kn5 says "no texture", not the name of one');
+  assert.equal(without({ slots: { ...multi.slots, txDiffuse: '' } }), null);
+  assert.equal(without({ props: { ...multi.props, detailUVMultiplier: 0 } }), null,
+    'a tiling of zero would sample one texel across the whole part');
+  assert.equal(without({ props: { ...multi.props, detailUVMultiplier: NaN } }), null);
+  assert.equal(detailLayer(null), null, 'a mesh with no material at all');
+
+  // The normal map is optional; the colour half still stands without it.
+  const noNormal = without({ slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds' } });
+  assert.equal(noNormal.detail, 'carbon.dds');
+  assert.equal(noNormal.normal, null);
+});
+
+test('the whole car draws one cockpit, and each texture once', async () => {
+  // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
+  // same coordinates. Drawing both z-fights the interior into a checkerboard
+  // seen through the glass, which is exactly how it was reported.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+
+  // The two cockpits go under NAMED PARENT NODES, because that is the only
+  // thing that tells them apart: both contain a mesh called dash, and the rule
+  // reads the path. The blur alternate is matched by name and needs no parent.
+  const quad = (name) => ({
+    name,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  const model = parseKn5Buffer(buildKn5({
+    wrapped: [
+      { name: 'COCKPIT_HR', meshes: [quad('dash')] },
+      { name: 'COCKPIT_LR', meshes: [quad('dash')] },
+    ],
+    extraMeshes: [quad('EXT_RIM_BLUR_LF')],
+  }));
+
+  const g = wholeModelGeometry(model, [], { livery, profile });
+  const paths = (model.meshes ?? []).map((m) => m.path ?? m.name);
+  assert.ok(paths.some((p) => /COCKPIT_HR/i.test(p)), `no HR cockpit in the fixture: ${paths}`);
+  assert.ok(paths.some((p) => /COCKPIT_LR/i.test(p)), `no LR cockpit in the fixture: ${paths}`);
+  assert.ok((model.meshes ?? []).some((m) => m.name === 'EXT_RIM_BLUR_LF'),
+    'and a motion-blur alternate, so all three rules have something to exclude');
+
+  // Every triangle drawn, counted against the meshes that should survive: the
+  // fixture's own body, ONE of the two cockpit quads, and neither of the two
+  // things that must not be drawn.
+  const drawn = g.indices.length / 3;
+  assert.equal(drawn, 2,
+    `the body plus one cockpit quad, no LR twin and no blur alternate — got ${drawn}`);
+
+  // And the groups must not overlap: a triangle drawn by two groups is drawn
+  // twice, which is the z-fight this is here to prevent.
+  const seen = new Set();
+  for (const grp of g.groups) {
+    for (let i = grp.start; i < grp.start + grp.count; i++) {
+      assert.equal(seen.has(i), false, `index ${i} is claimed by two groups`);
+      seen.add(i);
+    }
+  }
+});

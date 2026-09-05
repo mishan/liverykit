@@ -1017,8 +1017,14 @@ export function createViewer(canvas) {
     let w = width;
     let h = height;
     let done = 0;
+    // CLAMPED to what a chain can physically be. `levels` is mipMapCount out of
+    // the file's header, and a header is not a promise: a malformed or
+    // out-of-range count would have this asking the driver for hundreds of
+    // levels that cannot exist, each one a GL call and an exception to catch.
+    // A complete chain from w x h is chainLength(w, h) and never more.
+    const top = Math.min(levels, chainLength(width, height));
     gl.getError();                        // so the check below is about US
-    for (let level = 0; level < levels; level++) {
+    for (let level = 0; level < top; level++) {
       // A block covers four texels square at every level, so the tail of any
       // chain is several levels that are all one block and all the same size.
       const bytes = Math.ceil(w / 4) * Math.ceil(h / 4) * blockBytes;
@@ -1635,7 +1641,44 @@ export function createViewer(canvas) {
       // failure modes worse.
       const LANES = 6;
       const bytes = new Array(wanted.length).fill(null);
+      const arrived = new Array(wanted.length).fill(false);
       let next = 0;
+      let cursor = 0;
+
+      // Uploaded in the order they were ASKED for, not the order they arrived.
+      // GL work is serial whatever this does, and a fixed order means a texture
+      // that fails to upload fails the same way twice instead of depending on
+      // which download won a race.
+      //
+      // Drained AS THEY ARRIVE rather than after the last one lands. Holding
+      // every stock texture for a GT3 car is tens of megabytes of ArrayBuffer
+      // sitting resident while the slowest fetch finishes, for nothing: as soon
+      // as the next one in order is here it can go to the GPU and be dropped.
+      // Synchronous from end to end, so two lanes can never interleave inside
+      // it and the order it uploads in is still the order things were asked
+      // for.
+      const drain = () => {
+        while (cursor < wanted.length && arrived[cursor]) {
+          const i = cursor;
+          cursor += 1;
+          const { map, file, upload } = wanted[i];
+          const raw = bytes[i];
+          bytes[i] = null;                          // released either way
+          if (!raw || map.has(file)) continue;
+          const tex = greyTexture();
+          let kept = false;
+          try {
+            kept = !!upload(tex, raw);
+          } catch { /* the grey is a fine answer */ }
+          // DELETED when it is not kept. greyTexture() allocates on the GPU,
+          // and a texture that never reaches a map is unreachable from anything
+          // that could free it afterwards — one leak per DDS variant this
+          // cannot decode, every time the whole-car view reloads.
+          if (kept) map.set(file, tex);
+          else gl.deleteTexture(tex);
+        }
+      };
+
       await Promise.all(Array.from({ length: Math.min(LANES, wanted.length) }, async () => {
         while (next < wanted.length) {
           const i = next;
@@ -1644,21 +1687,11 @@ export function createViewer(canvas) {
             const res = await fetch(`/api/stock?file=${encodeURIComponent(wanted[i].file)}`);
             if (res.ok) bytes[i] = await res.arrayBuffer();
           } catch { /* the grey is a fine answer */ }
+          arrived[i] = true;
+          drain();
         }
       }));
-
-      // Uploaded in the order they were ASKED for, not the order they arrived.
-      // GL work is serial whatever this does, and a fixed order means a texture
-      // that fails to upload fails the same way twice instead of depending on
-      // which download won a race.
-      for (let i = 0; i < wanted.length; i++) {
-        const { map, file, upload } = wanted[i];
-        if (!bytes[i] || map.has(file)) continue;
-        const tex = greyTexture();
-        try {
-          if (upload(tex, bytes[i])) map.set(file, tex);
-        } catch { /* the grey is a fine answer */ }
-      }
+      drain();                    // whatever a lane left behind if it threw
 
       // Centres now, not per frame: the geometry does not move and the sort
       // runs on every draw.

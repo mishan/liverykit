@@ -34,6 +34,11 @@ const IDENTITY = translation(0, 0, 0);
 export function buildKn5({
   version = 6, extraMeshes = [], dummies = [],
   placeholderTexture = false, encrypted = false, bodyMesh = null,
+  // Meshes under a NAMED PARENT NODE, for the rules that read a mesh's path
+  // rather than its name — which cockpit LOD selection does, since both
+  // cockpits contain meshes called the same thing and only the node above
+  // them says which is which. `[{ name, meshes: [...] }]`.
+  wrapped = [],
 } = {}) {
   const parts = [];
 
@@ -53,7 +58,7 @@ export function buildKn5({
     u32(0), u32(1), str('txDiffuse'), u32(0), str('body.dds'));
 
   // root dummy -> one mesh child, plus whatever the caller added
-  const children = 1 + extraMeshes.length + dummies.length;
+  const children = 1 + extraMeshes.length + dummies.length + wrapped.length;
   parts.push(u32(1), str('root'), u32(children), Buffer.from([1]), IDENTITY);
 
   const body = bodyMesh ?? {
@@ -70,6 +75,13 @@ export function buildKn5({
   // Extra meshes, for tests that need geometry the analysis will look for by
   // name (a steering wheel) or trip over (an occluder).
   for (const em of extraMeshes) parts.push(mesh(em));
+
+  // A dummy with children, which is how a kn5 states COCKPIT_HR and everything
+  // under it. The parser builds each mesh's `path` from this.
+  for (const w of wrapped) {
+    parts.push(u32(1), str(w.name), u32(w.meshes.length), Buffer.from([1]), IDENTITY);
+    for (const m of w.meshes) parts.push(mesh(m));
+  }
 
   // Dummies carry no geometry but do carry a transform, which is how AC states
   // where a wheel is — and therefore the only exact source for which way this
