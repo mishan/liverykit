@@ -2751,6 +2751,34 @@ function nextFrame() {
     : setTimeout(ok, 16)));
 }
 
+/**
+ * Show or hide an element, by ATTRIBUTE rather than by the `hidden` property.
+ *
+ * `hidden` lives on HTMLElement. `#overlay` is an `<svg>`, and SVGElement does
+ * not have it — so `overlay.hidden = false` quietly defines a plain expando and
+ * leaves the content attribute exactly where it was. Nothing throws and nothing
+ * logs; the attribute simply cannot be removed that way, in any browser.
+ *
+ * And this page supplies its own `[hidden] { display: none !important }`, which
+ * an attribute selector applies to SVG as readily as to anything else. So from
+ * the moment the markup started shipping `hidden` on #overlay, the region
+ * editor's overlay was permanently display:none EVERYWHERE — not, as the first
+ * telling of this had it, only in the browser whose UA stylesheet happens to
+ * cover SVG. What hid it was the rule this page ships on purpose.
+ *
+ * It went unnoticed because the two views under active work — whole car and
+ * cockpit — do not use the overlay at all. The browser test that drives a real
+ * pointer at a region is what found it, by having no region to click.
+ *
+ * Attributes work on both kinds of element. Used for every layer in this view
+ * so the next one added cannot inherit the trap.
+ */
+export function setHidden(el, on) {
+  if (!el) return;
+  if (on) el.setAttribute('hidden', '');
+  else el.removeAttribute('hidden');
+}
+
 async function showView(which) {
   // The offer belongs to the click that produced it. Left up across a view
   // change it would invite adopting a surface you can no longer see, from a
@@ -2764,12 +2792,12 @@ async function showView(which) {
   ]) {
     $(id).className = `tab${which === name ? ' on' : ''}`;
   }
-  $('#texture').hidden = is3d;
-  $('#overlay').hidden = is3d;
-  $('#carview').hidden = !is3d;
+  setHidden($('#texture'), is3d);
+  setHidden($('#overlay'), is3d);
+  setHidden($('#carview'), !is3d);
   // Only where there is geometry to shade. On the UV tab you are reading the
   // sheet, and a control offering to light it would be offering nonsense.
-  if ($('#litbox')) $('#litbox').hidden = !is3d;
+  setHidden($('#litbox'), !is3d);
   if (!is3d) return;
 
   // Unhiding is not the same as being laid out. `hidden = false` takes effect on
@@ -2792,9 +2820,9 @@ async function showView(which) {
     // same way, as a message rather than a crash.
     $('#viewnote').textContent = `no 3D view — ${e.message}`;
     status(`3D unavailable for ${state.surface.file}`);
-    $('#carview').hidden = true;
-    $('#texture').hidden = false;
-    $('#overlay').hidden = false;
+    setHidden($('#carview'), true);
+    setHidden($('#texture'), false);
+    setHidden($('#overlay'), false);
     state.view = 'uv';
     $('#tab-uv').className = 'tab on';
     $('#tab-3d').className = 'tab';

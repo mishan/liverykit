@@ -26,6 +26,12 @@ import '../src/index.mjs';
 function fakeDom() {
   const made = new Map();
   const node = (id) => {
+    // Attributes, and `hidden` REFLECTED between the two the way a real
+    // HTMLElement does it. The app hides layers by attribute now, because one
+    // of them is an <svg> and SVGElement has no `hidden` property to assign —
+    // and this fake had no setAttribute at all, which is its own small lesson
+    // about what it can and cannot catch.
+    const attrs = new Map();
     const el = {
       id,
       innerHTML: '',
@@ -34,12 +40,17 @@ function fakeDom() {
       dataset: {},
       style: {},
       disabled: false,
+      hidden: false,
       onclick: null,
       onchange: null,
       onpointerdown: null,
       children: [],
       querySelectorAll: () => [],
       getBoundingClientRect: () => ({ width: 1000, height: 1000, left: 0, top: 0 }),
+      setAttribute(k, v) { attrs.set(k, v); if (k === 'hidden') el.hidden = true; },
+      removeAttribute(k) { attrs.delete(k); if (k === 'hidden') el.hidden = false; },
+      hasAttribute: (k) => attrs.has(k),
+      getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
     };
     return el;
   };
@@ -428,8 +439,14 @@ test('the page and the script agree about what exists', async () => {
   assert.match(css, /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/,
     'the stylesheet needs a [hidden] reset that outranks its own display rules');
 
-  // And anything app.js toggles with `hidden` must be covered by it.
-  const toggled = [...new Set([...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]))];
+  // And anything app.js hides must be covered by it — however it does the
+  // hiding. `setHidden($('#x'), ...)` counts as much as `$('#x').hidden = ...`,
+  // and missing the first form would have quietly stopped checking the stage
+  // layers on the day they moved to it.
+  const toggled = [...new Set([
+    ...[...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]),
+    ...[...app.matchAll(/setHidden\(\$\('#([\w-]+)'\)/g)].map((m) => m[1]),
+  ])];
   assert.ok(toggled.length, 'the editor toggles something with hidden');
   for (const id of toggled) {
     assert.ok(ids.includes(id), `app.js hides #${id}, which the page does not contain`);
@@ -3639,3 +3656,41 @@ test('an absent cockpit field and a null one stay different answers', async () =
 function toArrayBuffer(b) {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 }
+
+test('layers are hidden by attribute, so an SVG can be unhidden too', async () => {
+  // `hidden` is a property of HTMLElement. `#overlay` is an <svg>, and
+  // SVGElement does not have it, so `overlay.hidden = false` defined an expando
+  // and left the content attribute alone. Nothing threw and nothing logged.
+  //
+  // And this page ships its own `[hidden] { display: none !important }` — the
+  // rule the test above insists on — which an attribute selector applies to SVG
+  // as readily as to anything else. So the region editor's overlay was
+  // permanently display:none in EVERY browser from the commit that put `hidden`
+  // in the markup. It survived being looked at because the two views under
+  // active work, whole car and cockpit, do not use the overlay; only the
+  // browser test driving a real pointer at a region could notice.
+  //
+  // An element with no `hidden` property is the whole of the fixture, because
+  // that is precisely what an SVGElement is.
+  const { setHidden } = await import('../src/ui/app.js');
+
+  const attrs = new Map();
+  const svgish = {
+    setAttribute: (k, v) => attrs.set(k, v),
+    removeAttribute: (k) => attrs.delete(k),
+    hasAttribute: (k) => attrs.has(k),
+  };
+  assert.equal('hidden' in svgish, false, 'the fixture must not offer the easy way out');
+
+  attrs.set('hidden', '');
+  setHidden(svgish, false);
+  assert.equal(svgish.hasAttribute('hidden'), false,
+    'showing must REMOVE the attribute — assigning .hidden would not have');
+
+  setHidden(svgish, true);
+  assert.equal(svgish.hasAttribute('hidden'), true);
+
+  // A missing element is not an error: #litbox is optional in the markup and
+  // was already guarded at every call site.
+  assert.doesNotThrow(() => setHidden(null, true));
+});
