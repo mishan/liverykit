@@ -631,9 +631,9 @@ design written for one car will always look better on it.
   not mean the design is good.
 - **`render_view`**: Texture SVG and placement data for one surface, or all of them.
 - **`render_car`**: A picture of the working design on the car, returned as an
-  image. Seven named views. Its limits are in the tool description rather than
-  left to be discovered: no transparency, no stock car textures — unpainted parts
-  are flat grey — and one fixed light rig.
+  image. Seven named views, with the car's own textures on whatever the design
+  leaves unpainted. Its limits are in the tool description rather than left to be
+  discovered: no environment reflections, and one fixed light rig.
 
 **Proposing.**
 

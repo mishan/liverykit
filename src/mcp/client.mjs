@@ -61,6 +61,7 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       return {
         png: Buffer.from(await res.arrayBuffer()),
         skipped: Number(res.headers.get('x-liverykit-skipped') ?? 0),
+        absent: Number(res.headers.get('x-liverykit-absent') ?? 0),
       };
     },
     previewSurfaces: async (seed) => request('api/preview', {

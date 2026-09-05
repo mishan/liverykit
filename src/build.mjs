@@ -9,13 +9,16 @@ import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
-import { packageZip, makePreview } from './engine/package.mjs';
+import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
+import { parseKn5 } from './engine/kn5.mjs';
+import { wholeModelGeometry } from './engine/geometry.mjs';
+import { carSheets } from './engine/shot.mjs';
 
 // Re-exported: `hidePlan` lived here first, and the build is where anybody
 // looking for what `hide` does would go.
@@ -60,7 +63,7 @@ const CLEAR_SHEET = 4;
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, modelPath = null, log = console.log }) {
   await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -115,6 +118,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
 
   let firstPng = null;
   const written = [];
+  // Every painted role's finished art, kept for the showroom preview below —
+  // the same pixels that just got written to the DDS, not a re-render.
+  const pngByRole = new Map();
 
   for (const { from, role, spec, primary } of targets) {
     const tex = texture(profile, role);
@@ -178,6 +184,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     if (!pngDir && pngPath !== outPath) await rm(pngPath);
 
     firstPng ??= png;
+    pngByRole.set(role, png);
     written.push(tex.file);
     const kb = (await stat(outPath)).size / 1024;
     log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
@@ -246,8 +253,92 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     }
   }
 
-  await writeMetadata({ outDir, livery, firstPng });
+  // Asked once and used by both the real render and the placeholder, so a
+  // build that falls back still lands the conventional size for this car.
+  const frame = (await previewFrame(modelPath, { log })) ?? PREVIEW_FRAME;
+  await writeMetadata({ outDir, livery, firstPng, frame, preview: await renderShowroomPreview({
+    profile, livery, targets, pngByRole, modelPath, frame, log,
+  }) });
   return { outDir, files: written, firstPng, notes };
+}
+
+/**
+ * A real render of the car wearing the finished skin, for preview.jpg — the
+ * same picture `render_car` would take, rather than the blurred-texture
+ * placeholder. `null` when there is no model to render it from, which is not
+ * an error: plenty of people hold a profile for a car they have not unpacked,
+ * and `writeMetadata` falls back to the placeholder when this comes back
+ * empty.
+ *
+ * Parity with the editor's Whole Car view is the goal, not a coincidence:
+ * both wear the design's own artwork on what it paints and the CAR'S OWN
+ * texture on what it does not — glass, wheels, interior trim — rather than
+ * leaving those parts flat grey. The editor gets that from the browser
+ * uploading the kn5's compressed textures straight to the GPU; this has no
+ * GPU, so `carSheets` does in a temp file what the browser does in VRAM.
+ */
+async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log }) {
+  if (!modelPath || !targets.length) return null;
+
+  let model;
+  try {
+    // TRUE here, unlike every other model read in this project: the whole
+    // point of this pass is the texture bytes, not just the geometry they are
+    // wrapped around.
+    model = await parseKn5(modelPath, { keepTextureData: true });
+  } catch (e) {
+    log(`  ! could not read ${modelPath} for preview.jpg: ${e.message}`);
+    return null;
+  }
+
+  const files = targets.map((t) => ({ role: t.role, file: texture(profile, t.role).file }));
+  const g = wholeModelGeometry(model, files, { livery, profile });
+
+  // FULL RESOLUTION, and it used to be 512.
+  //
+  // That downsize was reasoned from a 900x560 shot: a few hundred pixels
+  // across, so a 2048 sheet is more detail than can survive. The reasoning was
+  // right and the numbers stopped being true. This frame is 1555x835, rendered
+  // two samples over at 3110x1670, and a door that spans six hundred of those
+  // pixels was reading a couple of hundred texels — every texel four pixels
+  // wide, sampled nearest, which is what put the staircase on the number and
+  // the sponsor text. That is not edge aliasing and no amount of supersampling
+  // touches it.
+  //
+  // It is also nearly free: decoding one of these PNGs straight to raw is
+  // ~13 ms, where resizing it to 512 on the way was ~35. The resize was the
+  // expensive half.
+  const sheets = new Map();
+  for (const [role, png] of pngByRole) {
+    const { data, info } = await sharp(png)
+      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    sheets.set(role, { data, w: info.width, h: info.height });
+  }
+
+  // The car's own artwork for whatever the design leaves unpainted — filed
+  // under FILE rather than role, which is how `rasterise`'s `sheetKey` tells
+  // "this is the car's" from "this is the design's". Only the files a group
+  // actually claims, which `wholeModelGeometry` has already narrowed to what
+  // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
+  // excluded there, before this ever sees it).
+  //
+  // Shared with the MCP renderer rather than done here, which is where it used
+  // to live: `shoot` had none of this and drew every unpainted part grey, so
+  // the picture an agent takes without a browser and the picture that ships in
+  // the skin disagreed about the same car.
+  const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
+  const stock = await carSheets(g.groups, (file) => byName.get(String(file).toLowerCase())?.data ?? null);
+  for (const [file, art] of stock.sheets) sheets.set(file, art);
+  if (stock.absent.length) {
+    log(`  preview: ${stock.absent.length} texture(s) the model does not carry: ${stock.absent.join(', ')}`);
+  }
+
+  try {
+    return await makeShowroomPreview(g, g.groups, sheets, frame);
+  } catch (e) {
+    log(`  ! could not render preview.jpg from the model: ${e.message}`);
+    return null;
+  }
 }
 
 /**
@@ -325,7 +416,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
   return { outDir, folder };
 }
 
-async function writeMetadata({ outDir, livery, firstPng, previewLabel }) {
+async function writeMetadata({ outDir, livery, firstPng, previewLabel, frame = PREVIEW_FRAME, preview = null }) {
   const id = livery.identity ?? {};
   await writeFile(
     join(outDir, 'ui_skin.json'),
@@ -339,7 +430,11 @@ async function writeMetadata({ outDir, livery, firstPng, previewLabel }) {
   );
   if (firstPng) {
     await makeBadge(firstPng, join(outDir, 'livery.png'));
-    await makePreview(firstPng, join(outDir, 'preview.jpg'), { label: previewLabel ?? id.number ?? '' });
+    // A real render, when one was made — see renderShowroomPreview — and the
+    // placeholder otherwise. `buildCalibration` never passes `preview`: the
+    // UV-grid skin has no business claiming to show the car.
+    if (preview) await writeFile(join(outDir, 'preview.jpg'), preview);
+    else await makePreview(firstPng, join(outDir, 'preview.jpg'), { ...frame, label: previewLabel ?? id.number ?? '' });
   }
 }
 

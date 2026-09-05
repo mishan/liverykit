@@ -334,6 +334,7 @@ $('#lit').onchange = () => state.viewer?.setLit($('#lit').checked);
 $('#tab-uv').onclick = () => showView('uv');
 $('#tab-3d').onclick = () => showView('3d');
 $('#tab-all').onclick = () => showView('all');
+$('#tab-cockpit').onclick = () => showView('cockpit');
 
 $('#save').onclick = async () => {
   await api('/api/fit', state.fit);
@@ -525,6 +526,7 @@ async function refresh() {
   $('#texture').innerHTML = out.svg;
   if (state.view === '3d') paintCar();
   else if (state.view === 'all') loadWholeCar().catch((e) => status(`preview: ${e.message}`));
+  else if (state.view === 'cockpit') loadCockpit().catch((e) => status(`preview: ${e.message}`));
   drawOverlay();
   drawRegions();
   drawInspector();
@@ -1310,7 +1312,7 @@ export function claimCarPointer(uv, e) {
   // The whole-car view has no selection to drag, and one thing worth clicking:
   // a part the design does not paint. Answering `false` afterwards lets the
   // gesture go on to orbit, so pointing at something never costs you the drag.
-  if (state.view === 'all') { offerToAdopt(uv?.group); return false; }
+  if (state.view === 'all' || state.view === 'cockpit') { offerToAdopt(uv?.group); return false; }
   if (!uv) return false;
 
   const sel = state.placed.find((p) => p.id === state.selected);
@@ -2749,6 +2751,34 @@ function nextFrame() {
     : setTimeout(ok, 16)));
 }
 
+/**
+ * Show or hide an element, by ATTRIBUTE rather than by the `hidden` property.
+ *
+ * `hidden` lives on HTMLElement. `#overlay` is an `<svg>`, and SVGElement does
+ * not have it — so `overlay.hidden = false` quietly defines a plain expando and
+ * leaves the content attribute exactly where it was. Nothing throws and nothing
+ * logs; the attribute simply cannot be removed that way, in any browser.
+ *
+ * And this page supplies its own `[hidden] { display: none !important }`, which
+ * an attribute selector applies to SVG as readily as to anything else. So from
+ * the moment the markup started shipping `hidden` on #overlay, the region
+ * editor's overlay was permanently display:none EVERYWHERE — not, as the first
+ * telling of this had it, only in the browser whose UA stylesheet happens to
+ * cover SVG. What hid it was the rule this page ships on purpose.
+ *
+ * It went unnoticed because the two views under active work — whole car and
+ * cockpit — do not use the overlay at all. The browser test that drives a real
+ * pointer at a region is what found it, by having no region to click.
+ *
+ * Attributes work on both kinds of element. Used for every layer in this view
+ * so the next one added cannot inherit the trap.
+ */
+export function setHidden(el, on) {
+  if (!el) return;
+  if (on) el.setAttribute('hidden', '');
+  else el.removeAttribute('hidden');
+}
+
 async function showView(which) {
   // The offer belongs to the click that produced it. Left up across a view
   // change it would invite adopting a surface you can no longer see, from a
@@ -2756,16 +2786,18 @@ async function showView(which) {
   if ($('#adopt')) $('#adopt').hidden = true;
 
   state.view = which;
-  const is3d = which === '3d' || which === 'all';
-  for (const [id, name] of [['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all']]) {
+  const is3d = which === '3d' || which === 'all' || which === 'cockpit';
+  for (const [id, name] of [
+    ['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all'], ['#tab-cockpit', 'cockpit'],
+  ]) {
     $(id).className = `tab${which === name ? ' on' : ''}`;
   }
-  $('#texture').hidden = is3d;
-  $('#overlay').hidden = is3d;
-  $('#carview').hidden = !is3d;
+  setHidden($('#texture'), is3d);
+  setHidden($('#overlay'), is3d);
+  setHidden($('#carview'), !is3d);
   // Only where there is geometry to shade. On the UV tab you are reading the
   // sheet, and a control offering to light it would be offering nonsense.
-  if ($('#litbox')) $('#litbox').hidden = !is3d;
+  setHidden($('#litbox'), !is3d);
   if (!is3d) return;
 
   // Unhiding is not the same as being laid out. `hidden = false` takes effect on
@@ -2776,21 +2808,26 @@ async function showView(which) {
   await nextFrame();
 
   try {
-    $('#viewnote').textContent = which === 'all' ? 'rendering every surface…' : 'loading…';
+    $('#viewnote').textContent = which === 'uv' || which === '3d' ? 'loading…' : 'rendering every surface…';
     if (which === 'all') await loadWholeCar();
+    else if (which === 'cockpit') await loadCockpit();
     else await loadCarGeometry();
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
-    // profile for a car whose kn5 is not on this machine.
+    // profile for a car whose kn5 is not on this machine. Neither is a model
+    // with no cockpit eye — an open passenger buggy, or a car this project's
+    // steering-wheel search does not recognise — which loadCockpit reports the
+    // same way, as a message rather than a crash.
     $('#viewnote').textContent = `no 3D view — ${e.message}`;
     status(`3D unavailable for ${state.surface.file}`);
-    $('#carview').hidden = true;
-    $('#texture').hidden = false;
-    $('#overlay').hidden = false;
+    setHidden($('#carview'), true);
+    setHidden($('#texture'), false);
+    setHidden($('#overlay'), false);
     state.view = 'uv';
     $('#tab-uv').className = 'tab on';
     $('#tab-3d').className = 'tab';
     $('#tab-all').className = 'tab';
+    $('#tab-cockpit').className = 'tab';
   }
 }
 
@@ -2831,7 +2868,12 @@ export function reRole(groups, surfaces) {
   }));
 }
 
-async function loadWholeCar() {
+/**
+ * Fetch (once) and upload the whole-car geometry and every painted surface.
+ * Shared by the orbit whole-car view and the cockpit view — they show the same
+ * car, painted the same way, and differ only in what the camera does with it.
+ */
+async function ensureWholeCar() {
   if (!state.viewer) {
     state.viewer = createViewer($('#carview'));
     state.viewer.attach({ claim: claimCarPointer });
@@ -2863,6 +2905,16 @@ async function loadWholeCar() {
   // texture its meshes use, and a surface carries the texture it writes.
   const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
   const drew = await state.viewer.setWholeCar(g, surfaces);
+  return { g, drew };
+}
+
+async function loadWholeCar() {
+  const { g, drew } = await ensureWholeCar();
+  // The camera this view wants, asked for rather than inherited. setWholeCar
+  // used to leave the view in orbit mode as a side effect of uploading
+  // geometry, and now that it only uploads when the geometry changed, coming
+  // back here from the cockpit has to say so.
+  state.viewer.setOrbit();
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
   const bare = g.groups.filter((x) => !x.role).reduce((s, x) => s + x.count / 3, 0);
@@ -2879,6 +2931,53 @@ async function loadWholeCar() {
       drew.failed.join('; ')}` : '') +
     ` · ${drew?.blended ?? 0} blended, ${drew?.additive ?? 0} additive` +
     ' — drag to orbit, wheel to zoom';
+}
+
+/**
+ * The whole car again, but from the driver's seat instead of orbiting it.
+ *
+ * Answers a different question than the whole-car view: not "does this design
+ * work on the car" but "what does the person racing it actually see" — which
+ * parts of a wrap read from inside the cockpit, whether a number on the halo
+ * or the mirrors ends up in the driver's eyeline.
+ *
+ * The eye position is the same one the profile's visibility pass uses
+ * (`cockpitEye`, keyed off the steering wheel mesh), so this shows exactly the
+ * point the "readable from the driver's seat" tag on a panel was measured
+ * from. A car with no recognisable steering wheel — an open buggy, or a model
+ * this project has not seen — has no such point, and this says so rather than
+ * guessing one.
+ */
+async function loadCockpit() {
+  const { g, drew } = await ensureWholeCar();
+  const eye = state.wholeGeometry.cockpit;
+  // ABSENT and NULL are different answers. The server states null for a car
+  // whose model has no recognisable steering wheel; the key is missing only
+  // when the server is running code older than this page, which is what a
+  // reload without a restart gets you — the modules the server imports are
+  // cached and the page's are not.
+  if (eye === undefined) {
+    throw new Error(
+      'this server sent no cockpit field at all — it is running an older build than this page. Restart it.');
+  }
+  if (!eye) {
+    throw new Error(
+      'no cockpit eye for this car — liverykit could not find a steering wheel mesh in the model');
+  }
+  state.viewer.setCockpit(eye);
+
+  const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
+  $('#viewnote').textContent =
+    `${painted.size} painted surface${painted.size === 1 ? '' : 's'}` +
+    (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
+      drew.failed.join('; ')}` : '') +
+    // The car's own textures, as opposed to the design's renders above. A
+    // missing one shows as grey on a part nobody painted, which reads as a
+    // finished picture rather than a hole in it.
+    (drew?.stockFailed?.length ? ` · ${drew.stockFailed.length} CAR TEXTURE${
+      drew.stockFailed.length === 1 ? '' : 'S'} NOT SERVED: ${
+      drew.stockFailed.join('; ')}` : '') +
+    ' — drag to look around';
 }
 
 /**

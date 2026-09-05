@@ -112,8 +112,23 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     const shader = c.str();
     c.skip(2);                            // alphaBlendMode, alphaTested
     c.u32();                              // depthMode
+    // Read and dropped for a long time, which cost nothing while no shader
+    // here sampled a second texture. `detailUVMultiplier` lives in here, and
+    // without it a tiling detail map is drawn at 1:1 — a carbon weave at a
+    // 20cm pitch instead of a 2mm one, which reads as abstract grey mush
+    // rather than as carbon.
+    //
+    // Only valueA is kept. Every property this project has wanted is the
+    // scalar, and the vec2/vec3/vec4 behind it are the remaining 36 bytes of
+    // the fixed 40 — skipped as one, so the arithmetic stays in one place
+    // instead of in four readers that have to agree.
+    const props = {};
     const propCount = c.u32();
-    for (let p = 0; p < propCount; p++) { c.str(); c.skip(40); }
+    for (let p = 0; p < propCount; p++) {
+      const key = c.str();
+      props[key] = c.f32();
+      c.skip(36);
+    }
     const slotCount = c.u32();
     const slots = {};
     for (let s = 0; s < slotCount; s++) {
@@ -121,7 +136,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
       c.u32();                            // slot index
       slots[sample] = c.str();
     }
-    materials.push({ name, shader, slots });
+    materials.push({ name, shader, slots, props });
   }
 
   // --- node tree ---
@@ -271,11 +286,29 @@ export function vertex(model, mesh, i) {
   const ry = nx * m[1] + ny * m[5] + nz * m[9];
   const rz = nx * m[2] + ny * m[6] + nz * m[10];
   const rl = Math.hypot(rx, ry, rz) || 1;
+  // The TANGENT, which is what turns a normal map into a direction rather
+  // than three numbers. It sits behind the UV, so it only exists on a mesh
+  // packed wide enough to hold one — a narrower stride answers zero, and the
+  // shader reads that as "no tangent frame here" instead of interpreting a
+  // neighbouring vertex's position as a direction.
+  let tx = 0;
+  let ty = 0;
+  let tz = 0;
+  if (mesh.stride >= 44) {
+    const ax = b.readFloatLE(o + 32), ay = b.readFloatLE(o + 36), az = b.readFloatLE(o + 40);
+    const wx = ax * m[0] + ay * m[4] + az * m[8];
+    const wy = ax * m[1] + ay * m[5] + az * m[9];
+    const wz = ax * m[2] + ay * m[6] + az * m[10];
+    const wl = Math.hypot(wx, wy, wz);
+    if (wl > 1e-6) { tx = wx / wl; ty = wy / wl; tz = wz / wl; }
+  }
+
   return {
     x: x * m[0] + y * m[4] + z * m[8] + m[12],
     y: x * m[1] + y * m[5] + z * m[9] + m[13],
     z: x * m[2] + y * m[6] + z * m[10] + m[14],
     nx: rx / rl, ny: ry / rl, nz: rz / rl,
+    tx, ty, tz,
     u: b.readFloatLE(o + 24),
     // AC stores V negative; texture-space y is 1 + v. Get this wrong and every
     // panel is flipped vertically, which looks plausible enough to ship.
@@ -466,6 +499,195 @@ export function additive(file) {
 /** Whether a material composites against what is behind it. */
 export function blends(shader) {
   return BLENDS.has(String(shader ?? ''));
+}
+
+/**
+ * Whether a material is reflective glass, specifically — a narrower question
+ * than `blends`: `ksPerPixelAlpha` composites too (a decal, a number plate)
+ * but is not glass and should not go mirror-like at a grazing angle.
+ */
+const GLASS = new Set(['ksPerPixelReflection', 'ksWindscreen', 'ksBrokenGlass']);
+export function isGlass(shader) {
+  return GLASS.has(String(shader ?? ''));
+}
+
+/**
+ * Whether a shader is a damage-only overlay, with nothing to show until the
+ * car is actually damaged.
+ *
+ * `ksBrokenGlass` is that shader by convention: a `DAMAGE_GLASS_*` mesh
+ * sits exactly over the real glass it belongs to and is how CSP's damage
+ * system draws a crack once a panel is hit — a grid of pre-cut fragment
+ * quads, invisible at zero damage.
+ *
+ * This project has no notion of damage — a livery is not a crash — so there
+ * is no value to condition on, and the only correct default is "not shown".
+ * Grouping it with real glass and giving it the same fresnel alpha drew that
+ * fragment grid on every showroom-fresh car: a faint rectangular lattice
+ * across the windscreen that looked like a rendering bug and was actually
+ * this mesh, finally visible now that blended surfaces are not forced
+ * opaque. It is excluded from `drawn` entirely rather than just kept out of
+ * `isGlass`, because there is no textured or bare-grey rendering of a crack
+ * decal that would be correct either.
+ */
+export function damageOnly(shader) {
+  return String(shader ?? '') === 'ksBrokenGlass';
+}
+
+/**
+ * Whether a mesh is a motion-blur alternate — the wheel as it looks spinning,
+ * with nothing to show while the car is standing still.
+ *
+ * Every corner of this car ships THREE rims: `EXT_RIM_LF` is the real one,
+ * `EXT_RIM_BLUR_LF` is a 288-triangle disc wearing a radial streak texture,
+ * and `EXT_RIM_BLUR_STATIC_LF` is the low-poly rim that sits behind that disc
+ * while it spins. The game swaps between them by wheel speed. Drawing all
+ * three at once — which is what this did — puts the streak disc over the
+ * wheel as a turbine-looking fan, and lands the static rim exactly on top of
+ * the real one, where the two z-fight and speckle the design's own rim paint.
+ *
+ * A livery preview is a car at rest, which is the one state where the answer
+ * is unambiguous: the sharp rim, and neither alternate. Same reasoning as
+ * `damageOnly` above — a condition this project has no value for, and only
+ * one correct default.
+ *
+ * By NAME, because that is where the distinction lives: the static blur rim
+ * shares both its material and its texture with the real rim, so nothing in
+ * the material can tell them apart. AC's own convention is what makes the
+ * name reliable, and it is the same convention `additive` and
+ * `trustworthyDiffuse` already lean on.
+ */
+export function motionBlurOnly(name) {
+  return /(^|_)blur(_|$)/i.test(String(name ?? ''));
+}
+
+/**
+ * Whether this shader's diffuse texture is a plausible standalone image —
+ * safe to show a part wearing, when the design does not paint it.
+ *
+ * Most shaders sample txDiffuse directly, so what the kn5 stores IS the
+ * surface. The MultiMap family is not: Kunos packs several material
+ * variants into one sheet — the NSX GT3's cockpit trim is four unrelated
+ * teams' switch panels and decals in one atlas — and blends between them at
+ * runtime with a mask this project does not read. Sampling it raw shows a
+ * fragment of every variant stitched together, which reads as a broken
+ * texture rather than as an honestly-unpainted part. `car-hides`-style
+ * honesty says grey instead.
+ *
+ * Detected by NAME, the same way `additive` is: `ksPerPixelMultiMap_damage_dirt`
+ * is also a body panel's shader (see docs/naming.md), so this only ever
+ * gates whether the CAR'S OWN stock texture is trusted for an unpainted
+ * part — a livery's own rendered artwork always overrides it regardless of
+ * the shader underneath.
+ */
+export function trustworthyDiffuse(shader) {
+  return !/multimap/i.test(String(shader ?? ''));
+}
+
+/**
+ * The tiling second texture a MultiMap material multiplies over its diffuse,
+ * when it has one.
+ *
+ * `trustworthyDiffuse` is right that these materials' diffuse is not the
+ * surface. It does not follow that the surface is unknowable — the NMDetail
+ * family is simply TWO layers, and the kn5 carries both. The NSX GT3's door
+ * cards and rollcage trim are `INT_HR_Occlusion.dds`, an ambient-occlusion
+ * bake with no colour in it whatsoever, multiplied by `MAT_Carbon.dds`, which
+ * is where the weave and the colour actually live; the instrument surround is
+ * the same bake against `metal_detail_2.dds`. Given both, a viewer can show
+ * what the game shows. Given only the bake it cannot, so this answers `null`
+ * and the caller keeps its honest grey rather than rendering a part as a
+ * greyscale photograph of its own shadows.
+ *
+ * Gated on the material's own `useDetail`, not on the presence of a filename.
+ * `NULL.dds` is Kunos's written-out empty slot and a real entry in the
+ * archive, so a filename test alone finds a texture, fetches it, and
+ * multiplies a switch panel by whatever that placeholder happens to hold —
+ * `INT_ELECTRONICS` is exactly that shape, and it is `useDetail: 0` that
+ * says so plainly.
+ *
+ * The multiplier comes back as recorded and is NOT defaulted to something
+ * plausible: it is 500 on this car's carbon and 100 on its instrument
+ * surround, so a made-up 1 would draw a weave with a 20cm pitch and call it
+ * carbon. A material claiming detail without a usable multiplier is a
+ * material this cannot honestly draw, and answers `null` with the rest.
+ */
+export function detailLayer(material) {
+  if (trustworthyDiffuse(material?.shader)) return null;
+  if (!material?.props?.useDetail) return null;
+
+  const named = (f) => (typeof f === 'string' && f && f.toLowerCase() !== 'null.dds' ? f : null);
+  const diffuse = named(material?.slots?.txDiffuse);
+  const detail = named(material?.slots?.txDetail);
+  if (!diffuse || !detail) return null;
+
+  const mult = Number(material.props.detailUVMultiplier);
+  if (!Number.isFinite(mult) || mult <= 0) return null;
+
+  // And the detail's NORMAL map, tiled the same way, which is the half that
+  // makes a material read as itself. Alcantara's colour is a flat dark grey
+  // whichever way you light it; what says "suede" is the nap catching light
+  // at a thousand angles, and that lives entirely in alcnt_nm.dds. Without it
+  // a matte fabric renders as one broad sheen on a perfectly smooth surface,
+  // which is exactly the plastic look it is supposed to avoid.
+  //
+  // Optional, because the colour detail is useful on its own and a material
+  // may state one without the other. `detailNormalBlend` is how hard the
+  // material wants it — 0.3 for this car's alcantara and carbon, 1.5 for its
+  // brushed metal — and a material that gives no usable strength gets 1
+  // rather than being dropped, since the map itself is the unambiguous part.
+  const normal = named(material?.slots?.txNormalDetail);
+  const blend = Number(material.props.detailNormalBlend);
+  return {
+    diffuse,
+    detail,
+    mult,
+    normal,
+    // Clamped, because the stated value is not always a considered one: this
+    // car's radiator says 1000, which would swing the sampled normal past
+    // sideways and light an eight-triangle part as if it faced anywhere but
+    // out. The real values sit between 0.2 and 1.5, so 4 is well clear of
+    // anything deliberate while still catching a typo.
+    normalBlend: Number.isFinite(blend) && blend > 0 ? Math.min(4, blend) : 1,
+  };
+}
+
+/**
+ * The material's OWN normal map: the relief of the part itself — stitching,
+ * a panel seam, the moulding around a switch — at the diffuse's UV rather
+ * than tiled like the detail grain beside it. Two different maps doing two
+ * different jobs, and only `txNormalDetail` was ever being read.
+ *
+ * Gated on the SHADER NAME, which is the unusual part and is what keeps two
+ * accidents out of the picture. AC's shaders say in their names whether they
+ * sample this slot — ksPerPixelNM, ksPerPixelAT_NM, ksPerPixelMultiMap_NMDetail
+ * — and a kn5 binding a texture to a slot its shader never reads is ordinary.
+ * This car has both kinds:
+ *
+ *   * the carpaint is `ksPerPixelMultiMap_damage_dirt` and its `txNormal` is
+ *     `EXT_Damage_NM.dds`, the relief of a CRASHED panel, which the game
+ *     blends in by damage and this project always renders at zero. Sampled
+ *     unconditionally it would put dents down the side of an undamaged car.
+ *   * `LUMIRANK` binds one to a plain `ksPerPixelMultiMap`, which has no
+ *     normal to sample it into at all.
+ *
+ * Matched case-sensitively, so a mod shader spelling it `nm` gets no base
+ * normal and renders exactly as it does today. That is the safe direction to
+ * fail in: this test failing leaves a surface flatter than it should be, and
+ * the other one covers a car in relief nothing in the game shows.
+ *
+ * `nmObjectSpace` is the other refusal. Such a map stores its direction in the
+ * MODEL'S frame rather than the surface's, so putting it through a tangent
+ * basis points every fragment somewhere arbitrary. Two materials here set it.
+ */
+export function baseNormal(material) {
+  if (!/NM/.test(material?.shader ?? '')) return null;
+  if (material?.props?.nmObjectSpace) return null;
+  const file = material?.slots?.txNormal;
+  // NULL.dds is Kunos's written-out empty slot and a real entry in the archive
+  // — see detailLayer, which learned this the same way.
+  if (typeof file !== 'string' || !file || file.toLowerCase() === 'null.dds') return null;
+  return file;
 }
 
 /** Meshes whose material's txDiffuse is `textureName`. */

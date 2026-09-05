@@ -60,6 +60,7 @@
         <button id="tab-uv" class="tab on">UV</button>
         <button id="tab-3d" class="tab">Car</button>
         <button id="tab-all" class="tab">Whole car</button>
+        <button id="tab-cockpit" class="tab">Cockpit</button>
         <span id="viewnote" class="hint"></span>
         <span id="adopt" class="hint" hidden>
           <span id="adoptwhat"></span>
@@ -70,8 +71,16 @@
         </label>
       </div>
       <div id="stage">
-        <div id="texture"></div>
-        <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+        <!-- Hidden by markup, the same way #carview already is below: JS
+             decides which of the three layers is showing, but boot has to
+             fetch state and render before it can make that call, and on a
+             slow network that took long enough for #texture to sit there
+             fully painted — the region editor's dashed boxes, full-screen —
+             before showView('3d') ever ran to hide it again. A flash
+             on every load, worse on every reload. #overlay carries the same
+             gap for the same reason and gets the same fix. -->
+        <div id="texture" hidden></div>
+        <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" hidden></svg>
         <canvas id="carview" hidden></canvas>
       </div>
       <p class="hint" id="canvashint">

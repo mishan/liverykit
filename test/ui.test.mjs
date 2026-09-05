@@ -26,6 +26,12 @@ import '../src/index.mjs';
 function fakeDom() {
   const made = new Map();
   const node = (id) => {
+    // Attributes, and `hidden` REFLECTED between the two the way a real
+    // HTMLElement does it. The app hides layers by attribute now, because one
+    // of them is an <svg> and SVGElement has no `hidden` property to assign —
+    // and this fake had no setAttribute at all, which is its own small lesson
+    // about what it can and cannot catch.
+    const attrs = new Map();
     const el = {
       id,
       innerHTML: '',
@@ -34,12 +40,17 @@ function fakeDom() {
       dataset: {},
       style: {},
       disabled: false,
+      hidden: false,
       onclick: null,
       onchange: null,
       onpointerdown: null,
       children: [],
       querySelectorAll: () => [],
       getBoundingClientRect: () => ({ width: 1000, height: 1000, left: 0, top: 0 }),
+      setAttribute(k, v) { attrs.set(k, v); if (k === 'hidden') el.hidden = true; },
+      removeAttribute(k) { attrs.delete(k); if (k === 'hidden') el.hidden = false; },
+      hasAttribute: (k) => attrs.has(k),
+      getAttribute: (k) => (attrs.has(k) ? attrs.get(k) : null),
     };
     return el;
   };
@@ -428,8 +439,14 @@ test('the page and the script agree about what exists', async () => {
   assert.match(css, /\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/,
     'the stylesheet needs a [hidden] reset that outranks its own display rules');
 
-  // And anything app.js toggles with `hidden` must be covered by it.
-  const toggled = [...new Set([...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]))];
+  // And anything app.js hides must be covered by it — however it does the
+  // hiding. `setHidden($('#x'), ...)` counts as much as `$('#x').hidden = ...`,
+  // and missing the first form would have quietly stopped checking the stage
+  // layers on the day they moved to it.
+  const toggled = [...new Set([
+    ...[...app.matchAll(/\$\('#([\w-]+)'\)\.hidden/g)].map((m) => m[1]),
+    ...[...app.matchAll(/setHidden\(\$\('#([\w-]+)'\)/g)].map((m) => m[1]),
+  ])];
   assert.ok(toggled.length, 'the editor toggles something with hidden');
   for (const id of toggled) {
     assert.ok(ids.includes(id), `app.js hides #${id}, which the page does not contain`);
@@ -507,6 +524,7 @@ test('the whole car packs every mesh exactly once, painted or not', async () => 
   const back = unpackModel(new Uint8Array(packModel(g)).buffer);
   assert.deepEqual([...back.positions], [...g.positions]);
   assert.deepEqual([...back.uvs], [...g.uvs]);
+  assert.deepEqual([...back.tangents], [...g.tangents]);
   assert.deepEqual([...back.indices], [...g.indices]);
   assert.deepEqual(back.groups, g.groups);
 });
@@ -523,6 +541,7 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
       positions: Float32Array.from([0, 1, 2]),
       uvs: Float32Array.from([0, 1]),
       normals: Float32Array.from([0, 1, 0]),
+      tangents: Float32Array.from([1, 0, 0]),
       indices: Uint32Array.from([0]),
       groups: [{ role, file: `${role}.dds`, start: 0, count: 1 }],
       bounds: { lo: [0, 0, 0], hi: [1, 1, 1] },
@@ -531,9 +550,11 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
     const back = unpackModel(buf);          // throws on a misaligned offset
     assert.equal(back.groups[0].role, role);
     assert.deepEqual([...back.positions], [0, 1, 2]);
-    // The normals share the alignment problem and are the newest array, so they
-    // are the one most likely to be read from the wrong offset.
+    // Every array behind the header shares the alignment problem, and whichever
+    // was added last is likeliest to be read from the wrong offset — packModel
+    // and unpackModel have to agree on the order AND the widths.
     assert.deepEqual([...back.normals], [0, 1, 0]);
+    assert.deepEqual([...back.tangents], [1, 0, 0]);
   }
 });
 
@@ -3286,6 +3307,18 @@ test('packModel says what is missing instead of dying on undefined', async () =>
     groups: [], bounds: { lo: [0, 0, 0], hi: [0, 0, 0] },
   }), /needs a typed array for "normals"/,
     'a builder that has not caught up is told so, at the call that did it');
+
+  // And it must name the one that is actually missing. The message used to say
+  // "normals" whatever the gap, from when normals were the newest field, so a
+  // builder short of TANGENTS was sent to look at the wrong array.
+  assert.throws(() => packModel({
+    positions: Float32Array.from([0, 0, 0]),
+    uvs: Float32Array.from([0, 0]),
+    normals: Float32Array.from([0, 1, 0]),
+    indices: Uint32Array.from([0]),
+    groups: [], bounds: { lo: [0, 0, 0], hi: [0, 0, 0] },
+  }), /needs a typed array for "tangents"/,
+    'the field named must be the field missing');
 });
 
 test('an op the editor does not know is refused, not silently dropped', async () => {
@@ -3398,9 +3431,15 @@ test('the whole-car view never paints grey where a transparent surface belongs',
   // something transparent.
   const paintBody = src.slice(src.indexOf('const paint = (g) =>'),
     src.indexOf('for (const g of groups) if (!g.blend) paint(g);'));
-  assert.match(paintBody, /if \(!tex && g\.blend\) return;/,
-    'a blended group with no texture is skipped, not drawn grey');
-  assert.ok(paintBody.indexOf('if (!tex && g.blend) return;')
+  // Glass is the one deliberate exception, added later: it draws on
+  // `unpainted` grey plus a fresnel rim rather than being skipped, because a
+  // bare surface shaded that way reads as a windscreen and an empty hole
+  // does not. It stays a NARROWER condition than the general rule, not a
+  // replacement for it — every other blended group with no texture is still
+  // skipped, not drawn grey.
+  assert.match(paintBody, /if \(!tex && g\.blend && !g\.glass\) return;/,
+    'a blended, non-glass group with no texture is skipped, not drawn grey');
+  assert.ok(paintBody.indexOf('if (!tex && g.blend && !g.glass) return;')
     < paintBody.indexOf('gl.bindTexture'),
     'and skipped BEFORE it binds the grey fallback');
 
@@ -3440,6 +3479,27 @@ test('an emissive sheet adds light instead of covering what is behind it', async
   const pass = src.slice(src.indexOf('for (const g of blended)'));
   assert.match(pass, /if \(g\.add\) gl\.blendFunc\(gl\.ONE, gl\.ONE\);/);
   assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
+});
+
+test('the car is drawn on an opaque canvas, not a translucent one', async () => {
+  // Fragment alpha in this viewer means "composite me over what is behind me
+  // IN THE SCENE" — glass over bodywork, a plate's emissive twin over the
+  // plate. On a canvas with an alpha channel it means one more thing nobody
+  // asked for: the DOM compositor reads it too, and a transparent fragment
+  // punches through to the page.
+  //
+  // It hides well. #stage is #05070a and the clear colour is (0.02, 0.03,
+  // 0.04), so the hole shows almost exactly the colour that should have been
+  // there — which is why the per-surface pass shipped leaking and was caught
+  // by reasoning rather than by looking.
+  //
+  // Read out of the source because the alternative is a GPU, and asserted at
+  // the context rather than at each uniform: guarding the uniforms is a rule
+  // every future pass has to remember, and this is a fact about the canvas.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const call = src.slice(src.indexOf('canvas.getContext('), src.indexOf('canvas.getContext(') + 200);
+  assert.match(call, /alpha:\s*false/,
+    'the drawing buffer has no alpha channel, so no fragment can reach the page');
 });
 
 test('a surface the browser cannot rasterise fails loudly and alone', async () => {
@@ -3583,4 +3643,432 @@ test('the single-surface payload carries normals too, at the right offset', asyn
   assert.throws(() => packGeometry({ ...g, normals: undefined }),
     /needs a typed array for "normals"/,
     'a builder that has not caught up is told so at the call that did it');
+});
+
+test('an absent cockpit field and a null one stay different answers', async () => {
+  // `packModel` sends `cockpit: null` on purpose for a car whose model has no
+  // recognisable steering wheel, and says so in a comment: null travels as
+  // JSON null rather than an absent key so the client can tell that from a
+  // payload that predates the field. `unpackModel` then coerced the absence
+  // back to null and threw the distinction away.
+  //
+  // It is not hypothetical. The server caches the modules it imports and the
+  // page does not, so a browser reload against a server that was not restarted
+  // is exactly the case where the field is missing — and the editor reported
+  // it as "this car has no cockpit eye", which sends you looking at the car.
+  const { packModel } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const empty = () => ({
+    positions: new Float32Array([0, 0, 0]), uvs: new Float32Array([0, 0]),
+    normals: new Float32Array([0, 1, 0]), tangents: new Float32Array([1, 0, 0]),
+    indices: new Uint32Array([0]), groups: [], bounds: null,
+  });
+
+  const stated = unpackModel(toArrayBuffer(packModel({ ...empty(), cockpit: null })));
+  assert.equal('cockpit' in stated, true, 'a stated null is a stated null');
+  assert.equal(stated.cockpit, null);
+
+  const withEye = unpackModel(toArrayBuffer(packModel({ ...empty(), cockpit: { x: 1, y: 2, z: 3 } })));
+  assert.deepEqual(withEye.cockpit, { x: 1, y: 2, z: 3 });
+
+  // And a payload from before the field existed: the header simply has no such
+  // key. Rebuilt by hand, because the current packer cannot produce one.
+  const old = packModel({ ...empty(), cockpit: null });
+  const headLen = old.readUInt32LE(0);
+  const head = JSON.parse(old.subarray(4, 4 + headLen).toString('utf8'));
+  delete head.cockpit;
+  const json = Buffer.from(JSON.stringify(head), 'utf8');
+  const pad = Buffer.alloc((4 - json.length % 4) % 4, 0x20);
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(json.length + pad.length);
+  const rebuilt = Buffer.concat([size, json, pad, old.subarray(4 + headLen)]);
+  const ancient = unpackModel(toArrayBuffer(rebuilt));
+  assert.equal('cockpit' in ancient, false,
+    'a payload that never carried the field must not grow one');
+  assert.equal(ancient.cockpit, undefined);
+});
+
+/** A Buffer's bytes as their own ArrayBuffer — Buffers are views into a pool. */
+function toArrayBuffer(b) {
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+test('layers are hidden by attribute, so an SVG can be unhidden too', async () => {
+  // `hidden` is a property of HTMLElement. `#overlay` is an <svg>, and
+  // SVGElement does not have it, so `overlay.hidden = false` defined an expando
+  // and left the content attribute alone. Nothing threw and nothing logged.
+  //
+  // And this page ships its own `[hidden] { display: none !important }` — the
+  // rule the test above insists on — which an attribute selector applies to SVG
+  // as readily as to anything else. So the region editor's overlay was
+  // permanently display:none in EVERY browser from the commit that put `hidden`
+  // in the markup. It survived being looked at because the two views under
+  // active work, whole car and cockpit, do not use the overlay; only the
+  // browser test driving a real pointer at a region could notice.
+  //
+  // An element with no `hidden` property is the whole of the fixture, because
+  // that is precisely what an SVGElement is.
+  const { setHidden } = await import('../src/ui/app.js');
+
+  const attrs = new Map();
+  const svgish = {
+    setAttribute: (k, v) => attrs.set(k, v),
+    removeAttribute: (k) => attrs.delete(k),
+    hasAttribute: (k) => attrs.has(k),
+  };
+  assert.equal('hidden' in svgish, false, 'the fixture must not offer the easy way out');
+
+  attrs.set('hidden', '');
+  setHidden(svgish, false);
+  assert.equal(svgish.hasAttribute('hidden'), false,
+    'showing must REMOVE the attribute — assigning .hidden would not have');
+
+  setHidden(svgish, true);
+  assert.equal(svgish.hasAttribute('hidden'), true);
+
+  // A missing element is not an error: #litbox is optional in the markup and
+  // was already guarded at every call site.
+  assert.doesNotThrow(() => setHidden(null, true));
+});
+
+test('a rim drawn twice, a cockpit drawn twice, and a material with two layers', async () => {
+  // Three exclusion and grouping rules arrived together here, and none of them
+  // had a test. All three are string- or property-matching heuristics over
+  // somebody else's model, which is the kind of rule that is wrong quietly:
+  // too broad and geometry vanishes, too narrow and it draws twice. Both have
+  // happened on this project, and both were found by looking at a picture.
+  const { motionBlurOnly, detailLayer, trustworthyDiffuse } = await import('../src/engine/kn5.mjs');
+
+  // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
+  // two blurred stand-ins it swaps in with speed — and all three are in the
+  // model at once, co-planar. Drawn together they z-fight into a mess.
+  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF']) {
+    assert.equal(motionBlurOnly(yes), true, `${yes} is an alternate`);
+  }
+  // And it must not eat a part whose name merely CONTAINS the letters. This is
+  // the half that goes wrong: a pattern loose enough to catch the rims is
+  // loose enough to delete a blurred-glass panel or a "Blurton" sponsor decal.
+  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', '', null]) {
+    assert.equal(motionBlurOnly(no), false, `${JSON.stringify(no)} is a real part`);
+  }
+
+  // TWO-LAYER MATERIALS. Only when the shader says its diffuse cannot stand
+  // alone, the material asks for detail, both textures are real, and the tiling
+  // is a usable number — anything less and the group is better off with the
+  // honest grey than with half a material.
+  const multi = {
+    shader: 'ksPerPixelMultiMap',
+    slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds', txNormalDetail: 'carbon_nm.dds' },
+    props: { useDetail: 1, detailUVMultiplier: 377, detailNormalBlend: 2 },
+  };
+  assert.equal(trustworthyDiffuse(multi.shader), false, 'a MultiMap diffuse is an atlas');
+  assert.deepEqual(detailLayer(multi), {
+    diffuse: 'bake.dds', detail: 'carbon.dds', mult: 377,
+    normal: 'carbon_nm.dds', normalBlend: 2,
+  });
+
+  const without = (patch) => detailLayer({ ...multi, ...patch });
+  assert.equal(without({ props: { ...multi.props, useDetail: 0 } }), null,
+    'the material has to ask for the layer');
+  assert.equal(without({ shader: 'ksPerPixel' }), null,
+    'a shader whose diffuse IS the surface needs no second layer');
+  assert.equal(without({ slots: { ...multi.slots, txDetail: 'NULL.dds' } }), null,
+    'NULL.dds is how a kn5 says "no texture", not the name of one');
+  assert.equal(without({ slots: { ...multi.slots, txDiffuse: '' } }), null);
+  assert.equal(without({ props: { ...multi.props, detailUVMultiplier: 0 } }), null,
+    'a tiling of zero would sample one texel across the whole part');
+  assert.equal(without({ props: { ...multi.props, detailUVMultiplier: NaN } }), null);
+  assert.equal(detailLayer(null), null, 'a mesh with no material at all');
+
+  // The normal map is optional; the colour half still stands without it.
+  const noNormal = without({ slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds' } });
+  assert.equal(noNormal.detail, 'carbon.dds');
+  assert.equal(noNormal.normal, null);
+});
+
+test("a part's own relief is read where the shader says it is, and nowhere else", async () => {
+  // `txNormalDetail` was the only normal map this viewer read, so a surface got
+  // its material's grain — the weave, the nap — and never the relief of the
+  // part itself: the stitching down a seat, a panel seam, the moulding around a
+  // switch. Those live in `txNormal`, at the diffuse's UV rather than tiled.
+  //
+  // The slot cannot simply be trusted, and this car says why twice over.
+  const { baseNormal } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelNM', slots: { txDiffuse: 'plastic.dds', txNormal: 'flat_nm.dds' },
+  }), 'flat_nm.dds');
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap_NMDetail',
+    slots: { txDiffuse: 'INT_HR_Occlusion.dds', txNormal: 'INT_HR_Occlusion_NM.dds' },
+  }), 'INT_HR_Occlusion_NM.dds', 'the interior relief, at the bake\'s own UV');
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelAT_NM', slots: { txNormal: 'EXT_Decals_NM.dds' },
+  }), 'EXT_Decals_NM.dds');
+
+  // THE CARPAINT. Its shader is ksPerPixelMultiMap_damage_dirt and the texture
+  // in its normal slot is the relief of a CRASHED panel, which the game blends
+  // in by damage and this project always renders at zero. Read unconditionally
+  // it puts dents down the side of an undamaged car.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap_damage_dirt',
+    slots: { txDiffuse: 'EXT_Skin_Sponsors.dds', txNormal: 'EXT_Damage_NM.dds' },
+  }), null, 'a damage map is not the shape of the part');
+
+  // And a slot bound on a shader that has no normal to sample it into, which
+  // is an ordinary thing for a kn5 to contain — this car's Lumirank panel.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap', slots: { txNormal: 'Lumirank_3_slots_NM.dds' },
+  }), null, 'the shader name is what says the slot is read');
+
+  // An object-space map states its direction in the MODEL'S frame, so putting
+  // it through a tangent basis points every fragment somewhere arbitrary.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelNM', props: { nmObjectSpace: 1 }, slots: { txNormal: 'EXT_Lights_NM.dds' },
+  }), null);
+
+  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: { txNormal: 'NULL.dds' } }), null,
+    'NULL.dds is how a kn5 says "no texture"');
+  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: {} }), null);
+  assert.equal(baseNormal(null), null, 'a mesh with no material at all');
+});
+
+test("a group carries its material's relief, painted or not", async () => {
+  // The map has to reach the renderer on the GROUP, next to the lighting
+  // constants and for the same reason: a group is one draw call, and the
+  // viewer has nothing else to hang a per-part texture on.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(buildKn5({
+    material: { shader: 'ksPerPixelNM', slots: { txDiffuse: 'body.dds', txNormal: 'body_nm.dds' } },
+  }));
+
+  // PAINTED, which is the case that could most easily have been left out. A
+  // livery replaces the colour of a panel; it does not replace the shape of the
+  // seam running across it, and that shape is still the car's.
+  const painted = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]);
+  assert.ok(painted.groups.length, 'the fixture drew something');
+  for (const g of painted.groups) {
+    assert.equal(g.normalMap, 'body_nm.dds', `${g.role ?? g.file} kept its relief`);
+  }
+
+  // And unpainted, where the car supplies the colour as well as the shape.
+  for (const g of wholeModelGeometry(model, []).groups) {
+    assert.equal(g.normalMap, 'body_nm.dds');
+  }
+
+  // `null` where the material does not honestly have one, so the viewer can
+  // tell "no relief" from "a relief that failed to arrive".
+  const flat = parseKn5Buffer(buildKn5({ material: { shader: 'ksPerPixel' } }));
+  for (const g of wholeModelGeometry(flat, []).groups) assert.equal(g.normalMap, null);
+});
+
+test('the viewer samples the relief untiled, and asks for it on painted groups too', async () => {
+  // Read out of the source because the alternative is a GPU — same bargain the
+  // transparent-surface test above makes. Three things this can get wrong in a
+  // way no unit test elsewhere would notice.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // ONE IMAGE OVER THE PART. The detail normal beside it is sampled at
+  // vUv * detailMult — five hundred repeats across a door card — and tiling
+  // the relief the same way would turn one panel seam into a mesh of them.
+  assert.match(src, /texture2D\(baseNormal, vUv\)/,
+    'the relief is sampled at the diffuse\'s own UV');
+  assert.ok(!/texture2D\(baseNormal, vUv \* detail/.test(src),
+    'and never at the detail layer\'s tiling');
+
+  // FETCHED FOR EVERY GROUP. The stock-texture loop skips painted groups —
+  // their colour comes from the design — and the relief does not follow that
+  // rule: the car still supplies the shape.
+  const loop = src.slice(src.indexOf('for (const g of model.groups ?? []) {'),
+    src.indexOf('// A few lanes rather than one after another.'));
+  assert.ok(loop.indexOf("want(byFile, g.normalMap") < loop.indexOf("if (g.role !== null) continue;"),
+    'the relief is asked for before the painted groups are skipped');
+
+  // AND RESET in the per-surface pass, like every other per-group uniform. The
+  // sheet being edited is a texture and not a part; a leftover 1 here embosses
+  // one part's seams onto every surface in the picker.
+  const surfacePass = src.slice(src.indexOf('if (!groups) {'), src.indexOf('// One draw call per painted surface.'));
+  assert.match(surfacePass, /gl\.uniform1f\(loc\.hasBaseNormal, 0\);/);
+});
+
+test('the whole car keeps both cockpits and tags which is which', async () => {
+  // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
+  // same coordinates. Drawing both z-fights the interior into a checkerboard
+  // seen through the glass, which is exactly how it was reported.
+  //
+  // This used to drop LR on the way through, and the geometry lost a fact the
+  // rest of the editor needs — LR is where a car's `interior` role can live,
+  // and a design painting it had nothing to paint on. So both survive, tagged,
+  // and choosing between them is the renderer's job.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+
+  // The two cockpits go under NAMED PARENT NODES, because that is the only
+  // thing that tells them apart: both contain a mesh called dash, and the rule
+  // reads the path. The blur alternate is matched by name and needs no parent.
+  const quad = (name) => ({
+    name,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  const model = parseKn5Buffer(buildKn5({
+    wrapped: [
+      { name: 'COCKPIT_HR', meshes: [quad('dash')] },
+      { name: 'COCKPIT_LR', meshes: [quad('dash')] },
+    ],
+    extraMeshes: [quad('EXT_RIM_BLUR_LF')],
+  }));
+
+  const g = wholeModelGeometry(model, [], { livery, profile });
+  const paths = (model.meshes ?? []).map((m) => m.path ?? m.name);
+  assert.ok(paths.some((p) => /COCKPIT_HR/i.test(p)), `no HR cockpit in the fixture: ${paths}`);
+  assert.ok(paths.some((p) => /COCKPIT_LR/i.test(p)), `no LR cockpit in the fixture: ${paths}`);
+  assert.ok((model.meshes ?? []).some((m) => m.name === 'EXT_RIM_BLUR_LF'),
+    'and a motion-blur alternate, so all three rules have something to exclude');
+
+  // The fixture's own body and BOTH cockpit quads survive; the motion-blur
+  // alternate does not.
+  const drawn = g.indices.length / 3;
+  assert.equal(drawn, 3,
+    `the body and both cockpit quads, and no blur alternate — got ${drawn}`);
+
+  // Tagged, and tagged separately: a group is one draw call, so a group that
+  // mixed the two cockpits could not have one of them left out.
+  const lods = g.groups.map((x) => x.lod ?? null);
+  assert.equal(lods.filter((l) => l === 'HR').length, 1, `one HR group: ${lods}`);
+  assert.equal(lods.filter((l) => l === 'LR').length, 1, `one LR group: ${lods}`);
+  assert.ok(lods.includes(null), 'and the body, which belongs to neither');
+
+  // And the groups must not overlap: a triangle drawn by two groups is drawn
+  // twice, which is the z-fight this is here to prevent.
+  const seen = new Set();
+  for (const grp of g.groups) {
+    for (let i = grp.start; i < grp.start + grp.count; i++) {
+      assert.equal(seen.has(i), false, `index ${i} is claimed by two groups`);
+      seen.add(i);
+    }
+  }
+});
+
+test('every concurrent request for a stock texture gets it, on a cold server', async () => {
+  // The viewer asks for a car's own textures fifty at a time, six in flight, and
+  // the first of those arrives while the server has not read the kn5 yet.
+  //
+  // `stock` used to be assigned an empty Map on the line before the parse
+  // started, so every request that landed during those seconds saw it truthy,
+  // skipped the load, looked up the empty map, and got a 404 — "no such texture
+  // in this model" — for a texture the model has. The client believed it, drew
+  // grey, and reported success. A refresh after a server restart came up with
+  // most of the car untextured; a second refresh, against a warm server, was
+  // fine. Nothing was ever still loading when the picture was drawn. The answers
+  // had been wrong.
+  //
+  // So: concurrency, and a real HTTP server, because that race lives between two
+  // requests and cannot be seen from inside one.
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-cold-'));
+  const modelPath = join(dir, 'fixture.kn5');
+  // Bigger than the 256-byte floor, or the server would decline to serve it for
+  // the honest reason and this would pass without testing anything.
+  await writeFile(modelPath, carKn5({ textureBytes: 1024 }));
+
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server, url } = await startUi({
+    livery, profile, liveryId: 'neon-grid-any',
+    fitPath: join(dir, 'fit.json'), modelPath, port: 0, log: () => {},
+  });
+
+  try {
+    // node:http rather than fetch: the boot test in this file replaces the
+    // global fetch with a recorder, and a test that quietly talks to that
+    // instead of to the server would pass whatever the server did.
+    const { get } = await import('node:http');
+    const asked = `${url}api/stock?file=${encodeURIComponent(CAR.texture)}`;
+    const answers = await Promise.all(Array.from({ length: 8 }, () =>
+      new Promise((ok, no) => {
+        get(asked, (res) => {
+          let bytes = 0;
+          res.on('data', (c) => { bytes += c.length; });
+          res.on('end', () => ok({ status: res.statusCode, bytes }));
+        }).on('error', no);
+      })));
+    for (const [i, a] of answers.entries()) {
+      assert.equal(a.status, 200,
+        `request ${i} of 8 was told the model has no ${CAR.texture}; ` +
+        `statuses were ${answers.map((x) => x.status).join(', ')}`);
+      assert.ok(a.bytes > 256, `request ${i} got ${a.bytes} bytes`);
+    }
+  } finally {
+    await new Promise((ok) => server.close(ok));
+  }
+});
+
+test('a model that cannot be read is a 500, not "no such texture"', async () => {
+  // The viewer takes a 404 at its word and draws the grey without a word,
+  // because an encrypted kn5 genuinely has none of these textures. That makes
+  // 404 the wrong answer for a model nobody could read at all — the same
+  // failure as the load-order race above, wearing different clothes: a request
+  // that could not be served answered with a confident fact about the car.
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { get } = await import('node:http');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-unreadable-'));
+  const good = join(dir, 'fixture.kn5');
+  await writeFile(good, carKn5({ textureBytes: 1024 }));
+  const profile = await profileFromKn5(good, { id: 'fixture_car', log: () => {} });
+
+  // Profiled from the real thing, then pointed at something that is not a kn5
+  // at all — which is what a truncated download or a half-written file is.
+  const broken = join(dir, 'broken.kn5');
+  await writeFile(broken, Buffer.from('not a kn5, not even close'));
+
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const { server, url } = await startUi({
+    livery, profile, liveryId: 'neon-grid-any',
+    fitPath: join(dir, 'fit.json'), modelPath: broken, port: 0, log: () => {},
+  });
+
+  try {
+    const ask = () => new Promise((ok, no) => {
+      get(`${url}api/stock?file=body.dds`, (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => ok({ status: res.statusCode, body }));
+      }).on('error', no);
+    });
+
+    const first = await ask();
+    assert.equal(first.status, 500,
+      `an unreadable model is a server failure, not a missing texture: ${first.status} ${first.body}`);
+    assert.match(first.body, /could not read textures/);
+
+    // And it stays 500. The rejected load is cached like a successful one --
+    // a kn5 that would not parse once will not parse differently on the
+    // fiftieth request, and every caller should hear the same answer.
+    const again = await ask();
+    assert.equal(again.status, 500, 'the same answer, not a retry that reports differently');
+  } finally {
+    await new Promise((ok) => server.close(ok));
+  }
 });
