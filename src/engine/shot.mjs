@@ -469,13 +469,11 @@ export function rasterise(model, groups, sheets, {
             const ob = (cy0 * art.w + cx1) * 4;
             const oc = (cy1 * art.w + cx0) * 4;
             const od = (cy1 * art.w + cx1) * 4;
-            // Written out rather than looped through a closure. This is the
-            // innermost thing in the renderer — a few tens of millions of
-            // fragments for one preview — and allocating a function per
-            // covered pixel is real time for no expressiveness.
-            // Written out, with no closure of any kind: `tx` and `ty` change
-            // every fragment, so anything that captures them is allocated per
-            // covered pixel — a few tens of millions of them for one preview.
+            // Written out, with no closure of any kind. `tx` and `ty` change
+            // every fragment, so nothing that folds the four channels can be
+            // hoisted out — it would be allocated per covered pixel, and this
+            // is the innermost thing in the renderer: a few tens of millions of
+            // them for one preview.
             const d = art.data;
             const r0 = d[oa] + (d[ob] - d[oa]) * tx;
             const r1 = d[oc] + (d[od] - d[oc]) * tx;
