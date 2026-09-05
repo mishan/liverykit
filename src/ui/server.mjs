@@ -48,7 +48,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
-import { shoot, VIEWS } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -830,6 +830,12 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
     }
     return stock;
   };
+  // The same textures again, decoded, for the renderer that has no GPU to hand
+  // a DDS to. Kept for the life of the server: the car's own artwork does not
+  // change while the editor is up, and decoding is an ImageMagick run per
+  // texture — thirty-odd of them for one shot of a GT3 car, and all of them
+  // again for every other angle somebody asks for.
+  const stockSheets = new Map();
   const stockTexture = async (file) => {
     if (!modelPath) return null;
     // Assigned before the await, and it is a PROMISE this time, so the racing
@@ -996,9 +1002,30 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           role: r.role,
           svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
         }));
+        // The car's OWN artwork for everything the design does not paint, the
+        // same way the build's preview.jpg gets it. Without it this drew glass,
+        // wheels and the entire interior flat grey while the browser view a
+        // metre away showed them in their real materials — and this is the only
+        // picture an agent working without a browser can see, so a change was
+        // being verified against the wrong one.
+        let stock = new Map();
+        let absent = [];
+        try {
+          ({ sheets: stock, absent } = await carSheets(g.groups, stockTexture, { cache: stockSheets }));
+        } catch (e) {
+          // A model whose textures cannot be read at all is a fact about the
+          // server rather than about the car, and the geometry is already in
+          // hand — so the honest answer is the picture without them, with the
+          // reason counted alongside the ones that were merely missing.
+          absent = [`every texture: ${e.message}`];
+        }
+        if (absent.length) {
+          log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
+        }
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
         const shot = await shoot(g, g.groups, surfaces, {
           view,
+          sheets: stock,
           width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
           height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
         });
@@ -1009,6 +1036,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           // renderer has no artwork for are not drawn, and the caller should
           // know how much of the car that was.
           'x-liverykit-skipped': String(shot.skipped),
+          // And how many of the car's own textures the model could not give up,
+          // which is the difference between "your design does not paint this"
+          // and "nobody could read what the car wears there".
+          'x-liverykit-absent': String(absent.length),
         });
         return res.end(shot.png);
       }

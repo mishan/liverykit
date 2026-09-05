@@ -7,23 +7,6 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
-## render_car and render_view still draw the car's own textures as grey
-
-`rasterise` now composites a two-layer material, and the build feeds it both
-halves, so `preview.jpg` shows the cockpit in carbon, alcantara and brushed
-metal. `shoot()` does not: it builds `sheets` from the painted surfaces alone,
-so everything the design does not paint — glass, wheels, the whole interior —
-is BARE grey in an MCP screenshot.
-
-The pieces all exist. `renderShowroomPreview` in build.mjs does exactly this
-work already: walk the groups for `file` and both `detail` names, pull the
-blobs out of the kn5, `decodeDds` them into `sheets`. It wants lifting out of
-build.mjs and calling from the MCP path, where the model is already open.
-
-This matters more than it looks: the CLI render is what an agent working
-without a browser sees, so the two renderers disagreeing is how a change gets
-verified against the wrong picture. It has happened.
-
 ## The CLI renderer has one light rig, not the car's materials
 
 The editor reads `ksAmbient`, `ksDiffuse`, `ksSpecular` and `ksSpecularEXP` off
