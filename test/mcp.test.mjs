@@ -830,3 +830,88 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
   assert.deepEqual(at(reversed), [nr, ng, nb],
     'group order must not change the picture; that is what sorting is for');
 });
+
+test('a shot is antialiased, and comes back the size it was asked for', async () => {
+  // The single most obvious tell against AC's own showroom previews was the
+  // staircase on every silhouette: one sample at the pixel centre makes a
+  // triangle edge a step function, and a fine repeated pattern in the artwork
+  // aliases into moire that is not in the design. `samples` renders the frame
+  // several times over in each direction and boxes it back down.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Rotated in the image plane, so its edges cross pixel rows at an angle and
+  // there is something for the sampling to be wrong about. An axis-aligned
+  // quad lands on pixel boundaries and looks identical either way, which is
+  // how a version of this test passed while doing nothing.
+  const c = Math.cos(0.4); const s = Math.sin(0.4);
+  const corner = (y, z) => [0, y * c - z * s, y * s + z * c];
+  const tri = {
+    positions: new Float32Array([...corner(-1, -1), ...corner(-1, 1), ...corner(1, 1)]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2]),
+  };
+  const group = [{ role: 'body', start: 0, count: 3 }];
+  const opts = { view: 'left', width: 60, height: 60 };
+
+  const hard = rasterise(tri, group, new Map(), { ...opts, samples: 1 });
+  const soft = rasterise(tri, group, new Map(), { ...opts, samples: 3 });
+
+  // The frame is the frame. A caller asking for 60x60 gets 60x60 whatever the
+  // sampling did internally, or every consumer of this — preview.jpg's encoder
+  // included — is handed a picture three times the size it planned for.
+  for (const [name, img] of [['samples: 1', hard], ['samples: 3', soft]]) {
+    assert.equal(img.width, 60, name);
+    assert.equal(img.height, 60, name);
+    assert.equal(img.data.length, 60 * 60 * 4, name);
+  }
+
+  // Count how many distinct greys appear. Aliased, there are two — background
+  // and surface. Antialiased, the edge pixels hold the blend between them, and
+  // that is the whole of what this buys.
+  const shades = (img) => new Set(
+    Array.from({ length: img.width * img.height }, (_, i) => img.data[i * 4]));
+  assert.ok(shades(soft).size > shades(hard).size,
+    `antialiasing should add intermediate values: ${shades(hard).size} -> ${shades(soft).size}`);
+});
+
+test('the preview frame is taken from the car\'s own skins, by vote', async () => {
+  // A generated preview lands in Content Manager's list beside the ones the car
+  // shipped with, and being a different size or aspect ratio there is the first
+  // thing that marks it as not belonging. The convention has moved — Kunos-era
+  // content is 1022x575 and the current GT3 mods are 1555x835, which is not
+  // even the same ratio — so it is read off the car rather than assumed.
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const sharp = (await import('sharp')).default;
+  const { previewFrame, PREVIEW_FRAME } = await import('../src/engine/package.mjs');
+
+  const car = await mkdtemp(join(tmpdir(), 'lk-frame-'));
+  const modelPath = join(car, 'car.kn5');
+  await writeFile(modelPath, Buffer.alloc(8));
+
+  const jpeg = (w, h) => sharp({
+    create: { width: w, height: h, channels: 3, background: '#000' },
+  }).jpeg().toBuffer();
+
+  // Three skins at the car's real size and one that somebody resized by hand.
+  // The odd one out must not redefine the car, which is the reason this is a
+  // vote and not a read of whichever directory sorts first — and `aaa_odd`
+  // sorts first deliberately.
+  for (const [name, w, h] of [
+    ['aaa_odd', 800, 450], ['team_a', 1555, 835], ['team_b', 1555, 835], ['team_c', 1555, 835],
+  ]) {
+    await mkdir(join(car, 'skins', name), { recursive: true });
+    await writeFile(join(car, 'skins', name, 'preview.jpg'), await jpeg(w, h));
+  }
+
+  assert.deepEqual(await previewFrame(modelPath), { width: 1555, height: 835 });
+
+  // A car with no skins at all is not an error — plenty ship none — and the
+  // caller falls back to the conventional frame.
+  const bare = await mkdtemp(join(tmpdir(), 'lk-bare-'));
+  await writeFile(join(bare, 'car.kn5'), Buffer.alloc(8));
+  assert.equal(await previewFrame(join(bare, 'car.kn5')), null);
+  assert.deepEqual(PREVIEW_FRAME, { width: 1022, height: 575 });
+});

@@ -9,7 +9,7 @@ import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
 import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin, decodeDds } from './engine/pipeline.mjs';
-import { packageZip, makePreview, makeShowroomPreview } from './engine/package.mjs';
+import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
@@ -252,8 +252,11 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     }
   }
 
-  await writeMetadata({ outDir, livery, firstPng, preview: await renderShowroomPreview({
-    profile, livery, targets, pngByRole, modelPath, log,
+  // Asked once and used by both the real render and the placeholder, so a
+  // build that falls back still lands the conventional size for this car.
+  const frame = (await previewFrame(modelPath, { log })) ?? PREVIEW_FRAME;
+  await writeMetadata({ outDir, livery, firstPng, frame, preview: await renderShowroomPreview({
+    profile, livery, targets, pngByRole, modelPath, frame, log,
   }) });
   return { outDir, files: written, firstPng, notes };
 }
@@ -273,7 +276,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
  * uploading the kn5's compressed textures straight to the GPU; this has no
  * GPU, so `decodeDds` does in a temp file what the browser does in VRAM.
  */
-async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, log }) {
+async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log }) {
   if (!modelPath || !targets.length) return null;
 
   let model;
@@ -322,7 +325,7 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
   }
 
   try {
-    return await makeShowroomPreview(g, g.groups, sheets);
+    return await makeShowroomPreview(g, g.groups, sheets, frame);
   } catch (e) {
     log(`  ! could not render preview.jpg from the model: ${e.message}`);
     return null;
@@ -404,7 +407,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
   return { outDir, folder };
 }
 
-async function writeMetadata({ outDir, livery, firstPng, previewLabel, preview = null }) {
+async function writeMetadata({ outDir, livery, firstPng, previewLabel, frame = PREVIEW_FRAME, preview = null }) {
   const id = livery.identity ?? {};
   await writeFile(
     join(outDir, 'ui_skin.json'),
@@ -422,7 +425,7 @@ async function writeMetadata({ outDir, livery, firstPng, previewLabel, preview =
     // placeholder otherwise. `buildCalibration` never passes `preview`: the
     // UV-grid skin has no business claiming to show the car.
     if (preview) await writeFile(join(outDir, 'preview.jpg'), preview);
-    else await makePreview(firstPng, join(outDir, 'preview.jpg'), { label: previewLabel ?? id.number ?? '' });
+    else await makePreview(firstPng, join(outDir, 'preview.jpg'), { ...frame, label: previewLabel ?? id.number ?? '' });
   }
 }
 
