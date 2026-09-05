@@ -46,6 +46,19 @@ function optionsRead(fn, seed) {
     width: 2048,
     height: 2048,
     tokens: { driver: 'A. Driver', number: '7' },
+    // The rest of what renderTexture hands over. `decals` is the livery's own
+    // images and `note` is how a treatment says something did not happen —
+    // `decal` reads both, and a ctx missing either is a ctx no treatment ever
+    // actually receives.
+    // One decal, called SAMPLE — which is the value `sampleFor` hands to any
+    // string option, `image` included. So a treatment that places a decal gets
+    // past its "there is no such asset" branch and goes on to read the rest of
+    // what it takes.
+    decals: new Map([['SAMPLE', {
+      name: 'SAMPLE', file: 'SAMPLE.png', type: 'image/png',
+      width: 400, height: 100, uri: 'data:image/png;base64,AAAA', bytes: 3,
+    }]]),
+    note: () => {},
   });
   return read;
 }

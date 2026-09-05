@@ -606,7 +606,7 @@ export function designRefusal(design, path) {
  * painted rather than the editor's own idea of it. If the two ever disagree, the
  * overlay is wrong and you can see that it is.
  */
-export function renderSurface({ livery, profile, fit, role, seed }) {
+export function renderSurface({ livery, profile, fit, role, seed, decals = new Map() }) {
   const targets = resolveTargets(profile, livery).targets;
   const target = targets.find((t) => t.role === role);
   const spec = target?.spec;
@@ -647,6 +647,7 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
     role,
     regions: fitted,
     regionNotes: notes,
+    decals,
     background: spec.background,
     treatments: resolveTreatments(livery.packs ?? ['core']),
     palette: livery.palette ?? {},
@@ -710,7 +711,7 @@ export function renderSurface({ livery, profile, fit, role, seed }) {
 
 export { applyDesignOp, applyFitOp, applyProposalDiff };
 
-export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, modelPath = null, port = 7391, log = console.log }) {
+export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, decals = new Map(), modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
@@ -1000,7 +1001,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const g = wholeModelGeometry(m, roles, { livery: design, profile });
         const surfaces = roles.map((r) => ({
           role: r.role,
-          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
+          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals }).svg,
         }));
         // The car's OWN artwork for everything the design does not paint, the
         // same way the build's preview.jpg gets it. Without it this drew glass,
@@ -1106,7 +1107,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         return json(200, renderSurface({
-          livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed,
+          livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed, decals,
         }));
       }
 
@@ -1120,7 +1121,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const state = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit });
         const surfaces = [];
         for (const s of state.surfaces) {
-          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed });
+          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
           // 2048x2048 — so the livery was rasterised at a quarter of its
