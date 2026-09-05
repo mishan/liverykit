@@ -1069,4 +1069,30 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
     if (before !== 0 && after !== 0 && Math.sign(before) !== Math.sign(after)) turns++;
   }
   assert.ok(turns >= 8, `eight repeats should turn about sixteen times, got ${turns}`);
+
+  // THE OTHER GAIN. A bake multiplies straight through; a colour map is doubled
+  // first, because a detail sheet is authored against mid-grey meaning "leave
+  // this alone" and 0.5 x 2 = 1. Backwards in either direction and the surface
+  // is half or twice the brightness it should be — which is what the dashboard
+  // cowl rendering white was, and it reads as a lighting bug rather than as a
+  // compositing one, so it costs an afternoon.
+  //
+  // Measured against a HALF-GREY layer, exactly the neutral point, where the
+  // two rules give plainly different answers: doubled it is the base
+  // untouched, undoubled it is the base halved.
+  const neutral = { w: 1, h: 1, data: Buffer.from([128, 128, 128, 255]) };
+  const overNeutral = (bake) => rasterise(quad, [{
+    start: 0, count: 6, role: null, file: null,
+    detail: { diffuse: 'bake.dds', detail: 'neutral.dds', mult: 1, bake },
+  }], new Map([['bake.dds', white], ['neutral.dds', neutral]]), opts);
+
+  const centre = (img) => img.data[((45 * img.width) + (img.width >> 1)) * 4];
+  const asBake = centre(overNeutral(true));
+  const asColour = centre(overNeutral(false));
+  const noLayer = centre(without);
+
+  assert.ok(Math.abs(asColour - noLayer) <= 2,
+    `a colour base doubles back to itself over neutral grey: ${asColour} vs ${noLayer}`);
+  assert.ok(asBake < asColour - 20,
+    `a bake must NOT double, so it comes out darker: ${asBake} vs ${asColour}`);
 });
