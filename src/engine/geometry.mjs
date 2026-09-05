@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -100,6 +100,15 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
           specular: num(props.ksSpecular),
           exponent: num(props.ksSpecularEXP),
         },
+        // The part's own relief, from the same dominant material the lighting
+        // constants come from, and for the same reason: a group is one texture
+        // and usually one material, and picking the map from the minority one
+        // would put another part's seams on this one. `null` where the material
+        // does not honestly have one — see baseNormal for what that excludes.
+        //
+        // A PAINTED group carries it too. A livery replaces the colour of a
+        // panel, never the shape of the seam running across it.
+        normalMap: baseNormal(model.materials?.[dominant]),
         add: blend && additive(group.file),
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
@@ -261,10 +270,18 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // cards and its brushed-metal instrument surround do exactly that — are
     // two surfaces and cannot share one draw call.
     const lod = cockpitLod(m);
+    // The part's own relief is part of the key for the same reason the detail
+    // pair is: it is a texture the draw call binds, and two materials that
+    // share a diffuse while stating different normal maps are two surfaces.
+    // This car has that exactly — `EXT_Mechanics_Colour.dds` is worn by a
+    // MultiMap material with no normal to sample and by the fuel cap's
+    // ksPerPixelNM, which has one. Merged, whichever contributed more
+    // triangles would lend the other its shape.
+    const relief = baseNormal(model.materials?.[m.materialId]) ?? '';
     const key = detail
       ? ['detail', detail.diffuse, detail.detail, detail.mult,
-        detail.normal ?? '', detail.normalBlend, lod ?? ''].join('\u0000')
-      : ['file', file ?? '', lod ?? ''].join('\u0000');
+        detail.normal ?? '', detail.normalBlend, relief, lod ?? ''].join('\u0000')
+      : ['file', file ?? '', relief, lod ?? ''].join('\u0000');
     if (!leftover.has(key)) {
       leftover.set(key, {
         meshes: [],

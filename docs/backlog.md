@@ -95,14 +95,6 @@ weakness. Once the entry above exists, this function should read the profile
 and the name-matching should be confined to the generator, where a wrong guess
 is visible in a file rather than invisible at draw time.
 
-## The base normal map is never sampled
-
-Only `txNormalDetail` is read. `txNormal` carries per-part relief — stitching,
-panel seams, the moulding around a switch — at the bake's UV rather than tiled.
-The tangent frame and the upload path both already exist, so this is one more
-sampler and one more blend; it was left out to keep the first normal-mapping
-change to one thing.
-
 ## The occlusion bake's resolution shows through up close
 
 `INT_HR_Occlusion.dds` is a single 1024x1024 sheet covering the whole interior,

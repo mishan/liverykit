@@ -368,8 +368,9 @@ export function createToolHandler(client) {
         'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
         'Views: ' + Object.keys(VIEWS).join(', ') + '. Unpainted parts wear the car\'s own ' +
-        'textures, where the model carries them. Note the limits — no environment reflections ' +
-        'and one fixed light rig, so it answers "does the artwork land where I said" and not ' +
+        'textures, where the model carries them. Note the limits — no normal maps, no ' +
+        'environment reflections and one fixed light rig, so it answers "does the artwork land ' +
+        'where I said" and not ' +
         `"is this exactly the game". ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',

@@ -14,8 +14,8 @@
 // dependency that was not already here, and it turns "I cannot see it" into a
 // PNG.
 //
-// It is NOT a substitute for the editor. It has one light rig and no
-// reflections, so a windscreen or a mirror never looks like glass here the
+// It is NOT a substitute for the editor. It has one light rig, no normal maps
+// and no reflections, so a windscreen or a mirror never looks like glass here the
 // way it does in the game. It DOES wear the car's own stock textures on the
 // parts a design does not paint — sheetKey and carSheets, below, are the two
 // halves of that — and a caller that supplies none of them gets bare grey
