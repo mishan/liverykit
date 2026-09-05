@@ -134,8 +134,14 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     .flatMap((r) => {
       const f = resolveRect(profile, role, r);
       // A spanning name is on every panel it reaches, not only its home.
+      //
+      // The notes this pass produces are DROPPED, and the same regions report
+      // through the drawing loop below — every region in this list is drawn
+      // there too, so keeping both would say each thing twice. Passing a
+      // channel is still what stops it throwing, so the array is real and
+      // only its contents are thrown away.
       const boxes = r.span === true && f.panel
-        ? spanPlacements(profile, role, r.panel, f).map((p) => p.on)
+        ? spanPlacements(profile, role, r.panel, f, { notes: [] }).map((p) => p.on)
         : [{ x: f.x, y: f.y, w: f.w, h: f.h }];
       return boxes.map((b) => ({ ...b, from: r }));
     });
@@ -257,7 +263,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // Maps are in fractions; SVG wants texels. u' = a u + c v + e becomes
     // x' = a x + (c W/H) y + e W, and likewise for y.
     if (region.span === true && frac.panel) {
-      const placed = spanPlacements(profile, role, region.panel, frac);
+      const placed = spanPlacements(profile, role, region.panel, frac, { notes: regionNotes });
       placed.forEach((p) => {
         const [a, b, c, d, e, f] = p.matrix;
         const m = [a, (b * height) / width, (c * width) / height, d, e * width, f * height].map(r2);

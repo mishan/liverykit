@@ -7,29 +7,6 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
-## A profile with no seam maps cannot be opened at all
-
-`span: true` on a panel whose profile carries no seam map is refused rather
-than clipped in silence, which is right. The refusal is a THROW, though, and it
-leaves `resolveRect` with nothing to catch it: `/api/preview` answers 500, the
-editor draws no car, and the explanation sits in a network response somebody
-has to go looking for. What the person sees is an editor that does not work.
-
-It is not a corner case. Every profile contributed before seam maps existed is
-in this state, which was two of the three in this repo until they were
-regenerated — and the design that trips it is any design with a band running
-across a panel edge, which is most of them.
-
-The rule everywhere else here is that a surface this tool cannot honestly
-render is reported and skipped, never fatal. This wants the same: clip the
-region to its panel, carry a note saying the artwork stops at the edge because
-this island has no measured neighbour, and open. `renderTexture` already
-collects `regionNotes` and `renderSurface` already returns them; what is
-missing is a channel out of `resolveRect`, which today can only answer with a
-rectangle or an exception.
-
-Regenerating the profile stays the real fix, and the note is where to say so.
-
 ## The CLI renderer has one light rig, not the car's materials
 
 The editor reads `ksAmbient`, `ksDiffuse`, `ksSpecular` and `ksSpecularEXP` off
