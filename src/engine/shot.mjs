@@ -140,8 +140,54 @@ const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
  * texture (`role` is null there; see wholeModelGeometry). A group with
  * neither draws bare grey, which is honest: it says "nobody supplied art for
  * this" rather than inventing something.
+ *
+ * The third case is a two-layer material, where the base is the per-part
+ * occlusion bake named in `detail.diffuse` and neither role nor file is set.
+ * Those used to fall through to grey, so every carbon, alcantara and brushed
+ * metal surface in the cockpit rendered flat — which is most of an interior.
  */
-const sheetKey = (g) => g.role ?? g.file;
+const sheetKey = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? null;
+
+/**
+ * One bilinear sample, into `out` rather than a fresh array — this is the
+ * innermost thing in the renderer and it runs a few tens of millions of times.
+ *
+ * `wrap` repeats rather than clamping, which is the difference between the two
+ * layers of a MultiMap material: a bake is a per-part atlas whose UVs stay
+ * inside [0,1] and whose neighbours are a different part, so reaching past the
+ * edge must not fetch them; a detail map is a small square of carbon or suede
+ * tiled hundreds of times across a panel, and clamping it would smear one row
+ * of texels across everything past the first repeat.
+ */
+function sampleTexel(tex, u, v, wrap, out) {
+  const w = tex.w; const h = tex.h; const d = tex.data;
+  // Half a texel back, because texel CENTRES sit at (i + 0.5) / size. Without
+  // it every sample is biased up and left and a 1:1 sheet comes out soft.
+  const fx = u * w - 0.5;
+  const fy = v * h - 0.5;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  let xa; let xb; let ya; let yb;
+  if (wrap) {
+    xa = ((x0 % w) + w) % w; xb = (((x0 + 1) % w) + w) % w;
+    ya = ((y0 % h) + h) % h; yb = (((y0 + 1) % h) + h) % h;
+  } else {
+    xa = x0 < 0 ? 0 : (x0 > w - 1 ? w - 1 : x0);
+    xb = x0 + 1 < 0 ? 0 : (x0 + 1 > w - 1 ? w - 1 : x0 + 1);
+    ya = y0 < 0 ? 0 : (y0 > h - 1 ? h - 1 : y0);
+    yb = y0 + 1 < 0 ? 0 : (y0 + 1 > h - 1 ? h - 1 : y0 + 1);
+  }
+  const oa = (ya * w + xa) * 4; const ob = (ya * w + xb) * 4;
+  const oc = (yb * w + xa) * 4; const od = (yb * w + xb) * 4;
+  for (let k = 0; k < 4; k++) {
+    const top = d[oa + k] + (d[ob + k] - d[oa + k]) * tx;
+    const bot = d[oc + k] + (d[od + k] - d[oc + k]) * tx;
+    out[k] = top + (bot - top) * ty;
+  }
+  return out;
+}
 
 /**
  * Render the model to raw RGBA.
@@ -400,8 +446,20 @@ export function rasterise(model, groups, sheets, {
     return far.get(b) - far.get(a);
   });
 
+  // Reused across every fragment rather than allocated per sample.
+  const base = [0, 0, 0, 0];
+  const grain = [0, 0, 0, 0];
+
   for (const g of order) {
     const art = sheets.get(sheetKey(g)) ?? null;
+    // The tiling half of a two-layer material, and how many times it repeats.
+    // `detail.bake` is the recorded fact about the layer UNDER it: a bake is
+    // an occlusion map and multiplies straight through, and anything else is
+    // a colour map, where the game's own x2 keeps the mid-grey of the detail
+    // sheet from halving the surface. Same rule the editor's shader follows.
+    const layer = g.detail ? (sheets.get(g.detail.detail) ?? null) : null;
+    const layerMult = g.detail?.mult ?? 1;
+    const layerGain = g.detail?.bake ? 1 : 2;
     for (let t = g.start; t < g.start + g.count; t += 3) {
       const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
       const A = project(ia), B = project(ib), C = project(ic);
@@ -434,57 +492,51 @@ export function rasterise(model, groups, sheets, {
 
           let rgb = BARE;
           let alpha = 1;
-          if (art) {
-            // Bilinear, and it was nearest.
-            //
-            // Nearest was argued for on the grounds that a blurred sample would
-            // hide the hard edge this exists to show — a name clipped by a
-            // panel seam. That holds when a texel is smaller than a pixel. Here
-            // it is bigger: the sheets magnify, and nearest under magnification
-            // does not preserve an edge, it invents a staircase along it and
-            // squares off every letter.
-            //
-            // With a full-resolution sheet the ratio is near 1:1, where the two
-            // filters agree anyway, and bilinear is the one that stays honest
-            // as the sheet shrinks relative to the frame.
+          // Interpolated once for both layers, and only when one of them is
+          // going to read it. The detail layer needs the same u and v as the
+          // base and can be present on a group whose base sheet is missing, so
+          // they cannot live inside the `art` branch — but a group that draws
+          // BARE with no detail map reads neither, and this is the inner loop.
+          if (art || layer) {
             const u = w0 * uvs[ia * 2] + w1 * uvs[ib * 2] + w2 * uvs[ic * 2];
             const v = w0 * uvs[ia * 2 + 1] + w1 * uvs[ib * 2 + 1] + w2 * uvs[ic * 2 + 1];
-            // Half-texel offset: texel centres sit at (i + 0.5) / size, so
-            // without it every sample is biased half a texel up and left and a
-            // 1:1 sheet comes out subtly soft instead of exact.
-            const fx = u * art.w - 0.5;
-            const fy = v * art.h - 0.5;
-            const x0 = Math.floor(fx);
-            const y0 = Math.floor(fy);
-            const tx = fx - x0;
-            const ty = fy - y0;
-            // CLAMPED, as the nearest version was. An island's UVs can run a
-            // hair outside [0,1] and wrapping there would fetch a neighbouring
-            // island's artwork onto the edge of this one.
-            const cx0 = x0 < 0 ? 0 : (x0 > art.w - 1 ? art.w - 1 : x0);
-            const cx1 = x0 + 1 < 0 ? 0 : (x0 + 1 > art.w - 1 ? art.w - 1 : x0 + 1);
-            const cy0 = y0 < 0 ? 0 : (y0 > art.h - 1 ? art.h - 1 : y0);
-            const cy1 = y0 + 1 < 0 ? 0 : (y0 + 1 > art.h - 1 ? art.h - 1 : y0 + 1);
-            const oa = (cy0 * art.w + cx0) * 4;
-            const ob = (cy0 * art.w + cx1) * 4;
-            const oc = (cy1 * art.w + cx0) * 4;
-            const od = (cy1 * art.w + cx1) * 4;
-            // Written out, with no closure of any kind. `tx` and `ty` change
-            // every fragment, so nothing that folds the four channels can be
-            // hoisted out — it would be allocated per covered pixel, and this
-            // is the innermost thing in the renderer: a few tens of millions of
-            // them for one preview.
-            const d = art.data;
-            const r0 = d[oa] + (d[ob] - d[oa]) * tx;
-            const r1 = d[oc] + (d[od] - d[oc]) * tx;
-            const g0 = d[oa + 1] + (d[ob + 1] - d[oa + 1]) * tx;
-            const g1 = d[oc + 1] + (d[od + 1] - d[oc + 1]) * tx;
-            const b0 = d[oa + 2] + (d[ob + 2] - d[oa + 2]) * tx;
-            const b1 = d[oc + 2] + (d[od + 2] - d[oc + 2]) * tx;
-            const a0 = d[oa + 3] + (d[ob + 3] - d[oa + 3]) * tx;
-            const a1 = d[oc + 3] + (d[od + 3] - d[oc + 3]) * tx;
-            rgb = [r0 + (r1 - r0) * ty, g0 + (g1 - g0) * ty, b0 + (b1 - b0) * ty];
-            alpha = (a0 + (a1 - a0) * ty) / 255;
+            if (art) {
+              // Bilinear, and it was nearest.
+              //
+              // Nearest was argued for on the grounds that a blurred sample would
+              // hide the hard edge this exists to show — a name clipped by a
+              // panel seam. That holds when a texel is smaller than a pixel. Here
+              // it is bigger: the sheets magnify, and nearest under magnification
+              // does not preserve an edge, it invents a staircase along it and
+              // squares off every letter.
+              //
+              // With a full-resolution sheet the ratio is near 1:1, where the two
+              // filters agree anyway, and bilinear is the one that stays honest
+              // as the sheet shrinks relative to the frame.
+              // CLAMPED. An island's UVs can run a hair outside [0,1] and
+              // wrapping there would fetch a neighbouring island's artwork onto
+              // the edge of this one.
+              sampleTexel(art, u, v, false, base);
+              rgb = [base[0], base[1], base[2]];
+              alpha = base[3] / 255;
+            }
+
+            // The second layer, over whatever the first one gave — including
+            // over BARE, since a group can have a detail map and no base sheet
+            // and grey times carbon still reads as carbon.
+            if (layer) {
+              sampleTexel(layer, u * layerMult, v * layerMult, true, grain);
+              // A NEW array, never a write into `rgb`. With no base sheet `rgb`
+              // is still BARE, which is a module constant shared by every group
+              // in the render — multiplying into it would turn the car's grey
+              // black from the first detail fragment onwards.
+              const k = layerGain / 255;
+              rgb = [
+                Math.min(255, rgb[0] * grain[0] * k),
+                Math.min(255, rgb[1] * grain[1] * k),
+                Math.min(255, rgb[2] * grain[2] * k),
+              ];
+            }
           }
 
           let n = norm([

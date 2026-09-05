@@ -321,16 +321,38 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
   // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
   // excluded there, before this ever sees it).
   const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
-  const wanted = new Set(g.groups.filter((x) => x.role === null && x.file).map((x) => x.file));
+  const wanted = new Set();
+  for (const x of g.groups) {
+    if (x.role === null && x.file) wanted.add(x.file);
+    // BOTH halves of a two-layer material: the per-part occlusion bake
+    // underneath and the small tiling material over it. Fetched even when the
+    // group is painted, because the detail layer belongs to the car — it is
+    // the weave in the carbon and the nap on the alcantara, not artwork.
+    //
+    // These were missed entirely, which is why the whole cockpit rendered flat
+    // grey here while the editor showed it in its real materials.
+    if (x.detail) {
+      if (x.detail.diffuse) wanted.add(x.detail.diffuse);
+      if (x.detail.detail) wanted.add(x.detail.detail);
+    }
+  }
+  const absent = [];
   for (const file of wanted) {
     const t = byName.get(String(file).toLowerCase());
     // A 1x1-ish blob is not a small texture, it is an absent one — an
     // encrypted kn5 substitutes placeholders and keeps the real artwork
     // somewhere this project does not decrypt. Same threshold the editor's
     // stockTexture uses, so the two never disagree about what counts as real.
-    if (!t?.data || t.data.length <= 256) continue;
+    if (!t?.data || t.data.length <= 256) { absent.push(file); continue; }
     const decoded = await decodeDds(Buffer.from(t.data));
-    if (decoded) sheets.set(file, decoded);
+    if (decoded) sheets.set(file, decoded); else absent.push(`${file} (undecodable)`);
+  }
+  // SAID OUT LOUD. A texture that does not arrive costs nothing visible — the
+  // surface just draws in whatever it had, or grey — which is how the entire
+  // cockpit rendered flat here for weeks while the editor showed it properly.
+  // An encrypted car legitimately has none of these, so it is a note.
+  if (absent.length) {
+    log(`  preview: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
   }
 
   try {

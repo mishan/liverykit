@@ -1009,3 +1009,64 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
   assert.deepEqual(Buffer.from(framed.data), Buffer.from(bare.data),
     'stated bounds must frame exactly as measured ones do');
 });
+
+test('a two-layer material gets both layers, and the tiling one tiles', async () => {
+  // MultiMap materials are a per-part occlusion bake times a small square of
+  // carbon or suede repeated across the panel. The rasteriser knew about the
+  // first layer and not the second, so every one of them drew flat — which on
+  // this project's reference car is 180k triangles of cockpit rendering grey
+  // while the editor showed it in its real materials.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  // White base, so whatever comes out is the detail layer and not the bake.
+  const white = { w: 1, h: 1, data: Buffer.from([255, 255, 255, 255]) };
+  // Two texels, black and white. Tiled, this must show as stripes.
+  const stripe = { w: 2, h: 1, data: Buffer.from([0, 0, 0, 255, 255, 255, 255, 255]) };
+  const sheets = new Map([['bake.dds', white], ['grain.dds', stripe]]);
+  const opts = { view: 'left', width: 90, height: 90, floor: false, samples: 1 };
+
+  // No role and no file: this group's base sheet is named by the detail block,
+  // which is the case that used to fall through to grey.
+  const withLayer = rasterise(quad, [{
+    start: 0, count: 6, role: null, file: null,
+    detail: { diffuse: 'bake.dds', detail: 'grain.dds', mult: 8, bake: true },
+  }], sheets, opts);
+  const without = rasterise(quad, [{
+    start: 0, count: 6, role: null, file: 'bake.dds',
+  }], sheets, opts);
+
+  const row = (img, y) => Array.from({ length: img.width },
+    (_, x) => img.data[(y * img.width + x) * 4]);
+  const mid = row(withLayer, 45);
+  const flat = row(without, 45);
+
+  // The base alone is one flat value across the surface. With the layer it is
+  // not: at eight repeats across the quad there are stripes to find.
+  const spread = (r) => {
+    const on = r.filter((v) => v !== r[0]);
+    return on.length;
+  };
+  assert.ok(spread(flat) < spread(mid),
+    `the tiling layer should vary across the surface: ${spread(flat)} vs ${spread(mid)}`);
+
+  // And it must REPEAT rather than clamp — a clamped detail map smears one
+  // column of texels across everything past the first tile.
+  //
+  // Counted as direction reversals rather than as sharp steps. A two-texel
+  // sheet sampled bilinearly is a triangle wave, not a square one, so the
+  // signal is the turning points: eight repeats across the quad means roughly
+  // sixteen of them, and a clamped layer has none.
+  let turns = 0;
+  for (let i = 2; i < mid.length; i++) {
+    const before = mid[i - 1] - mid[i - 2];
+    const after = mid[i] - mid[i - 1];
+    if (before !== 0 && after !== 0 && Math.sign(before) !== Math.sign(after)) turns++;
+  }
+  assert.ok(turns >= 8, `eight repeats should turn about sixteen times, got ${turns}`);
+});
