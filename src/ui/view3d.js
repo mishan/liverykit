@@ -1600,8 +1600,15 @@ export function createViewer(canvas) {
       // Sequential rather than parallel: a GT3 car has tens of these, several of
       // them megabytes, and firing them all at a local server at once buys
       // nothing anybody can perceive while making the failure modes worse.
-      byFile.clear();
-      byDetail.clear();
+      // FREED, not merely dropped. These hold WebGLTextures, and a Map that
+      // forgets one leaves its GPU allocation with nothing left that could
+      // release it. setWholeCar runs on every tab switch and every livery edit,
+      // so what looks like tidying up is a leak of the car's entire stock
+      // texture set, once per visit to this view.
+      for (const map of [byFile, byDetail]) {
+        for (const t of map.values()) gl.deleteTexture(t);
+        map.clear();
+      }
 
       // ASKED FOR FIRST, fetched second, uploaded third.
       //

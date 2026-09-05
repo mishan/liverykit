@@ -3307,6 +3307,18 @@ test('packModel says what is missing instead of dying on undefined', async () =>
     groups: [], bounds: { lo: [0, 0, 0], hi: [0, 0, 0] },
   }), /needs a typed array for "normals"/,
     'a builder that has not caught up is told so, at the call that did it');
+
+  // And it must name the one that is actually missing. The message used to say
+  // "normals" whatever the gap, from when normals were the newest field, so a
+  // builder short of TANGENTS was sent to look at the wrong array.
+  assert.throws(() => packModel({
+    positions: Float32Array.from([0, 0, 0]),
+    uvs: Float32Array.from([0, 0]),
+    normals: Float32Array.from([0, 1, 0]),
+    indices: Uint32Array.from([0]),
+    groups: [], bounds: { lo: [0, 0, 0], hi: [0, 0, 0] },
+  }), /needs a typed array for "tangents"/,
+    'the field named must be the field missing');
 });
 
 test('an op the editor does not know is refused, not silently dropped', async () => {
