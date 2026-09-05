@@ -908,6 +908,22 @@ test('the preview frame is taken from the car\'s own skins, by vote', async () =
 
   assert.deepEqual(await previewFrame(modelPath), { width: 1555, height: 835 });
 
+  // A skin whose preview.jpg opens but states nothing must not cost that skin
+  // its other spellings. This gave up on the whole skin instead, so a car whose
+  // skins carry a stub .jpg beside a real .png was read as having no previews.
+  const spelling = await mkdtemp(join(tmpdir(), 'lk-spelling-'));
+  const spellingModel = join(spelling, 'car.kn5');
+  await writeFile(spellingModel, Buffer.alloc(8));
+  for (const name of ['a', 'b']) {
+    await mkdir(join(spelling, 'skins', name), { recursive: true });
+    // Empty rather than absent: `sharp` opens it and reports no dimensions,
+    // which is a different path from the file not being there at all.
+    await writeFile(join(spelling, 'skins', name, 'preview.jpg'), Buffer.alloc(0));
+    await writeFile(join(spelling, 'skins', name, 'preview.png'), await jpeg(1555, 835));
+  }
+  assert.deepEqual(await previewFrame(spellingModel), { width: 1555, height: 835 },
+    'the second spelling still counts when the first says nothing');
+
   // A car with no skins at all is not an error — plenty ship none — and the
   // caller falls back to the conventional frame, QUIETLY.
   const bare = await mkdtemp(join(tmpdir(), 'lk-bare-'));
