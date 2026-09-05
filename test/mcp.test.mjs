@@ -655,8 +655,11 @@ test('render_car returns an image, and refuses a view it does not have', async (
     const listed = (await tools.listTools()).find((t) => t.name === 'render_car');
     assert.ok(listed, 'the tool is offered');
     // The description has to state what the picture is NOT, or it will be read
-    // as a screenshot of the game and trusted further than it should be.
-    assert.match(listed.description, /no stock car textures|no transparency/);
+    // as a screenshot of the game and trusted further than it should be. It also
+    // has to MOVE when the picture does: it claimed no stock car textures long
+    // enough for that to become the wrong warning, and an understated capability
+    // is as much a lie to the only reader that cannot check as an overstated one.
+    assert.match(listed.description, /no environment reflections|one fixed light rig/);
 
     // No car model in this harness, so the honest answer is a refusal rather
     // than a blank image — a picture of nothing looks like a car with nothing
@@ -711,6 +714,100 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
   assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
     `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
   assert.notDeepEqual([br, bg, bb], [r, g, b]);
+});
+
+test('a shot wears the car\'s own texture where the design paints nothing', async () => {
+  // `shoot` built `sheets` out of the painted surfaces alone, so everything a
+  // design does not paint — glass, wheels, the whole interior — drew BARE grey
+  // in the only picture an agent working without a browser can see. The build's
+  // preview.jpg had been doing this properly for weeks, which is what made it
+  // hard to notice: two renderers disagreeing about the same car is how a
+  // change gets verified against the wrong one.
+  const sharp = (await import('sharp')).default;
+  const { shoot } = await import('../src/engine/shot.mjs');
+
+  // In the YZ plane, facing the `left` camera at +X — a quad in the XY plane is
+  // edge-on from there and renders as nothing.
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  // A null role with a file is what wholeModelGeometry emits for a part the
+  // design leaves to the car, and the key `sheets` is read back by.
+  const groups = [{ role: null, file: 'glass.dds', start: 0, count: 6 }];
+  const stock = new Map([['glass.dds', { w: 1, h: 1, data: Buffer.from([0, 220, 40, 255]) }]]);
+
+  const centre = async (png) => {
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const at = ((info.height >> 1) * info.width + (info.width >> 1)) * 4;
+    return [data[at], data[at + 1], data[at + 2]];
+  };
+  const opts = { view: 'left', width: 80, height: 80 };
+
+  const bare = await centre((await shoot(quad, groups, [], opts)).png);
+  assert.ok(Math.abs(bare[0] - bare[1]) < 30 && Math.abs(bare[1] - bare[2]) < 30,
+    `with nothing supplied the part is grey, not a plausible colour: ${bare}`);
+
+  const worn = await centre((await shoot(quad, groups, [], { ...opts, sheets: stock })).png);
+  assert.ok(worn[1] > worn[0] + 40 && worn[1] > worn[2] + 40,
+    `the car's own texture reaches the pixels: ${worn}`);
+});
+
+test('the car\'s own sheets are asked for by file, both halves of a material included', async () => {
+  const { carTextureFiles, carSheets } = await import('../src/engine/shot.mjs');
+
+  const groups = [
+    { role: 'body', file: 'body.dds' },
+    { role: null, file: 'glass.dds' },
+    // A two-layer material: an occlusion bake with a tiling material over it,
+    // and neither of them named by `file`. Missing these is what left a whole
+    // cockpit flat grey in the build's preview.
+    { role: null, file: null, detail: { diffuse: 'seat_bake.dds', detail: 'alcantara.dds', mult: 40 } },
+  ];
+  const wanted = carTextureFiles(groups);
+  assert.deepEqual([...wanted].sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds']);
+  assert.ok(!wanted.has('body.dds'), 'a painted surface wears the design, not the car');
+
+  // Nothing on offer, so nothing decodes — and every one of them is NAMED. A
+  // texture that does not arrive costs nothing visible, which is exactly how
+  // this went unnoticed the first time.
+  const asked = [];
+  const { sheets, absent } = await carSheets(groups, (file) => { asked.push(file); return null; });
+  assert.equal(sheets.size, 0);
+  assert.deepEqual(absent.sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds']);
+  assert.equal(asked.length, 3);
+
+  // A 1x1-ish blob is an absent texture rather than a small one: an encrypted
+  // kn5 substitutes placeholders for the artwork it keeps to itself.
+  const placeholder = await carSheets([{ role: null, file: 'glass.dds' }], () => Buffer.alloc(128));
+  assert.deepEqual(placeholder.absent, ['glass.dds']);
+
+  // A LOADER THAT THROWS names every file, not one. The editor's stock loader
+  // rejects once for a kn5 it could not read and rejects identically for every
+  // file after it, and the count this returns is what the shot reports as the
+  // number of parts drawing grey — so answering "1" for a model that gave up
+  // nothing would tell the caller most of the car is fine.
+  const broken = new Map();
+  const threw = await carSheets(groups, () => { throw new Error('could not read the model'); },
+    { cache: broken });
+  assert.equal(threw.absent.length, 3, 'every texture the render wanted is named');
+  for (const line of threw.absent) assert.match(line, /could not read the model/);
+  assert.equal(broken.size, 0,
+    'and nothing is cached: a loader that failed once is entitled to recover');
+
+  // Cached across calls: the car's artwork does not change while a process is
+  // up, and decoding is a subprocess per texture — thirty-odd of them for one
+  // shot of a GT3 car, and again for every other angle asked for.
+  const cache = new Map();
+  let loads = 0;
+  const load = () => { loads += 1; return null; };
+  await carSheets(groups, load, { cache });
+  const second = await carSheets(groups, load, { cache });
+  assert.equal(loads, 3, 'the second shot asks the model for nothing it has already looked up');
+  assert.deepEqual(second.absent.sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds'],
+    'and still says what it does not have');
 });
 
 test('the left view shows the left of the car', async () => {
@@ -773,6 +870,38 @@ test('render_view tells an empty role apart from no role at all', async () => {
   }
 });
 
+test('a view this renderer does not have falls back to one it does', async () => {
+  // `VIEWS['constructor']` is a function off the prototype: truthy, with no
+  // yaw and no pitch. The projection was guarded against exactly that and the
+  // CAMERA was not — it looked the name up a second time on its own — so the
+  // fallback protected the maths downstream while frameCamera got undefined
+  // angles, and NaN put the car nowhere. A blank stage and a 200 OK.
+  //
+  // The server refuses an unknown view before it reaches here; this is about
+  // what the renderer does when something gets past it, and the answer has to
+  // be a picture rather than an empty room.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const groups = [{ role: 'body', start: 0, count: 6 }];
+  const art = new Map([['body', { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) }]]);
+  const opts = { width: 60, height: 60, samples: 1 };
+
+  const left = rasterise(quad, groups, art, { ...opts, view: 'left' });
+  for (const view of ['constructor', 'toString', 'nope']) {
+    const fallen = rasterise(quad, groups, art, { ...opts, view });
+    // Compared as BUFFERS. deepEqual over two unpacked frames builds a diff of
+    // fourteen thousand numbers when it fails, which is how proving this bug
+    // exists killed the test runner rather than reporting it.
+    assert.ok(fallen.data.equals(left.data),
+      `${view} renders as the default view, not as an empty stage`);
+  }
+});
+
 test('the shot composites blended surfaces the way the viewer does', async () => {
   // Two ways the rasteriser drifted from the viewer it exists to check.
   const { rasterise } = await import('../src/engine/shot.mjs');
@@ -829,4 +958,375 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
     { view: 'left', width: 60, height: 60 });
   assert.deepEqual(at(reversed), [nr, ng, nb],
     'group order must not change the picture; that is what sorting is for');
+});
+
+test('a shot is antialiased, and comes back the size it was asked for', async () => {
+  // The single most obvious tell against AC's own showroom previews was the
+  // staircase on every silhouette: one sample at the pixel centre makes a
+  // triangle edge a step function, and a fine repeated pattern in the artwork
+  // aliases into moire that is not in the design. `samples` renders the frame
+  // several times over in each direction and boxes it back down.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Rotated in the image plane, so its edges cross pixel rows at an angle and
+  // there is something for the sampling to be wrong about. An axis-aligned
+  // quad lands on pixel boundaries and looks identical either way, which is
+  // how a version of this test passed while doing nothing.
+  const c = Math.cos(0.4); const s = Math.sin(0.4);
+  const corner = (y, z) => [0, y * c - z * s, y * s + z * c];
+  const tri = {
+    positions: new Float32Array([...corner(-1, -1), ...corner(-1, 1), ...corner(1, 1)]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2]),
+  };
+  const group = [{ role: 'body', start: 0, count: 3 }];
+  const opts = { view: 'left', width: 60, height: 60 };
+
+  const hard = rasterise(tri, group, new Map(), { ...opts, samples: 1 });
+  const soft = rasterise(tri, group, new Map(), { ...opts, samples: 3 });
+
+  // The frame is the frame. A caller asking for 60x60 gets 60x60 whatever the
+  // sampling did internally, or every consumer of this — preview.jpg's encoder
+  // included — is handed a picture three times the size it planned for.
+  for (const [name, img] of [['samples: 1', hard], ['samples: 3', soft]]) {
+    assert.equal(img.width, 60, name);
+    assert.equal(img.height, 60, name);
+    assert.equal(img.data.length, 60 * 60 * 4, name);
+  }
+
+  // Count how many distinct greys appear. Aliased, there are two — background
+  // and surface. Antialiased, the edge pixels hold the blend between them, and
+  // that is the whole of what this buys.
+  const shades = (img) => new Set(
+    Array.from({ length: img.width * img.height }, (_, i) => img.data[i * 4]));
+  assert.ok(shades(soft).size > shades(hard).size,
+    `antialiasing should add intermediate values: ${shades(hard).size} -> ${shades(soft).size}`);
+});
+
+test('the preview frame is taken from the car\'s own skins, by vote', async () => {
+  // A generated preview lands in Content Manager's list beside the ones the car
+  // shipped with, and being a different size or aspect ratio there is the first
+  // thing that marks it as not belonging. The convention has moved — Kunos-era
+  // content is 1022x575 and the current GT3 mods are 1555x835, which is not
+  // even the same ratio — so it is read off the car rather than assumed.
+  const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const sharp = (await import('sharp')).default;
+  const { previewFrame, PREVIEW_FRAME } = await import('../src/engine/package.mjs');
+
+  const car = await mkdtemp(join(tmpdir(), 'lk-frame-'));
+  const modelPath = join(car, 'car.kn5');
+  await writeFile(modelPath, Buffer.alloc(8));
+
+  const jpeg = (w, h) => sharp({
+    create: { width: w, height: h, channels: 3, background: '#000' },
+  }).jpeg().toBuffer();
+
+  // Three skins at the car's real size and one that somebody resized by hand.
+  // The odd one out must not redefine the car, which is the reason this is a
+  // vote and not a read of whichever directory sorts first — and `aaa_odd`
+  // sorts first deliberately.
+  for (const [name, w, h] of [
+    ['aaa_odd', 800, 450], ['team_a', 1555, 835], ['team_b', 1555, 835], ['team_c', 1555, 835],
+  ]) {
+    await mkdir(join(car, 'skins', name), { recursive: true });
+    await writeFile(join(car, 'skins', name, 'preview.jpg'), await jpeg(w, h));
+  }
+
+  assert.deepEqual(await previewFrame(modelPath), { width: 1555, height: 835 });
+
+  // A skin whose preview.jpg opens but states nothing must not cost that skin
+  // its other spellings. This gave up on the whole skin instead, so a car whose
+  // skins carry a stub .jpg beside a real .png was read as having no previews.
+  const spelling = await mkdtemp(join(tmpdir(), 'lk-spelling-'));
+  const spellingModel = join(spelling, 'car.kn5');
+  await writeFile(spellingModel, Buffer.alloc(8));
+  for (const name of ['a', 'b']) {
+    await mkdir(join(spelling, 'skins', name), { recursive: true });
+    // Empty rather than absent: `sharp` opens it and reports no dimensions,
+    // which is a different path from the file not being there at all.
+    await writeFile(join(spelling, 'skins', name, 'preview.jpg'), Buffer.alloc(0));
+    await writeFile(join(spelling, 'skins', name, 'preview.png'), await jpeg(1555, 835));
+  }
+  assert.deepEqual(await previewFrame(spellingModel), { width: 1555, height: 835 },
+    'the second spelling still counts when the first says nothing');
+
+  // A car with no skins at all is not an error — plenty ship none — and the
+  // caller falls back to the conventional frame, QUIETLY.
+  const bare = await mkdtemp(join(tmpdir(), 'lk-bare-'));
+  await writeFile(join(bare, 'car.kn5'), Buffer.alloc(8));
+  const quiet = [];
+  assert.equal(await previewFrame(join(bare, 'car.kn5'), { log: (m) => quiet.push(m) }), null);
+  assert.deepEqual(quiet, [], 'no skins folder is the ordinary case and says nothing');
+  assert.deepEqual(PREVIEW_FRAME, { width: 1022, height: 575 });
+
+  // Anything OTHER than "there is no skins folder" is a real problem with a
+  // real cause, and falling back without a word means shipping a preview at the
+  // wrong size for a car whose own skins state one. A file where the folder
+  // should be is the cheapest way to produce a not-ENOENT error.
+  const odd = await mkdtemp(join(tmpdir(), 'lk-odd-'));
+  await writeFile(join(odd, 'car.kn5'), Buffer.alloc(8));
+  await writeFile(join(odd, 'skins'), 'not a directory');
+  const loud = [];
+  assert.equal(await previewFrame(join(odd, 'car.kn5'), { log: (m) => loud.push(m) }), null);
+  assert.equal(loud.length, 1, `it should say what went wrong: ${JSON.stringify(loud)}`);
+  assert.match(loud[0], /could not read/);
+});
+
+test('the car stands on a floor: a reflection under it and dark where it meets', async () => {
+  // AC's showroom previews are a black room, and what says the car is standing
+  // on something rather than floating in one is the mirrored copy below it and
+  // the dark that gathers at the contact. There is no floor surface drawn —
+  // both are composited onto the background over the pixels whose ray reaches
+  // the ground plane.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // A SLAB, not a single quad: two faces with real extent in x, because the
+  // contact shadow is an ellipse over the footprint and a flat thing has no
+  // footprint to speak of. Magenta, so a reflection is unmistakably the object
+  // rather than a lighting accident.
+  //
+  // NARROW across the view and long towards the camera. Neither is decoration.
+  //
+  // The camera fits the projected box to the frame, so the shape decides which
+  // axis binds. An object as wide as it is tall fills the frame edge to edge,
+  // its own mirrored copy then covers every visible floor pixel, and the
+  // shadow — composited underneath the reflection — cannot be told apart from
+  // it. Narrow across the view and the vertical binds instead, leaving floor
+  // to either side that the reflection never reaches.
+  const face = (x) => [x, 0, -0.15, x, 0, 0.15, x, 0.6, 0.15, x, 0.6, -0.15];
+  const slab = {
+    positions: new Float32Array([...face(-1), ...face(1)]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  const art = { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) };
+  const draw = (floor) => rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+    new Map([['body', art]]), { view: 'left', width: 120, height: 120, floor, samples: 1 });
+
+  const bare = draw(false);
+  const stood = draw(true);
+  const px = (img, i) => [0, 1, 2].map((k) => img.data[i * 4 + k]);
+
+  // Somewhere below the object the two must disagree, and the version with a
+  // floor must be the one carrying the object's magenta — a reflection, not
+  // a shading difference.
+  let reflected = -1;
+  let darkened = -1;
+  for (let i = 0; i < 120 * 120; i++) {
+    const [r, g, b] = px(stood, i);
+    const [br, bg, bb] = px(bare, i);
+    if (r === br && g === bg && b === bb) continue;
+    if (r > br + 8 && r > g + 8 && b > g + 8) reflected = i;
+    if (r < br && g < bg && b < bb) darkened = i;
+  }
+  assert.ok(reflected >= 0, 'the object should be mirrored onto the floor below it');
+  assert.ok(darkened >= 0, 'and the floor should darken where the object meets it');
+  // Below, not above: a reflection over the object would mean the mirror pass
+  // and the car pass disagree about where the ground is.
+  assert.ok(Math.floor(reflected / 120) > 60, `the reflection belongs under the object, row ${Math.floor(reflected / 120) }`);
+
+  // The mirrored pass renders flipped geometry through THIS pass's camera, and
+  // it cannot derive that camera for itself — framing the reflection's own
+  // vertices would frame the reflection. So a stated camera has to be used
+  // VERBATIM. If it ever stops being, the reflection slides out from under the
+  // car and nothing else complains.
+  //
+  // Proved by handing the 'right' view the camera the 'left' view computed:
+  // the picture must be the left one. A camera that were merely a starting
+  // point, or a hint, would give something else.
+  const { frameCamera, VIEWS } = await import('../src/engine/shot.mjs');
+  const focal = (120 / 2) / Math.tan(0.32);
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < slab.positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], slab.positions[i + k]);
+      hi[k] = Math.max(hi[k], slab.positions[i + k]);
+    }
+  }
+  const shape = {
+    width: 120,
+    height: 120,
+    focal,
+    span: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]),
+    centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
+  };
+  const fromLeft = frameCamera(slab.positions, VIEWS.left, shape);
+  const wrongView = rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+    new Map([['body', art]]),
+    { view: 'right', width: 120, height: 120, floor: false, samples: 1, camera: fromLeft });
+  assert.deepEqual(Buffer.from(wrongView.data), Buffer.from(bare.data),
+    'a stated camera must win over `view`, or the two passes cannot agree');
+});
+
+test('a two-layer material gets both layers, and the tiling one tiles', async () => {
+  // MultiMap materials are a per-part occlusion bake times a small square of
+  // carbon or suede repeated across the panel. The rasteriser knew about the
+  // first layer and not the second, so every one of them drew flat — which on
+  // this project's reference car is 180k triangles of cockpit rendering grey
+  // while the editor showed it in its real materials.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  // White base, so whatever comes out is the detail layer and not the bake.
+  const white = { w: 1, h: 1, data: Buffer.from([255, 255, 255, 255]) };
+  // Two texels, black and white. Tiled, this must show as stripes.
+  const stripe = { w: 2, h: 1, data: Buffer.from([0, 0, 0, 255, 255, 255, 255, 255]) };
+  const sheets = new Map([['bake.dds', white], ['grain.dds', stripe]]);
+  const opts = { view: 'left', width: 90, height: 90, floor: false, samples: 1 };
+
+  // No role and no file: this group's base sheet is named by the detail block,
+  // which is the case that used to fall through to grey.
+  const withLayer = rasterise(quad, [{
+    start: 0, count: 6, role: null, file: null,
+    detail: { diffuse: 'bake.dds', detail: 'grain.dds', mult: 8, bake: true },
+  }], sheets, opts);
+  const without = rasterise(quad, [{
+    start: 0, count: 6, role: null, file: 'bake.dds',
+  }], sheets, opts);
+
+  const row = (img, y) => Array.from({ length: img.width },
+    (_, x) => img.data[(y * img.width + x) * 4]);
+  const mid = row(withLayer, 45);
+  const flat = row(without, 45);
+
+  // DISTINCT values across the row, not "how many differ from the first pixel"
+  // — that counted the background the moment the camera stopped cropping the
+  // quad at the frame's edge, and reported the same number for both.
+  //
+  // The base alone is one flat value over the surface, so the row holds two:
+  // the object, and the background behind it. With the layer there are stripes.
+  const shades = (r) => new Set(r).size;
+  assert.ok(shades(mid) > shades(flat) + 4,
+    `the tiling layer should vary across the surface: ${shades(flat)} vs ${shades(mid)}`);
+
+  // And it must REPEAT rather than clamp — a clamped detail map smears one
+  // column of texels across everything past the first tile.
+  //
+  // Counted as direction reversals rather than as sharp steps. A two-texel
+  // sheet sampled bilinearly is a triangle wave, not a square one, so the
+  // signal is the turning points: eight repeats across the quad means roughly
+  // sixteen of them, and a clamped layer has none.
+  let turns = 0;
+  for (let i = 2; i < mid.length; i++) {
+    const before = mid[i - 1] - mid[i - 2];
+    const after = mid[i] - mid[i - 1];
+    if (before !== 0 && after !== 0 && Math.sign(before) !== Math.sign(after)) turns++;
+  }
+  assert.ok(turns >= 8, `eight repeats should turn about sixteen times, got ${turns}`);
+
+  // THE OTHER GAIN. A bake multiplies straight through; a colour map is doubled
+  // first, because a detail sheet is authored against mid-grey meaning "leave
+  // this alone" and 0.5 x 2 = 1. Backwards in either direction and the surface
+  // is half or twice the brightness it should be — which is what the dashboard
+  // cowl rendering white was, and it reads as a lighting bug rather than as a
+  // compositing one, so it costs an afternoon.
+  //
+  // Measured against a HALF-GREY layer, exactly the neutral point, where the
+  // two rules give plainly different answers: doubled it is the base
+  // untouched, undoubled it is the base halved.
+  const neutral = { w: 1, h: 1, data: Buffer.from([128, 128, 128, 255]) };
+  const overNeutral = (bake) => rasterise(quad, [{
+    start: 0, count: 6, role: null, file: null,
+    detail: { diffuse: 'bake.dds', detail: 'neutral.dds', mult: 1, bake },
+  }], new Map([['bake.dds', white], ['neutral.dds', neutral]]), opts);
+
+  const centre = (img) => img.data[((45 * img.width) + (img.width >> 1)) * 4];
+  const asBake = centre(overNeutral(true));
+  const asColour = centre(overNeutral(false));
+  const noLayer = centre(without);
+
+  assert.ok(Math.abs(asColour - noLayer) <= 2,
+    `a colour base doubles back to itself over neutral grey: ${asColour} vs ${noLayer}`);
+  assert.ok(asBake < asColour - 20,
+    `a bake must NOT double, so it comes out darker: ${asBake} vs ${asColour}`);
+});
+
+test('the framed camera is actually centred, and fills the frame', async () => {
+  // The CONTRACT, not the bug. frameCamera used to return on the pass where the
+  // distance settled while the recentring it had just worked out was still
+  // sitting in `target` and not in `eye`, so the camera came back framed but
+  // off-centre. Requiring the pan to have settled too — and bracketing the
+  // distance rather than stepping at it — converges well enough that the old
+  // fault can no longer be provoked from outside this function, so this asserts
+  // what the camera must BE rather than reproducing how it once failed.
+  //
+  // Which is still worth having: centred, outside the model, filling the frame
+  // and not overflowing it are the four things every caller depends on, and
+  // three of them have been wrong at some point.
+  const { frameCamera, VIEWS } = await import('../src/engine/shot.mjs');
+
+  // Car-shaped enough to be a fair test: solid rather than a curve, longer than
+  // it is wide, and lower than it is long. A thin curve seen down its own
+  // length is a different problem — the camera cannot get far enough from the
+  // near end and close enough to the far one at once — and asserting a full
+  // frame for one would be asserting something untrue.
+  const pts = [];
+  for (let i = 0; i <= 6; i++) {
+    for (let j = 0; j <= 4; j++) {
+      for (let k = 0; k <= 4; k++) {
+        pts.push(-2.2 + (4.4 * i) / 6, (1.2 * j) / 4, -0.95 + (1.9 * k) / 4);
+      }
+    }
+  }
+  const positions = new Float32Array(pts);
+
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], positions[i + k]);
+      hi[k] = Math.max(hi[k], positions[i + k]);
+    }
+  }
+  const width = 400;
+  const height = 300;
+  const focal = (height / 2) / Math.tan(0.32);
+  const shape = {
+    width,
+    height,
+    focal,
+    span: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]),
+    centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
+  };
+
+  for (const [name, angles] of Object.entries(VIEWS)) {
+    const { eye, fwd, right, up } = frameCamera(positions, angles, shape);
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+      const d = [positions[i] - eye[0], positions[i + 1] - eye[1], positions[i + 2] - eye[2]];
+      const z = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2];
+      assert.ok(z > 0, `${name}: the camera must be outside the model`);
+      const sx = ((d[0] * right[0] + d[1] * right[1] + d[2] * right[2]) * focal) / z;
+      const sy = ((d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) * focal) / z;
+      minX = Math.min(minX, sx); maxX = Math.max(maxX, sx);
+      minY = Math.min(minY, sy); maxY = Math.max(maxY, sy);
+    }
+
+    // Horizontally centred within a pixel. Vertically the frame is deliberately
+    // off-centre — room is left below for the reflection — so the assertion is
+    // that the shape sits ABOVE the middle, by about that allowance.
+    assert.ok(Math.abs((minX + maxX) / 2) < 1.5,
+      `${name}: not centred across, off by ${((minX + maxX) / 2).toFixed(1)}px`);
+    assert.ok((minY + maxY) / 2 > 0,
+      `${name}: the reflection's room belongs below the shape, not above it`);
+
+    // And it fills the frame: one axis has to be at the fit, or the camera is
+    // simply further away than it needs to be, which is the whole bug this
+    // replaced.
+    const fill = Math.max((maxX - minX) / width, (maxY - minY) / height);
+    assert.ok(fill > 0.55, `${name}: only fills ${(fill * 100).toFixed(0)}% of the frame`);
+    assert.ok((maxX - minX) <= width && (maxY - minY) <= height,
+      `${name}: overflows the frame`);
+  }
 });

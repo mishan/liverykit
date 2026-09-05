@@ -34,6 +34,26 @@ const IDENTITY = translation(0, 0, 0);
 export function buildKn5({
   version = 6, extraMeshes = [], dummies = [],
   placeholderTexture = false, encrypted = false, bodyMesh = null,
+  // Meshes under a NAMED PARENT NODE, for the rules that read a mesh's path
+  // rather than its name — which cockpit LOD selection does, since both
+  // cockpits contain meshes called the same thing and only the node above
+  // them says which is which. `[{ name, meshes: [...] }]`.
+  wrapped = [],
+  // The one material this fixture emits, for tests about MATERIALS rather than
+  // about geometry: `{ shader, props: { detailUVMultiplier: 377 }, slots: {
+  // txDetail: 'carbon.dds' } }`. txDiffuse defaults to the texture above and
+  // can be overridden — deliberately, since the spelling of a slot need not
+  // match the spelling of the texture entry, and code that compares the two
+  // with `===` has been wrong about that.
+  material = {},
+  // What the one texture is CALLED. Several rules read a texture's name — the
+  // bake seed is one — so a test about those needs to choose it.
+  textureName = 'body.dds',
+  // A header and nothing else is enough for every test that only parses. The
+  // server refuses to SERVE a blob of 256 bytes or less, on the grounds that an
+  // encrypted kn5 substitutes 1x1 placeholders, so a test that wants the stock
+  // texture route to hand back real bytes asks for a bigger one.
+  textureBytes = 128,
 } = {}) {
   const parts = [];
 
@@ -41,19 +61,29 @@ export function buildKn5({
   if (version > 5) parts.push(u32(0));
 
   // textures: one null slot (type 0, no further fields) then one real DDS
-  const dds = Buffer.alloc(128); dds.write('DDS ', 0, 'ascii');
+  const dds = Buffer.alloc(Math.max(128, textureBytes)); dds.write('DDS ', 0, 'ascii');
   // An encrypted model substitutes a 1x1 image for every texture; the real one
   // lives in the protected blob appended after the node tree.
   dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
   dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
-  parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
+  parts.push(u32(2), u32(0), u32(1), str(textureName), u32(dds.length), dds);
 
   // one material binding that texture as a diffuse
-  parts.push(u32(1), str('BodyMat'), str('ksPerPixel'), Buffer.from([0, 0]), u32(0),
-    u32(0), u32(1), str('txDiffuse'), u32(0), str('body.dds'));
+  const slots = { txDiffuse: textureName, ...(material.slots ?? {}) };
+  const props = material.props ?? {};
+  parts.push(
+    u32(1), str(material.name ?? 'BodyMat'), str(material.shader ?? 'ksPerPixel'),
+    Buffer.from([0, 0]), u32(0),
+    // Each property is its key, then valueA, then 36 bytes of the vec2/3/4
+    // behind it that the parser skips as one.
+    u32(Object.keys(props).length),
+    ...Object.entries(props).map(([k, v]) => Buffer.concat([str(k), f32(v), Buffer.alloc(36)])),
+    u32(Object.keys(slots).length),
+    ...Object.entries(slots).map(([k, v]) => Buffer.concat([str(k), u32(0), str(v)])),
+  );
 
   // root dummy -> one mesh child, plus whatever the caller added
-  const children = 1 + extraMeshes.length + dummies.length;
+  const children = 1 + extraMeshes.length + dummies.length + wrapped.length;
   parts.push(u32(1), str('root'), u32(children), Buffer.from([1]), IDENTITY);
 
   const body = bodyMesh ?? {
@@ -70,6 +100,13 @@ export function buildKn5({
   // Extra meshes, for tests that need geometry the analysis will look for by
   // name (a steering wheel) or trip over (an occluder).
   for (const em of extraMeshes) parts.push(mesh(em));
+
+  // A dummy with children, which is how a kn5 states COCKPIT_HR and everything
+  // under it. The parser builds each mesh's `path` from this.
+  for (const w of wrapped) {
+    parts.push(u32(1), str(w.name), u32(w.meshes.length), Buffer.from([1]), IDENTITY);
+    for (const m of w.meshes) parts.push(mesh(m));
+  }
 
   // Dummies carry no geometry but do carry a transform, which is how AC states
   // where a wheel is — and therefore the only exact source for which way this
@@ -147,7 +184,7 @@ export const CAR = {
  * friends, the axes are derived from them, and a fixture without them exercises
  * only the fallback path.
  */
-export function carKn5() {
+export function carKn5(rest = {}) {
   const x0 = -CAR.width / 2, x1 = CAR.width / 2;
   const y0 = 0, y1 = CAR.height;
   const z0 = -CAR.length / 2, z1 = CAR.length / 2;
@@ -196,6 +233,7 @@ export function carKn5() {
 
   const hx = CAR.track / 2, hz = CAR.wheelbase / 2;
   return buildKn5({
+    ...rest,
     bodyMesh: { name: 'BODY_SHELL', verts, indices },
     dummies: [
       // +X is the car's left and +Z its front, which is the common convention

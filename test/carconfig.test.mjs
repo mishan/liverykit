@@ -135,3 +135,63 @@ test('a config that exists and cannot be read stops the profile rather than bein
     /could not be read/,
   );
 });
+
+test('a bake is recorded from the name AND the structure, whatever the spelling', async () => {
+  // `bake` decides how two renderers composite a two-layer material — a bake
+  // multiplies straight through, a colour map is doubled first — so getting it
+  // wrong is not subtle: the brightest island of a bake mistaken for colour
+  // renders as a white panel, which on the reference car is the dashboard cowl.
+  //
+  // Both signals must agree. The NAME, because Kunos names a bake a bake; and
+  // the STRUCTURE, because a bake is only ever the base layer of a material
+  // with a detail layer over it. A texture called "occlusion" with nothing
+  // multiplied over it is a texture with an unfortunate name.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+
+  const bakeOf = async (label, { textureName, material }) => {
+    const dir = await mkdtemp(join(tmpdir(), `lk-${label}-`));
+    const at = join(dir, 'fixture.kn5');
+    // buildKn5, not carKn5: this is a test about a MATERIAL, and the small
+    // default body wears it as readily as the six-panel car does.
+    await writeFile(at, buildKn5({ textureName, material }));
+    const profile = await profileFromKn5(at, { id: 'fixture_car', log: () => {} });
+    return Object.values(profile.textures).find((t) => t.file === textureName)?.bake;
+  };
+  const twoLayer = (txDiffuse) => ({
+    shader: 'ksPerPixelMultiMap',
+    props: { useDetail: 1, detailUVMultiplier: 377 },
+    slots: { txDiffuse, txDetail: 'carbon.dds' },
+  });
+
+  const BAKE = 'INT_HR_Occlusion.dds';
+
+  // Named like a bake AND the base layer of a two-layer material.
+  assert.equal(await bakeOf('both', { textureName: BAKE, material: twoLayer(BAKE) }), true);
+
+  // The structure without the name.
+  assert.equal(await bakeOf('unnamed', { textureName: 'body.dds', material: twoLayer('body.dds') }),
+    undefined, 'structure alone is not a bake');
+
+  // The name without the structure — an ordinary single-layer material.
+  assert.equal(await bakeOf('nolayer', { textureName: BAKE, material: { shader: 'ksPerPixel' } }),
+    undefined, 'a name with nothing multiplied over it is an unfortunate name');
+
+  // A material that asks for no detail, which is most of a MultiMap car.
+  assert.equal(await bakeOf('nodetail', {
+    textureName: BAKE,
+    material: { shader: 'ksPerPixelMultiMap', slots: { txDetail: 'carbon.dds' } },
+  }), undefined, 'useDetail is what says the second layer is real');
+
+  // A texture whose material spells the slot in a different case is not merely
+  // un-baked, it is ABSENT: profilegen keys `boundAs` by the slot's spelling
+  // and looks it up by the texture entry's, so the texture is filed as "shipped
+  // but never bound" and never reaches the loop this test is about. Asserted as
+  // it behaves rather than as it should, because pretending otherwise here
+  // would hide it — see docs/backlog.md.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-cased-'));
+  const at = join(dir, 'fixture.kn5');
+  await writeFile(at, buildKn5({ textureName: BAKE, material: twoLayer(BAKE.toLowerCase()) }));
+  const cased = await profileFromKn5(at, { id: 'fixture_car', log: () => {} });
+  assert.deepEqual(Object.values(cased.textures).map((t) => t.file), [],
+    'a case-mismatched slot loses the texture entirely — which is the bug above this one');
+});

@@ -38,6 +38,7 @@ import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
+import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
@@ -47,7 +48,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
-import { shoot, VIEWS } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 
@@ -132,148 +133,7 @@ export function modelGeometry(model, file) {
   };
 }
 
-/**
- * The WHOLE car, grouped by which texture paints each part.
- *
- * The per-role view is the right one while you are editing a surface — you are
- * looking at what you are painting. It is the wrong one for judging a design,
- * because a livery is not a texture, it is every texture at once, and a stripe
- * that meets the bodywork perfectly can still miss the sidepod beside it.
- *
- * Every mesh appears exactly once. A mesh whose texture the livery does not
- * paint goes into a group with no ROLE but with its FILE, one group per texture
- * — which is what lets the viewer draw the car's own artwork there, out of the
- * kn5, and fall back to flat grey only when it cannot. Leaving those meshes out
- * entirely would be worse than either: a car with holes in it reads as a broken
- * export rather than as an unpainted panel.
- *
- * They used to be ONE group and always grey. That is honest and it reads as a
- * bug: a grey rectangle across a door panel looks like a sticker somebody left
- * on, and it was reported as a fault twice.
- */
-export function wholeModelGeometry(model, files, { livery = {}, profile = {} } = {}) {
-  const positions = [];
-  const uvs = [];
-  // The surface normals were always in the kn5 and were always thrown away
-  // here, so the viewer had nothing to light with and drew the raw texture. A
-  // livery on an unlit slab does not look like a livery on a car, and you
-  // cannot judge how artwork sits over a curve you cannot see.
-  const normals = [];
-  const indices = [];
-  const groups = [];
-  let lo = [Infinity, Infinity, Infinity];
-  let hi = [-Infinity, -Infinity, -Infinity];
-
-  const claimed = new Set();
-  const emit = (meshes, group) => {
-    const start = indices.length;
-    for (const mesh of meshes) {
-      const base = positions.length / 3;
-      for (let i = 0; i < mesh.vertexCount; i++) {
-        const v = vertex(model, mesh, i);
-        positions.push(v.x, v.y, v.z);
-        uvs.push(v.u, v.v);
-        normals.push(v.nx, v.ny, v.nz);
-        for (const [k, n] of [[0, v.x], [1, v.y], [2, v.z]]) {
-          if (n < lo[k]) lo[k] = n;
-          if (n > hi[k]) hi[k] = n;
-        }
-      }
-      for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
-    }
-    if (indices.length > start) {
-      // Whether this group composites, taken from the MATERIAL rather than from
-      // the texture. A group is one draw call and one texture, and in practice
-      // one shader — but `some` rather than `every`, because a blended mesh
-      // drawn in the opaque pass is a black slab and an opaque one drawn in the
-      // blended pass merely sorts oddly. Wrong in the cheaper direction.
-      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
-      groups.push({
-        ...group, start, count: indices.length - start, blend,
-        add: blend && additive(group.file),
-      });
-    }
-  };
-
-  // Surfaces the design explicitly does not want drawn.
-  //
-  // A GT3 car ships one set of number plate meshes per racing series and
-  // renders them ALL — this Honda has eight on the left flank: IGT, IMSA and
-  // two Blancpain variants, each with an emissive twin, stacked in one patch of
-  // door. In the game a skin makes the unused ones transparent. Here they wore
-  // their stock 32x32 black textures and were drawn over the plate the design
-  // had just painted.
-  //
-  // This is a CHOICE, not something to infer. I tried inferring it from
-  // geometry twice — first "unpainted things inside painted things", which hid
-  // half the car because a group is a whole texture and the body's box encloses
-  // the mirrors; then with a size-similarity test, which hid the hood lining
-  // and the radiator. Bounding boxes cannot tell an alternate from a part, and
-  // I had already written that conclusion down once while building the fitment
-  // checker and then ignored it.
-  //
-  // So the design says which ones. `hide` is a list of texture roles, matched
-  // by their file, and it means exactly what it says.
-  //
-  // Guarded, because a design is a file somebody edits by hand. `hide: 'imsa'`
-  // is a string, and iterating a string yields characters — five roles named
-  // i, m, s, a — while a profile entry whose `file` is not a string would throw
-  // inside toLowerCase. Neither is worth a stack trace or a wrong car.
-  const hidden = new Set();
-  for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
-    const f = profile.textures?.[role]?.file;
-    if (typeof f === 'string' && f) hidden.add(f.toLowerCase());
-  }
-
-  // And the meshes the CAR hides, by its own CSP config, as the profile
-  // recorded them. These are skipped for painted surfaces too: a design that
-  // paints a plate the game never draws is painting nothing, and the picture
-  // should say so rather than show artwork on a part that does not exist in
-  // the game. The build's report names the contradiction in words.
-  const carHides = new Set(Object.keys(profile.hiddenByCar?.meshes ?? {}));
-  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name);
-
-  for (const { role, file } of files) {
-    const meshes = meshesUsingTexture(model, file).filter(drawn);
-    for (const m of meshes) claimed.add(m);
-    emit(meshes, { role, file });
-  }
-  // Whatever is left: glass, the number plates, the Lumirank panel, the mirrors.
-  //
-  // ONE GROUP PER TEXTURE, not one group for all of them. They used to be lumped
-  // together and drawn flat grey, which is honest but reads as a bug — a grey
-  // rectangle across a door panel looks like a sticker, not like "this part is
-  // unpainted", and it was reported as a fault twice. Split by texture, each can
-  // wear the car's OWN artwork, so the whole-car view shows the real car with
-  // your livery on the parts your livery paints.
-  //
-  // Sorted, so the group order does not depend on mesh order in the file and a
-  // test can say what it expects.
-  const leftover = new Map();
-  for (const m of (model.meshes ?? []).filter(drawn)) {
-    const file = model.materials?.[m.materialId]?.slots?.txDiffuse ?? null;
-    if (!leftover.has(file)) leftover.set(file, []);
-    leftover.get(file).push(m);
-  }
-  for (const file of [...leftover.keys()].sort((a, b) => String(a).localeCompare(String(b)))) {
-    // Named on the `hide` list: not emitted at all, so it is not drawn, not
-    // fetched, and not counted as unpainted geometry.
-    if (file && hidden.has(String(file).toLowerCase())) continue;
-    // `role: null` still means "the design does not paint this", which is what
-    // the viewer keys its grey off. `file` is new, and says what to draw instead
-    // when the car itself can supply it.
-    emit(leftover.get(file), { role: null, file });
-  }
-
-  return {
-    positions: Float32Array.from(positions),
-    uvs: Float32Array.from(uvs),
-    normals: Float32Array.from(normals),
-    indices: Uint32Array.from(indices),
-    groups,
-    bounds: { lo, hi },
-  };
-}
+export { wholeModelGeometry };
 
 /**
  * A JSON header of known length, then the arrays.
@@ -285,13 +145,16 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
  */
 export function packModel(g) {
   // Named, because the alternative is a TypeError reading byteLength of
-  // undefined forty lines away from the caller that forgot it. Normals became
-  // part of this format when the viewer learned to light the car, and a
-  // geometry builder that has not caught up should be told so.
-  for (const k of ['positions', 'uvs', 'normals', 'indices']) {
+  // undefined forty lines away from the caller that forgot it. This format has
+  // grown twice — normals when the viewer learned to light the car, tangents
+  // when it learned to read a normal map — and a geometry builder that has not
+  // caught up should be told which one it is missing rather than a stale
+  // guess at which one it might be.
+  for (const k of ['positions', 'uvs', 'normals', 'tangents', 'indices']) {
     if (!ArrayBuffer.isView(g[k])) {
       throw new Error(`packModel needs a typed array for "${k}"; got ${typeof g[k]}. ` +
-        'Normals are part of this payload — the viewer lights the car with them.');
+        'Normals and tangents are part of this payload — the viewer lights the '
+        + 'car with the first and reads its detail normal maps with the second.');
     }
   }
   const json = Buffer.from(JSON.stringify({
@@ -299,6 +162,10 @@ export function packModel(g) {
     indexCount: g.indices.length,
     groups: g.groups,
     bounds: g.bounds,
+    // Where the driver's eyes sit, for the cockpit view. `null` travels as
+    // JSON `null`, not an absent key, so the client can tell "this car has
+    // no cockpit eye" from "this payload predates the field".
+    cockpit: g.cockpit ?? null,
   }), 'utf8');
   // PADDED TO FOUR BYTES. The browser takes Float32Array views straight over
   // this buffer, and a typed-array view must start on a multiple of its element
@@ -306,12 +173,15 @@ export function packModel(g) {
   // out of four, which is a maddening way to find out about an alignment rule.
   const header = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 0x20)]);
   const out = Buffer.alloc(4 + header.length + g.positions.byteLength
-    + g.uvs.byteLength + g.normals.byteLength + g.indices.byteLength);
+    + g.uvs.byteLength + g.normals.byteLength + g.tangents.byteLength
+    + g.indices.byteLength);
   out.writeUInt32LE(header.length, 0);
   let o = 4;
   const put = (b) => { b.copy(out, o); o += b.length; };
   put(header);
-  for (const ta of [g.positions, g.uvs, g.normals, g.indices]) {
+  // Tangents ride between the normals and the indices, and `unpackModel` reads
+  // them in this order — the two are one format and move together.
+  for (const ta of [g.positions, g.uvs, g.normals, g.tangents, g.indices]) {
     put(Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength));
   }
   return out;
@@ -857,16 +727,24 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   // has a profile but not the car.
   let model = null;
   let modelError = null;
+  // Single-flight, for the same reason as the stock textures below: the page
+  // can have the whole-car geometry, a shot and the surface list all in the air
+  // at once on a cold server, and without this each one parses the 45 MB file
+  // for itself.
+  let modelLoading = null;
   const getModel = async () => {
     if (model || modelError) return model;
     if (!modelPath) { modelError = 'no model path given'; return null; }
-    try {
-      model = await parseKn5(modelPath, { keepTextureData: false });
-      log(`  model loaded: ${modelPath}`);
-    } catch (e) {
-      modelError = e.message;
-      log(`  ! could not read ${modelPath}: ${e.message}`);
-    }
+    modelLoading ??= (async () => {
+      try {
+        model = await parseKn5(modelPath, { keepTextureData: false });
+        log(`  model loaded: ${modelPath}`);
+      } catch (e) {
+        modelError = e.message;
+        log(`  ! could not read ${modelPath}: ${e.message}`);
+      }
+    })();
+    await modelLoading;
     return model;
   };
 
@@ -890,33 +768,83 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
    * hundred megabytes kept alive to show a wing mirror. So the file is parsed a
    * second time, the wanted blobs are COPIED out, and the big buffer goes.
    */
-  let stock = null;
+  // ONE promise, not one flag. `stock` used to be set to an empty Map on the
+  // line before the parse started, so every request that arrived during those
+  // few seconds saw it truthy, skipped the load, looked up an empty map and was
+  // told 404 — "this model has no such texture" — for textures the model does
+  // have. The viewer asks for fifty of these six at a time on a cold server, so
+  // a refresh right after a restart drew most of the car grey, and a second
+  // refresh fixed it. Nothing was still loading by then; the answers had been
+  // wrong the first time. Holding the in-flight promise makes the second caller
+  // WAIT for the first one's work instead of racing past it.
+  let stockLoading = null;
+  const loadStock = async () => {
+    const stock = new Map();
+    try {
+      const full = await parseKn5(modelPath, { keepTextureData: true });
+      // EVERY slot a material binds, not a list of the ones we happen to
+      // want today.
+      //
+      // This was diffuse-only, from when one texture was the whole of a
+      // surface. The first correction added txDetail, which fixed the seat's
+      // colour and left its normal map answering 404 — that one is bound as
+      // txNormalDetail. An allowlist of slot names goes stale every time the
+      // viewer learns to read one more of them, and it fails SILENTLY: the
+      // viewer asks, is told no, and draws something plausible with a layer
+      // missing. Normal mapping shipped that way and nobody could see it,
+      // because a lit surface with no grain still looks like a surface.
+      //
+      // So: whatever the model binds is fetchable. The filtering that earns
+      // its place is skipping textures no mesh references at all — it was
+      // the per-slot allowlist inside it that had no business existing.
+      const used = new Set();
+      for (const m of full.meshes ?? []) {
+        for (const name of Object.values(full.materials?.[m.materialId]?.slots ?? {})) {
+          if (name) used.add(String(name).toLowerCase());
+        }
+      }
+      for (const t of full.textures ?? []) {
+        // Only textures some mesh actually uses, so an unused slot in the file
+        // does not cost anything. `Buffer.from` COPIES — a subarray would keep
+        // the whole model alive and defeat the point of parsing twice.
+        if (!t.data || !used.has(t.name.toLowerCase())) continue;
+        // A 1x1 blob is not a small texture, it is an absent one: an encrypted
+        // kn5 substitutes placeholders and keeps the real artwork in a blob
+        // this project does not decrypt. Storing them would put a single grey
+        // texel on the bodywork and call it the car.
+        if (t.data.length <= 256) continue;
+        stock.set(t.name.toLowerCase(), Buffer.from(t.data));
+      }
+      log(`  stock textures available: ${stock.size}`);
+    } catch (e) {
+      log(`  ! could not read textures from ${modelPath}: ${e.message}`);
+      // THROWN ON, not swallowed into an empty map.
+      //
+      // Returning the empty map made every request answer 404 — "no such
+      // texture in this model" — for a model nobody could read at all, which
+      // is the same failure this whole change is about: a request that cannot
+      // be served must not be answered with a confident fact about the car.
+      // It matters more now that the viewer trusts a 404, which it does
+      // because an encrypted kn5 legitimately has none of these.
+      throw new Error(`could not read textures from ${modelPath}: ${e.message}`);
+    }
+    return stock;
+  };
+  // The same textures again, decoded, for the renderer that has no GPU to hand
+  // a DDS to. Kept for the life of the server: the car's own artwork does not
+  // change while the editor is up, and decoding is an ImageMagick run per
+  // texture — thirty-odd of them for one shot of a GT3 car, and all of them
+  // again for every other angle somebody asks for.
+  const stockSheets = new Map();
   const stockTexture = async (file) => {
     if (!modelPath) return null;
-    if (!stock) {
-      stock = new Map();
-      try {
-        const full = await parseKn5(modelPath, { keepTextureData: true });
-        const used = new Set((full.meshes ?? [])
-          .map((m) => full.materials?.[m.materialId]?.slots?.txDiffuse)
-          .filter(Boolean).map((n) => n.toLowerCase()));
-        for (const t of full.textures ?? []) {
-          // Only textures some mesh actually uses, so an unused slot in the file
-          // does not cost anything. `Buffer.from` COPIES — a subarray would keep
-          // the whole model alive and defeat the point of parsing twice.
-          if (!t.data || !used.has(t.name.toLowerCase())) continue;
-          // A 1x1 blob is not a small texture, it is an absent one: an encrypted
-          // kn5 substitutes placeholders and keeps the real artwork in a blob
-          // this project does not decrypt. Storing them would put a single grey
-          // texel on the bodywork and call it the car.
-          if (t.data.length <= 256) continue;
-          stock.set(t.name.toLowerCase(), Buffer.from(t.data));
-        }
-        log(`  stock textures available: ${stock.size}`);
-      } catch (e) {
-        log(`  ! could not read textures from ${modelPath}: ${e.message}`);
-      }
-    }
+    // Assigned before the await, and it is a PROMISE this time, so the racing
+    // caller awaits the same load rather than reading a half-built map. A
+    // REJECTED promise is cached the same way, deliberately: a kn5 that could
+    // not be read once will not read differently on the fiftieth request, and
+    // every caller should hear the same answer.
+    stockLoading ??= loadStock();
+    const stock = await stockLoading;
     return stock.get(String(file).toLowerCase()) ?? null;
   };
 
@@ -986,7 +914,16 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // The name is resolved by LOOKUP and never joined onto a path, so this can
       // only ever answer with something the model itself contains.
       if (req.method === 'GET' && url.pathname === '/api/stock') {
-        const data = await stockTexture(url.searchParams.get('file') ?? '');
+        // 404 means THIS MODEL HAS NO SUCH TEXTURE, and the viewer takes it at
+        // its word — draws the grey and says nothing, because an encrypted car
+        // really does have none of these. So a model that could not be read is
+        // a 500 and not a 404: it is a fact about the server, not about the car.
+        let data;
+        try {
+          data = await stockTexture(url.searchParams.get('file') ?? '');
+        } catch (e) {
+          return json(500, { error: e.message });
+        }
         if (!data) return send(404, 'text/plain', 'no such texture in this model');
         return send(200, 'application/octet-stream', data);
       }
@@ -1065,9 +1002,25 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           role: r.role,
           svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role }).svg,
         }));
+        // The car's OWN artwork for everything the design does not paint, the
+        // same way the build's preview.jpg gets it. Without it this drew glass,
+        // wheels and the entire interior flat grey while the browser view a
+        // metre away showed them in their real materials — and this is the only
+        // picture an agent working without a browser can see, so a change was
+        // being verified against the wrong one.
+        // A kn5 whose textures cannot be read AT ALL rejects here once per
+        // file, and carSheets names each of them — so the count below is the
+        // number of parts drawing grey either way, and the picture still gets
+        // taken. The geometry is already in hand; withholding it over the
+        // paint would answer a question nobody asked.
+        const { sheets: stock, absent } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
+        if (absent.length) {
+          log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
+        }
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
         const shot = await shoot(g, g.groups, surfaces, {
           view,
+          sheets: stock,
           width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
           height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
         });
@@ -1078,6 +1031,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           // renderer has no artwork for are not drawn, and the caller should
           // know how much of the car that was.
           'x-liverykit-skipped': String(shot.skipped),
+          // And how many of the car's own textures the model could not give up,
+          // which is the difference between "your design does not paint this"
+          // and "nobody could read what the car wears there".
+          'x-liverykit-absent': String(absent.length),
         });
         return res.end(shot.png);
       }
