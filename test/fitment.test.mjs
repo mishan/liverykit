@@ -113,6 +113,117 @@ test('artwork outside the readable part of a panel is reported', () => {
   assert.equal(out[0].severity, 'high');
 });
 
+test('a region that names no panel is checked, not skipped', () => {
+  // Placements with no panel were filtered out before any check ran, so a
+  // design written in whole-sheet coordinates — which is what a design does on
+  // a role whose panels the profile never mapped — went through this module
+  // untouched and came back clean. Not "clean" as in checked: clean as in a
+  // list of findings about the other surfaces.
+  //
+  // Nothing about them needs a panel. `resolveRect` gives the sheet rectangle
+  // straight back, and each check below already gates itself on the fields it
+  // needs — the safe area, the metres, the mirrored twin — so the ones that
+  // cannot answer stay quiet on their own.
+  const r = fitment(design([
+    { id: 'ground', treatment: 'fill', at: [0, 0, 1, 1], color: 'ink' },
+    { id: 'team', treatment: 'text', at: [0.2, 0.2, 0.4, 0.1], text: 'T' },
+  ]), profile);
+
+  const over = r.findings.filter((f) => f.kind === 'overlap');
+  assert.deepEqual(over.map((f) => f.ids), [['ground', 'team']],
+    'a name under a full-sheet fill is the same finding it would be on a panel');
+
+  // And the checks that need a panel say nothing rather than guessing: there
+  // is no safe area to be outside of, and no metres to be too small in.
+  assert.deepEqual(r.findings.filter((f) => ['outside-safe', 'unreadable'].includes(f.kind)), []);
+});
+
+test('artwork on the face of a sheet the world cannot see is reported', () => {
+  // The windscreen banner on the NSX: EXT_Banner and INT_Banner share one
+  // texture, the outward face in its top half and the underside plus the
+  // interior mesh in its bottom. A team name placed in sheet coordinates
+  // landed in the bottom half, read perfectly from the driver's seat, and
+  // appeared nowhere from outside. Nothing said so — it took somebody noticing
+  // it from the wrong seat, weeks later.
+  const twoFaced = structuredClone(profile);
+  twoFaced.panels.body = {
+    outside: { rect: [0.1, 0.02, 0.8, 0.47], anisotropy: 1, metresPerUv: [4, 4], visible: 0.59 },
+    inside: { rect: [0.1, 0.49, 0.8, 0.48], anisotropy: 1, metresPerUv: [4, 4], visible: 0, visibleFromCockpit: 0.13 },
+  };
+  twoFaced.aliases = { body: { banner: 'outside' } };
+
+  const r = fitment(design([
+    // The sheet's background. It covers both faces because that is what a
+    // background does, and reporting it would teach anybody reading this
+    // panel to stop reading it.
+    { id: 'ground', treatment: 'fill', at: [0, 0, 1, 1], color: 'ink' },
+    // Placed by sheet coordinates, straddling the seam, mostly below it.
+    { id: 'team', treatment: 'text', at: [0.14, 0.37, 0.72, 0.55], text: 'T' },
+    // And the same artwork where it belongs.
+    { id: 'stripe', treatment: 'stripe', at: [0.1, 0.08, 0.8, 0.06], color: 'ink' },
+  ]), twoFaced);
+
+  const hidden = r.findings.filter((f) => f.kind === 'hidden-face');
+  assert.deepEqual(hidden.map((f) => f.ids[0]), ['team'],
+    'the background covers both faces by definition, and the stripe is on the right one');
+  assert.equal(hidden[0].severity, 'high', 'a name the world cannot read is not a footnote');
+  assert.equal(hidden[0].onto, 'inside');
+  assert.equal(hidden[0].instead, 'outside');
+  // The report has to say where to put it instead, by the name a design would
+  // write — which is the alias when the profile carries one.
+  assert.match(hidden[0].why, /banner \(outside\)/);
+  assert.match(hidden[0].why, /driver/, 'and that this one is not invisible, it is inward-facing');
+  assert.ok(r.checked.includes('hidden-face'), 'and the check is named as having run');
+
+  // Silent on a sheet the world sees none of. An interior, a tub, the
+  // underside of a floor — painting those is the point, not a mistake.
+  const allInside = structuredClone(twoFaced);
+  allInside.panels.body.outside.visible = 0;
+  const quiet = fitment(design([
+    { id: 'team', treatment: 'text', at: [0.14, 0.37, 0.72, 0.55], text: 'T' },
+  ]), allInside);
+  assert.deepEqual(quiet.findings.filter((f) => f.kind === 'hidden-face'), []);
+
+  // And silent where the profile has never been measured for visibility, like
+  // one written from screenshots: no number, no claim.
+  const unmeasured = structuredClone(twoFaced);
+  for (const q of Object.values(unmeasured.panels.body)) delete q.visible;
+  const nothingToSay = fitment(design([
+    { id: 'team', treatment: 'text', at: [0.14, 0.37, 0.72, 0.55], text: 'T' },
+  ]), unmeasured);
+  assert.deepEqual(nothingToSay.findings.filter((f) => f.kind === 'hidden-face'), []);
+});
+
+test('artwork wholly on the hidden face is the worst case, not a crash', () => {
+  // The case this check exists for, and the one it could not survive. A
+  // placement entirely on the inward face overlaps NO outward panel, so
+  // "the outward panel it overlaps most" is nothing at all — and the finding
+  // went looking for that panel's visibility. A region straddling the seam
+  // has one and does not, which is why the first test of this passed.
+  //
+  // Where to put it instead cannot come from where the artwork wrongly is. It
+  // is the sheet's most visible face, which exists whether or not the
+  // placement ever reached it.
+  const twoFaced = structuredClone(profile);
+  twoFaced.panels.body = {
+    outside: { rect: [0.1, 0.02, 0.8, 0.44], anisotropy: 1, metresPerUv: [4, 4], visible: 0.59 },
+    lip: { rect: [0.1, 0.46, 0.8, 0.02], anisotropy: 1, metresPerUv: [4, 4], visible: 0.2 },
+    inside: { rect: [0.1, 0.5, 0.8, 0.47], anisotropy: 1, metresPerUv: [4, 4], visible: 0 },
+  };
+
+  const r = fitment(design([
+    { id: 'team', treatment: 'text', at: [0.2, 0.6, 0.5, 0.2], text: 'T' },
+  ]), twoFaced);
+
+  const hidden = r.findings.filter((f) => f.kind === 'hidden-face');
+  assert.equal(hidden.length, 1);
+  assert.equal(hidden[0].severity, 'high');
+  assert.equal(hidden[0].onto, 'inside');
+  assert.equal(hidden[0].instead, 'outside', 'the most visible face, not the least');
+  assert.match(hidden[0].why, /none of this reaches it/);
+  assert.match(hidden[0].why, /100% of team is on inside/);
+});
+
 test('a placement mostly off the model is reported before its visibility is', () => {
   // The mistake that started all of this, finally caught.
   //
