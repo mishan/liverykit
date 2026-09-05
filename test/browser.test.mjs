@@ -106,6 +106,31 @@ test('a browser is present, where the environment says one has to be', {
     + 'in this file would have skipped and the run would have been green for nothing.');
 });
 
+test('a browser that never reported back says how far it got', () => {
+  // Runs without a browser, deliberately: it is about the sentence a CI log
+  // gets when the browser suite fails, and that sentence is the only thing
+  // anybody reading a failed run has to work with.
+  //
+  // "The browser never reported back" has now failed twice in CI, on two
+  // different Node versions, with nothing in either log to tell which of three
+  // failures it was — and they want opposite responses. A browser that never
+  // started is the environment, and waiting longer is not a fix. A page that
+  // loaded without running the driver is a module or a policy problem. A
+  // driver that ran and never finished is a hang in the test.
+  assert.match(howFar([]), /never reached the page/);
+  assert.match(howFar([]), /waiting\s+longer would not have changed it/,
+    'and says plainly that the timeout is not the thing to raise');
+
+  assert.match(howFar(['/', '/app.js']), /never ran/);
+  assert.match(howFar(['/', '/app.js']), /2 URL\(s\)/, 'with the trail, so it can be read');
+
+  const ran = howFar(['/', '/driver.js', '/api/state', '/api/state']);
+  assert.match(ran, /ran and did not finish/);
+  assert.match(ran, /watchdog did not fire/);
+  assert.match(ran, /\/api\/state/);
+  assert.ok(!/\/api\/state, \/api\/state/.test(ran), 'and each URL once, however often it was asked for');
+});
+
 test('the browser probe does not depend on a shell being installed', async () => {
   // This decides whether the rest of this file runs. `command -v` needs a shell
   // to run in, and the obvious one to name is bash — which a minimal container
@@ -238,12 +263,22 @@ async function inBrowser(driver, {
   const realPort = real.server.address().port;
 
   let report = null;
+  // EVERY URL THE BROWSER ASKED FOR, in order.
+  //
+  // "The browser never reported back" is three different failures wearing one
+  // sentence, and CI has now shown two of them without being able to say
+  // which: a browser that never started, a page that loaded and never ran the
+  // driver, and a driver that ran and never finished. The proxy is the only
+  // thing that knows, since every request the page makes goes through it —
+  // including the one for the page itself.
+  const trail = [];
   // Every request the proxy is part-way through, so teardown can wait for them.
   // A forward that rejects after the test has ended is reported by Node as
   // "asynchronous activity after the test ended" and pinned on whichever test
   // was running, which is why this looked like three different flaky tests.
   const inFlight = new Set();
   const proxy = createServer(async (req, res) => {
+    trail.push(req.url);
     const finished = new Promise((done) => res.on('close', done));
     inFlight.add(finished);
     finished.then(() => inFlight.delete(finished));
@@ -436,10 +471,36 @@ async function inBrowser(driver, {
   if (typeof real.server.closeAllConnections === 'function') real.server.closeAllConnections();
   await new Promise((ok) => real.server.close(ok));
 
-  assert.ok(report, 'the browser never reported back. ' + child.why(waited));
+  assert.ok(report, 'the browser never reported back. ' + child.why(waited)
+    + '\n' + howFar(trail));
   const failures = report.filter((l) => /^(ERROR|REJECT|THREW)/.test(l));
   assert.deepEqual(failures, [], `the page reported errors: ${failures.join(' | ')}`);
   return report;
+}
+
+/**
+ * How far the browser got, read off what it asked the proxy for.
+ *
+ * Written because the same assertion has now failed twice in CI on different
+ * Node versions with nothing to tell them apart, and the three shapes below
+ * want three different responses: a browser that never started is an
+ * environment problem and no amount of extra waiting fixes it; a page that
+ * loaded and never ran the driver is a module or a CSP problem; a driver that
+ * ran and never finished is a hang in the test, and the page's own 25s
+ * watchdog should have reported it, so getting here means it did not.
+ */
+function howFar(trail) {
+  if (!trail.length) {
+    return 'It never asked the proxy for anything, so it never reached the page: '
+      + 'this is a browser that did not start or did not navigate, and waiting '
+      + 'longer would not have changed it.';
+  }
+  const asked = `It asked for ${trail.length} URL(s): ${[...new Set(trail)].join(', ')}.`;
+  if (!trail.includes('/driver.js')) {
+    return `${asked} The page loaded and the injected driver never ran.`;
+  }
+  return `${asked} The driver was fetched and never reported, so it ran and did `
+    + 'not finish — and the page\'s own watchdog did not fire either.';
 }
 
 /**
