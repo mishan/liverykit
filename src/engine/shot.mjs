@@ -142,8 +142,28 @@ const sheetKey = (g) => g.role ?? g.file;
  * `sheets` maps a sheetKey to rasterised artwork — see above.
  */
 export function rasterise(model, groups, sheets, {
-  width = 900, height = 560, view = 'left', background = [0x10, 0x10, 0x16],
+  width: outWidth = 900, height: outHeight = 560, view = 'left',
+  background = [0x10, 0x10, 0x16],
+  // Rendered this many times over in each direction and averaged back down.
+  //
+  // One sample at the pixel centre makes a triangle's edge a step function, and
+  // against AC's own showroom previews that is the single most obvious tell:
+  // the jaggies climb a wing endplate and a wheel's spokes, and a fine repeated
+  // pattern in the artwork — a row of dots along a bonnet — aliases into moire
+  // that is not in the design. There is no cheap analytic fix in a scanline
+  // rasteriser; there is just sampling more often.
+  //
+  // Two is the default because it removes most of it for four times the
+  // fragments, and the fragments are the cost here. Three is visibly better
+  // still on thin geometry and costs nine.
+  samples = 2,
 } = {}) {
+  // Everything below works in SAMPLE space and the result is boxed down at the
+  // end, so the projection, the depth buffer and the triangle walk are the
+  // ones they always were and only the two numbers changed.
+  const ss = Math.max(1, Math.min(4, Math.round(samples) || 1));
+  const width = outWidth * ss;
+  const height = outHeight * ss;
   // hasOwn rather than a lookup with a fallback: `VIEWS['constructor']` is
   // truthy and has no yaw, which yields NaN everywhere downstream and a picture
   // that looks like an empty stage rather than an error.
@@ -345,7 +365,30 @@ export function rasterise(model, groups, sheets, {
       }
     }
   }
-  return { data: px, width, height, skipped };
+  if (ss === 1) return { data: px, width, height, skipped };
+
+  // Box filter, which is what averaging a square block of samples is. Nothing
+  // fancier earns its place: the samples are already a uniform grid inside the
+  // pixel, and a weighted kernel over them would be reconstructing detail the
+  // grid never had.
+  const out = Buffer.alloc(outWidth * outHeight * 4);
+  const n = ss * ss;
+  for (let y = 0; y < outHeight; y++) {
+    for (let x = 0; x < outWidth; x++) {
+      let r = 0; let g = 0; let b = 0; let a = 0;
+      for (let sy = 0; sy < ss; sy++) {
+        const row = (y * ss + sy) * width + x * ss;
+        for (let sx = 0; sx < ss; sx++) {
+          const o = (row + sx) * 4;
+          r += px[o]; g += px[o + 1]; b += px[o + 2]; a += px[o + 3];
+        }
+      }
+      const o = (y * outWidth + x) * 4;
+      out[o] = Math.round(r / n); out[o + 1] = Math.round(g / n);
+      out[o + 2] = Math.round(b / n); out[o + 3] = Math.round(a / n);
+    }
+  }
+  return { data: out, width: outWidth, height: outHeight, skipped };
 }
 
 /** Render and encode. `surfaces` is [{ role, svg }] as /api/preview returns. */
