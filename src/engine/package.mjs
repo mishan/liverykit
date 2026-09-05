@@ -56,9 +56,10 @@ export async function makePreview(pngBuffer, outPath, {
 
 
 /**
- * A real render of the finished skin on the car, in the same 1022x575 frame
- * Content Manager's own showroom-generated previews use. Returns the encoded
- * JPEG rather than writing it, so the caller decides where it lands.
+ * A real render of the finished skin on the car, in the frame the caller asks
+ * for — `previewFrame` measures that off the car's own skins, and PREVIEW_FRAME
+ * answers when they cannot say. Returns the encoded JPEG rather than writing
+ * it, so the caller decides where it lands.
  *
  * `sheets` is prebuilt — role -> { data, w, h } raw RGBA, already the PNGs
  * this build just composed and encoded to DDS — so this does no rendering of
