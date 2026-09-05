@@ -24,18 +24,34 @@ Note for whoever does it: the contact shadow will become visible when this
 lands. It is currently placed correctly and almost entirely hidden behind the
 car, because at this distance the car covers its own footprint.
 
-## The CLI renderer draws none of the detail materials
+## render_car and render_view still draw the car's own textures as grey
 
-`shot.mjs` binds one texture per group. The WebGL viewer composites two —
-a bake times a tiling material — so `preview.jpg`, `render_car` and
-`render_view` still show flat grey exactly where the editor now shows carbon,
-alcantara and brushed metal. The groups already carry everything needed
-(`detail.diffuse`, `detail.detail`, `detail.mult`, `detail.bake`); the software
-rasteriser simply does not read it.
+`rasterise` now composites a two-layer material, and the build feeds it both
+halves, so `preview.jpg` shows the cockpit in carbon, alcantara and brushed
+metal. `shoot()` does not: it builds `sheets` from the painted surfaces alone,
+so everything the design does not paint — glass, wheels, the whole interior —
+is BARE grey in an MCP screenshot.
+
+The pieces all exist. `renderShowroomPreview` in build.mjs does exactly this
+work already: walk the groups for `file` and both `detail` names, pull the
+blobs out of the kn5, `decodeDds` them into `sheets`. It wants lifting out of
+build.mjs and calling from the MCP path, where the model is already open.
 
 This matters more than it looks: the CLI render is what an agent working
 without a browser sees, so the two renderers disagreeing is how a change gets
 verified against the wrong picture. It has happened.
+
+## The CLI renderer has one light rig, not the car's materials
+
+The editor reads `ksAmbient`, `ksDiffuse`, `ksSpecular` and `ksSpecularEXP` off
+each material and lights by them; `shade()` here has a single hardcoded rig, so
+the same surface is a different brightness in the two renderers even now that
+they agree about its texture. The groups already carry `light`.
+
+The obstacle is that the editor's `lightingFor` scales those numbers against a
+`PAINT` constant taken from this car's carpaint, which is a calibration and not
+a measurement (see below). Porting the calibration into a second renderer would
+make one car's paint the reference for two of them.
 
 ## `INT_ELECTRONICS` and its kind still render grey
 
