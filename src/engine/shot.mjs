@@ -149,6 +149,103 @@ const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
 const sheetKey = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? null;
 
 /**
+ * Where the camera goes so the car fills the frame.
+ *
+ * The distance used to be `span * 1.15` — the longest side of the bounding box
+ * and a fudge factor. For a car the longest side is its LENGTH, which from any
+ * three-quarter view is the axis most foreshortened, so the distance was set by
+ * an extent that barely appears. The car sat small in a frame with a lot of
+ * empty sky, which against the previews a car ships with was the last obvious
+ * tell that this is a render.
+ *
+ * Fitted to the VERTICES, not to the bounding box. A car's box is much bigger
+ * than the car: from the front-left the far rear corner projects into a patch
+ * of frame the bodywork never reaches, and fitting the box reserves room for
+ * it — which is a smaller car sitting off to one side, and was the first thing
+ * this got wrong.
+ *
+ * Iterated rather than solved. Projected size goes as roughly 1/distance, but
+ * only roughly, since the vertices' own depths move as the camera does; each
+ * pass measures, recentres, rescales, and re-measures. Two or three passes get
+ * within a fraction of a percent and the rest cost nothing.
+ */
+export function frameCamera(positions, { yaw, pitch }, { width, height, focal, span, centre }) {
+  // Room left under the car for its reflection, as a fraction of the car's own
+  // projected height. Taken in SCREEN space rather than by extending the model
+  // downward, because that is where the reflection actually is — and because
+  // the amount wanted is a fraction of what you can see, not of the geometry.
+  const REFLECTION = 0.45;
+  const fitW = (width / 2) * 0.94;      // a little air on every side, as the
+  const fitH = (height / 2) * 0.94;     // previews a car ships with leave
+  const SETTLED = 0.002;
+
+  let target = [...centre];
+  let dist = span * 1.15;
+  let eye; let fwd; let right; let up;
+
+  for (let pass = 0; pass < 8; pass++) {
+    eye = [
+      target[0] + dist * Math.cos(pitch) * Math.sin(yaw),
+      target[1] + dist * Math.sin(pitch),
+      target[2] + dist * Math.cos(pitch) * Math.cos(yaw),
+    ];
+    // A camera basis rather than a composed matrix. Every time this project has
+    // multiplied matrices by hand the result has been a camera inside the car.
+    fwd = norm(sub(target, eye));
+    // Negated against the obvious choice, and the picture is why. The other
+    // sign gives a perfectly plausible car with every piece of text written
+    // backwards — which no amount of staring at the cross products would have
+    // told me.
+    right = norm([-fwd[2], 0, fwd[0]]);
+    // right x fwd. Paired with the sign above: get either one wrong on its own
+    // and the car is upside down or mirrored, get both wrong and it is both.
+    up = [
+      right[1] * fwd[2] - right[2] * fwd[1],
+      right[2] * fwd[0] - right[0] * fwd[2],
+      right[0] * fwd[1] - right[1] * fwd[0],
+    ];
+
+    let minX = Infinity; let maxX = -Infinity;
+    let minY = Infinity; let maxY = -Infinity;
+    let seen = 0;
+    for (let i = 0; i < positions.length; i += 3) {
+      const dx = positions[i] - eye[0];
+      const dy = positions[i + 1] - eye[1];
+      const dz = positions[i + 2] - eye[2];
+      const z = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+      // Behind the camera contributes nothing to a frame it cannot appear in.
+      if (z <= 1e-4) continue;
+      const sx = ((dx * right[0] + dy * right[1] + dz * right[2]) * focal) / z;
+      const sy = ((dx * up[0] + dy * up[1] + dz * up[2]) * focal) / z;
+      if (sx < minX) minX = sx;
+      if (sx > maxX) maxX = sx;
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
+      seen += 1;
+    }
+    // Nothing in front of the camera at all: it is inside the model, and no
+    // amount of scaling from here can reason about that. Back off and retry.
+    if (!seen) { dist *= 2; continue; }
+
+    minY -= (maxY - minY) * REFLECTION;
+
+    // Centred FIRST. The projected outline is not symmetric about the
+    // projection of the model's centre, so measuring the fit before recentring
+    // reserves room for an offset that is about to go away. Moving the TARGET
+    // pans the eye with it, which leaves the view direction exactly as asked.
+    const panX = ((minX + maxX) / 2) * dist / focal;
+    const panY = ((minY + maxY) / 2) * dist / focal;
+    target = [0, 1, 2].map((k) => target[k] + right[k] * panX + up[k] * panY);
+
+    const need = Math.max((maxX - minX) / 2 / fitW, (maxY - minY) / 2 / fitH);
+    if (!Number.isFinite(need) || need <= 0) break;
+    if (Math.abs(need - 1) < SETTLED) break;
+    dist *= need;
+  }
+  return { eye, fwd, right, up };
+}
+
+/**
  * One bilinear sample, into `out` rather than a fresh array — this is the
  * innermost thing in the renderer and it runs a few tens of millions of times.
  *
@@ -217,10 +314,11 @@ export function rasterise(model, groups, sheets, {
   // `false` for the mirrored pass below, which must not recurse, and for any
   // caller that wants the geometry and nothing else.
   floor = true,
-  // The box to frame, when the caller already knows it. The mirrored pass needs
-  // this: derived from its own positions it would frame the reflection rather
-  // than the car, and the two passes have to share one camera exactly.
-  bounds = null,
+  // A camera to use verbatim rather than one derived from this model. The
+  // mirrored pass needs it: its vertices are the car upside down, so framing
+  // them would frame the reflection, and the two passes have to agree to the
+  // pixel or the reflection slides out from under the car.
+  camera = null,
 } = {}) {
   // Everything below works in SAMPLE space and the result is boxed down at the
   // end, so the projection, the depth buffer and the triangle walk are the
@@ -234,40 +332,23 @@ export function rasterise(model, groups, sheets, {
   const { yaw, pitch } = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
   const { positions, uvs, normals, indices } = model;
 
-  let lo = bounds ? [...bounds.lo] : [Infinity, Infinity, Infinity];
-  let hi = bounds ? [...bounds.hi] : [-Infinity, -Infinity, -Infinity];
-  if (!bounds) {
-    for (let i = 0; i < positions.length; i += 3) {
-      for (let k = 0; k < 3; k++) {
-        if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
-        if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
-      }
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
+      if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
     }
   }
-  const target = [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2);
   const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 4;
-  const dist = span * 1.15;
-  const eye = [
-    target[0] + dist * Math.cos(pitch) * Math.sin(yaw),
-    target[1] + dist * Math.sin(pitch),
-    target[2] + dist * Math.cos(pitch) * Math.cos(yaw),
-  ];
-
-  // A camera basis rather than a composed matrix. Every time this project has
-  // multiplied matrices by hand the result has been a camera inside the car.
-  const fwd = norm(sub(target, eye));
-  // Negated against the obvious choice, and the picture is why. The other sign
-  // gives a perfectly plausible car with every piece of text written backwards
-  // — which no amount of staring at the cross products would have told me.
-  const right = norm([-fwd[2], 0, fwd[0]]);
-  // right x fwd. Paired with the sign above: get either one wrong on its own
-  // and the car is upside down or mirrored, get both wrong and it is both.
-  const up = [
-    right[1] * fwd[2] - right[2] * fwd[1],
-    right[2] * fwd[0] - right[0] * fwd[2],
-    right[0] * fwd[1] - right[1] * fwd[0],
-  ];
   const focal = (height / 2) / Math.tan(0.32);
+
+  // Reused verbatim when the caller states one — see the mirrored pass, which
+  // has to look through this pass's camera and cannot derive it, since its own
+  // vertices are the car upside down.
+  const cam = camera ?? frameCamera(positions, VIEWS[view] ?? VIEWS.left,
+    { width, height, focal, span, centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2) });
+  const { eye, fwd, right, up } = cam;
 
   const px = Buffer.alloc(width * height * 4);
   for (let i = 0; i < width * height; i++) {
@@ -331,7 +412,7 @@ export function rasterise(model, groups, sheets, {
       // glass above all — composites against whatever is behind it, so a
       // mirror pass run against black reflects a differently-coloured
       // windscreen than the one standing above it.
-      { width, height, view, samples: 1, floor: false, bounds: { lo, hi },
+      { width, height, view, samples: 1, floor: false, camera: cam,
         background: [background[0], background[1], background[2], 0] },
     );
 
