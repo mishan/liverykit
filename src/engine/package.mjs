@@ -92,8 +92,9 @@ export const PREVIEW_FRAME = { width: 1022, height: 575 };
  * 90 sounds generous and is not: across 3,789 skin previews in one install the
  * median is 100 and the tenth percentile is 98 — 90 sits at the very bottom of
  * the distribution, below all but a handful of files. A preview is one image of
- * a hundred-odd kilobytes shipped once per skin, so the bytes 98 costs over 90
- * are not worth the artefacts it saves.
+ * a hundred-odd kilobytes shipped once per skin, and at that size the extra
+ * bytes 98 costs over 90 are worth what they buy: no ringing along the hard
+ * edge of a number or a sponsor decal, which is most of what a livery is.
  */
 export const PREVIEW_QUALITY = 98;
 
@@ -137,10 +138,13 @@ export async function previewFrame(modelPath, { log = () => {} } = {}) {
         try {
           // `metadata` reads the header. The pixels are never decoded.
           const { width, height } = await sharp(join(skins, d, name)).metadata();
-          if (!width || !height) break;
+          // CONTINUE, not break. A file that opens but states no dimensions is
+          // this spelling failing, not the skin failing — breaking here gave up
+          // on the other spellings for a skin that may well have one of them.
+          if (!width || !height) continue;
           const key = `${width}x${height}`;
           seen.set(key, (seen.get(key) ?? 0) + 1);
-          break;
+          break;                            // this skin has voted
         } catch { /* try the next spelling, then the next skin */ }
       }
     }
