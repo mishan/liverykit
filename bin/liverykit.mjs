@@ -9,10 +9,11 @@ import { loadProfile, doNotPaint, mergeBindings, binding, carModelCandidates } f
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
-import { loadLivery } from '../src/livery.mjs';
+import { loadLivery, resolveLivery } from '../src/livery.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { textureFeatures, explain } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
+import { loadDecals } from '../src/decals.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -262,8 +263,12 @@ for (const p of values.pack) {
   await import(pathToFileURL(resolve(p)).href);
 }
 
-const liveryPath = await resolveLivery(liveryArg);
+const { path: liveryPath, dir: liveryOwnDir } = await resolveLivery(liveryArg, { root: ROOT });
 const livery = await loadLivery(liveryPath);
+// Loaded ONCE per run and handed to whatever draws — the build and the editor
+// both. Every decal is inlined into every document that places it, so reading
+// and encoding them per surface would be the same bytes over and over.
+const decals = await loadDecals(liveryOwnDir, { log: console.log });
 // A PORTABLE livery deliberately has no `car`: it is written against the shared
 // vocabulary rather than against one model, and the profile is chosen at build
 // time. It still needs one of the two.
@@ -348,6 +353,7 @@ if (values.ui) {
     fitPath,
     liveryId: liveryName,
     liveryPath,
+    decals,
     modelPath,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
@@ -391,6 +397,7 @@ if (values.ui) {
     // Never inside outDir: packaging zips whatever it finds there.
     pngDir: values['keep-png'] ? join(values.out, `${folder}_png`) : null,
     liveryDir: dirname(liveryPath),
+    decals,
     modelPath,
   });
   if (values['keep-png']) console.log(`\n  Intermediate PNGs: ${join(values.out, `${folder}_png`)}`);
@@ -439,28 +446,6 @@ if (!values.ui && !values['no-zip']) {
  * directory named `neon-grid` sitting in the working directory would shadow the
  * shipped livery and fail with a confusing import error.
  */
-async function resolveLivery(arg) {
-  const looksLikePath = /[\\/]/.test(arg)
-    || arg.endsWith('.mjs') || arg.endsWith('.js') || arg.endsWith('.json');
-  const candidates = looksLikePath
-    ? [resolve(arg)]
-    : [
-        join(ROOT, 'liveries', `${arg}.mjs`),
-        join(ROOT, 'liveries', `${arg}.json`),
-        join(ROOT, 'liveries', `${arg}.local.mjs`),
-        join(ROOT, 'liveries', `${arg}.local.json`),
-        join(ROOT, 'liveries', arg),
-        resolve(arg),
-      ];
-
-  for (const c of candidates) {
-    try {
-      if ((await stat(c)).isFile()) return c;
-    } catch { /* next */ }
-  }
-  throw new Error(`Livery "${arg}" not found. Tried:\n  ${candidates.join('\n  ')}`);
-}
-
 // Declared as a function, not a const arrow: it is called above, and a const
 // would be in the temporal dead zone at that point.
 function largestTexture(p) {

@@ -87,7 +87,7 @@ export function makeColorResolver(palette) {
   };
 }
 
-export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, regionNotes = [] }) {
+export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, decals = new Map(), regionNotes = [] }) {
   const tex = texture(profile, role);
   const { width, height } = tex;
 
@@ -246,8 +246,23 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       .filter((l) => l.from !== region)
       .map(({ from, ...box }) => box);
 
+    // A TREATMENT CAN SAY SOMETHING DID NOT HAPPEN.
+    //
+    // Until now it could draw or not draw, and "not draw" is exactly the
+    // silence this library is arranged against: a decal naming an asset the
+    // livery does not carry renders as nothing, which on a car is
+    // indistinguishable from a design that simply paints nothing there. The
+    // region's own name is attached here rather than by the treatment, which
+    // does not know it and should not have to.
+    const note = (text, status = 'treatment') => regionNotes.push({
+      term: region.id ?? region.__key ?? region.treatment,
+      status,
+      text: `${region.id ?? `${role}:${region.treatment}`}: ${text}`,
+    });
+
     const out = entry.fn(drawn,
-      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering, panel: frac.panel ?? null });
+      { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering,
+        panel: frac.panel ?? null, decals, note });
     const spin = (svg) => (rot === 0 || !svg ? svg
       : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
 

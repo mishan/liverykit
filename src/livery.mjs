@@ -18,6 +18,8 @@
 
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { join, resolve } from 'node:path';
+import { stat } from 'node:fs/promises';
 
 /**
  * Load a design from either form.
@@ -123,4 +125,57 @@ export function serialisableDesign(design) {
       Object.entries(v).map(([k, x]) => [k, walk(x, path ? `${path}.${k}` : k)]));
   };
   return { design: walk(design, ''), lossy };
+}
+
+
+/**
+ * Turn what somebody typed into the design it means, and say whether that
+ * design has a folder of its own.
+ *
+ * `dir` is the second half of the answer and the reason this is here rather
+ * than in the CLI: a livery may be a FOLDER — `liveries/<name>/` holding
+ * `livery.mjs` and a `decals/` directory beside it — and that is what gives a
+ * design somewhere to keep the images it places. A single-file livery gets
+ * `null`, which is how `loadDecals` knows there is nowhere to look rather than
+ * looking in the shared `liveries/` directory and finding everybody's.
+ */
+export async function resolveLivery(arg, { root } = {}) {
+  const looksLikePath = /[\\/]/.test(arg)
+    || arg.endsWith('.mjs') || arg.endsWith('.js') || arg.endsWith('.json');
+  const candidates = looksLikePath
+    ? [resolve(arg)]
+    : [
+        join(root, 'liveries', `${arg}.mjs`),
+        join(root, 'liveries', `${arg}.json`),
+        join(root, 'liveries', `${arg}.local.mjs`),
+        join(root, 'liveries', `${arg}.local.json`),
+        join(root, 'liveries', arg),
+        resolve(arg),
+      ];
+
+  for (const c of candidates) {
+    let entry;
+    try {
+      entry = await stat(c);
+    } catch { continue; }
+    if (entry.isFile()) return { path: c, dir: null };
+    // A LIVERY MAY BE A FOLDER, and then it has somewhere to keep its own
+    // images. `dir` is what says so — see src/decals.mjs, which reads
+    // `decals/` inside it, and which returns nothing for a design that is a
+    // single file because a single file has no folder of its own to look in.
+    if (entry.isDirectory()) {
+      for (const inside of ['livery.mjs', 'livery.json']) {
+        const p = join(c, inside);
+        try {
+          if ((await stat(p)).isFile()) return { path: p, dir: c };
+        } catch { /* next */ }
+      }
+      throw new Error(
+        `Livery folder ${c} has no livery.mjs or livery.json in it.\n` +
+        '  A livery folder holds the design under one of those two names, and its ' +
+        'images in a decals/ directory beside it.'
+      );
+    }
+  }
+  throw new Error(`Livery "${arg}" not found. Tried:\n  ${candidates.join('\n  ')}`);
 }

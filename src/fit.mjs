@@ -28,7 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 
 /**
  * The name a fit knows a design by.
@@ -44,7 +44,13 @@ export function fitLiveryId(liveryPath) {
   // only `.mjs` would give `my-livery.json` a fit called
   // `my-livery.json@abarth500.json` — which loads, and disagrees with every
   // other fit about how the pair is named.
-  return basename(liveryPath).replace(/\.(mjs|json)$/, '');
+  const stem = basename(liveryPath).replace(/\.(mjs|json)$/, '');
+  // A LIVERY FOLDER is named by the folder, not by the file inside it. The
+  // design in `liveries/neon-doll/livery.mjs` is called neon-doll — every one
+  // of them holds a file called `livery`, so taking the basename would give
+  // them all the same fits and the same identity, and a fit written for one
+  // would load happily against another.
+  return stem === 'livery' ? basename(dirname(liveryPath)) : stem;
 }
 
 /**
