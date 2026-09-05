@@ -156,9 +156,13 @@ const sheetKey = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? null;
  * material — the per-part occlusion bake underneath and the small tiling
  * material over it.
  *
- * Both halves are wanted even where the group is painted, because the detail
- * layer belongs to the car and not to the design: it is the weave in the
- * carbon and the nap on the alcantara, not artwork.
+ * Both halves of a two-layer material, because half of one is not a surface:
+ * the bake underneath is a greyscale photograph of the part's own shadows and
+ * the tiling layer over it is what carries the carbon weave or the nap on the
+ * alcantara. Only a group the design leaves unpainted ever carries the pair —
+ * `wholeModelGeometry` reads the material for a detail layer only where it has
+ * no trustworthy diffuse to paint — so this walk is over the car's own parts
+ * throughout, and a painted role wears the design on every layer it has.
  */
 export function carTextureFiles(groups) {
   const wanted = new Set();
@@ -210,9 +214,22 @@ export async function carSheets(groups, load, { cache = null } = {}) {
       if (typeof hit === 'string') absent.push(hit); else sheets.set(file, hit);
       continue;
     }
-    const data = await load(file);
+    let data = null;
     let sheet = null;
     let why = null;
+    // A loader that THROWS is a fact about the model rather than about this
+    // texture — the editor's stock loader rejects once for a kn5 it could not
+    // read at all, and rejects the same way for every file after it. So each
+    // file it was asked for is absent and each says why, which is what keeps
+    // the count the caller reports equal to the number of parts drawing grey.
+    // Not cached: the loader is entitled to recover, and a cached throw would
+    // make one bad moment permanent.
+    try {
+      data = await load(file);
+    } catch (e) {
+      absent.push(`${file} (${e.message})`);
+      continue;
+    }
     // A 1x1-ish blob is not a small texture, it is an absent one: an encrypted
     // kn5 substitutes placeholders and keeps the real artwork somewhere this
     // project does not decrypt. Same threshold the editor's stockTexture uses,

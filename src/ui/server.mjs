@@ -1008,17 +1008,12 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         // metre away showed them in their real materials — and this is the only
         // picture an agent working without a browser can see, so a change was
         // being verified against the wrong one.
-        let stock = new Map();
-        let absent = [];
-        try {
-          ({ sheets: stock, absent } = await carSheets(g.groups, stockTexture, { cache: stockSheets }));
-        } catch (e) {
-          // A model whose textures cannot be read at all is a fact about the
-          // server rather than about the car, and the geometry is already in
-          // hand — so the honest answer is the picture without them, with the
-          // reason counted alongside the ones that were merely missing.
-          absent = [`every texture: ${e.message}`];
-        }
+        // A kn5 whose textures cannot be read AT ALL rejects here once per
+        // file, and carSheets names each of them — so the count below is the
+        // number of parts drawing grey either way, and the picture still gets
+        // taken. The geometry is already in hand; withholding it over the
+        // paint would answer a question nobody asked.
+        const { sheets: stock, absent } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
         if (absent.length) {
           log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
         }
