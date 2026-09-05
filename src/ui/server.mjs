@@ -145,13 +145,16 @@ export { wholeModelGeometry };
  */
 export function packModel(g) {
   // Named, because the alternative is a TypeError reading byteLength of
-  // undefined forty lines away from the caller that forgot it. Normals became
-  // part of this format when the viewer learned to light the car, and a
-  // geometry builder that has not caught up should be told so.
+  // undefined forty lines away from the caller that forgot it. This format has
+  // grown twice — normals when the viewer learned to light the car, tangents
+  // when it learned to read a normal map — and a geometry builder that has not
+  // caught up should be told which one it is missing rather than a stale
+  // guess at which one it might be.
   for (const k of ['positions', 'uvs', 'normals', 'tangents', 'indices']) {
     if (!ArrayBuffer.isView(g[k])) {
       throw new Error(`packModel needs a typed array for "${k}"; got ${typeof g[k]}. ` +
-        'Normals are part of this payload — the viewer lights the car with them.');
+        'Normals and tangents are part of this payload — the viewer lights the '
+        + 'car with the first and reads its detail normal maps with the second.');
     }
   }
   const json = Buffer.from(JSON.stringify({
