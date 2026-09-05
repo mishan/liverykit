@@ -280,8 +280,13 @@ export function rasterise(model, groups, sheets, {
     const mirror = rasterise(
       { positions: flipped, uvs, normals: flipNormals, indices },
       groups, sheets,
+      // THE PARENT'S BACKGROUND, with alpha zero. Alpha is what carries
+      // coverage here, and the colour still has to match: a blended surface —
+      // glass above all — composites against whatever is behind it, so a
+      // mirror pass run against black reflects a differently-coloured
+      // windscreen than the one standing above it.
       { width, height, view, samples: 1, floor: false, bounds: { lo, hi },
-        background: [0, 0, 0, 0] },
+        background: [background[0], background[1], background[2], 0] },
     );
 
     for (let y = 0; y < height; y++) {
@@ -464,13 +469,24 @@ export function rasterise(model, groups, sheets, {
             const ob = (cy0 * art.w + cx1) * 4;
             const oc = (cy1 * art.w + cx0) * 4;
             const od = (cy1 * art.w + cx1) * 4;
-            const mix = (k) => {
-              const top = art.data[oa + k] + (art.data[ob + k] - art.data[oa + k]) * tx;
-              const bot = art.data[oc + k] + (art.data[od + k] - art.data[oc + k]) * tx;
-              return top + (bot - top) * ty;
-            };
-            rgb = [mix(0), mix(1), mix(2)];
-            alpha = mix(3) / 255;
+            // Written out rather than looped through a closure. This is the
+            // innermost thing in the renderer — a few tens of millions of
+            // fragments for one preview — and allocating a function per
+            // covered pixel is real time for no expressiveness.
+            // Written out, with no closure of any kind: `tx` and `ty` change
+            // every fragment, so anything that captures them is allocated per
+            // covered pixel — a few tens of millions of them for one preview.
+            const d = art.data;
+            const r0 = d[oa] + (d[ob] - d[oa]) * tx;
+            const r1 = d[oc] + (d[od] - d[oc]) * tx;
+            const g0 = d[oa + 1] + (d[ob + 1] - d[oa + 1]) * tx;
+            const g1 = d[oc + 1] + (d[od + 1] - d[oc + 1]) * tx;
+            const b0 = d[oa + 2] + (d[ob + 2] - d[oa + 2]) * tx;
+            const b1 = d[oc + 2] + (d[od + 2] - d[oc + 2]) * tx;
+            const a0 = d[oa + 3] + (d[ob + 3] - d[oa + 3]) * tx;
+            const a1 = d[oc + 3] + (d[od + 3] - d[oc + 3]) * tx;
+            rgb = [r0 + (r1 - r0) * ty, g0 + (g1 - g0) * ty, b0 + (b1 - b0) * ty];
+            alpha = (a0 + (a1 - a0) * ty) / 255;
           }
 
           let n = norm([
