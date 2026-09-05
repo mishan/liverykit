@@ -181,6 +181,79 @@ const treatments = {
 
     return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
   },
+
+  /**
+   * A picture the livery brought with it: a logo, a flag, a sponsor mark.
+   *
+   * Everything else in this pack draws; this one PLACES. A sponsor's mark is
+   * somebody else's artwork and arrives as a file, so the livery carries it in
+   * its own `decals/` folder and a region names it — see src/decals.mjs, which
+   * is also where an SVG stops being markup and becomes pixels.
+   *
+   * The pixels travel INSIDE the document as a data URI rather than as a path
+   * or a URL. librsvg would have to be allowed to read the filesystem for a
+   * path to work, the editor would have to be allowed to fetch for a URL, and
+   * the build and the editor would then be rendering documents that differ in
+   * the one place this project can least afford them to.
+   *
+   * ANISOTROPY IS THE WHOLE TRICK, and it is why this cannot be left to SVG's
+   * own `preserveAspectRatio`. A square of texture does not land square on the
+   * car — 2:1 on this Honda's banner — so a logo fitted to its own pixel
+   * aspect comes out stretched by exactly the panel's distortion. The box is
+   * computed here, in texels, from the aspect the artwork should have ON THE
+   * CAR, and the image is then told to fill that box exactly.
+   */
+  decal: (r, c) => {
+    const name = typeof c.opts.image === 'string' ? c.opts.image.trim() : '';
+    const art = name ? c.decals?.get(name) : null;
+    if (!art) {
+      // NAMED, not silent. A decal that draws nothing looks exactly like a
+      // design that paints nothing here, and the difference is the whole
+      // point of the region.
+      c.note(name
+        ? `no decal called "${name}" — this livery's decals/ folder has ` +
+          (c.decals?.size ? `${[...c.decals.keys()].join(', ')}` : 'nothing in it')
+        : 'no "image" was named, so there is nothing to place', 'no-decal');
+      return { base: '', emissive: '' };
+    }
+
+    // The aspect the artwork wants once the sheet's own stretch is undone.
+    const aspect = (art.width / art.height) / (r.anisotropy || 1);
+    const mode = c.opts.fit ?? 'contain';
+    let box = { x: r.x, y: r.y, w: r.w, h: r.h };
+    if (mode !== 'stretch') {
+      // `contain` takes the smaller scale and leaves air; `cover` takes the
+      // larger and spills, which is why it is clipped below.
+      const byWidth = { w: r.w, h: r.w / aspect };
+      const byHeight = { w: r.h * aspect, h: r.h };
+      const pick = mode === 'cover'
+        ? (byWidth.h >= r.h ? byWidth : byHeight)
+        : (byWidth.h <= r.h ? byWidth : byHeight);
+      box = { x: r.x + (r.w - pick.w) / 2, y: r.y + (r.h - pick.h) / 2, w: pick.w, h: pick.h };
+    }
+
+    const opacity = Number(c.opts.opacity);
+    const alpha = Number.isFinite(opacity) && opacity >= 0 && opacity < 1
+      ? ` opacity="${r2(opacity)}"` : '';
+    // `none`, because the box above already carries the aspect. Left to SVG,
+    // `meet` would refit the image to its own pixel ratio and undo the
+    // anisotropy correction.
+    let img = `<image href="${art.uri}" x="${r2(box.x)}" y="${r2(box.y)}" ` +
+      `width="${r2(box.w)}" height="${r2(box.h)}" preserveAspectRatio="none"${alpha}/>`;
+
+    // A covered decal is bigger than its region by construction, and artwork
+    // outside the region is artwork on somebody else's panel. The id comes
+    // from the seeded rng, so it is unique within the document and the same on
+    // every build of the same design.
+    if (mode === 'cover') {
+      const id = `lk-decal-${Math.floor(c.rng() * 1e9).toString(36)}`;
+      img = `<clipPath id="${id}"><rect x="${r2(r.x)}" y="${r2(r.y)}" ` +
+        `width="${r2(r.w)}" height="${r2(r.h)}"/></clipPath>` +
+        `<g clip-path="url(#${id})">${img}</g>`;
+    }
+
+    return c.opts.glow ? { base: img, emissive: img } : { base: img, emissive: '' };
+  },
 };
 
 /**
@@ -189,6 +262,17 @@ const treatments = {
  * person rather than repeated as a value that could drift from it.
  */
 export default definePack('core', treatments, {
+  decal: {
+    label: 'Decal',
+    summary: "An image the livery carries in its own decals/ folder — a logo, a flag, a sponsor mark.",
+    options: {
+      image: { type: 'string', hint: "the file's name in the livery's decals/ folder, without its extension", label: 'Image' },
+      fit: { type: 'enum', values: ['contain', 'cover', 'stretch'], hint: 'contain' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
   fill: {
     label: 'Fill',
     summary: 'A flat rectangle of one colour.',
