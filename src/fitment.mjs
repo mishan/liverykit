@@ -457,6 +457,13 @@ function hiddenFace(placed, profile, t, say) {
     const covered = intersect(p.frac, rectOf(q.rect));
     return covered > won.covered ? { name: n, panel: q, covered } : won;
   }, { name: null, panel: null, covered: 0 });
+  // The face to send somebody to when the placement reaches none of them —
+  // which is the WORST case of this and was the one that crashed: a region
+  // wholly on the inward face overlaps no outward panel at all, so there is no
+  // "most overlapped" one to name. The sheet's most visible face is the honest
+  // answer to "where should this have gone", and it does not depend on where
+  // the artwork wrongly is.
+  const mostVisible = outward.reduce((won, e) => (e[1].visible > won[1].visible ? e : won));
 
   for (const p of placed) {
     // A BACKGROUND IS NOT A PLACEMENT ON A FACE. A fill over the sheet covers
@@ -476,6 +483,9 @@ function hiddenFace(placed, profile, t, say) {
     // belongs. Words are the exception — a name is placed wherever it lands.
     if (p.region.span === true && p.spilled && p.region.treatment !== 'text') continue;
     const cockpit = hidden.panel.visibleFromCockpit;
+    // `shown` is empty when the placement touches no outward panel, and that is
+    // the strongest form of this finding rather than a case to skip.
+    const [suggestName, suggest] = shown.panel ? [shown.name, shown.panel] : mostVisible;
     say({
       kind: 'hidden-face',
       // Text is the case that matters: a name or a number painted where the
@@ -485,16 +495,18 @@ function hiddenFace(placed, profile, t, say) {
       panel: p.region.panel,
       ids: [p.id],
       onto: hidden.name,
-      instead: shown.name,
+      instead: suggestName,
       share: round(onIn),
       why: `${Math.round(onIn * 100)}% of ${name(t, p.id)} is on ${friendly(hidden.name)}, ` +
         'which measurement puts at 0% visible from trackside' +
         (typeof cockpit === 'number' && cockpit > 0
           ? ` and ${Math.round(cockpit * 100)}% from the driver's seat — so it shows to the driver and to nobody else`
           : ' — so it shows nowhere') +
-        `. ${friendly(shown.name)} is the face of this same sheet the world sees ` +
-        `(${Math.round(shown.panel.visible * 100)}% visible)` +
-        (onOut > 0 ? `, and only ${Math.round(onOut * 100)}% of this lands there` : ''),
+        `. ${friendly(suggestName)} is the face of this same sheet the world sees ` +
+        `(${Math.round(suggest.visible * 100)}% visible)` +
+        (onOut > 0
+          ? `, and only ${Math.round(onOut * 100)}% of this lands there`
+          : ', and none of this reaches it'),
     });
   }
 }
