@@ -3465,6 +3465,27 @@ test('an emissive sheet adds light instead of covering what is behind it', async
   assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
 });
 
+test('the car is drawn on an opaque canvas, not a translucent one', async () => {
+  // Fragment alpha in this viewer means "composite me over what is behind me
+  // IN THE SCENE" — glass over bodywork, a plate's emissive twin over the
+  // plate. On a canvas with an alpha channel it means one more thing nobody
+  // asked for: the DOM compositor reads it too, and a transparent fragment
+  // punches through to the page.
+  //
+  // It hides well. #stage is #05070a and the clear colour is (0.02, 0.03,
+  // 0.04), so the hole shows almost exactly the colour that should have been
+  // there — which is why the per-surface pass shipped leaking and was caught
+  // by reasoning rather than by looking.
+  //
+  // Read out of the source because the alternative is a GPU, and asserted at
+  // the context rather than at each uniform: guarding the uniforms is a rule
+  // every future pass has to remember, and this is a fact about the canvas.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const call = src.slice(src.indexOf('canvas.getContext('), src.indexOf('canvas.getContext(') + 200);
+  assert.match(call, /alpha:\s*false/,
+    'the drawing buffer has no alpha channel, so no fragment can reach the page');
+});
+
 test('a surface the browser cannot rasterise fails loudly and alone', async () => {
   // Three rounds of "I still cannot see the plate, no errors in console", and
   // this is why the console was clean. setWholeCar awaited each upload in

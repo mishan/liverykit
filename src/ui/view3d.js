@@ -429,7 +429,23 @@ export function textureSizes(surfaces, { budget = 192 * 1024 * 1024, max = 4096 
 }
 
 export function createViewer(canvas) {
-  const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: false });
+  // NO ALPHA CHANNEL IN THE DRAWING BUFFER, which is a statement about the
+  // canvas rather than about the car: this view is opaque, and what is behind
+  // it in the page is never meant to show through.
+  //
+  // Without it, every fragment alpha this shader writes is also an instruction
+  // to the DOM compositor. The blended pass sets `texAlpha` for exactly the
+  // groups whose transparency is real — glass, the plates' emissive twins —
+  // and those fragments then punch a hole through the canvas to the stage
+  // behind it. It is nearly invisible here, because #stage is #05070a and the
+  // clear colour is (0.02, 0.03, 0.04): the hole shows the same near-black.
+  // Guarding each uniform instead is what the per-surface pass already had to
+  // do, and it only holds until the next pass forgets one.
+  //
+  // Blending is untouched. SRC_ALPHA / ONE_MINUS_SRC_ALPHA and the additive
+  // ONE / ONE both take their factors from the fragment, and nothing here
+  // reads destination alpha.
+  const gl = canvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: false, alpha: false });
   if (!gl) throw new Error('WebGL is unavailable in this browser');
 
   const prog = gl.createProgram();
