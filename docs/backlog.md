@@ -7,6 +7,21 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
+## The preview has no ground plane, and frames the car loosely
+
+Two things still separate `preview.jpg` from the ones a car ships with, now
+that the frame, the quality and the aliasing match.
+
+AC's showroom previews sit on a reflective floor: a contact shadow under the
+car and a mirrored copy below it. Ours floats on flat #101016, which is what
+makes it read as a render rather than a photograph of the car. A floor is a
+plane, a second pass with the geometry flipped in y, and a vertical fade.
+
+And the framing is loose — `dist = span * 1.15` with the focal length taken
+from the frame height leaves a lot of empty sky above a car, which is long and
+low. The stock previews crop tight. Fitting the projected bounding box to the
+frame rather than guessing from the bounding sphere would do it.
+
 ## The CLI renderer draws none of the detail materials
 
 `shot.mjs` binds one texture per group. The WebGL viewer composites two —
