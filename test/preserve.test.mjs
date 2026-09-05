@@ -249,6 +249,83 @@ test('hand-written panels survive only for roles the model measured nothing for'
   assert.deepEqual(report.panels, [{ role: 'suit', count: 2 }]);
 });
 
+test('a regeneration without --skins keeps the roles only skins know about', () => {
+  // THE BUG, and it made a profile that could not be opened at all.
+  //
+  // A car's skins carry textures the model has never heard of: the driver's
+  // helmet, suit and gloves are a separate kn5 and the pit crew is another
+  // again. The generator files those as `sizeFrom: "skin"` — and can only see
+  // them when it is pointed at a skins folder. Regenerating without --skins
+  // dropped them, the human-confirmed bindings that named them were kept by
+  // the merge, and the result was
+  //
+  //   bind."crew" points at texture role "crew", which this profile does not
+  //   define
+  //
+  // on every attempt to load it. The roles going was not a measurement saying
+  // they are gone; it was a flag nobody passed.
+  const prior = {
+    textures: {
+      body: { file: 'B.dds', sizeFrom: 'model' },
+      crew: { file: 'ac_crew.dds', sizeFrom: 'skin', notes: 'a separate kn5' },
+    },
+    panels: { body: {}, crew: { front: { rect: [0, 0, 1, 1], confidence: 'estimated' } } },
+    bind: { crew: { roles: ['crew'], source: 'human' } },
+  };
+  const madeWithout = () => ({
+    textures: { body: { file: 'B.dds', sizeFrom: 'model' } },
+    panels: { body: { left_mid: { rect: [0, 0, 0.5, 0.5] } } },
+    bind: { crew: { roles: ['crew'], source: 'human' } },
+  });
+
+  const fresh = madeWithout();
+  const report = preserveHandwork(fresh, prior, { skinsGiven: false });
+  assert.ok(fresh.textures.crew, 'the role the run could not have seen is still there');
+  assert.equal(fresh.textures.crew.sizeFrom, 'skin');
+  assert.deepEqual(Object.keys(fresh.panels.crew), ['front'], 'and what was mapped on it');
+  assert.deepEqual(fresh.bind.crew.roles, ['crew'], 'so the binding still names something');
+  assert.deepEqual(report.skinOnly.map((r) => r.role), ['crew']);
+  assert.deepEqual(report.dangling, [], 'nothing had to be dropped');
+  assert.ok(describeHandwork(report, 'prior.json').some((l) => /--skins/.test(l)),
+    'and the report says how to measure them again instead');
+
+  // WITH a skins folder in hand, a role that is gone is gone: the skins no
+  // longer carry that file, which is a measurement, and measurement wins.
+  const measured = madeWithout();
+  const said = preserveHandwork(measured, prior, { skinsGiven: true });
+  assert.equal(measured.textures.crew, undefined);
+  assert.deepEqual(said.skinOnly, []);
+});
+
+test('a binding naming a role that is really gone is dropped, loudly', () => {
+  // The backstop. `mergeBindings` keeps what a human confirmed and cannot know
+  // whether the role still exists; left in, the profile does not load. A
+  // dropped binding with a line about it beats a file nothing can open.
+  const prior = {
+    textures: { body: { file: 'B.dds' }, spare: { file: 'S.dds', sizeFrom: 'model' } },
+    panels: {},
+    bind: {},
+  };
+  const fresh = {
+    textures: { body: { file: 'B.dds' } },
+    panels: { body: {} },
+    bind: {
+      body: { roles: ['body'], source: 'human' },
+      wing: { roles: ['spare'], source: 'human' },
+      mixed: { roles: ['body', 'spare'], source: 'auto' },
+    },
+  };
+  const report = preserveHandwork(fresh, prior, { skinsGiven: true });
+  assert.equal(fresh.bind.wing, undefined, 'nothing left to name');
+  assert.deepEqual(fresh.bind.mixed.roles, ['body'], 'and a binding half of which survives keeps that half');
+  assert.deepEqual(fresh.bind.body.roles, ['body']);
+  assert.deepEqual(report.dangling.map((d) => d.term).sort(), ['mixed', 'wing']);
+  const lines = describeHandwork(report, 'prior.json');
+  assert.ok(lines.some((l) => /could not be loaded at all/.test(l)));
+  assert.ok(lines.some((l) => /confirmed by hand/.test(l)),
+    'and says which of them somebody had checked');
+});
+
 test('blocks that are pure judgement are carried, and never overwrite fresh ones', () => {
   const prior = {
     leaveStock: [{ file: 'Glass.dds', reason: 'painting it looks wrong from inside' }],
