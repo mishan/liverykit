@@ -215,8 +215,9 @@ lose by accident later:
    rather than in front of the person who did not make it.
 5. **No claim to have looked.** Originally: the descriptions must say the agent
    cannot see the car. Now that `render_car` exists they must say what it CAN
-   see and what that picture leaves out — no transparency, no stock textures,
-   one light rig. The point is unchanged and is the stronger half of it: those
+   see and what that picture leaves out — no environment reflections, one light
+   rig — and that list has to be kept current as the renderer grows: it warned
+   about having no stock car textures for a while after it had them. The point is unchanged and is the stronger half of it: those
    descriptions are the model's entire understanding of what it is doing, so an
    overstated capability is a lie told to the only reader that cannot check it.
    This is the one place where a prompt is part of the software.
@@ -261,7 +262,11 @@ made.
 
 **The original worry stands, and is handled by saying what the picture is not.**
 The tool description lists the limits rather than leaving them to be discovered:
-no transparency, no stock car textures, one fixed light rig. It answers "does the
+no environment reflections, one fixed light rig. It draws the car's own textures
+on the parts a design does not paint, the same ones the build's `preview.jpg`
+uses — for a while it did not, and the picture an agent checked its work against
+showed a car with grey glass and a grey interior while the editor beside it
+showed neither. It answers "does the
 artwork land where I said it would", not "is this exactly the game". And
 `PROMPT_NOTE` was updated at the same time: it used to tell the agent it could not
 see the car, which became false, and an agent that believes it cannot see will

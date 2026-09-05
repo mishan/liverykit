@@ -16,15 +16,17 @@
 //
 // It is NOT a substitute for the editor. It has one light rig and no
 // reflections, so a windscreen or a mirror never looks like glass here the
-// way it does in the game. A caller CAN hand it the car's own stock textures
-// for the parts a design does not paint — sheetKey, below, is what makes
-// that possible — but nothing requires it, and without them those parts
-// draw bare grey rather than invent something. What this can answer is the
+// way it does in the game. It DOES wear the car's own stock textures on the
+// parts a design does not paint — sheetKey and carSheets, below, are the two
+// halves of that — and a caller that supplies none of them gets bare grey
+// there rather than something invented. What this can answer is the
 // question I kept getting wrong: does the artwork land where I said it
 // would, and does the car still look like a car.
 // ---------------------------------------------------------------------------
 
 import sharp from 'sharp';
+
+import { decodeDds } from './pipeline.mjs';
 
 /** Unpainted geometry. Grey, and obviously grey — never a plausible colour. */
 const BARE = [0x4a, 0x4a, 0x52];
@@ -147,6 +149,84 @@ const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
  * metal surface in the cockpit rendered flat — which is most of an interior.
  */
 const sheetKey = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? null;
+
+/**
+ * Every texture of the CAR'S OWN that a render of these groups wants: the
+ * diffuse of a part the design does not paint, and both halves of a two-layer
+ * material — the per-part occlusion bake underneath and the small tiling
+ * material over it.
+ *
+ * Both halves are wanted even where the group is painted, because the detail
+ * layer belongs to the car and not to the design: it is the weave in the
+ * carbon and the nap on the alcantara, not artwork.
+ */
+export function carTextureFiles(groups) {
+  const wanted = new Set();
+  for (const g of groups) {
+    if (g.role === null && g.file) wanted.add(g.file);
+    if (g.detail?.diffuse) wanted.add(g.detail.diffuse);
+    if (g.detail?.detail) wanted.add(g.detail.detail);
+  }
+  return wanted;
+}
+
+/**
+ * Those textures, decoded into sheets `rasterise` can sample.
+ *
+ * This lived in the build, which was the only caller that had it, and `shoot`
+ * was the caller that needed it: an MCP screenshot built `sheets` out of the
+ * painted surfaces alone, so glass, wheels and the whole interior came out
+ * BARE grey in the one renderer an agent working without a browser can see,
+ * while the editor beside it drew the real materials. Two renderers
+ * disagreeing about what the car looks like is how a change gets verified
+ * against the wrong picture, and it has happened.
+ *
+ * `load(file)` hands back the bytes the kn5 holds for one texture, or null: a
+ * lookup over a model parsed with `keepTextureData` in the build, the editor's
+ * single-flight stock loader in the server. Decoding happens here, so the two
+ * agree about what counts as a texture and about what to say when one does not
+ * arrive.
+ *
+ * `cache` is a Map the caller keeps between calls, holding a decoded sheet or
+ * the sentence saying why there is none. The car's own artwork does not change
+ * while a process is up, and decoding is an ImageMagick run per texture —
+ * thirty-odd of them for one shot of a GT3 car, and all of them again for the
+ * next angle somebody asks for.
+ */
+export async function carSheets(groups, load, { cache = null } = {}) {
+  const sheets = new Map();
+  // SAID OUT LOUD. A texture that does not arrive costs nothing visible — the
+  // part just draws grey — which is how an entire cockpit rendered flat for
+  // weeks while the editor showed it properly. An encrypted kn5 legitimately
+  // has none of these, so it is a note rather than a failure.
+  const absent = [];
+  for (const file of carTextureFiles(groups)) {
+    // Cached by the LOWERCASED name and returned under the spelling this group
+    // uses, since nothing in the format stops two materials spelling one
+    // texture differently and `sheets` is read back by sheetKey.
+    const key = String(file).toLowerCase();
+    if (cache?.has(key)) {
+      const hit = cache.get(key);
+      if (typeof hit === 'string') absent.push(hit); else sheets.set(file, hit);
+      continue;
+    }
+    const data = await load(file);
+    let sheet = null;
+    let why = null;
+    // A 1x1-ish blob is not a small texture, it is an absent one: an encrypted
+    // kn5 substitutes placeholders and keeps the real artwork somewhere this
+    // project does not decrypt. Same threshold the editor's stockTexture uses,
+    // so the two never disagree about what counts as real.
+    if (!data || data.length <= 256) why = String(file);
+    else {
+      sheet = await decodeDds(Buffer.from(data));
+      if (!sheet) why = `${file} (undecodable)`;
+    }
+    if (sheet) sheets.set(file, sheet); else absent.push(why);
+    cache?.set(key, sheet ?? why);
+  }
+  return { sheets, absent };
+}
 
 /**
  * Where the camera goes so the car fills the frame.
@@ -761,9 +841,15 @@ export function rasterise(model, groups, sheets, {
   return { data: out, width: outWidth, height: outHeight, skipped };
 }
 
-/** Render and encode. `surfaces` is [{ role, svg }] as /api/preview returns. */
-export async function shoot(model, groups, surfaces, opts = {}) {
-  const sheets = new Map();
+/**
+ * Render and encode. `surfaces` is [{ role, svg }] as /api/preview returns.
+ *
+ * `sheets` in the options is the CAR'S OWN artwork for what the design leaves
+ * alone — see carSheets — and the design's own surfaces are laid over it. The
+ * two cannot collide: those are keyed by file and these by role.
+ */
+export async function shoot(model, groups, surfaces, { sheets: stock = null, ...opts } = {}) {
+  const sheets = new Map(stock ?? []);
   for (const s of surfaces) {
     if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
   }

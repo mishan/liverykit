@@ -655,8 +655,11 @@ test('render_car returns an image, and refuses a view it does not have', async (
     const listed = (await tools.listTools()).find((t) => t.name === 'render_car');
     assert.ok(listed, 'the tool is offered');
     // The description has to state what the picture is NOT, or it will be read
-    // as a screenshot of the game and trusted further than it should be.
-    assert.match(listed.description, /no stock car textures|no transparency/);
+    // as a screenshot of the game and trusted further than it should be. It also
+    // has to MOVE when the picture does: it claimed no stock car textures long
+    // enough for that to become the wrong warning, and an understated capability
+    // is as much a lie to the only reader that cannot check as an overstated one.
+    assert.match(listed.description, /no environment reflections|one fixed light rig/);
 
     // No car model in this harness, so the honest answer is a refusal rather
     // than a blank image — a picture of nothing looks like a car with nothing
@@ -711,6 +714,87 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
   assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
     `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
   assert.notDeepEqual([br, bg, bb], [r, g, b]);
+});
+
+test('a shot wears the car\'s own texture where the design paints nothing', async () => {
+  // `shoot` built `sheets` out of the painted surfaces alone, so everything a
+  // design does not paint — glass, wheels, the whole interior — drew BARE grey
+  // in the only picture an agent working without a browser can see. The build's
+  // preview.jpg had been doing this properly for weeks, which is what made it
+  // hard to notice: two renderers disagreeing about the same car is how a
+  // change gets verified against the wrong one.
+  const sharp = (await import('sharp')).default;
+  const { shoot } = await import('../src/engine/shot.mjs');
+
+  // In the YZ plane, facing the `left` camera at +X — a quad in the XY plane is
+  // edge-on from there and renders as nothing.
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  // A null role with a file is what wholeModelGeometry emits for a part the
+  // design leaves to the car, and the key `sheets` is read back by.
+  const groups = [{ role: null, file: 'glass.dds', start: 0, count: 6 }];
+  const stock = new Map([['glass.dds', { w: 1, h: 1, data: Buffer.from([0, 220, 40, 255]) }]]);
+
+  const centre = async (png) => {
+    const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const at = ((info.height >> 1) * info.width + (info.width >> 1)) * 4;
+    return [data[at], data[at + 1], data[at + 2]];
+  };
+  const opts = { view: 'left', width: 80, height: 80 };
+
+  const bare = await centre((await shoot(quad, groups, [], opts)).png);
+  assert.ok(Math.abs(bare[0] - bare[1]) < 30 && Math.abs(bare[1] - bare[2]) < 30,
+    `with nothing supplied the part is grey, not a plausible colour: ${bare}`);
+
+  const worn = await centre((await shoot(quad, groups, [], { ...opts, sheets: stock })).png);
+  assert.ok(worn[1] > worn[0] + 40 && worn[1] > worn[2] + 40,
+    `the car's own texture reaches the pixels: ${worn}`);
+});
+
+test('the car\'s own sheets are asked for by file, both halves of a material included', async () => {
+  const { carTextureFiles, carSheets } = await import('../src/engine/shot.mjs');
+
+  const groups = [
+    { role: 'body', file: 'body.dds' },
+    { role: null, file: 'glass.dds' },
+    // A two-layer material: an occlusion bake with a tiling material over it,
+    // and neither of them named by `file`. Missing these is what left a whole
+    // cockpit flat grey in the build's preview.
+    { role: null, file: null, detail: { diffuse: 'seat_bake.dds', detail: 'alcantara.dds', mult: 40 } },
+  ];
+  const wanted = carTextureFiles(groups);
+  assert.deepEqual([...wanted].sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds']);
+  assert.ok(!wanted.has('body.dds'), 'a painted surface wears the design, not the car');
+
+  // Nothing on offer, so nothing decodes — and every one of them is NAMED. A
+  // texture that does not arrive costs nothing visible, which is exactly how
+  // this went unnoticed the first time.
+  const asked = [];
+  const { sheets, absent } = await carSheets(groups, (file) => { asked.push(file); return null; });
+  assert.equal(sheets.size, 0);
+  assert.deepEqual(absent.sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds']);
+  assert.equal(asked.length, 3);
+
+  // A 1x1-ish blob is an absent texture rather than a small one: an encrypted
+  // kn5 substitutes placeholders for the artwork it keeps to itself.
+  const placeholder = await carSheets([{ role: null, file: 'glass.dds' }], () => Buffer.alloc(128));
+  assert.deepEqual(placeholder.absent, ['glass.dds']);
+
+  // Cached across calls: the car's artwork does not change while a process is
+  // up, and decoding is a subprocess per texture — thirty-odd of them for one
+  // shot of a GT3 car, and again for every other angle asked for.
+  const cache = new Map();
+  let loads = 0;
+  const load = () => { loads += 1; return null; };
+  await carSheets(groups, load, { cache });
+  const second = await carSheets(groups, load, { cache });
+  assert.equal(loads, 3, 'the second shot asks the model for nothing it has already looked up');
+  assert.deepEqual(second.absent.sort(), ['alcantara.dds', 'glass.dds', 'seat_bake.dds'],
+    'and still says what it does not have');
 });
 
 test('the left view shows the left of the car', async () => {

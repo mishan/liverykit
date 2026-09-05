@@ -367,9 +367,10 @@ export function createToolHandler(client) {
         'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
         'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
-        'Views: ' + Object.keys(VIEWS).join(', ') + '. Note the limits — no transparency, ' +
-        'no stock car textures (unpainted parts are flat grey), and one fixed light rig, so ' +
-        `it answers "does the artwork land where I said" and not "is this exactly the game". ${PROMPT_NOTE}`,
+        'Views: ' + Object.keys(VIEWS).join(', ') + '. Unpainted parts wear the car\'s own ' +
+        'textures, where the model carries them. Note the limits — no environment reflections ' +
+        'and one fixed light rig, so it answers "does the artwork land where I said" and not ' +
+        `"is this exactly the game". ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -470,7 +471,7 @@ export function createToolHandler(client) {
         // useful answer is "no model" — a blank image would look like a car
         // wearing nothing, which is a lie about the design rather than a gap.
         try {
-          const { png, skipped } = await client.shoot(args.view ?? 'left', args.width, args.height);
+          const { png, skipped, absent } = await client.shoot(args.view ?? 'left', args.width, args.height);
           const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
           // Named, not silently absent. Transparent surfaces with no artwork —
           // glass, emissive masks — are left out rather than drawn as grey
@@ -478,8 +479,19 @@ export function createToolHandler(client) {
           // the car is missing on purpose.
           if (skipped) {
             content.push({ type: 'text', text:
-              `${skipped} transparent surface(s) are not drawn: this renderer has no stock ` +
-              'car textures, and grey would misrepresent something that is see-through.' });
+              `${skipped} transparent surface(s) are not drawn: neither the design nor the ` +
+              'model supplies artwork for them, and grey would misrepresent something that ' +
+              'is see-through.' });
+          }
+          // The other half of the same honesty. The car's own textures are what
+          // the unpainted parts wear here; a model that cannot give one up
+          // leaves that part bare grey, which otherwise reads as a design that
+          // paints nothing there.
+          if (absent) {
+            content.push({ type: 'text', text:
+              `${absent} of the car's own texture(s) could not be read from the model, so the ` +
+              'parts wearing them are drawn bare grey. An encrypted kn5 has none of them, ' +
+              'and that is not a fault in the design.' });
           }
           return { content };
         } catch (e) {

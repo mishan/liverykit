@@ -8,7 +8,7 @@ import { join, isAbsolute, resolve } from 'node:path';
 import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin, decodeDds } from './engine/pipeline.mjs';
+import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
 import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -18,6 +18,7 @@ import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
 import { parseKn5 } from './engine/kn5.mjs';
 import { wholeModelGeometry } from './engine/geometry.mjs';
+import { carSheets } from './engine/shot.mjs';
 
 // Re-exported: `hidePlan` lived here first, and the build is where anybody
 // looking for what `hide` does would go.
@@ -274,7 +275,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
  * texture on what it does not — glass, wheels, interior trim — rather than
  * leaving those parts flat grey. The editor gets that from the browser
  * uploading the kn5's compressed textures straight to the GPU; this has no
- * GPU, so `decodeDds` does in a temp file what the browser does in VRAM.
+ * GPU, so `carSheets` does in a temp file what the browser does in VRAM.
  */
 async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log }) {
   if (!modelPath || !targets.length) return null;
@@ -320,39 +321,16 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
   // actually claims, which `wholeModelGeometry` has already narrowed to what
   // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
   // excluded there, before this ever sees it).
+  //
+  // Shared with the MCP renderer rather than done here, which is where it used
+  // to live: `shoot` had none of this and drew every unpainted part grey, so
+  // the picture an agent takes without a browser and the picture that ships in
+  // the skin disagreed about the same car.
   const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
-  const wanted = new Set();
-  for (const x of g.groups) {
-    if (x.role === null && x.file) wanted.add(x.file);
-    // BOTH halves of a two-layer material: the per-part occlusion bake
-    // underneath and the small tiling material over it. Fetched even when the
-    // group is painted, because the detail layer belongs to the car — it is
-    // the weave in the carbon and the nap on the alcantara, not artwork.
-    //
-    // These were missed entirely, which is why the whole cockpit rendered flat
-    // grey here while the editor showed it in its real materials.
-    if (x.detail) {
-      if (x.detail.diffuse) wanted.add(x.detail.diffuse);
-      if (x.detail.detail) wanted.add(x.detail.detail);
-    }
-  }
-  const absent = [];
-  for (const file of wanted) {
-    const t = byName.get(String(file).toLowerCase());
-    // A 1x1-ish blob is not a small texture, it is an absent one — an
-    // encrypted kn5 substitutes placeholders and keeps the real artwork
-    // somewhere this project does not decrypt. Same threshold the editor's
-    // stockTexture uses, so the two never disagree about what counts as real.
-    if (!t?.data || t.data.length <= 256) { absent.push(file); continue; }
-    const decoded = await decodeDds(Buffer.from(t.data));
-    if (decoded) sheets.set(file, decoded); else absent.push(`${file} (undecodable)`);
-  }
-  // SAID OUT LOUD. A texture that does not arrive costs nothing visible — the
-  // surface just draws in whatever it had, or grey — which is how the entire
-  // cockpit rendered flat here for weeks while the editor showed it properly.
-  // An encrypted car legitimately has none of these, so it is a note.
-  if (absent.length) {
-    log(`  preview: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
+  const stock = await carSheets(g.groups, (file) => byName.get(String(file).toLowerCase())?.data ?? null);
+  for (const [file, art] of stock.sheets) sheets.set(file, art);
+  if (stock.absent.length) {
+    log(`  preview: ${stock.absent.length} texture(s) the model does not carry: ${stock.absent.join(', ')}`);
   }
 
   try {
