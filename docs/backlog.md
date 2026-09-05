@@ -7,23 +7,6 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
-## The preview frames the car loosely
-
-`dist = span * 1.15` sets the camera distance from the model's LONGEST axis,
-and for a car that is its length — which from any three-quarter view is the
-axis most foreshortened. So the distance is set by an extent that barely
-appears, and the car sits small in a frame with a lot of empty sky above it.
-The stock previews crop tight.
-
-The fix is to frame by what is actually on screen: project the eight corners of
-the bounding box, and pull the camera in until that rectangle fits the frame
-with a small margin. It is a couple of iterations of a cheap loop, and it also
-removes the fudge factor.
-
-Note for whoever does it: the contact shadow will become visible when this
-lands. It is currently placed correctly and almost entirely hidden behind the
-car, because at this distance the car covers its own footprint.
-
 ## render_car and render_view still draw the car's own textures as grey
 
 `rasterise` now composites a two-layer material, and the build feeds it both

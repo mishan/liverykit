@@ -959,13 +959,15 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
   // footprint to speak of. Magenta, so a reflection is unmistakably the object
   // rather than a lighting accident.
   //
-  // LOW, and long along the axis the camera looks down. Neither is decoration.
-  // The camera frames whatever it is given by its LONGEST axis, so an object
-  // that is also long across the view fills the frame edge to edge and leaves
-  // no floor to test against — which is how the first version of this passed
-  // the reflection check and could not see the shadow at all. Long towards the
-  // camera and low, and there is floor on three sides of it.
-  const face = (x) => [x, 0, -0.3, x, 0, 0.3, x, 0.35, 0.3, x, 0.35, -0.3];
+  // NARROW across the view and long towards the camera. Neither is decoration.
+  //
+  // The camera fits the projected box to the frame, so the shape decides which
+  // axis binds. An object as wide as it is tall fills the frame edge to edge,
+  // its own mirrored copy then covers every visible floor pixel, and the
+  // shadow — composited underneath the reflection — cannot be told apart from
+  // it. Narrow across the view and the vertical binds instead, leaving floor
+  // to either side that the reflection never reaches.
+  const face = (x) => [x, 0, -0.15, x, 0, 0.15, x, 0.6, 0.15, x, 0.6, -0.15];
   const slab = {
     positions: new Float32Array([...face(-1), ...face(1)]),
     uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
@@ -999,15 +1001,37 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
   assert.ok(Math.floor(reflected / 120) > 60, `the reflection belongs under the object, row ${Math.floor(reflected / 120) }`);
 
   // The mirrored pass renders flipped geometry through THIS pass's camera, and
-  // it can only do that if `bounds` fully determines the framing. If it ever
-  // stops doing so the reflection slides out from under the car and nothing
-  // else complains.
-  const framed = rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+  // it cannot derive that camera for itself — framing the reflection's own
+  // vertices would frame the reflection. So a stated camera has to be used
+  // VERBATIM. If it ever stops being, the reflection slides out from under the
+  // car and nothing else complains.
+  //
+  // Proved by handing the 'right' view the camera the 'left' view computed:
+  // the picture must be the left one. A camera that were merely a starting
+  // point, or a hint, would give something else.
+  const { frameCamera, VIEWS } = await import('../src/engine/shot.mjs');
+  const focal = (120 / 2) / Math.tan(0.32);
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < slab.positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], slab.positions[i + k]);
+      hi[k] = Math.max(hi[k], slab.positions[i + k]);
+    }
+  }
+  const shape = {
+    width: 120,
+    height: 120,
+    focal,
+    span: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]),
+    centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
+  };
+  const fromLeft = frameCamera(slab.positions, VIEWS.left, shape);
+  const wrongView = rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
     new Map([['body', art]]),
-    { view: 'left', width: 120, height: 120, floor: false, samples: 1,
-      bounds: { lo: [-1, 0, -0.3], hi: [1, 0.35, 0.3] } });
-  assert.deepEqual(Buffer.from(framed.data), Buffer.from(bare.data),
-    'stated bounds must frame exactly as measured ones do');
+    { view: 'right', width: 120, height: 120, floor: false, samples: 1, camera: fromLeft });
+  assert.deepEqual(Buffer.from(wrongView.data), Buffer.from(bare.data),
+    'a stated camera must win over `view`, or the two passes cannot agree');
 });
 
 test('a two-layer material gets both layers, and the tiling one tiles', async () => {
@@ -1046,14 +1070,15 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
   const mid = row(withLayer, 45);
   const flat = row(without, 45);
 
-  // The base alone is one flat value across the surface. With the layer it is
-  // not: at eight repeats across the quad there are stripes to find.
-  const spread = (r) => {
-    const on = r.filter((v) => v !== r[0]);
-    return on.length;
-  };
-  assert.ok(spread(flat) < spread(mid),
-    `the tiling layer should vary across the surface: ${spread(flat)} vs ${spread(mid)}`);
+  // DISTINCT values across the row, not "how many differ from the first pixel"
+  // — that counted the background the moment the camera stopped cropping the
+  // quad at the frame's edge, and reported the same number for both.
+  //
+  // The base alone is one flat value over the surface, so the row holds two:
+  // the object, and the background behind it. With the layer there are stripes.
+  const shades = (r) => new Set(r).size;
+  assert.ok(shades(mid) > shades(flat) + 4,
+    `the tiling layer should vary across the surface: ${shades(flat)} vs ${shades(mid)}`);
 
   // And it must REPEAT rather than clamp — a clamped detail map smears one
   // column of texels across everything past the first tile.
