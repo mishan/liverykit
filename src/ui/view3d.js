@@ -296,7 +296,15 @@ export function unpackModel(buffer) {
   const uvs = new Float32Array(buffer, o, meta.vertexCount * 2); o += meta.vertexCount * 8;
   const normals = new Float32Array(buffer, o, meta.vertexCount * 3); o += meta.vertexCount * 12;
   const indices = new Uint32Array(buffer, o, meta.indexCount);
-  return { positions, uvs, normals, indices, groups: meta.groups, bounds: meta.bounds, cockpit: meta.cockpit ?? null };
+  const model = { positions, uvs, normals, indices, groups: meta.groups, bounds: meta.bounds };
+  // PRESENCE, not value. `packModel` sends `cockpit: null` on purpose for a car
+  // whose model has no recognisable steering wheel, and omits the key only when
+  // the server predates the field — which in practice means a page that
+  // hot-reloaded against a server still running the old module. Those are
+  // different problems with different fixes, and `?? null` reported both as
+  // "this car has no cockpit eye".
+  if ('cockpit' in meta) model.cockpit = meta.cockpit;
+  return model;
 }
 
 /** Unpack the server's blob: two counts, then positions, UVs, normals, indices. */
@@ -478,6 +486,9 @@ export function createViewer(canvas) {
   // A body is a megabyte of floats; holding it is cheaper than a round trip to
   // the server on every pointer event.
   let mesh = null;
+  // The typed arrays currently sitting in the GPU's buffers, held by IDENTITY
+  // rather than by content — see setWholeCar.
+  let uploaded = null;
 
   gl.enable(gl.DEPTH_TEST);
   // Both faces. Car meshes are not reliably wound one way, and a missing
@@ -795,6 +806,10 @@ export function createViewer(canvas) {
     setGeometry({ positions, uvs, normals, indices }) {
       groups = null;
       mesh = { positions, uvs, indices };
+      // What is actually in the GPU's buffers, by identity, so setWholeCar can
+      // tell "the same car again" from "a different car" without comparing
+      // thirty megabytes element by element.
+      uploaded = { positions, uvs, normals, indices };
       gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
       gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(loc.position);
@@ -878,15 +893,24 @@ export function createViewer(canvas) {
     setLit(on) { lit = !!on; draw(); },
 
     /**
+     * Orbit the car, as opposed to sitting in it. Asked for by the whole-car
+     * view rather than arriving as a side effect of handing over geometry —
+     * setWholeCar only uploads when the buffers changed, so it is no longer in
+     * a position to decide what camera you wanted.
+     */
+    setOrbit() { cam.mode = 'orbit'; draw(); },
+
+    /**
      * Switch to the cockpit camera: eye fixed at `eye` (the point the profile
      * measured the steering wheel from), drag looks around instead of
-     * orbiting. Call after setWholeCar, which frames the orbit camera on the
-     * new geometry and would otherwise fight this.
+     * orbiting. Call after setWholeCar, which frames the orbit camera on new
+     * geometry and would otherwise fight this.
      *
      * Re-entering with the same eye keeps the current look direction — a
      * livery edit that reloads the whole car should not snap your view back
      * to dead ahead — but the first entry, or a different eye (a different
-     * car), starts you looking forward, roughly level.
+     * car), starts you looking forward, roughly level. That only works because
+     * setWholeCar no longer forces orbit mode on its way past.
      */
     setCockpit(eye) {
       const moved = cam.mode !== 'cockpit'
@@ -898,10 +922,32 @@ export function createViewer(canvas) {
     },
 
     async setWholeCar(model, surfaces, { budget = 192 * 1024 * 1024 } = {}) {
+      // ONLY WHEN THE GEOMETRY ACTUALLY CHANGED.
+      //
+      // This runs on every re-render of the whole-car and cockpit views — every
+      // livery edit, every tab switch — and app.js caches the unpacked model,
+      // so the same typed arrays arrive here over and over. Re-uploading them
+      // costs tens of megabytes of bufferData for nothing.
+      //
+      // It also reset the camera. setGeometry frames the orbit camera on the
+      // geometry and puts the view back in orbit mode, which is right for NEW
+      // geometry and wrong here: setCockpit, called straight after this by
+      // loadCockpit, then saw a mode that was never 'cockpit' and snapped the
+      // look direction back to dead ahead. The comment promising that
+      // re-entering the cockpit keeps your view had never once been true.
+      //
+      // The mode belongs to the caller either way — see setOrbit below.
+      const same = uploaded
+        && uploaded.positions === model.positions
+        && uploaded.uvs === model.uvs
+        && uploaded.normals === model.normals
+        && uploaded.indices === model.indices;
       // setGeometry clears the grouping, so the groups go on afterwards. The
       // order matters: a frame drawn with the new buffers and the old group
-      // offsets would index past the end of them.
-      this.setGeometry(model);
+      // offsets would index past the end of them. Unchanged buffers cannot
+      // have that problem, so the existing groups stay and the intermediate
+      // frames keep drawing the car instead of nothing.
+      if (!same) this.setGeometry(model);
 
       // PER SURFACE, and reported.
       //

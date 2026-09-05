@@ -2882,6 +2882,11 @@ async function ensureWholeCar() {
 
 async function loadWholeCar() {
   const { g, drew } = await ensureWholeCar();
+  // The camera this view wants, asked for rather than inherited. setWholeCar
+  // used to leave the view in orbit mode as a side effect of uploading
+  // geometry, and now that it only uploads when the geometry changed, coming
+  // back here from the cockpit has to say so.
+  state.viewer.setOrbit();
 
   const painted = new Set(g.groups.filter((x) => x.role).map((x) => x.role));
   const bare = g.groups.filter((x) => !x.role).reduce((s, x) => s + x.count / 3, 0);
@@ -2918,6 +2923,15 @@ async function loadWholeCar() {
 async function loadCockpit() {
   const { g, drew } = await ensureWholeCar();
   const eye = state.wholeGeometry.cockpit;
+  // ABSENT and NULL are different answers. The server states null for a car
+  // whose model has no recognisable steering wheel; the key is missing only
+  // when the server is running code older than this page, which is what a
+  // reload without a restart gets you — the modules the server imports are
+  // cached and the page's are not.
+  if (eye === undefined) {
+    throw new Error(
+      'this server sent no cockpit field at all — it is running an older build than this page. Restart it.');
+  }
   if (!eye) {
     throw new Error(
       'no cockpit eye for this car — liverykit could not find a steering wheel mesh in the model');

@@ -3590,3 +3590,52 @@ test('the single-surface payload carries normals too, at the right offset', asyn
     /needs a typed array for "normals"/,
     'a builder that has not caught up is told so at the call that did it');
 });
+
+test('an absent cockpit field and a null one stay different answers', async () => {
+  // `packModel` sends `cockpit: null` on purpose for a car whose model has no
+  // recognisable steering wheel, and says so in a comment: null travels as
+  // JSON null rather than an absent key so the client can tell that from a
+  // payload that predates the field. `unpackModel` then coerced the absence
+  // back to null and threw the distinction away.
+  //
+  // It is not hypothetical. The server caches the modules it imports and the
+  // page does not, so a browser reload against a server that was not restarted
+  // is exactly the case where the field is missing — and the editor reported
+  // it as "this car has no cockpit eye", which sends you looking at the car.
+  const { packModel } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const empty = () => ({
+    positions: new Float32Array([0, 0, 0]), uvs: new Float32Array([0, 0]),
+    normals: new Float32Array([0, 1, 0]),
+    indices: new Uint32Array([0]), groups: [], bounds: null,
+  });
+
+  const stated = unpackModel(toArrayBuffer(packModel({ ...empty(), cockpit: null })));
+  assert.equal('cockpit' in stated, true, 'a stated null is a stated null');
+  assert.equal(stated.cockpit, null);
+
+  const withEye = unpackModel(toArrayBuffer(packModel({ ...empty(), cockpit: { x: 1, y: 2, z: 3 } })));
+  assert.deepEqual(withEye.cockpit, { x: 1, y: 2, z: 3 });
+
+  // And a payload from before the field existed: the header simply has no such
+  // key. Rebuilt by hand, because the current packer cannot produce one.
+  const old = packModel({ ...empty(), cockpit: null });
+  const headLen = old.readUInt32LE(0);
+  const head = JSON.parse(old.subarray(4, 4 + headLen).toString('utf8'));
+  delete head.cockpit;
+  const json = Buffer.from(JSON.stringify(head), 'utf8');
+  const pad = Buffer.alloc((4 - json.length % 4) % 4, 0x20);
+  const size = Buffer.alloc(4);
+  size.writeUInt32LE(json.length + pad.length);
+  const rebuilt = Buffer.concat([size, json, pad, old.subarray(4 + headLen)]);
+  const ancient = unpackModel(toArrayBuffer(rebuilt));
+  assert.equal('cockpit' in ancient, false,
+    'a payload that never carried the field must not grow one');
+  assert.equal(ancient.cockpit, undefined);
+});
+
+/** A Buffer's bytes as their own ArrayBuffer — Buffers are views into a pool. */
+function toArrayBuffer(b) {
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
