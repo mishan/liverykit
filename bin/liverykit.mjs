@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
-import { loadProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
+import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
@@ -152,8 +152,15 @@ if (values['from-kn5']) {
     if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
   }
 
-  const report = preserveHandwork(profile, prior);
+  const report = preserveHandwork(profile, prior, { skinsGiven: !!values.skins });
   for (const line of describeHandwork(report, priorPath)) console.log(line);
+
+  // READ BACK BEFORE IT IS WRITTEN. Everything above merges two profiles, and
+  // a merge can produce a file that is valid JSON and not a valid profile —
+  // which is how a regeneration came to write a car nothing could open, with
+  // the failure arriving later and somewhere else. `loadProfile` runs this on
+  // the way in; running it here means a written profile has already passed it.
+  validateProfile(profile, 'the profile this run just built');
 
 
   const outPath = join(values.out, `${profile.id}.json`);
