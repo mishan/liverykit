@@ -63,7 +63,7 @@ const CLEAR_SHEET = 4;
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, modelPath = null, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, log = console.log }) {
   await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
@@ -159,6 +159,10 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       rng: mulberry32(seedFrom(seedStr + tex.file)),
       font: render.font,
       tokens,
+      // The livery's own images, for any region that places one. Empty for a
+      // design that is a single file: only a livery folder has a decals/
+      // directory to carry them in.
+      decals,
       regionNotes,
     });
     notes.push(...regionNotes);
