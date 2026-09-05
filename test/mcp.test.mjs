@@ -784,6 +784,19 @@ test('the car\'s own sheets are asked for by file, both halves of a material inc
   const placeholder = await carSheets([{ role: null, file: 'glass.dds' }], () => Buffer.alloc(128));
   assert.deepEqual(placeholder.absent, ['glass.dds']);
 
+  // A LOADER THAT THROWS names every file, not one. The editor's stock loader
+  // rejects once for a kn5 it could not read and rejects identically for every
+  // file after it, and the count this returns is what the shot reports as the
+  // number of parts drawing grey — so answering "1" for a model that gave up
+  // nothing would tell the caller most of the car is fine.
+  const broken = new Map();
+  const threw = await carSheets(groups, () => { throw new Error('could not read the model'); },
+    { cache: broken });
+  assert.equal(threw.absent.length, 3, 'every texture the render wanted is named');
+  for (const line of threw.absent) assert.match(line, /could not read the model/);
+  assert.equal(broken.size, 0,
+    'and nothing is cached: a loader that failed once is entitled to recover');
+
   // Cached across calls: the car's artwork does not change while a process is
   // up, and decoding is a subprocess per texture — thirty-odd of them for one
   // shot of a GT3 car, and again for every other angle asked for.
