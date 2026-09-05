@@ -394,7 +394,13 @@ export function rasterise(model, groups, sheets, {
   // hasOwn rather than a lookup with a fallback: `VIEWS['constructor']` is
   // truthy and has no yaw, which yields NaN everywhere downstream and a picture
   // that looks like an empty stage rather than an error.
-  const { yaw, pitch } = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
+  //
+  // RESOLVED ONCE and passed on. This was guarded here and then looked up
+  // again, unguarded, on the way into frameCamera — so the fallback protected
+  // the projection and the camera got the NaN anyway, which is the same empty
+  // stage by a longer route. One name, used by both.
+  const angles = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
+  const { yaw, pitch } = angles;
   const { positions, uvs, normals, indices } = model;
 
   const lo = [Infinity, Infinity, Infinity];
@@ -411,7 +417,7 @@ export function rasterise(model, groups, sheets, {
   // Reused verbatim when the caller states one — see the mirrored pass, which
   // has to look through this pass's camera and cannot derive it, since its own
   // vertices are the car upside down.
-  const cam = camera ?? frameCamera(positions, VIEWS[view] ?? VIEWS.left,
+  const cam = camera ?? frameCamera(positions, angles,
     { width, height, focal, span, centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2) });
   const { eye, fwd, right, up } = cam;
 

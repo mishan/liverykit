@@ -773,6 +773,38 @@ test('render_view tells an empty role apart from no role at all', async () => {
   }
 });
 
+test('a view this renderer does not have falls back to one it does', async () => {
+  // `VIEWS['constructor']` is a function off the prototype: truthy, with no
+  // yaw and no pitch. The projection was guarded against exactly that and the
+  // CAMERA was not — it looked the name up a second time on its own — so the
+  // fallback protected the maths downstream while frameCamera got undefined
+  // angles, and NaN put the car nowhere. A blank stage and a 200 OK.
+  //
+  // The server refuses an unknown view before it reaches here; this is about
+  // what the renderer does when something gets past it, and the answer has to
+  // be a picture rather than an empty room.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+  const quad = {
+    positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
+  };
+  const groups = [{ role: 'body', start: 0, count: 6 }];
+  const art = new Map([['body', { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) }]]);
+  const opts = { width: 60, height: 60, samples: 1 };
+
+  const left = rasterise(quad, groups, art, { ...opts, view: 'left' });
+  for (const view of ['constructor', 'toString', 'nope']) {
+    const fallen = rasterise(quad, groups, art, { ...opts, view });
+    // Compared as BUFFERS. deepEqual over two unpacked frames builds a diff of
+    // fourteen thousand numbers when it fails, which is how proving this bug
+    // exists killed the test runner rather than reporting it.
+    assert.ok(fallen.data.equals(left.data),
+      `${view} renders as the default view, not as an empty stage`);
+  }
+});
+
 test('the shot composites blended surfaces the way the viewer does', async () => {
   // Two ways the rasteriser drifted from the viewer it exists to check.
   const { rasterise } = await import('../src/engine/shot.mjs');
