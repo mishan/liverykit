@@ -3787,6 +3787,114 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   assert.equal(noNormal.normal, null);
 });
 
+test("a part's own relief is read where the shader says it is, and nowhere else", async () => {
+  // `txNormalDetail` was the only normal map this viewer read, so a surface got
+  // its material's grain — the weave, the nap — and never the relief of the
+  // part itself: the stitching down a seat, a panel seam, the moulding around a
+  // switch. Those live in `txNormal`, at the diffuse's UV rather than tiled.
+  //
+  // The slot cannot simply be trusted, and this car says why twice over.
+  const { baseNormal } = await import('../src/engine/kn5.mjs');
+
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelNM', slots: { txDiffuse: 'plastic.dds', txNormal: 'flat_nm.dds' },
+  }), 'flat_nm.dds');
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap_NMDetail',
+    slots: { txDiffuse: 'INT_HR_Occlusion.dds', txNormal: 'INT_HR_Occlusion_NM.dds' },
+  }), 'INT_HR_Occlusion_NM.dds', 'the interior relief, at the bake\'s own UV');
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelAT_NM', slots: { txNormal: 'EXT_Decals_NM.dds' },
+  }), 'EXT_Decals_NM.dds');
+
+  // THE CARPAINT. Its shader is ksPerPixelMultiMap_damage_dirt and the texture
+  // in its normal slot is the relief of a CRASHED panel, which the game blends
+  // in by damage and this project always renders at zero. Read unconditionally
+  // it puts dents down the side of an undamaged car.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap_damage_dirt',
+    slots: { txDiffuse: 'EXT_Skin_Sponsors.dds', txNormal: 'EXT_Damage_NM.dds' },
+  }), null, 'a damage map is not the shape of the part');
+
+  // And a slot bound on a shader that has no normal to sample it into, which
+  // is an ordinary thing for a kn5 to contain — this car's Lumirank panel.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelMultiMap', slots: { txNormal: 'Lumirank_3_slots_NM.dds' },
+  }), null, 'the shader name is what says the slot is read');
+
+  // An object-space map states its direction in the MODEL'S frame, so putting
+  // it through a tangent basis points every fragment somewhere arbitrary.
+  assert.equal(baseNormal({
+    shader: 'ksPerPixelNM', props: { nmObjectSpace: 1 }, slots: { txNormal: 'EXT_Lights_NM.dds' },
+  }), null);
+
+  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: { txNormal: 'NULL.dds' } }), null,
+    'NULL.dds is how a kn5 says "no texture"');
+  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: {} }), null);
+  assert.equal(baseNormal(null), null, 'a mesh with no material at all');
+});
+
+test("a group carries its material's relief, painted or not", async () => {
+  // The map has to reach the renderer on the GROUP, next to the lighting
+  // constants and for the same reason: a group is one draw call, and the
+  // viewer has nothing else to hang a per-part texture on.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  const model = parseKn5Buffer(buildKn5({
+    material: { shader: 'ksPerPixelNM', slots: { txDiffuse: 'body.dds', txNormal: 'body_nm.dds' } },
+  }));
+
+  // PAINTED, which is the case that could most easily have been left out. A
+  // livery replaces the colour of a panel; it does not replace the shape of the
+  // seam running across it, and that shape is still the car's.
+  const painted = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]);
+  assert.ok(painted.groups.length, 'the fixture drew something');
+  for (const g of painted.groups) {
+    assert.equal(g.normalMap, 'body_nm.dds', `${g.role ?? g.file} kept its relief`);
+  }
+
+  // And unpainted, where the car supplies the colour as well as the shape.
+  for (const g of wholeModelGeometry(model, []).groups) {
+    assert.equal(g.normalMap, 'body_nm.dds');
+  }
+
+  // `null` where the material does not honestly have one, so the viewer can
+  // tell "no relief" from "a relief that failed to arrive".
+  const flat = parseKn5Buffer(buildKn5({ material: { shader: 'ksPerPixel' } }));
+  for (const g of wholeModelGeometry(flat, []).groups) assert.equal(g.normalMap, null);
+});
+
+test('the viewer samples the relief untiled, and asks for it on painted groups too', async () => {
+  // Read out of the source because the alternative is a GPU — same bargain the
+  // transparent-surface test above makes. Three things this can get wrong in a
+  // way no unit test elsewhere would notice.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // ONE IMAGE OVER THE PART. The detail normal beside it is sampled at
+  // vUv * detailMult — five hundred repeats across a door card — and tiling
+  // the relief the same way would turn one panel seam into a mesh of them.
+  assert.match(src, /texture2D\(baseNormal, vUv\)/,
+    'the relief is sampled at the diffuse\'s own UV');
+  assert.ok(!/texture2D\(baseNormal, vUv \* detail/.test(src),
+    'and never at the detail layer\'s tiling');
+
+  // FETCHED FOR EVERY GROUP. The stock-texture loop skips painted groups —
+  // their colour comes from the design — and the relief does not follow that
+  // rule: the car still supplies the shape.
+  const loop = src.slice(src.indexOf('for (const g of model.groups ?? []) {'),
+    src.indexOf('// A few lanes rather than one after another.'));
+  assert.ok(loop.indexOf("want(byFile, g.normalMap") < loop.indexOf("if (g.role !== null) continue;"),
+    'the relief is asked for before the painted groups are skipped');
+
+  // AND RESET in the per-surface pass, like every other per-group uniform. The
+  // sheet being edited is a texture and not a part; a leftover 1 here embosses
+  // one part's seams onto every surface in the picker.
+  const surfacePass = src.slice(src.indexOf('if (!groups) {'), src.indexOf('// One draw call per painted surface.'));
+  assert.match(surfacePass, /gl\.uniform1f\(loc\.hasBaseNormal, 0\);/);
+});
+
 test('the whole car keeps both cockpits and tags which is which', async () => {
   // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
   // same coordinates. Drawing both z-fights the interior into a checkerboard

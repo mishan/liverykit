@@ -95,6 +95,13 @@ uniform float detailOnly;  // 1 = the diffuse is a bake, so the detail IS the su
 uniform sampler2D detailNormal;
 uniform float hasDetailNormal;
 uniform float detailNormalBlend;
+// The material's OWN normal map, at the diffuse's UV and NOT tiled: the relief
+// of the part itself — the stitching down a seat, a panel seam, the moulding
+// around a switch — where the detail normal above it is a square of grain
+// repeated hundreds of times across the same surface. Two maps doing two jobs,
+// and for a while this viewer read only the second of them.
+uniform sampler2D baseNormal;
+uniform float hasBaseNormal;
 uniform float hasDetail;  // 1 = multiply the tiling layer over the diffuse
 // How this particular material answers light, already calibrated against car
 // paint on the way in — see lightingFor. One shading model for a whole car
@@ -247,16 +254,36 @@ void main() {
   // test is what a mesh packed without tangents falls through — it sends
   // zeroes, and a zero tangent would otherwise normalise to garbage and tilt
   // every fragment the same wrong way.
-  if (hasDetailNormal > 0.5) {
+  if (hasBaseNormal > 0.5 || hasDetailNormal > 0.5) {
     vec3 t = vT - n * dot(n, vT);
     if (dot(t, t) > 1e-8) {
       t = normalize(t);
       vec3 bt = cross(n, t);
-      vec3 nm = texture2D(detailNormal, vUv * detailMult).rgb * 2.0 - 1.0;
-      // Only the sideways components are scaled. Scaling z as well would tilt
-      // the whole surface rather than change how deep its grain reads.
-      nm.xy *= detailNormalBlend;
-      n = normalize(t * nm.x + bt * nm.y + n * nm.z);
+      // THE RELIEF FIRST, and the frame rebuilt on top of it, so the grain
+      // sits on the moulding instead of beside it. Sampled at vUv and never
+      // at vUv * detailMult: this map is one image over the whole part, and
+      // tiling it five hundred times would turn one panel seam into a mesh
+      // of them.
+      if (hasBaseNormal > 0.5) {
+        vec3 rel = texture2D(baseNormal, vUv).rgb * 2.0 - 1.0;
+        n = normalize(t * rel.x + bt * rel.y + n * rel.z);
+        // Re-orthogonalised against the normal it just moved, from the
+        // interpolated tangent rather than from the one derived above: the
+        // old frame is square to the old normal, and reusing it would apply
+        // the grain in a plane the surface no longer has.
+        vec3 t2 = vT - n * dot(n, vT);
+        if (dot(t2, t2) > 1e-8) {
+          t = normalize(t2);
+          bt = cross(n, t);
+        }
+      }
+      if (hasDetailNormal > 0.5) {
+        vec3 nm = texture2D(detailNormal, vUv * detailMult).rgb * 2.0 - 1.0;
+        // Only the sideways components are scaled. Scaling z as well would tilt
+        // the whole surface rather than change how deep its grain reads.
+        nm.xy *= detailNormalBlend;
+        n = normalize(t * nm.x + bt * nm.y + n * nm.z);
+      }
     }
   }
 
@@ -634,6 +661,8 @@ export function createViewer(canvas) {
     detailNormal: gl.getUniformLocation(prog, 'detailNormal'),
     hasDetailNormal: gl.getUniformLocation(prog, 'hasDetailNormal'),
     detailNormalBlend: gl.getUniformLocation(prog, 'detailNormalBlend'),
+    baseNormal: gl.getUniformLocation(prog, 'baseNormal'),
+    hasBaseNormal: gl.getUniformLocation(prog, 'hasBaseNormal'),
     hasDetail: gl.getUniformLocation(prog, 'hasDetail'),
     matAmbient: gl.getUniformLocation(prog, 'matAmbient'),
     matDiffuse: gl.getUniformLocation(prog, 'matDiffuse'),
@@ -785,6 +814,7 @@ export function createViewer(canvas) {
     gl.uniform1i(loc.map, 0);
     gl.uniform1i(loc.detail, 1);
     gl.uniform1i(loc.detailNormal, 2);
+    gl.uniform1i(loc.baseNormal, 3);
     gl.uniform1f(loc.border, border);
     gl.uniform1f(loc.lit, lit ? 1 : 0);
     gl.uniform3fv(loc.eye, new Float32Array(eye));
@@ -816,6 +846,10 @@ export function createViewer(canvas) {
       // times tiling.
       gl.uniform1f(loc.hasDetail, 0);
       gl.uniform1f(loc.hasDetailNormal, 0);
+      // The sheet being edited is a texture, not a part: it has no material and
+      // so no relief of its own. Left set from the whole-car pass this would
+      // emboss one part's seams onto every surface in the picker.
+      gl.uniform1f(loc.hasBaseNormal, 0);
       // The surface being edited has no material behind it — it is one sheet,
       // not a part — so it keeps the tuned defaults.
       const flat = lightingFor(null);
@@ -910,6 +944,18 @@ export function createViewer(canvas) {
       gl.activeTexture(gl.TEXTURE0);
       gl.uniform1f(loc.hasDetailNormal, grain ? 1 : 0);
       gl.uniform1f(loc.detailNormalBlend, grain ? g.detail.normalBlend : 1);
+
+      // And the part's own relief, which is independent of BOTH of those: it
+      // rides on the material rather than on the two-layer pair, so a plain
+      // ksPerPixelNM part has one where it has no detail layer at all, and a
+      // painted surface has one where it has no stock texture. Not gated on
+      // `tex` for the same reason — the design supplies the colour, the car
+      // still supplies the shape.
+      const relief = g.normalMap ? byFile.get(g.normalMap) : null;
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, relief ?? unpainted);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.uniform1f(loc.hasBaseNormal, relief ? 1 : 0);
       // A RECORDED FACT, not a guess about a filename. The profile says which
       // sheets are shading rather than artwork; see profilegen, where the
       // choice is made once against the model and written down where a human
@@ -1638,6 +1684,12 @@ export function createViewer(canvas) {
         wanted.push({ map, file, upload });
       };
       for (const g of model.groups ?? []) {
+        // BEFORE the unpainted test, and outside it. A painted group has a
+        // material too, and its normal map belongs to the car rather than to
+        // the design — this is where a decal sheet's raised edges and a
+        // bodywork seam live. Uploaded like any other full-size sheet: one
+        // image over the part, clamped, carrying its own chain.
+        want(byFile, g.normalMap, uploadDds, 'f');
         if (g.role !== null) continue;
         want(byFile, g.file, uploadDds, 'f');
         // A two-layer material needs both halves: the per-part bake, which is

@@ -652,6 +652,44 @@ export function detailLayer(material) {
   };
 }
 
+/**
+ * The material's OWN normal map: the relief of the part itself — stitching,
+ * a panel seam, the moulding around a switch — at the diffuse's UV rather
+ * than tiled like the detail grain beside it. Two different maps doing two
+ * different jobs, and only `txNormalDetail` was ever being read.
+ *
+ * Gated on the SHADER NAME, which is the unusual part and is what keeps two
+ * accidents out of the picture. AC's shaders say in their names whether they
+ * sample this slot — ksPerPixelNM, ksPerPixelAT_NM, ksPerPixelMultiMap_NMDetail
+ * — and a kn5 binding a texture to a slot its shader never reads is ordinary.
+ * This car has both kinds:
+ *
+ *   * the carpaint is `ksPerPixelMultiMap_damage_dirt` and its `txNormal` is
+ *     `EXT_Damage_NM.dds`, the relief of a CRASHED panel, which the game
+ *     blends in by damage and this project always renders at zero. Sampled
+ *     unconditionally it would put dents down the side of an undamaged car.
+ *   * `LUMIRANK` binds one to a plain `ksPerPixelMultiMap`, which has no
+ *     normal to sample it into at all.
+ *
+ * Matched case-sensitively, so a mod shader spelling it `nm` gets no base
+ * normal and renders exactly as it does today. That is the safe direction to
+ * fail in: this test failing leaves a surface flatter than it should be, and
+ * the other one covers a car in relief nothing in the game shows.
+ *
+ * `nmObjectSpace` is the other refusal. Such a map stores its direction in the
+ * MODEL'S frame rather than the surface's, so putting it through a tangent
+ * basis points every fragment somewhere arbitrary. Two materials here set it.
+ */
+export function baseNormal(material) {
+  if (!/NM/.test(material?.shader ?? '')) return null;
+  if (material?.props?.nmObjectSpace) return null;
+  const file = material?.slots?.txNormal;
+  // NULL.dds is Kunos's written-out empty slot and a real entry in the archive
+  // — see detailLayer, which learned this the same way.
+  if (typeof file !== 'string' || !file || file.toLowerCase() === 'null.dds') return null;
+  return file;
+}
+
 /** Meshes whose material's txDiffuse is `textureName`. */
 export function meshesUsingTexture(model, textureName) {
   const want = textureName.toLowerCase();
