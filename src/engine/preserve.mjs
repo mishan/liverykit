@@ -47,17 +47,79 @@ const dist = (a, b) => (Array.isArray(a) && Array.isArray(b)
  * Nothing is logged from in here: a function that both decides and narrates is
  * two functions, and only one of them is testable.
  */
-export function preserveHandwork(profile, prior) {
-  const report = { roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [], name: null };
+export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
+  const report = {
+    roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
+    name: null, skinOnly: [], dangling: [],
+  };
   if (!prior) return report;
 
   preserveDisplayName(profile, prior, report);
   preserveRoleNames(profile, prior, report);
+  // BEFORE the panels and the aliases, both of which skip a role the profile
+  // does not define — a role restored after them would come back bare.
+  preserveSkinOnlyRoles(profile, prior, report, skinsGiven);
   preserveBlocks(profile, prior, report);
   preserveTextureSizes(profile, prior, report);
   preserveUnmeasuredPanels(profile, prior, report);
   preserveAliases(profile, prior, report);
+  dropDanglingBindings(profile, report);
   return report;
+}
+
+/**
+ * Roles only a skins folder knows about, when this run had no skins folder.
+ *
+ * A car's skins legitimately contain textures the model has never heard of: the
+ * driver's helmet, suit and gloves are a separate kn5 under content/driver/ and
+ * the pit crew is another again, and a car skin overrides all of them. The
+ * generator files those as `sizeFrom: "skin"`, and its own comment says why —
+ * dropping them silently stops painting the driver.
+ *
+ * Regenerating without `--skins` dropped them anyway, because there was nowhere
+ * to see them from. That is not a measurement saying the role is gone; it is a
+ * flag that was not passed, and the difference matters: the roles vanished, the
+ * human-confirmed `bind` entries that named them were kept by the merge beside
+ * this, and the profile that came out could not be LOADED at all —
+ * `bind."crew" points at texture role "crew", which this profile does not
+ * define`. A regeneration that writes a file nothing can open is the worst
+ * shape this whole module exists to prevent.
+ *
+ * So when the run had no skins to look at, what the prior knew about them
+ * stands. When it did have them and a role is gone, the skins no longer carry
+ * that file and measurement wins, as everywhere else here.
+ */
+function preserveSkinOnlyRoles(profile, prior, report, skinsGiven) {
+  if (skinsGiven) return;
+  for (const [role, was] of Object.entries(prior.textures ?? {})) {
+    if (was?.sizeFrom !== 'skin' || profile.textures?.[role]) continue;
+    (profile.textures ??= {})[role] = structuredClone(was);
+    const panels = prior.panels?.[role];
+    if (panels && Object.keys(panels).length) (profile.panels ??= {})[role] = structuredClone(panels);
+    else (profile.panels ??= {})[role] ??= {};
+    report.skinOnly.push({ role, file: was.file });
+  }
+}
+
+/**
+ * A binding that survived everything above and still names nothing.
+ *
+ * `mergeBindings` keeps what a human confirmed, which is right, and it cannot
+ * know whether the role that binding named is still here. Left in, the profile
+ * does not load — so the binding goes, LOUDLY, rather than the file being
+ * unopenable. Only ever reached when the role is genuinely gone: a role missing
+ * because nobody passed `--skins` was put back a few lines up.
+ */
+function dropDanglingBindings(profile, report) {
+  for (const [term, entry] of Object.entries(profile.bind ?? {})) {
+    const roles = Array.isArray(entry?.roles) ? entry.roles : [];
+    const kept = roles.filter((r) => profile.textures?.[r]);
+    if (kept.length === roles.length) continue;
+    const lost = roles.filter((r) => !profile.textures?.[r]);
+    if (!kept.length) delete profile.bind[term];
+    else profile.bind[term] = { ...entry, roles: kept };
+    report.dangling.push({ term, roles: lost, source: entry?.source ?? 'auto' });
+  }
 }
 
 /**
@@ -271,6 +333,19 @@ export function describeHandwork(report, source) {
   if (report.gone.length) {
     out.push(`  ${report.gone.length} alias(es) name a panel this model no longer has, and were dropped:`);
     for (const g of report.gone) out.push(`    ${g}`);
+  }
+  if (report.skinOnly.length) {
+    out.push(`  kept ${report.skinOnly.length} role(s) only a skins folder knows about, ` +
+      'because this run had none to look at:');
+    for (const s of report.skinOnly) out.push(`    ${s.role}  (${s.file})`);
+    out.push('    Pass --skins <car>/skins to measure them again instead.');
+  }
+  if (report.dangling.length) {
+    out.push(`  ${report.dangling.length} binding(s) name a role this model no longer has, ` +
+      'and were dropped — a profile that kept them could not be loaded at all:');
+    for (const d of report.dangling) {
+      out.push(`    ${d.term} -> ${d.roles.join(', ')}${d.source === 'human' ? '  (confirmed by hand — worth a look)' : ''}`);
+    }
   }
   return out;
 }
