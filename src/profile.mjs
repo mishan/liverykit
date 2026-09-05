@@ -671,7 +671,7 @@ function mappedQuad(m, r) {
  * centimetre and a half across and the intake surround along its whole rear
  * edge; `minCross` is what sends a band through the surround.
  */
-export function spanPlacements(profile, role, homeName, home, { depth = 3, minCross = 0.03 } = {}) {
+export function spanPlacements(profile, role, homeName, home, { depth = 3, minCross = 0.03, notes = null } = {}) {
   const panels = profile.panels?.[role] ?? {};
   const start = panelName(profile, role, homeName);
   const rect = { x: home.x, y: home.y, w: home.w, h: home.h };
@@ -735,17 +735,42 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
   // profile generated before seams existed carries none; regenerating it is
   // the fix, and it is not something anybody would guess at from a picture of
   // a stripe that stops short.
+  //
+  // CLIPPED AND SAID OUT LOUD where the caller offers somewhere to say it, and
+  // still an exception where it does not.
+  //
+  // Throwing was the whole answer for two days and it was the wrong shape. It
+  // comes out of here with nothing to catch it, so the editor's /api/preview
+  // answered 500 and drew no car at all — for two of the three profiles in
+  // this repo, because anything generated before seam maps existed carries
+  // none. An editor that will not open is a worse way to learn this than a
+  // stripe that stops at a panel edge with a line of text beside it saying
+  // why, and it leaves nobody able to look at the design that caused it.
+  //
+  // The exception stays for a caller with no channel, so a new one cannot lose
+  // the report by forgetting to ask for it — the report is what this refuses
+  // to do without, not the failure.
   const seamCount = Object.keys(panels[start]?.seams ?? {}).length;
   if (!seamCount && polyArea(homePiece) < whole - 1e-9) {
-    throw new Error(
-      `A region with span: true on panel ${role}.${start} runs past that panel's edge, ` +
-      `and ${start} has no seam maps — so there is nowhere for the rest of it to go and it ` +
-      'would be silently clipped.\n' +
-      '  If this profile was generated before seam maps existed, regenerate it ' +
-      '(liverykit --from-kn5 <car.kn5>).\n' +
-      '  If it is current, this island has no measured neighbour: keep the region inside ' +
-      'the panel, or drop span: true.'
-    );
+    if (!notes) {
+      throw new Error(
+        `A region with span: true on panel ${role}.${start} runs past that panel's edge, ` +
+        `and ${start} has no seam maps — so there is nowhere for the rest of it to go and it ` +
+        'would be silently clipped.\n' +
+        '  If this profile was generated before seam maps existed, regenerate it ' +
+        '(liverykit --from-kn5 <car.kn5>).\n' +
+        '  If it is current, this island has no measured neighbour: keep the region inside ' +
+        'the panel, or drop span: true.'
+      );
+    }
+    notes.push({
+      term: `${role}.${start}`,
+      status: 'clipped',
+      text: `${role}.${start}: a spanning region runs past the panel's edge and this profile `
+        + 'has no seam maps for it, so the artwork stops at the edge. Regenerate the profile '
+        + '(liverykit --from-kn5 <car.kn5>) to give the island its neighbours, or drop span: true.',
+    });
+    return [{ panel: start, matrix: IDENTITY, on: polyBox(homePiece), hops: 0, crossed: Infinity, poly: homePiece }];
   }
 
   const best = new Map([[start, { panel: start, matrix: IDENTITY, piece: homePiece, on: polyBox(homePiece), hops: 0, crossed: Infinity }]]);
