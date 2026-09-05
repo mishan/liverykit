@@ -1713,7 +1713,15 @@ export function createViewer(canvas) {
           try {
             const res = await fetch(`/api/stock?file=${encodeURIComponent(wanted[i].file)}`);
             if (res.ok) bytes[i] = await res.arrayBuffer();
-            else if (res.status !== 404) stockFailed.push(`${wanted[i].file} (${res.status})`);
+            else {
+              // CANCELLED, not merely ignored. A response body that is neither
+              // read nor cancelled holds its stream open and the connection
+              // with it — and the common case here is not an error at all: an
+              // encrypted car answers 404 for every texture it has, six lanes
+              // at a time.
+              res.body?.cancel().catch(() => { /* already gone */ });
+              if (res.status !== 404) stockFailed.push(`${wanted[i].file} (${res.status})`);
+            }
           } catch (e) { stockFailed.push(`${wanted[i].file} (${e.message})`); }
           arrived[i] = true;
           drain();
