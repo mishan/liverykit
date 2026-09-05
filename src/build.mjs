@@ -293,14 +293,23 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
   const files = targets.map((t) => ({ role: t.role, file: texture(profile, t.role).file }));
   const g = wholeModelGeometry(model, files, { livery, profile });
 
-  // Downsized before it reaches the rasteriser, same as `shot.mjs`'s own
-  // `sheet()` does for render_car: a shot is a few hundred pixels across, and
-  // sampling a 2048 sheet at that size for nothing anybody can see is seconds
-  // spent on a picture nobody asked to be that precise.
+  // FULL RESOLUTION, and it used to be 512.
+  //
+  // That downsize was reasoned from a 900x560 shot: a few hundred pixels
+  // across, so a 2048 sheet is more detail than can survive. The reasoning was
+  // right and the numbers stopped being true. This frame is 1555x835, rendered
+  // two samples over at 3110x1670, and a door that spans six hundred of those
+  // pixels was reading a couple of hundred texels — every texel four pixels
+  // wide, sampled nearest, which is what put the staircase on the number and
+  // the sponsor text. That is not edge aliasing and no amount of supersampling
+  // touches it.
+  //
+  // It is also nearly free: decoding one of these PNGs straight to raw is
+  // ~13 ms, where resizing it to 512 on the way was ~35. The resize was the
+  // expensive half.
   const sheets = new Map();
   for (const [role, png] of pngByRole) {
     const { data, info } = await sharp(png)
-      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
       .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     sheets.set(role, { data, w: info.width, h: info.height });
   }
