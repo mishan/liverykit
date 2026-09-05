@@ -38,6 +38,24 @@ Nothing in the material distinguishes them. This wants the same treatment the
 whether a MultiMap diffuse is a standalone image, seeded by the generator and
 correctable by a human who can see the car.
 
+## A texture whose slot is spelled in another case vanishes from the profile
+
+`profilegen` builds `boundAs` keyed by the spelling in the material's SLOT and
+then looks it up by the spelling in the texture ENTRY. A kn5 where those differ
+in case only — which nothing in the format forbids, and which `meshesUsingTexture`
+already guards against by lowercasing both — files the texture as "shipped but
+never bound" and drops it. Not merely unpaintable: absent. It is in no list, it
+gets no `bake` seed, and the report has nothing to say about it.
+
+`headers`, `coverage` and `shadersOf` are keyed the same way, so the fix is to
+normalise the key once where these maps are built rather than at each lookup.
+There is a test in carconfig.test.mjs asserting the current behaviour, so that
+whoever changes it can see what changes.
+
+No car here has triggered it. It is written down because it was found while
+removing a redundant case-sensitive comparison one layer further in, and the
+outer one is the one that actually bites.
+
 ## `trustworthyDiffuse` is still an inference
 
 Same class of problem as the one `bake` was moved out of. It decides from the
