@@ -63,6 +63,13 @@ uniform vec4 twinPanel;   // and where that one lives
 uniform float border;     // border thickness, in UV units
 uniform float lit;        // 0 = true colour, 1 = shaded like a car
 uniform float glass;      // 1 = this group is reflective glass
+// 1 = take this group's transparency from the texture's alpha channel.
+//
+// NOT unconditional, and the canvas is why: it is created with an alpha
+// channel, so an opaque pass that writes alpha below 1 lets the page show
+// through the car. Only the alpha-blended pass asks for this, and only for
+// groups that are not glass — glass builds its own from the fresnel below.
+uniform float texAlpha;
 uniform vec3 eye;         // camera position, for the specular lobes
 varying vec2 vUv;
 varying vec3 vN;
@@ -126,8 +133,15 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v, float glassRim) {
 }
 
 void main() {
-  vec3 c = texture2D(map, vUv).rgb;
-  float alpha = 1.0;
+  vec4 texel = texture2D(map, vUv);
+  vec3 c = texel.rgb;
+  // The alpha-blended pass runs gl.blendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA),
+  // and this used to hand it a hard 1.0 for everything that was not glass —
+  // which composites as fully opaque and makes the whole pass a no-op for the
+  // surfaces it exists for. A decal sheet or a mask carries its shape in the
+  // alpha channel; ignoring it draws the transparent part as whatever colour
+  // happens to sit under it.
+  float alpha = texAlpha > 0.5 ? texel.a : 1.0;
 
   // Both faces are drawn, because car meshes are not reliably wound, so a
   // normal can point away from the camera on a perfectly visible surface.
@@ -440,6 +454,7 @@ export function createViewer(canvas) {
     border: gl.getUniformLocation(prog, 'border'),
     lit: gl.getUniformLocation(prog, 'lit'),
     glass: gl.getUniformLocation(prog, 'glass'),
+    texAlpha: gl.getUniformLocation(prog, 'texAlpha'),
     eye: gl.getUniformLocation(prog, 'eye'),
   };
 
@@ -640,6 +655,11 @@ export function createViewer(canvas) {
       if (!tex && g.blend && !g.glass) return;
 
       gl.uniform1f(loc.glass, g.glass ? 1 : 0);
+      // Only where it is both meaningful and safe: an alpha-blended group that
+      // is not glass and not additive. The opaque pass must keep writing 1, or
+      // the page shows through the car; glass overrides alpha with its fresnel;
+      // additive uses blendFunc(ONE, ONE) and never reads it.
+      gl.uniform1f(loc.texAlpha, g.blend && !g.glass && !g.add ? 1 : 0);
       gl.bindTexture(gl.TEXTURE_2D, tex ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     };
