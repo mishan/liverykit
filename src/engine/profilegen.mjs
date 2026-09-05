@@ -280,18 +280,22 @@ export async function profileFromKn5(path, {
     // A seed, not a verdict. It is recorded so that a human who can see the car
     // can correct it, which is the entire reason it belongs in a file rather
     // than in a regular expression.
+    //
+    // `meshesUsingTexture` already means "meshes whose material binds this as
+    // its DIFFUSE", and it compares case-insensitively. This used to re-check
+    // `slots.txDiffuse === tex.name` on top of that, which asked the same
+    // question a second time and asked it with `===` — so a kn5 that spells
+    // the slot in a different case from the texture entry answered no to the
+    // stricter test and the bake went unrecorded.
     const namedLikeABake = /occlusion|_bake|bakes|_ao(_|\.)/i.test(tex.name);
-    const isABaseLayer = meshesUsingTexture(model, tex.name).some((m) => {
-      const mat = model.materials?.[m.materialId];
-      return mat?.slots?.txDiffuse === tex.name && detailLayer(mat) !== null;
-    });
+    const wearers = meshesUsingTexture(model, tex.name);
+    const isABaseLayer = wearers.some((m) => detailLayer(model.materials?.[m.materialId]) !== null);
     if (namedLikeABake && isABaseLayer) entry.bake = true;
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.
-    if (hides) {
-      const wearers = meshesUsingTexture(model, tex.name);
-      if (wearers.length && wearers.every((m) => hides.hidden.has(m.name))) entry.hiddenByCar = true;
+    if (hides && wearers.length && wearers.every((m) => hides.hidden.has(m.name))) {
+      entry.hiddenByCar = true;
     }
 
     // On an encrypted model every embedded texture is a 1x1 placeholder, so the

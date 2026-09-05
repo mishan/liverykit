@@ -39,6 +39,16 @@ export function buildKn5({
   // cockpits contain meshes called the same thing and only the node above
   // them says which is which. `[{ name, meshes: [...] }]`.
   wrapped = [],
+  // The one material this fixture emits, for tests about MATERIALS rather than
+  // about geometry: `{ shader, props: { detailUVMultiplier: 377 }, slots: {
+  // txDetail: 'carbon.dds' } }`. txDiffuse defaults to the texture above and
+  // can be overridden — deliberately, since the spelling of a slot need not
+  // match the spelling of the texture entry, and code that compares the two
+  // with `===` has been wrong about that.
+  material = {},
+  // What the one texture is CALLED. Several rules read a texture's name — the
+  // bake seed is one — so a test about those needs to choose it.
+  textureName = 'body.dds',
 } = {}) {
   const parts = [];
 
@@ -51,11 +61,21 @@ export function buildKn5({
   // lives in the protected blob appended after the node tree.
   dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
   dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
-  parts.push(u32(2), u32(0), u32(1), str('body.dds'), u32(dds.length), dds);
+  parts.push(u32(2), u32(0), u32(1), str(textureName), u32(dds.length), dds);
 
   // one material binding that texture as a diffuse
-  parts.push(u32(1), str('BodyMat'), str('ksPerPixel'), Buffer.from([0, 0]), u32(0),
-    u32(0), u32(1), str('txDiffuse'), u32(0), str('body.dds'));
+  const slots = { txDiffuse: textureName, ...(material.slots ?? {}) };
+  const props = material.props ?? {};
+  parts.push(
+    u32(1), str(material.name ?? 'BodyMat'), str(material.shader ?? 'ksPerPixel'),
+    Buffer.from([0, 0]), u32(0),
+    // Each property is its key, then valueA, then 36 bytes of the vec2/3/4
+    // behind it that the parser skips as one.
+    u32(Object.keys(props).length),
+    ...Object.entries(props).map(([k, v]) => Buffer.concat([str(k), f32(v), Buffer.alloc(36)])),
+    u32(Object.keys(slots).length),
+    ...Object.entries(slots).map(([k, v]) => Buffer.concat([str(k), u32(0), str(v)])),
+  );
 
   // root dummy -> one mesh child, plus whatever the caller added
   const children = 1 + extraMeshes.length + dummies.length + wrapped.length;
