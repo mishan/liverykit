@@ -215,6 +215,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
     overlaps(placed, t, sayHere);
     outsideSafe(placed, profile, t, sayHere);
+    hiddenFace(placed, profile, t, sayHere);
     unreadable(placed, profile, t, sayHere);
     unmirrored(placed, profile, t, sayHere);
     if (seen) unseen(placed, profile, t, seen, sayHere);
@@ -236,8 +237,8 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'unreadable', 'unmirrored', 'unseen',
-  'off-mesh', 'crossed', 'bad-constraint', 'unpainted-twin'];
+const ALL_CHECKS = ['overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
+  'unseen', 'off-mesh', 'crossed', 'bad-constraint', 'unpainted-twin'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -261,7 +262,7 @@ function placements(profile, t, spec, fit) {
   // swallowing this here made a livery that cannot be resolved at all look
   // identical to one that is clean. The caller turns the throw into a `fatal`.
   const expanded = expandRegions(profile, t.role, fitted);
-  const out = expanded.regions.filter((r) => r.panel).flatMap((r, i) => {
+  const out = expanded.regions.flatMap((r, i) => {
     let frac = null;
     try {
       frac = resolveRect(profile, t.role, r);
@@ -410,6 +411,90 @@ function outsideSafe(placed, profile, t, say) {
       share: round(share),
       why: `${(100 - share * 100).toFixed(0)}% of ${p.id} is outside the readable part of ` +
         `${p.region.panel}, which measurement put at [${pan.safe.map(round).join(', ')}]`,
+    });
+  }
+}
+
+/**
+ * Artwork on the face of a sheet nobody outside the car can see.
+ *
+ * A two-sided part shares ONE texture between the side the world sees and the
+ * side only the driver does. This Honda's windscreen banner is exactly that:
+ * EXT_Banner and INT_Banner on one sheet, the outward face in its top half and
+ * the underside plus the interior mesh in its bottom. A team name placed in
+ * sheet coordinates landed in the bottom half, read perfectly from the driver's
+ * seat, and appeared nowhere from outside. Nothing said so; it took somebody
+ * noticing it from the wrong seat.
+ *
+ * `unseen` looks as though it should have caught it and cannot. That check
+ * casts at the placement's BOX, and a box straddling both faces collects
+ * enough visible samples from the outward half to pass while every glyph
+ * inside it sits on the inward one.
+ *
+ * Panel rects are bounding boxes and overlap each other, so the shares here are
+ * the largest single panel of each kind rather than a sum — summing would
+ * credit more area than the placement has.
+ *
+ * SILENT where the whole sheet is out of sight. An interior, a tub, the
+ * underside of a floor: painting those is deliberate, and a checker that
+ * reports it teaches people to ignore it.
+ */
+function hiddenFace(placed, profile, t, say) {
+  const named = Object.entries(profile.panels?.[t.role] ?? {})
+    .filter(([, q]) => Array.isArray(q.rect) && typeof q.visible === 'number');
+  const outward = named.filter(([, q]) => q.visible > 0);
+  const inward = named.filter(([, q]) => q.visible === 0);
+  // Nothing to compare. A sheet with no measured visibility, one the world sees
+  // all of, or one it sees none of — in every case this has no question to ask.
+  if (!outward.length || !inward.length) return;
+
+  // The name a design would write, where the profile carries one.
+  const friendly = (n) => {
+    const alias = Object.entries(profile.aliases?.[t.role] ?? {}).find(([, v]) => v === n);
+    return alias ? `${alias[0]} (${n})` : n;
+  };
+  const best = (list, p) => list.reduce((won, [n, q]) => {
+    const covered = intersect(p.frac, rectOf(q.rect));
+    return covered > won.covered ? { name: n, panel: q, covered } : won;
+  }, { name: null, panel: null, covered: 0 });
+
+  for (const p of placed) {
+    // A BACKGROUND IS NOT A PLACEMENT ON A FACE. A fill over the sheet covers
+    // both of them by definition, and saying so about every design's first
+    // region is how a checker earns its way into being ignored.
+    const size = area(p.frac);
+    if (size > 0.5) continue;
+    const hidden = best(inward, p);
+    const shown = best(outward, p);
+    const onIn = hidden.covered / (size || 1);
+    const onOut = shown.covered / (size || 1);
+    if (onIn < 0.5 || onIn <= onOut) continue;
+    // A SPILLED PIECE IS ALLOWED TO BE HERE, which is the same forgiveness
+    // `unseen` extends and for the same reason: a band that runs off a fender
+    // continues into the wheel arch liner, because that is where the bodywork
+    // goes. Nobody placed that piece and out of sight is exactly where it
+    // belongs. Words are the exception — a name is placed wherever it lands.
+    if (p.region.span === true && p.spilled && p.region.treatment !== 'text') continue;
+    const cockpit = hidden.panel.visibleFromCockpit;
+    say({
+      kind: 'hidden-face',
+      // Text is the case that matters: a name or a number painted where the
+      // world cannot read it is the whole point of the surface being missed.
+      severity: onOut < 0.15 || p.region.treatment === 'text' ? 'high' : 'low',
+      surface: t.from,
+      panel: p.region.panel,
+      ids: [p.id],
+      onto: hidden.name,
+      instead: shown.name,
+      share: round(onIn),
+      why: `${Math.round(onIn * 100)}% of ${name(t, p.id)} is on ${friendly(hidden.name)}, ` +
+        'which measurement puts at 0% visible from trackside' +
+        (typeof cockpit === 'number' && cockpit > 0
+          ? ` and ${Math.round(cockpit * 100)}% from the driver's seat — so it shows to the driver and to nobody else`
+          : ' — so it shows nowhere') +
+        `. ${friendly(shown.name)} is the face of this same sheet the world sees ` +
+        `(${Math.round(shown.panel.visible * 100)}% visible)` +
+        (onOut > 0 ? `, and only ${Math.round(onOut * 100)}% of this lands there` : ''),
     });
   }
 }
