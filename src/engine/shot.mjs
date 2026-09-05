@@ -59,11 +59,18 @@ export const VIEWS = {
 /**
  * Rasterise one texture's SVG to raw RGBA.
  *
- * Kept small on purpose: the shot is a few hundred pixels across, so a 2048
- * sheet is far more detail than can survive, and rasterising them all at full
- * size costs seconds per call for nothing anybody can see.
+ * Bounded on purpose, but not as tightly as it was. 512 left every texel
+ * several pixels wide once the frame grew and the sampling supersampled, which
+ * reads as a staircase on lettering — not edge aliasing, and nothing
+ * supersampling can touch.
+ *
+ * 1024 rather than the source's 2048 because of where the cost is: librsvg
+ * takes ~167 ms at 512, ~270 ms at 1024 and ~3.0 s at 2048 for one of these
+ * sheets, and seven of those is twenty seconds for a screenshot somebody is
+ * waiting on. The build's own preview does not come through here — it holds
+ * the rendered PNGs already and decodes them at full size for ~13 ms each.
  */
-async function sheet(svg, size = 512) {
+async function sheet(svg, size = 1024) {
   const { data, info } = await sharp(Buffer.from(svg))
     // ASPECT PRESERVED. `fit: 'fill'` at size x size squashed this car's
     // 2048x512 tyre sheet into a square and threw away three quarters of its
@@ -157,6 +164,17 @@ export function rasterise(model, groups, sheets, {
   // fragments, and the fragments are the cost here. Three is visibly better
   // still on thin geometry and costs nine.
   samples = 2,
+  // The ground the car stands on. AC's own showroom previews put it on a dark
+  // reflective floor, and without one a render floats in a void — which is the
+  // difference between a picture of a car and a picture of a mesh.
+  //
+  // `false` for the mirrored pass below, which must not recurse, and for any
+  // caller that wants the geometry and nothing else.
+  floor = true,
+  // The box to frame, when the caller already knows it. The mirrored pass needs
+  // this: derived from its own positions it would frame the reflection rather
+  // than the car, and the two passes have to share one camera exactly.
+  bounds = null,
 } = {}) {
   // Everything below works in SAMPLE space and the result is boxed down at the
   // end, so the projection, the depth buffer and the triangle walk are the
@@ -170,12 +188,14 @@ export function rasterise(model, groups, sheets, {
   const { yaw, pitch } = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
   const { positions, uvs, normals, indices } = model;
 
-  let lo = [Infinity, Infinity, Infinity];
-  let hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < positions.length; i += 3) {
-    for (let k = 0; k < 3; k++) {
-      if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
-      if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
+  let lo = bounds ? [...bounds.lo] : [Infinity, Infinity, Infinity];
+  let hi = bounds ? [...bounds.hi] : [-Infinity, -Infinity, -Infinity];
+  if (!bounds) {
+    for (let i = 0; i < positions.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
+        if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
+      }
     }
   }
   const target = [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2);
@@ -206,9 +226,109 @@ export function rasterise(model, groups, sheets, {
   const px = Buffer.alloc(width * height * 4);
   for (let i = 0; i < width * height; i++) {
     px[i * 4] = background[0]; px[i * 4 + 1] = background[1];
-    px[i * 4 + 2] = background[2]; px[i * 4 + 3] = 255;
+    // Alpha is COVERAGE, not transparency: nothing below writes it except a
+    // fragment landing, so a caller that starts it at zero can ask afterwards
+    // which pixels the model actually reached. The mirrored pass does exactly
+    // that; every ordinary caller starts at 255 and never notices.
+    px[i * 4 + 2] = background[2]; px[i * 4 + 3] = background[3] ?? 255;
   }
   const depth = new Float32Array(width * height).fill(Infinity);
+
+  // ---------------------------------------------------------------------
+  // The ground, before the car, so the car simply draws over it.
+  //
+  // There is no floor SURFACE here and there does not need to be one. AC's
+  // showroom previews are a black room: what tells you the car is standing on
+  // something is the reflection under it and the dark that gathers where it
+  // meets the floor. Both are composited onto the background over the pixels
+  // whose ray reaches the ground plane, and nothing else changes.
+  // ---------------------------------------------------------------------
+  if (floor) {
+    const groundY = lo[1];
+    const cx = (lo[0] + hi[0]) / 2;
+    const cz = (lo[2] + hi[2]) / 2;
+    // A shade wider than the box, because a car's shadow is: the body
+    // overhangs the wheels and the light is not a point.
+    //
+    // Floored against the model's overall SPAN rather than against epsilon. A
+    // thing with no extent in one axis — a flat panel, a single quad — has a
+    // degenerate footprint, and dividing by that put the whole shadow inside a
+    // millimetre and the reflection nowhere, which looked exactly like the
+    // floor not working at all.
+    const rx = Math.max((hi[0] - lo[0]) / 2, span * 0.05) * 1.12;
+    const rz = Math.max((hi[2] - lo[2]) / 2, span * 0.05) * 1.12;
+
+    // The car again, upside down about the ground plane. Winding reverses and
+    // it does not matter: this renderer draws both faces and turns the normal
+    // to the camera, so a mirrored triangle shades like the one it came from.
+    const flipped = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+      flipped[i] = positions[i];
+      flipped[i + 1] = 2 * groundY - positions[i + 1];
+      flipped[i + 2] = positions[i + 2];
+    }
+    const flipNormals = new Float32Array(normals.length);
+    for (let i = 0; i < normals.length; i += 3) {
+      flipNormals[i] = normals[i];
+      flipNormals[i + 1] = -normals[i + 1];
+      flipNormals[i + 2] = normals[i + 2];
+    }
+    // ALREADY IN SAMPLE SPACE: width and height here are the supersampled
+    // pair, so asking for one sample of exactly this size reproduces this
+    // pass's camera to the pixel, and the reflection gets its antialiasing
+    // from the same box-down at the end that the car does.
+    const mirror = rasterise(
+      { positions: flipped, uvs, normals: flipNormals, indices },
+      groups, sheets,
+      { width, height, view, samples: 1, floor: false, bounds: { lo, hi },
+        background: [0, 0, 0, 0] },
+    );
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // The ray this pixel looks along, in the basis the projection uses.
+        const sx = x + 0.5 - width / 2;
+        const sy = height / 2 - (y + 0.5);
+        const dy = fwd[1] * focal + right[1] * sx + up[1] * sy;
+        if (dy > -1e-9) continue;                   // level with or above the horizon
+        const t = (groundY - eye[1]) / dy;
+        if (t <= 0) continue;                       // the plane is behind the camera
+        const hx = eye[0] + t * (fwd[0] * focal + right[0] * sx + up[0] * sy);
+        const hz = eye[2] + t * (fwd[2] * focal + right[2] * sx + up[2] * sy);
+        // Squared distance from the footprint, in units of the footprint, so
+        // one falloff constant works for a hatchback and a prototype alike.
+        const ex = (hx - cx) / rx;
+        const ez = (hz - cz) / rz;
+        const d2 = ex * ex + ez * ez;
+
+        const at = (y * width + x) * 4;
+        // Contact shadow. The falloff is in units of the footprint, and it
+        // was tighter: at 2.4 the shadow is 8% dark by the edge of the
+        // ellipse, which means all of it is under the car, where the car is
+        // standing on it and nobody can see it. Reaching a little past the
+        // silhouette is what makes the car look placed rather than pasted.
+        //
+        // There is not much room to work in either way. The floor is the
+        // background, #101016, so the whole dynamic range of a shadow here is
+        // twenty-odd levels down to black. AC's own previews have the same
+        // problem and solve it the same way — what actually grounds the car in
+        // those is the reflection, and this is the quieter half.
+        const dark = Math.exp(-d2 * 1.3) * 0.85;
+        for (let k = 0; k < 3; k++) px[at + k] = Math.round(px[at + k] * (1 - dark));
+
+        // Reflection, wherever the mirrored car reached this pixel. Weaker
+        // with distance — a real floor is not a mirror — and weaker again
+        // inside the shadow, which is what stops the reflection from glowing
+        // brightest exactly where the car occludes the light.
+        if (mirror.data[at + 3]) {
+          const w = Math.exp(-d2 * 0.55) * 0.34 * (1 - 0.5 * (dark / 0.9));
+          for (let k = 0; k < 3; k++) {
+            px[at + k] = Math.round(px[at + k] * (1 - w) + mirror.data[at + k] * w);
+          }
+        }
+      }
+    }
+  }
 
   const project = (i) => {
     const p = [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]];
@@ -310,16 +430,47 @@ export function rasterise(model, groups, sheets, {
           let rgb = BARE;
           let alpha = 1;
           if (art) {
-            // Nearest, not bilinear. The shot is small, the artwork is large,
-            // and a blurred sample would hide exactly the hard edge — a name
-            // clipped by a panel seam — that this is for.
+            // Bilinear, and it was nearest.
+            //
+            // Nearest was argued for on the grounds that a blurred sample would
+            // hide the hard edge this exists to show — a name clipped by a
+            // panel seam. That holds when a texel is smaller than a pixel. Here
+            // it is bigger: the sheets magnify, and nearest under magnification
+            // does not preserve an edge, it invents a staircase along it and
+            // squares off every letter.
+            //
+            // With a full-resolution sheet the ratio is near 1:1, where the two
+            // filters agree anyway, and bilinear is the one that stays honest
+            // as the sheet shrinks relative to the frame.
             const u = w0 * uvs[ia * 2] + w1 * uvs[ib * 2] + w2 * uvs[ic * 2];
             const v = w0 * uvs[ia * 2 + 1] + w1 * uvs[ib * 2 + 1] + w2 * uvs[ic * 2 + 1];
-            const sx = Math.min(art.w - 1, Math.max(0, Math.floor(u * art.w)));
-            const sy = Math.min(art.h - 1, Math.max(0, Math.floor(v * art.h)));
-            const o = (sy * art.w + sx) * 4;
-            rgb = [art.data[o], art.data[o + 1], art.data[o + 2]];
-            alpha = art.data[o + 3] / 255;
+            // Half-texel offset: texel centres sit at (i + 0.5) / size, so
+            // without it every sample is biased half a texel up and left and a
+            // 1:1 sheet comes out subtly soft instead of exact.
+            const fx = u * art.w - 0.5;
+            const fy = v * art.h - 0.5;
+            const x0 = Math.floor(fx);
+            const y0 = Math.floor(fy);
+            const tx = fx - x0;
+            const ty = fy - y0;
+            // CLAMPED, as the nearest version was. An island's UVs can run a
+            // hair outside [0,1] and wrapping there would fetch a neighbouring
+            // island's artwork onto the edge of this one.
+            const cx0 = x0 < 0 ? 0 : (x0 > art.w - 1 ? art.w - 1 : x0);
+            const cx1 = x0 + 1 < 0 ? 0 : (x0 + 1 > art.w - 1 ? art.w - 1 : x0 + 1);
+            const cy0 = y0 < 0 ? 0 : (y0 > art.h - 1 ? art.h - 1 : y0);
+            const cy1 = y0 + 1 < 0 ? 0 : (y0 + 1 > art.h - 1 ? art.h - 1 : y0 + 1);
+            const oa = (cy0 * art.w + cx0) * 4;
+            const ob = (cy0 * art.w + cx1) * 4;
+            const oc = (cy1 * art.w + cx0) * 4;
+            const od = (cy1 * art.w + cx1) * 4;
+            const mix = (k) => {
+              const top = art.data[oa + k] + (art.data[ob + k] - art.data[oa + k]) * tx;
+              const bot = art.data[oc + k] + (art.data[od + k] - art.data[oc + k]) * tx;
+              return top + (bot - top) * ty;
+            };
+            rgb = [mix(0), mix(1), mix(2)];
+            alpha = mix(3) / 255;
           }
 
           let n = norm([
@@ -361,6 +512,7 @@ export function rasterise(model, groups, sheets, {
               px[at * 4 + k] = Math.round(c[k] * a + px[at * 4 + k] * (1 - a));
             }
           }
+          px[at * 4 + 3] = 255;                     // covered — see the fill
         }
       }
     }

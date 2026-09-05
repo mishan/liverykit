@@ -915,3 +915,67 @@ test('the preview frame is taken from the car\'s own skins, by vote', async () =
   assert.equal(await previewFrame(join(bare, 'car.kn5')), null);
   assert.deepEqual(PREVIEW_FRAME, { width: 1022, height: 575 });
 });
+
+test('the car stands on a floor: a reflection under it and dark where it meets', async () => {
+  // AC's showroom previews are a black room, and what says the car is standing
+  // on something rather than floating in one is the mirrored copy below it and
+  // the dark that gathers at the contact. There is no floor surface drawn —
+  // both are composited onto the background over the pixels whose ray reaches
+  // the ground plane.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // A SLAB, not a single quad: two faces with real extent in x, because the
+  // contact shadow is an ellipse over the footprint and a flat thing has no
+  // footprint to speak of. Magenta, so a reflection is unmistakably the object
+  // rather than a lighting accident.
+  //
+  // LOW, and long along the axis the camera looks down. Neither is decoration.
+  // The camera frames whatever it is given by its LONGEST axis, so an object
+  // that is also long across the view fills the frame edge to edge and leaves
+  // no floor to test against — which is how the first version of this passed
+  // the reflection check and could not see the shadow at all. Long towards the
+  // camera and low, and there is floor on three sides of it.
+  const face = (x) => [x, 0, -0.3, x, 0, 0.3, x, 0.35, 0.3, x, 0.35, -0.3];
+  const slab = {
+    positions: new Float32Array([...face(-1), ...face(1)]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  const art = { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) };
+  const draw = (floor) => rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+    new Map([['body', art]]), { view: 'left', width: 120, height: 120, floor, samples: 1 });
+
+  const bare = draw(false);
+  const stood = draw(true);
+  const px = (img, i) => [0, 1, 2].map((k) => img.data[i * 4 + k]);
+
+  // Somewhere below the object the two must disagree, and the version with a
+  // floor must be the one carrying the object's magenta — a reflection, not
+  // a shading difference.
+  let reflected = -1;
+  let darkened = -1;
+  for (let i = 0; i < 120 * 120; i++) {
+    const [r, g, b] = px(stood, i);
+    const [br, bg, bb] = px(bare, i);
+    if (r === br && g === bg && b === bb) continue;
+    if (r > br + 8 && r > g + 8 && b > g + 8) reflected = i;
+    if (r < br && g < bg && b < bb) darkened = i;
+  }
+  assert.ok(reflected >= 0, 'the object should be mirrored onto the floor below it');
+  assert.ok(darkened >= 0, 'and the floor should darken where the object meets it');
+  // Below, not above: a reflection over the object would mean the mirror pass
+  // and the car pass disagree about where the ground is.
+  assert.ok(Math.floor(reflected / 120) > 60, `the reflection belongs under the object, row ${Math.floor(reflected / 120) }`);
+
+  // The mirrored pass renders flipped geometry through THIS pass's camera, and
+  // it can only do that if `bounds` fully determines the framing. If it ever
+  // stops doing so the reflection slides out from under the car and nothing
+  // else complains.
+  const framed = rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+    new Map([['body', art]]),
+    { view: 'left', width: 120, height: 120, floor: false, samples: 1,
+      bounds: { lo: [-1, 0, -0.3], hi: [1, 0.35, 0.3] } });
+  assert.deepEqual(Buffer.from(framed.data), Buffer.from(bare.data),
+    'stated bounds must frame exactly as measured ones do');
+});
