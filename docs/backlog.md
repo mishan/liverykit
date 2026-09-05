@@ -37,6 +37,38 @@ Nothing in the material distinguishes them. This wants the same treatment the
 whether a MultiMap diffuse is a standalone image, seeded by the generator and
 correctable by a human who can see the car.
 
+## Some of the car's own textures decode in the browser and not in Node
+
+Both Node renderers now dress an unpainted part in the car's own artwork, and
+`decodeDds` — which shells out to ImageMagick — returns null for four of this
+NSX's textures. Three are uncompressed 16-bit A8L8: `INT_Bakes_2.dds`,
+`SEAMLESS_PLASTIC.dds` and `metal_detail_2.dds`, all `DDPF_LUMINANCE |
+DDPF_ALPHAPIXELS`, no fourCC, no mip chain. The RSS4's `HUB_1.dds` is another.
+The parts wearing them draw grey; the build's log and the shot's
+`x-liverykit-absent` header name them rather than dropping them quietly, which
+is the only reason this is written down rather than still invisible.
+
+The editor shows all four correctly, which is the tell. `decodeDds` in
+`view3d.js` reads exactly this layout — it grew its luminance branch for
+`metal_detail_2.dds`, through the channel masks rather than by assuming a byte
+order — so the same file decodes in the browser and not in Node. That is the
+two renderers disagreeing about the car again, this time across a decoder this
+project owns on one side and rents on the other.
+
+So the fix is probably to stop asking ImageMagick first: that pixel loop is
+about forty lines of arithmetic with no DOM in it, and lifting it into
+`engine/` would give both sides one answer, leaving ImageMagick the block
+formats it does handle. What it would have to establish is that the lift is
+faithful — it is the viewer's hot path, it is written for `ArrayBuffer` and
+`Uint8Array` rather than `Buffer`, and a test that decodes one known file both
+ways is what would say so.
+
+`Display.dds` is the fourth and a different question. It carries a DX10 header
+with `dxgiFormat` 98, which is BC7 — and AC is a DX9 engine that silently
+ignores a DDS with a DX10 header, so the game does not draw this file either.
+Whatever is on that display in the car, it is not this texture, and decoding
+it would make the render show something the game does not.
+
 ## A texture whose slot is spelled in another case vanishes from the profile
 
 `profilegen` builds `boundAs` keyed by the spelling in the material's SLOT and
