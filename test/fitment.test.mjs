@@ -194,6 +194,36 @@ test('artwork on the face of a sheet the world cannot see is reported', () => {
   assert.deepEqual(nothingToSay.findings.filter((f) => f.kind === 'hidden-face'), []);
 });
 
+test('artwork wholly on the hidden face is the worst case, not a crash', () => {
+  // The case this check exists for, and the one it could not survive. A
+  // placement entirely on the inward face overlaps NO outward panel, so
+  // "the outward panel it overlaps most" is nothing at all — and the finding
+  // went looking for that panel's visibility. A region straddling the seam
+  // has one and does not, which is why the first test of this passed.
+  //
+  // Where to put it instead cannot come from where the artwork wrongly is. It
+  // is the sheet's most visible face, which exists whether or not the
+  // placement ever reached it.
+  const twoFaced = structuredClone(profile);
+  twoFaced.panels.body = {
+    outside: { rect: [0.1, 0.02, 0.8, 0.44], anisotropy: 1, metresPerUv: [4, 4], visible: 0.59 },
+    lip: { rect: [0.1, 0.46, 0.8, 0.02], anisotropy: 1, metresPerUv: [4, 4], visible: 0.2 },
+    inside: { rect: [0.1, 0.5, 0.8, 0.47], anisotropy: 1, metresPerUv: [4, 4], visible: 0 },
+  };
+
+  const r = fitment(design([
+    { id: 'team', treatment: 'text', at: [0.2, 0.6, 0.5, 0.2], text: 'T' },
+  ]), twoFaced);
+
+  const hidden = r.findings.filter((f) => f.kind === 'hidden-face');
+  assert.equal(hidden.length, 1);
+  assert.equal(hidden[0].severity, 'high');
+  assert.equal(hidden[0].onto, 'inside');
+  assert.equal(hidden[0].instead, 'outside', 'the most visible face, not the least');
+  assert.match(hidden[0].why, /none of this reaches it/);
+  assert.match(hidden[0].why, /100% of team is on inside/);
+});
+
 test('a placement mostly off the model is reported before its visibility is', () => {
   // The mistake that started all of this, finally caught.
   //
