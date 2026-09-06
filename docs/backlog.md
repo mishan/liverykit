@@ -7,6 +7,93 @@ identifying the surface, not changing the code.
 
 Ordered roughly by how much they cost the person looking at the preview.
 
+## Portability, measured: what a portable design does on an untouched car
+
+Written from a sweep rather than an impression, so the entries under it can be
+argued with. 26 cars were sampled from a 254-car install — every eleventh, plus
+the three this repository already knows — profiled from scratch with
+`profileFromKn5` (no prior, no aliases, no hand-work of any kind), and then
+`liveries/neon-grid-any.mjs` was resolved against each and run through
+`fitment`. 25 profiled cleanly; the miss was the sampler's own "not a LOD"
+filter meeting a car whose only model is `<id>_LODA.kn5`. Sizes ran 25-75
+textures and 2-855 panels.
+
+**The format and the checker held.** Zero fatal findings across 25 unfamiliar
+cars; everything reported was a low-severity overlap or mirror mismatch from
+the design's own layering. Nothing about the design file, the fit file or the
+fitment machinery is the weak part. The sweep ran without a model, so the
+geometry checks — `unseen`, `off-mesh`, `unpainted-twin` — did not run, and
+nothing was built or rendered: this measures resolution and placement.
+
+**The design painted two surfaces on every car**: `body` and `tyres`. What
+follows is why, in the order worth fixing.
+
+## A candidate with no islands is still eligible to be the body
+
+Of 25 cars, the body binding was confident (>= 0.7) on 20, shaky on 3, and a
+guess on 2: `ks_mclaren_650_gt3` at 0.11 and `mclaren_mp412c_gt3` at 0.19. The
+second is the instructive one. It bound `body` to a role called `black` that
+has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
+so the design painted a sheet with nothing mapped on it, and every tag
+selection then matched nothing.
+
+The classifier ranks candidates on name, size, alpha and how many stock skins
+override them. It does not ask whether a candidate has any paintable islands,
+which is the one piece of evidence that would have moved both of these. A
+texture no island lives on cannot be the thing a livery paints, and that is a
+measurement already sitting in the profile beside the binding.
+
+## An auto binding the profile calls a guess is painted anyway
+
+`resolveTargets` files an `unconfirmed` note for an `auto` binding and then
+paints it — with the same conviction at 0.19 as at 0.95. On the two cars above
+that means artwork on the wrong sheet, reported in a note nobody reads before
+looking at the car.
+
+There is a threshold below which the honest answer is to paint nothing and say
+which term went unpainted, exactly as an absent surface is handled today. Where
+that threshold sits wants looking at across the fleet rather than picking a
+round number: the same sweep can answer it.
+
+## Tag selections match nothing on 20 of 25 cars
+
+`[shared, visible]` found no panel on 18 of 25, and `[left, visible]` and
+`[right, visible]` on 10 each — so a portable design's flank lettering lands
+nowhere on about 40% of cars. Two causes are mixed together in that number and
+want separating before either is chased: cars where the body binding is wrong
+(above), and cars whose panels genuinely carry neither tag.
+
+`shared` in particular looks like a tag a portable design should not lean on:
+it means an instanced panel, and most cars' flanks are not instanced.
+
+## Nothing says when a car has no islands to paint at all
+
+Three of the 25 — `tando_buddies_180sx` (2 panels from 66 textures),
+`btcc_toyota_avensis` (3) and `tc_legends_mazda_rx3` (7) — have essentially no
+UV islands anywhere. Their coordinates run far outside [0,1]: v from -59 to -9
+and u to +/-32000, because the paint is a seamless tiled material rather than
+an unwrapped skin sheet. `findIslands` returns nothing, correctly.
+
+What comes out is a profile that loads, validates, lists 66 textures and offers
+2 panels, and a design that then paints a sheet nobody can place anything on.
+The generator should say it: N textures whose UVs are tiled rather than
+unwrapped, and therefore nothing to map. A car like that may simply not be
+paintable by this approach, and finding that out should take a line of output
+rather than an afternoon.
+
+## The vocabulary binds three terms of fourteen
+
+`body` (25/25, mean confidence 0.78), `tyres` (24/25, 0.95) and `brakes`
+(22/25, 0.96) are proposed automatically. `rims`, `interior`, `belts`,
+`steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`, `gloves`
+and `crew` came back unbound on every car in the sweep.
+
+That is the ceiling on "portable": everything past the body and the tyres is a
+per-car `--explain` and a human confirmation, which is a thirty-second job
+repeated eleven times per car. Both halves are worth attention — teaching the
+classifier the regular ones (`rims` and `interior` look highly patterned across
+the fleet), and making confirming the rest one pass rather than eleven.
+
 ## The CLI renderer has one light rig, not the car's materials
 
 The editor reads `ksAmbient`, `ksDiffuse`, `ksSpecular` and `ksSpecularEXP` off
