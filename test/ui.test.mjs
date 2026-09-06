@@ -3949,6 +3949,60 @@ test('one shiny material on a sheet does not turn the whole car to glass', async
   assert.equal(pane.glass, true);
 });
 
+test('a reflective sheet is glass only if the sheet is see-through', async () => {
+  // The other half of the ghost car, and the one a restart did not fix.
+  //
+  // `ksPerPixelReflection` means "has a reflection map", not "is a window". The
+  // Abarth wears it on its side glass AND on its mirrors, its exhaust, its
+  // white metal trim and a 25,000-triangle plastic dashboard — so making the
+  // dominant material decide still left a quarter of the car see-through,
+  // because the dashboard's own material is that shader.
+  //
+  // Nothing in the material separates them: the real side glass states
+  // fresnelMaxLevel 0 and the metal trim states 0.3. The TEXTURE does, and
+  // cleanly on every car checked — glass carries real alpha (140 on this car's
+  // Glass.dds, 70 on the Honda's, 2 on its interior glass) and a shiny solid is
+  // 255 everywhere. That is also what AC composites with.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  const car = (shader) => parseKn5Buffer(buildKn5({ material: { name: 'M', shader } }));
+  const withAlpha = (mean) => ({
+    id: 'c',
+    textures: { body: { file: 'body.dds', width: 64, height: 32, ...(mean === null ? {} : { alphaMean: mean }) } },
+  });
+  const glassOf = (model, profile) =>
+    wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }], { profile }).groups[0].glass;
+
+  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(255)), false,
+    'a shiny solid: opaque everywhere, so it is not a window');
+  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(140)), true,
+    'and real glass carries real alpha');
+
+  // A windscreen shader is worn by windscreens. It does not have to prove
+  // itself, which also keeps glass working on a car whose glass texture cannot
+  // be decoded at all — this repository has several.
+  assert.equal(glassOf(car('ksWindscreen'), withAlpha(255)), true);
+
+  // `ksBrokenGlass` never gets that far: a damage overlay is dropped before
+  // any of this, because at zero damage the correct picture has no crack mesh
+  // in it at all. Worth pinning, since it is the one glass shader whose
+  // classification nothing here can reach.
+  assert.deepEqual(
+    wholeModelGeometry(car('ksBrokenGlass'), [{ role: 'body', file: 'body.dds' }], { profile: withAlpha(255) }).groups,
+    []);
+
+  // No measurement — a profile made before this was recorded, or a texture
+  // nothing could decode. The shader's own claim stands, which is what every
+  // car did until now.
+  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(null)), true);
+  assert.equal(glassOf(car('ksPerPixelReflection'), {}), true, 'and with no profile at all');
+
+  // Nothing here makes an opaque shader into glass.
+  assert.equal(glassOf(car('ksPerPixel'), withAlpha(10)), false);
+});
+
 test('the whole car keeps both cockpits and tags which is which', async () => {
   // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
   // same coordinates. Drawing both z-fights the interior into a checkerboard

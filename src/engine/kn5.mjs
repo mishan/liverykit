@@ -512,6 +512,23 @@ export function isGlass(shader) {
 }
 
 /**
+ * The two of those that mean glass and nothing else.
+ *
+ * `ksPerPixelReflection` is the odd one out: it means "has a reflection map",
+ * and a car uses it for its windows AND for every shiny solid on it — an
+ * Abarth 500 wears it on the side glass, the mirrors, the exhaust, the white
+ * metal trim and a plastic dashboard. A windscreen shader is worn by
+ * windscreens. So the ambiguous one has to prove itself against the texture's
+ * measured opacity (see `alphaMean`), and these two do not — which also keeps
+ * a windscreen glass on a car whose glass texture cannot be decoded at all,
+ * of which this repository has several.
+ */
+const CERTAIN_GLASS = new Set(['ksWindscreen', 'ksBrokenGlass']);
+export function certainlyGlass(shader) {
+  return CERTAIN_GLASS.has(String(shader ?? ''));
+}
+
+/**
  * Whether a shader is a damage-only overlay, with nothing to show until the
  * car is actually damaged.
  *

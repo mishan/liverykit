@@ -19,7 +19,8 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, isGlass } from './kn5.mjs';
+import { decodeDds } from './pipeline.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
@@ -291,6 +292,36 @@ export async function profileFromKn5(path, {
     const wearers = meshesUsingTexture(model, tex.name);
     const isABaseLayer = wearers.some((m) => detailLayer(model.materials?.[m.materialId]) !== null);
     if (namedLikeABake && isABaseLayer) entry.bake = true;
+
+    // HOW OPAQUE THIS SHEET ACTUALLY IS, where the answer decides something.
+    //
+    // `ksPerPixelReflection` means "has a reflection map", and a car uses it
+    // for the windows AND for every shiny solid on it: this Abarth wears it on
+    // its side glass, its mirrors, its exhaust, its white metal trim and a
+    // 25,000-triangle plastic dashboard. Treating the shader as glass drew all
+    // of them through a fresnel that is 15% opaque head-on, so most of the car
+    // could be seen through.
+    //
+    // Nothing in the material separates them — the real side glass states
+    // fresnelMaxLevel 0 and the metal trim states 0.3 — but the TEXTURE does,
+    // cleanly, on every car looked at: glass carries real alpha (41 and 140 on
+    // this car, 70 on the Honda's, 2 on its interior glass) and the shiny
+    // solids are 255 everywhere. That is what AC itself composites with.
+    //
+    // Measured only for the shaders where it decides something, because it
+    // costs an ImageMagick run per texture and most of a car is opaque by
+    // construction. Recorded rather than re-derived at draw time so that both
+    // renderers read one number and a human can see it.
+    if (wearers.some((m) => isGlass(model.materials?.[m.materialId]?.shader))
+        && tex.data && tex.data.length > 256) {
+      const img = await decodeDds(Buffer.from(tex.data), { maxSize: 64 });
+      if (img) {
+        let sum = 0;
+        let n = 0;
+        for (let i = 3; i < img.data.length; i += 4) { sum += img.data[i]; n++; }
+        if (n) entry.alphaMean = Math.round(sum / n);
+      }
+    }
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.
