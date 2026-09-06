@@ -37,7 +37,9 @@ export function buildKn5({
   // Meshes under a NAMED PARENT NODE, for the rules that read a mesh's path
   // rather than its name — which cockpit LOD selection does, since both
   // cockpits contain meshes called the same thing and only the node above
-  // them says which is which. `[{ name, meshes: [...] }]`.
+  // them says which is which. `[{ name, meshes: [...], children: [...] }]`,
+  // where a child is a node of the same shape: a real car buries its steering
+  // wheel two nodes below the one that turns it.
   wrapped = [],
   // The one material this fixture emits, for tests about MATERIALS rather than
   // about geometry: `{ shader, props: { detailUVMultiplier: 377 }, slots: {
@@ -46,6 +48,11 @@ export function buildKn5({
   // match the spelling of the texture entry, and code that compares the two
   // with `===` has been wrong about that.
   material = {},
+  // SEVERAL materials on the one texture, for the rules that have to choose
+  // between them: `[{ name, shader, slots, props, alphaBlendMode }, ...]`. A
+  // mesh picks one with `materialId`. Empty means the single `material` above,
+  // as before.
+  materials = [],
   // What the one texture is CALLED. Several rules read a texture's name — the
   // bake seed is one — so a test about those needs to choose it.
   textureName = 'body.dds',
@@ -68,19 +75,33 @@ export function buildKn5({
   dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
   parts.push(u32(2), u32(0), u32(1), str(textureName), u32(dds.length), dds);
 
-  // one material binding that texture as a diffuse
-  const slots = { txDiffuse: textureName, ...(material.slots ?? {}) };
-  const props = material.props ?? {};
-  parts.push(
-    u32(1), str(material.name ?? 'BodyMat'), str(material.shader ?? 'ksPerPixel'),
-    Buffer.from([0, 0]), u32(0),
-    // Each property is its key, then valueA, then 36 bytes of the vec2/3/4
-    // behind it that the parser skips as one.
-    u32(Object.keys(props).length),
-    ...Object.entries(props).map(([k, v]) => Buffer.concat([str(k), f32(v), Buffer.alloc(36)])),
-    u32(Object.keys(slots).length),
-    ...Object.entries(slots).map(([k, v]) => Buffer.concat([str(k), u32(0), str(v)])),
-  );
+  // The materials, binding that texture as a diffuse.
+  //
+  // Usually one, because most tests are about geometry and one is enough. But a
+  // group is a TEXTURE, not a material, and a real car wears one sheet with
+  // several — the Abarth's body sheet has the livery, the underbody, the
+  // exhaust and the plastic trim on it, and the rules that read "the material"
+  // have to pick one of them. `materials: [...]` writes as many as are asked
+  // for, and a mesh names which it uses.
+  const mats = materials.length ? materials : [material];
+  parts.push(u32(mats.length));
+  for (const m of mats) {
+    const slots = { txDiffuse: textureName, ...(m.slots ?? {}) };
+    const props = m.props ?? {};
+    parts.push(
+      str(m.name ?? 'BodyMat'), str(m.shader ?? 'ksPerPixel'),
+      // alphaBlendMode, alphaTested. The model's own answer to "does this
+      // composite" — 0 opaque, 1 alpha blend, 2 alpha to coverage — which this
+      // fixture wrote as two zeroes for as long as the parser skipped them.
+      Buffer.from([m.alphaBlendMode ?? 0, m.alphaTested ?? 0]), u32(0),
+      // Each property is its key, then valueA, then 36 bytes of the vec2/3/4
+      // behind it that the parser skips as one.
+      u32(Object.keys(props).length),
+      ...Object.entries(props).map(([k, v]) => Buffer.concat([str(k), f32(v), Buffer.alloc(36)])),
+      u32(Object.keys(slots).length),
+      ...Object.entries(slots).map(([k, v]) => Buffer.concat([str(k), u32(0), str(v)])),
+    );
+  }
 
   // root dummy -> one mesh child, plus whatever the caller added
   const children = 1 + extraMeshes.length + dummies.length + wrapped.length;
@@ -103,10 +124,14 @@ export function buildKn5({
 
   // A dummy with children, which is how a kn5 states COCKPIT_HR and everything
   // under it. The parser builds each mesh's `path` from this.
-  for (const w of wrapped) {
-    parts.push(u32(1), str(w.name), u32(w.meshes.length), Buffer.from([1]), IDENTITY);
-    for (const m of w.meshes) parts.push(mesh(m));
-  }
+  const wrap = (w) => {
+    const kids = w.children ?? [];
+    const own = w.meshes ?? [];
+    parts.push(u32(1), str(w.name), u32(own.length + kids.length), Buffer.from([1]), IDENTITY);
+    for (const m of own) parts.push(mesh(m));
+    for (const k of kids) wrap(k);
+  };
+  for (const w of wrapped) wrap(w);
 
   // Dummies carry no geometry but do carry a transform, which is how AC states
   // where a wheel is — and therefore the only exact source for which way this
@@ -127,7 +152,7 @@ export function buildKn5({
 }
 
 /** One mesh node: header, vertices, indices, then the 33-byte trailer. */
-function mesh({ name, verts, indices = [] }) {
+function mesh({ name, verts, indices = [], materialId = 0 }) {
   // Indices matter: the occupancy grid is built by SAMPLING TRIANGLES, so a
   // mesh with no index buffer occupies nothing and cannot occlude.
   const idxBuf = Buffer.alloc(indices.length * 2);
@@ -136,7 +161,7 @@ function mesh({ name, verts, indices = [] }) {
     u32(2), str(name), u32(0), Buffer.from([1]), Buffer.from([1, 1, 0]),
     u32(verts.length), ...verts.map((v) => Buffer.concat(v.map(f32))),
     u32(indices.length), idxBuf,
-    u32(0),                  // materialId — first of the 33-byte trailer
+    u32(materialId),         // materialId — first of the 33-byte trailer
     Buffer.alloc(29),        // layer, lodIn, lodOut, bounding sphere, isRenderable
   ]);
 }

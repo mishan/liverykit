@@ -3355,34 +3355,56 @@ test('an op the editor does not know is refused, not silently dropped', async ()
   assert.equal(design.surfaces.body.regions[0].constraints, undefined);
 });
 
-test('what blends is decided by the material, not by the texture', async () => {
-  // My first attempt at this used the profile's `alpha` flag, which means
-  // "this DDS carries an alpha channel" — true of a DXT5 body texture that is
-  // entirely opaque. 62 of the Honda's 75 textures are flagged, so nearly every
-  // panel went into the blended pass with depth write off, and a car whose
-  // bodywork does not write depth cannot hide its own interior. It came back as
-  // a screenshot of a see-through car.
-  const { blends } = await import('../src/engine/kn5.mjs');
+test('what blends is what the model says blends', async () => {
+  // THREE GUESSES AT A BYTE WE WERE SKIPPING.
+  //
+  // First the profile's `alpha` flag, which means "this DDS carries an alpha
+  // channel" — true of a DXT5 body texture that is entirely opaque, so nearly
+  // every panel went into the blended pass with depth write off, and a car
+  // whose bodywork does not write depth cannot hide its own interior.
+  //
+  // Then a list of shader NAMES. `ksPerPixelReflection` is on it because it
+  // draws side glass; the Abarth also wears it on its bumpers, its exhaust and
+  // its underbody, all sharing the one body sheet — so the painted bodywork
+  // blended, and the front of the car was see-through.
+  //
+  // Then the texture's mean alpha, to tell those apart. Better, and still a
+  // guess: a kn5 material states `alphaBlendMode` two bytes after its shader
+  // name, and the parser had skipped those two bytes since the first commit.
+  const { blends, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
 
-  assert.equal(blends('ksPerPixelAlpha'), true, 'the number plates');
-  assert.equal(blends('ksWindscreen'), true);
-  assert.equal(blends('ksPerPixelReflection'), true, 'side glass and mirrors');
+  const model = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' },
+      { name: 'CAR_PLASTICA', shader: 'ksPerPixelReflection' },
+      { name: 'CAR_Vetro', shader: 'ksPerPixelReflection', alphaBlendMode: 1 },
+      { name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 },
+      { name: 'COVERAGE', shader: 'ksPerPixel', alphaBlendMode: 2 },
+    ],
+  }));
+  const [livery, plastic, glass, grille, coverage] = model.materials;
 
-  // The bodywork, which is what went wrong.
-  assert.equal(blends('ksPerPixelMultiMap_damage_dirt'), false, 'the doors');
-  assert.equal(blends('ksPerPixelNM'), false);
-  assert.equal(blends('ksPerPixel'), false);
+  assert.equal(blends(livery), false, 'the paint');
+  assert.equal(blends(plastic), false,
+    'the same shader as the glass below it, and the model calls it opaque — ' +
+    'this is the Abarth bumper, and the reason the front went transparent');
+  assert.equal(blends(glass), true, 'and this is the window');
 
-  // Alpha TEST is a hard cutout: it neither blends nor needs sorting, and
-  // treating it as blended would put grilles and bolt heads in the sorted pass
-  // for nothing.
-  assert.equal(blends('ksPerPixelAT'), false, 'alpha test is not alpha blend');
-  assert.equal(blends('ksPerPixelAT_NM'), false);
+  // Alpha TEST is a hard cutout: it neither composites nor needs sorting, and
+  // treating it as blended puts grilles and badges in the sorted pass for
+  // nothing. Read, because it is the difference between a grille and a slab,
+  // and because the byte is right there.
+  assert.equal(grille.alphaTested, true);
+  assert.equal(blends(grille), false, 'alpha test is not alpha blend');
+  // Alpha to coverage is the same bargain, resolved by the multisampler.
+  assert.equal(blends(coverage), false);
 
-  assert.equal(blends(undefined), false, 'and an unknown shader is opaque');
-  assert.equal(blends('ksSomethingNobodyHasWrittenYet'), false,
-    'unknown means opaque: a wrongly opaque surface looks solid, a wrongly ' +
-    'blended one can disappear');
+  assert.equal(blends(undefined), false, 'and a material we do not have is opaque');
+  assert.equal(blends({ shader: 'ksWindscreen' }), false,
+    'including one carrying nothing but a name: unrecorded means opaque, ' +
+    'because a wrongly opaque surface looks solid and a wrongly blended one ' +
+    'can disappear');
 });
 
 test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
@@ -3895,6 +3917,114 @@ test('the viewer samples the relief untiled, and asks for it on painted groups t
   assert.match(surfacePass, /gl\.uniform1f\(loc\.hasBaseNormal, 0\);/);
 });
 
+test('one shiny material on a sheet does not turn the whole car to glass', async () => {
+  // THE GHOST CAR. Opening a design on the Abarth 500 showed the bodywork
+  // see-through from every angle — you could read the engine bay through the
+  // bonnet.
+  //
+  // Its body sheet is worn by four materials: the livery, the underbody, the
+  // exhaust and the plastic trim. The last two are `ksPerPixelReflection`,
+  // which is glass by name — and `glass` was true if ANY mesh in the group had
+  // a glass shader. Eight shiny meshes made nineteen of bodywork transparent.
+  //
+  // `some` is right for `blend` and wrong here, and what each flag does when it
+  // is wrong is the difference. A blended mesh drawn opaque is a black slab and
+  // an opaque one drawn blended merely sorts oddly, so blend errs cheaply.
+  // Glass does not composite, it REPLACES the alpha with a fresnel that is 0.15
+  // head-on — so being wrong about it is a car you can see through.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+
+  // One triangle each: the rules under test read materials and vertex counts,
+  // and nothing here cares what shape the geometry is.
+  const tri = (name, materialId) => ({
+    name, materialId,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  // Three meshes of livery, one of shiny trim, all on the one sheet.
+  const model = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' },
+      { name: 'CAR_PLASTICA', shader: 'ksPerPixelReflection' },
+    ],
+    bodyMesh: tri('body_1', 0),
+    extraMeshes: [tri('body_2', 0), tri('body_3', 0), tri('trim', 1)],
+  }));
+
+  const [group] = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups;
+  assert.equal(group.role, 'body', 'one group, because a group is one texture');
+  assert.equal(group.glass, false, 'the livery is what that sheet is');
+  // And it does not blend either, which the shiny trim's NAME once decided for
+  // the whole sheet. The model states the trim opaque, so the sheet is opaque:
+  // that is the transparent bumper, hood and fenders.
+  assert.equal(group.blend, false);
+
+  // A sheet that really is glass still is. Same shader, this time composited
+  // and as the material the geometry is mostly made of.
+  const windows = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'GLASS', shader: 'ksPerPixelReflection', alphaBlendMode: 1 },
+      { name: 'SEAL', shader: 'ksPerPixel' },
+    ],
+    bodyMesh: tri('glass_1', 0),
+    extraMeshes: [tri('glass_2', 0), tri('seal', 1)],
+  }));
+  const [pane] = wholeModelGeometry(windows, [{ role: 'body', file: 'body.dds' }]).groups;
+  assert.equal(pane.glass, true);
+  assert.equal(pane.blend, true,
+    'and blending still takes ANY mesh in the group: drawn opaque, a blended ' +
+    'mesh is a black slab, while an opaque one drawn blended merely sorts oddly');
+});
+
+test('a reflective material is glass only where the model says it composites', async () => {
+  // The other half of the ghost car. `ksPerPixelReflection` means "has a
+  // reflection map", not "is a window": the Abarth wears it on its side glass
+  // AND on its mirrors, its exhaust, its white metal trim, a 25,000-triangle
+  // plastic dashboard and the bumpers that share the body sheet.
+  //
+  // Nothing in the material's PROPERTIES separates them — the real side glass
+  // states fresnelMaxLevel 0 and the metal trim states 0.3 — which is what
+  // sent me measuring texture alpha. The blend mode separates them exactly,
+  // and the model has always carried it.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  const car = (shader, alphaBlendMode) =>
+    parseKn5Buffer(buildKn5({ materials: [{ name: 'M', shader, alphaBlendMode }] }));
+  // NO PROFILE. What composites is a fact about the model, and needing a
+  // profile to answer it was how a regenerated profile became the difference
+  // between a solid car and a transparent one.
+  const groupOf = (model) =>
+    wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups[0];
+
+  const bumper = groupOf(car('ksPerPixelReflection', 0));
+  assert.equal(bumper.blend, false, 'a shiny solid does not composite');
+  assert.equal(bumper.glass, false, 'so it cannot be glass');
+
+  const pane = groupOf(car('ksPerPixelReflection', 1));
+  assert.equal(pane.blend, true);
+  assert.equal(pane.glass, true, 'reflective and composited is a window');
+
+  assert.equal(groupOf(car('ksWindscreen', 1)).glass, true);
+
+  // Composited but not reflective: a decal, a number plate, the blurred rim.
+  // It blends, and it does not get glass's fresnel rim.
+  const decal = groupOf(car('ksPerPixelAlpha', 1));
+  assert.equal(decal.blend, true);
+  assert.equal(decal.glass, false);
+
+  // `ksBrokenGlass` never gets that far: a damage overlay is dropped before
+  // any of this, because at zero damage the correct picture has no crack mesh
+  // in it at all. Worth pinning, since it is the one glass shader whose
+  // classification nothing here can reach.
+  assert.deepEqual(
+    wholeModelGeometry(car('ksBrokenGlass', 1), [{ role: 'body', file: 'body.dds' }]).groups,
+    []);
+});
+
 test('the whole car keeps both cockpits and tags which is which', async () => {
   // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
   // same coordinates. Drawing both z-fights the interior into a checkerboard
@@ -4071,4 +4201,362 @@ test('a model that cannot be read is a 500, not "no such texture"', async () => 
   } finally {
     await new Promise((ok) => server.close(ok));
   }
+});
+
+test('a stock sheet the GPU cannot take as blocks is decoded, not dropped', async () => {
+  // THE SEE-THROUGH FRONT. The Abarth's nose badge and its headlight lenses
+  // were missing from the whole-car view — not grey, not dark, absent, so the
+  // bumper behind them showed through and the front of the car read as glass.
+  //
+  // `uploadDds` only knew DXT1/3/5 and answered false for everything else, and
+  // a blended group with no texture is deliberately skipped rather than drawn
+  // grey (see above). Six of this car's 31 stock textures are uncompressed —
+  // Glass.dds and LOGO_500.dds at 32-bit BGRA, INTERNAL_Glass.dds at 16-bit
+  // luminance-plus-alpha, LCD.dds and Rim500_BLUR.dds at 24-bit — so those six
+  // parts were never drawn at all.
+  //
+  // The decoder that reads all of it was already in this file, used by
+  // `uploadDetail` since the carbon weave turned out to be plain BGRA. Two
+  // upload paths, one archive, different ideas of what a texture can be.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('function uploadDds('),
+    src.indexOf('function uploadDecoded('));
+  assert.match(body, /if \(!format\) return uploadDecoded\(target, buffer\);/,
+    'a format the driver cannot take as blocks goes to the CPU decoder');
+  assert.ok(!/if \(!format\) return false;/.test(body),
+    'and is not refused outright');
+
+  // FILTERED like the block path too, which is the half of "like the block
+  // path" this originally missed: the compressed sheet beside it asks for
+  // anisotropy and this one did not, so an uncompressed stock sheet -- and
+  // every sheet at all on a driver with no S3TC -- came out blurrier at a
+  // glancing angle, which is how a car is mostly seen.
+  assert.match(src, /function anisotropy\(\) \{/,
+    'and it is one rule rather than a line copied into each upload path');
+  assert.equal(src.match(/TEXTURE_MAX_ANISOTROPY_EXT/g).length, 2,
+    'named twice inside that one function, and nowhere else');
+
+  // CLAMPED, like the block path it stands in for: this is one image over a
+  // part, not a tiling detail map, and REPEAT on a whole sheet smears its
+  // last row across whatever runs past 1.
+  const decoded = src.slice(src.indexOf('function uploadDecoded('),
+    src.indexOf('function centreOf('));
+  assert.match(decoded, /gl\.TEXTURE_WRAP_S, gl\.CLAMP_TO_EDGE/);
+  assert.match(decoded, /gl\.TEXTURE_WRAP_T, gl\.CLAMP_TO_EDGE/);
+  // A mipmap filter over a texture with no chain renders solid black in
+  // WebGL 1, and generateMipmap wants a power of two — so the filter has to
+  // follow what was built rather than what was wanted.
+  assert.match(decoded, /const mipped = isPot\(img\.width\) && isPot\(img\.height\);/);
+  assert.match(decoded, /mipped \? gl\.LINEAR_MIPMAP_LINEAR : gl\.LINEAR/);
+  assert.match(decoded, /if \(mipped\) anisotropy\(\);/,
+    'and anisotropy where there is a chain for it to work over, as the blocks do');
+});
+
+test('the decoder reads every pixel format this fleet actually ships', async () => {
+  // Read through the channel MASKS, not an assumed byte order: the same file
+  // format holds BGRA, RGB and luminance-plus-alpha, and guessing turns a red
+  // car blue rather than failing.
+  const { decodeDds } = await import('../src/ui/dds.js');
+
+  /** A DDS of `data`, described by the header fields that decide how to read it. */
+  const dds = (width, height, { pfFlags, fourCC = 0, bits = 0, masks = [0, 0, 0, 0] }, data) => {
+    const buf = new ArrayBuffer(128 + data.length);
+    const h = new DataView(buf);
+    h.setUint32(0, 0x20534444, true);            // 'DDS '
+    h.setUint32(4, 124, true);
+    h.setUint32(12, height, true);
+    h.setUint32(16, width, true);
+    h.setUint32(28, 1, true);                    // mipMapCount
+    h.setUint32(76, 32, true);                   // pixelformat size
+    h.setUint32(80, pfFlags, true);
+    h.setUint32(84, fourCC, true);
+    h.setUint32(88, bits, true);
+    masks.forEach((m, i) => h.setUint32(92 + (i * 4), m, true));
+    new Uint8Array(buf, 128).set(data);
+    return buf;
+  };
+  const px = (img, i) => Array.from(img.pixels.slice(i * 4, (i * 4) + 4));
+
+  // 32-BIT BGRA — Glass.dds, LOGO_500.dds, MAT_Vetro_INTERNO.dds. Stored
+  // blue-first, and the masks are the only thing that says so.
+  const bgra = decodeDds(dds(2, 1,
+    { pfFlags: 0x41, bits: 32, masks: [0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000] },
+    new Uint8Array([10, 20, 30, 40, 200, 100, 50, 0])));
+  assert.deepEqual([bgra.width, bgra.height], [2, 1]);
+  assert.deepEqual(px(bgra, 0), [30, 20, 10, 40], 'B,G,R,A on disk comes back R,G,B,A');
+  assert.deepEqual(px(bgra, 1), [50, 100, 200, 0], 'including a fully cut-out texel');
+
+  // 24-BIT BGR — LCD.dds, Rim500_BLUR.dds. No alpha channel at all, which is
+  // opaque rather than transparent: a zero here is how a rim goes invisible.
+  const bgr = decodeDds(dds(1, 1,
+    { pfFlags: 0x40, bits: 24, masks: [0xff0000, 0x00ff00, 0x0000ff, 0] },
+    new Uint8Array([1, 2, 3])));
+  assert.deepEqual(px(bgr, 0), [3, 2, 1, 255], 'no alpha mask means opaque');
+
+  // 16-BIT LUMINANCE PLUS ALPHA — INTERNAL_Glass.dds, and the brushed metal
+  // detail map. One grey value across all three colour channels.
+  const al = decodeDds(dds(1, 1,
+    { pfFlags: 0x20001, bits: 16, masks: [0x00ff, 0, 0, 0xff00] },
+    new Uint8Array([90, 128])));
+  assert.deepEqual(px(al, 0), [90, 90, 90, 128], 'luminance fills R, G and B');
+
+  // DXT5, the format most of the car is in, through the same door. One block:
+  // both alpha endpoints 255, then two identical colour endpoints so every
+  // interpolation scheme agrees on the answer.
+  const red565 = 0xf800;
+  const block = new Uint8Array(16);
+  block[0] = 255; block[1] = 255;                       // alpha endpoints
+  block[8] = red565 & 0xff; block[9] = red565 >> 8;     // colour 0
+  block[10] = red565 & 0xff; block[11] = red565 >> 8;   // colour 1
+  const dxt5 = decodeDds(dds(4, 4, { pfFlags: 0x4, fourCC: 0x35545844 }, block));
+  assert.deepEqual([dxt5.width, dxt5.height], [4, 4]);
+  assert.deepEqual(px(dxt5, 0), [255, 0, 0, 255]);
+  assert.deepEqual(px(dxt5, 15), [255, 0, 0, 255], 'every texel in the block');
+
+  // AND AN HONEST NULL for what it cannot read, because the caller's fallback
+  // is grey and a wrong guess would be worse than none.
+  assert.equal(decodeDds(new ArrayBuffer(8)), null, 'too short to be a header');
+  assert.equal(decodeDds(dds(1, 1, { pfFlags: 0x40, bits: 12, masks: [0xf00, 0xf0, 0xf, 0] },
+    new Uint8Array([0, 0]))), null, 'a bit depth that is not whole bytes');
+  const noMagic = dds(1, 1, { pfFlags: 0x40, bits: 24, masks: [0xff0000, 0xff00, 0xff, 0] },
+    new Uint8Array([1, 2, 3]));
+  new DataView(noMagic).setUint32(0, 0, true);
+  assert.equal(decodeDds(noMagic), null, 'not a DDS at all');
+});
+
+test('an alpha-tested material states a threshold, and an unset one gets AC\'s', async () => {
+  // A hard cutout: the grille, the stitching, the badge on the nose. The model
+  // says which materials are drawn that way in the byte beside `alphaBlendMode`
+  // — the one the parser used to skip — and the threshold itself is a material
+  // property.
+  //
+  // 253 alpha-tested materials across the 64 readable cars here, and 218 of
+  // them state `ksAlphaRef` 0, which is the property being absent rather than a
+  // request to keep every texel. AC's own default for its AT shaders stands in.
+  // The 35 that do state one mostly say 0.5 anyway; the outliers say 0.2, 0.24,
+  // 0.3, 0.4 and — once — 1, meaning nothing but a fully opaque texel survives.
+  const { alphaTest, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  assert.equal(alphaTest({ shader: 'ksPerPixelAT', props: {} }), null,
+    'not stated by the model is not alpha tested, whatever the shader is called');
+  assert.equal(alphaTest(undefined), null);
+  assert.equal(alphaTest({ alphaTested: true, props: {} }), 0.5, 'AC\'s own default');
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0 } }), 0.5,
+    'and zero is the property missing, not a threshold nothing fails');
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0.24 } }), 0.24);
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 1 } }), 1);
+
+  // Out of a real header, so the byte and the property arrive together.
+  const model = parseKn5Buffer(buildKn5({
+    materials: [{ name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 }],
+  }));
+  assert.equal(alphaTest(model.materials[0]), 0.5);
+});
+
+test('a cutout group carries its threshold, and a blended one does not', async () => {
+  // On the group, from the DOMINANT material, for the same reason glass is:
+  // a sheet is worn by several materials and this one is a fact about how the
+  // surface is drawn. The Abarth's stitching is the case — `INT_cuciture_NM`
+  // is alpha tested and `INT_cuciture_NM_skin` composites, on one sheet.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+
+  const tri = (name, materialId) => ({
+    name, materialId,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  const groupOf = (materials, ids) => {
+    const model = parseKn5Buffer(buildKn5({
+      materials,
+      bodyMesh: tri('m0', ids[0]),
+      extraMeshes: ids.slice(1).map((id, i) => tri(`m${i + 1}`, id)),
+    }));
+    return wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups[0];
+  };
+
+  const grille = groupOf([{ name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 }], [0]);
+  assert.equal(grille.alphaTest, 0.5);
+  assert.equal(grille.blend, false, 'a cutout does not composite and does not need sorting');
+
+  const stitching = groupOf([
+    { name: 'INT_cuciture_NM', shader: 'ksPerPixelAT', alphaTested: 1 },
+    { name: 'INT_cuciture_NM_skin', shader: 'ksSkinnedMesh', alphaBlendMode: 1 },
+  ], [1, 1, 0]);
+  assert.equal(stitching.alphaTest, null, 'the dominant material composites, so nothing is cut');
+  assert.equal(stitching.blend, true);
+
+  const paint = groupOf([{ name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' }], [0]);
+  assert.equal(paint.alphaTest, null, 'and an ordinary surface keeps every texel');
+});
+
+test('the viewer throws away a cutout texel instead of painting it black', async () => {
+  // Read out of the source because the alternative is a GPU, like the
+  // transparent-surface tests above.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // DISCARD, not a low alpha: an alpha-tested surface is in the OPAQUE pass,
+  // where alpha is not composited at all, and it writes depth. Handing a zero
+  // alpha to a pass that ignores alpha is what drew the badge on this car's
+  // nose as a black rectangle.
+  const main = src.slice(src.indexOf('void main() {\n  vec4 texel'), src.indexOf('function compile('));
+  assert.match(main, /if \(alphaTest > 0\.0 && texel\.a < alphaTest\) discard;/);
+  assert.ok(main.indexOf('discard') < main.indexOf('vec3 c = texel.rgb'),
+    'thrown away before anything is computed from it');
+
+  // AND RESET in the per-surface pass, like every other per-group uniform. A
+  // leftover threshold there would punch holes in the sheet being edited.
+  const surfacePass = src.slice(src.indexOf('if (!groups) {'), src.indexOf('// One draw call per painted surface.'));
+  assert.match(surfacePass, /gl\.uniform1f\(loc\.alphaTest, 0\);/);
+  // And set from the group in the whole-car pass, where a group states one.
+  assert.match(src, /gl\.uniform1f\(loc\.alphaTest, g\.alphaTest \?\? 0\);/);
+});
+
+test('a cut-out texel is not drawn and does not hide what is behind it', async () => {
+  // The software renderer's half of the same rule, and the half with a trap in
+  // it: this rasteriser wrote depth as soon as a fragment passed the depth
+  // TEST, before it had sampled the texture. A thrown-away texel that had
+  // already written depth occludes what is behind it, so a grille would be a
+  // hole in the car rather than a grille.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Two panels facing the camera, one behind the other. The `left` view looks
+  // from +x, so the cutout is the quad at x = 1 and the solid green panel
+  // behind it is at x = -1.
+  const quads = {
+    positions: new Float32Array([
+      -1, -1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1,       // behind
+      1, -1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1,           // the cutout, nearer
+    ]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [-1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  // Half opaque magenta, half BLACK AND TRANSPARENT — which is what a cutout
+  // sheet actually holds, and why getting this wrong is so visible.
+  const cutout = { w: 2, h: 1, data: Buffer.from([0, 0, 0, 0, 255, 0, 255, 255]) };
+  const solid = { w: 1, h: 1, data: Buffer.from([0, 255, 0, 255]) };
+  const sheets = new Map([['cut', cutout], ['back', solid]]);
+  const shot = (alphaTest) => rasterise(quads, [
+    { role: 'cut', start: 6, count: 6, alphaTest },
+    { role: 'back', start: 0, count: 6 },
+  ], sheets, { view: 'left', width: 60, height: 60, floor: false });
+  const at = (img, x) => [0, 1, 2].map((k) => img.data[(((30 * img.width) + x) * 4) + k]);
+
+  const cut = shot(0.5);
+  assert.ok(at(cut, 20)[0] > 100 && at(cut, 20)[1] === 0, 'the cutout draws where it is opaque');
+  const through = at(cut, 38);
+  assert.ok(through[1] > 100 && through[0] < 40,
+    `the panel behind shows through the cut part: ${through}`);
+
+  // Without a threshold the transparent half is drawn anyway, as the colour
+  // sitting under the alpha — a near-black rectangle over the green panel.
+  // That is the grille, the stitching and the 500 badge on this car's nose.
+  const kept = at(shot(null), 38);
+  assert.ok(kept[1] < 40 && kept.reduce((a, b) => a + b, 0) < 40,
+    `no threshold, and the cutout is a black slab: ${kept}`);
+});
+
+test('a format ImageMagick refuses is decoded anyway, by the decoder the viewer uses', async () => {
+  // TWO RENDERERS, ONE CAR, AND ONLY ONE OF THEM COULD READ THE FILE. The
+  // browser has had a JS decoder for every DDS format in this fleet since the
+  // carbon weave turned out to be plain BGRA; Node shells out to ImageMagick,
+  // which reads DXT and refuses 16-bit luminance-plus-alpha. On this Abarth
+  // that is INTERNAL_Glass.dds — a 2048-square sheet whose alpha carries the
+  // black band at the base of the windscreen — so the software renderer drew
+  // the glass without it and the browser drew it with.
+  //
+  // Same decoder now, with ImageMagick still first: it is faster, and it
+  // downsizes on the way out.
+  const { decodeDds } = await import('../src/engine/pipeline.mjs');
+
+  // 2x2 of 16-bit A8L8, which is what the interior glass and the brushed metal
+  // detail map are stored as.
+  const buf = Buffer.alloc(128 + 8);
+  buf.write('DDS ', 0, 'ascii');
+  buf.writeUInt32LE(124, 4);
+  buf.writeUInt32LE(2, 12);                   // height
+  buf.writeUInt32LE(2, 16);                   // width
+  buf.writeUInt32LE(1, 28);                   // mipMapCount
+  buf.writeUInt32LE(32, 76);                  // pixelformat size
+  buf.writeUInt32LE(0x20001, 80);             // DDPF_LUMINANCE | DDPF_ALPHAPIXELS
+  buf.writeUInt32LE(16, 88);                  // bits
+  buf.writeUInt32LE(0x00ff, 92);              // luminance mask
+  buf.writeUInt32LE(0xff00, 104);             // alpha mask
+  Buffer.from([10, 0, 200, 255, 90, 128, 40, 64]).copy(buf, 128);
+
+  const img = await decodeDds(buf);
+  assert.ok(img, 'a format one decoder refuses is still a texture');
+  assert.deepEqual([img.w, img.h], [2, 2]);
+  const px = (i) => Array.from(img.data.slice(i * 4, (i * 4) + 4));
+  assert.deepEqual(px(0), [10, 10, 10, 0], 'luminance across RGB, alpha its own channel');
+  assert.deepEqual(px(1), [200, 200, 200, 255]);
+});
+
+test('glass keeps the opacity its own texture states', async () => {
+  // THE GAP WHERE THE COWL SHOULD BE. Looking down at the base of the
+  // windscreen you could see the dashboard and the seats through a band that
+  // is solid on the real car — the black frit printed around the edge of the
+  // glass, which on this Abarth is the bottom 128 rows of INTERNAL_Glass.dds
+  // at alpha 255 while the rest of the sheet sits near 16.
+  //
+  // Glass alpha was REPLACED by a fresnel term, deliberately: AC's glass
+  // shaders take their transparency from the shader rather than the diffuse,
+  // and a windscreen drawn from a texture that is mostly opaque read as a grey
+  // slab. That reasoning was about which SURFACES are glass, and it was
+  // settled properly when blending started coming from the model. What it
+  // cost was the one thing the texture really does say.
+  //
+  // So the fresnel ADDS to the sheet's own alpha rather than standing in for
+  // it: a windscreen is still see-through, its frit is still solid, and a
+  // glass surface with no texture at all still gets the rim it always had.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  const quads = {
+    positions: new Float32Array([
+      -1, -1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1,       // behind
+      1, -1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1,           // the glass, nearer
+    ]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [-1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  // Half clear, half solid black: a windscreen and its frit.
+  const pane = { w: 2, h: 1, data: Buffer.from([20, 20, 20, 0, 20, 20, 20, 255]) };
+  const solid = { w: 1, h: 1, data: Buffer.from([0, 255, 0, 255]) };
+  const groups = [
+    { role: 'glass', start: 6, count: 6, blend: true, glass: true },
+    { role: 'back', start: 0, count: 6 },
+  ];
+  const img = rasterise(quads, groups, new Map([['glass', pane], ['back', solid]]),
+    { view: 'left', width: 60, height: 60, floor: false });
+  const at = (x) => [0, 1, 2].map((k) => img.data[(((30 * img.width) + x) * 4) + k]);
+
+  // The sheet's second texel is the frit and lands on the left of the frame;
+  // its first, the clear half, on the right.
+  const frit = at(20);
+  assert.ok(frit[1] < 60, `the opaque band hides what is behind it: ${frit}`);
+  const clear = at(38);
+  assert.ok(clear[1] > 100, `and the clear half still shows the panel: ${clear}`);
+
+  // A glass group with no artwork keeps the fresnel it always had — this
+  // repository has several cars whose glass texture nothing could decode, and
+  // an empty hole where a windscreen belongs is worse than a grey pane.
+  const bare = rasterise(quads, [{ role: 'glass', start: 6, count: 6, blend: true, glass: true }],
+    new Map(), { view: 'left', width: 60, height: 60, floor: false });
+  const pale = [0, 1, 2].map((k) => bare.data[(((30 * bare.width) + 30) * 4) + k]);
+  assert.ok(pale.reduce((a, b) => a + b, 0) > 60, `a bare windscreen is still drawn: ${pale}`);
+});
+
+test('the viewer builds glass alpha from the sheet and the fresnel together', async () => {
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const main = src.slice(src.indexOf('void main() {\n  vec4 texel'), src.indexOf('function compile('));
+  // The rim is a FLOOR under the texture's own alpha, not a replacement for
+  // it: max, not assignment. A frit band at alpha 1 stays at 1.
+  assert.match(main, /max\(/);
+  assert.ok(/glass > 0\.5/.test(main));
+  assert.match(main, /hasArt/,
+    'and whether there is a texture at all decides whether its alpha means anything');
 });
