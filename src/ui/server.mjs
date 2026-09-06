@@ -208,7 +208,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'dds.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
 
 /**
  * The one dependency the browser shares with Node, and where it comes from.
