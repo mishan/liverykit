@@ -3895,6 +3895,60 @@ test('the viewer samples the relief untiled, and asks for it on painted groups t
   assert.match(surfacePass, /gl\.uniform1f\(loc\.hasBaseNormal, 0\);/);
 });
 
+test('one shiny material on a sheet does not turn the whole car to glass', async () => {
+  // THE GHOST CAR. Opening a design on the Abarth 500 showed the bodywork
+  // see-through from every angle — you could read the engine bay through the
+  // bonnet.
+  //
+  // Its body sheet is worn by four materials: the livery, the underbody, the
+  // exhaust and the plastic trim. The last two are `ksPerPixelReflection`,
+  // which is glass by name — and `glass` was true if ANY mesh in the group had
+  // a glass shader. Eight shiny meshes made nineteen of bodywork transparent.
+  //
+  // `some` is right for `blend` and wrong here, and what each flag does when it
+  // is wrong is the difference. A blended mesh drawn opaque is a black slab and
+  // an opaque one drawn blended merely sorts oddly, so blend errs cheaply.
+  // Glass does not composite, it REPLACES the alpha with a fresnel that is 0.15
+  // head-on — so being wrong about it is a car you can see through.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+
+  const quad = (name, materialId) => ({
+    name, materialId,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  // Three meshes of livery, one of shiny trim, all on the one sheet.
+  const model = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' },
+      { name: 'CAR_PLASTICA', shader: 'ksPerPixelReflection' },
+    ],
+    bodyMesh: quad('body_1', 0),
+    extraMeshes: [quad('body_2', 0), quad('body_3', 0), quad('trim', 1)],
+  }));
+
+  const [group] = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups;
+  assert.equal(group.role, 'body', 'one group, because a group is one texture');
+  assert.equal(group.glass, false, 'the livery is what that sheet is');
+  assert.equal(group.blend, true,
+    'and blending still takes any of them: a blended mesh drawn opaque is the worse mistake');
+
+  // A sheet that really is glass still is. Same shader, this time as the
+  // material the geometry is mostly made of.
+  const windows = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'GLASS', shader: 'ksPerPixelReflection' },
+      { name: 'SEAL', shader: 'ksPerPixel' },
+    ],
+    bodyMesh: quad('glass_1', 0),
+    extraMeshes: [quad('glass_2', 0), quad('seal', 1)],
+  }));
+  const [pane] = wholeModelGeometry(windows, [{ role: 'body', file: 'body.dds' }]).groups;
+  assert.equal(pane.glass, true);
+});
+
 test('the whole car keeps both cockpits and tags which is which', async () => {
   // A car that ships COCKPIT_HR and COCKPIT_LR has both in the model at the
   // same coordinates. Drawing both z-fights the interior into a checkerboard

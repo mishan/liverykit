@@ -112,7 +112,23 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         add: blend && additive(group.file),
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
-        glass: blend && meshes.some((m) => isGlass(model.materials?.[m.materialId]?.shader)),
+        //
+        // THE DOMINANT MATERIAL, where `blend` above takes any of them.
+        //
+        // `some` is right for blending and wrong here, and the difference is
+        // what each flag does when it is wrong. A blended mesh drawn opaque is
+        // a black slab and an opaque one drawn blended merely sorts oddly, so
+        // blend errs towards the cheap mistake. Glass does not composite — it
+        // REPLACES the surface's alpha with a fresnel that is 0.15 head-on, so
+        // one mesh in the group being glass makes the whole group see-through.
+        //
+        // The Abarth 500 is the case: its body sheet is worn by four materials
+        // — the livery itself, the underbody, the exhaust and the plastic trim
+        // — and the last two are `ksPerPixelReflection`, which is glass by
+        // name. Nineteen meshes of bodywork went transparent because eight of
+        // them are shiny. The dominant material is the livery, and the livery
+        // is what that sheet is.
+        glass: blend && isGlass(model.materials?.[dominant]?.shader),
       });
     }
   };
