@@ -4180,3 +4180,112 @@ test('a model that cannot be read is a 500, not "no such texture"', async () => 
     await new Promise((ok) => server.close(ok));
   }
 });
+
+test('a stock sheet the GPU cannot take as blocks is decoded, not dropped', async () => {
+  // THE SEE-THROUGH FRONT. The Abarth's nose badge and its headlight lenses
+  // were missing from the whole-car view — not grey, not dark, absent, so the
+  // bumper behind them showed through and the front of the car read as glass.
+  //
+  // `uploadDds` only knew DXT1/3/5 and answered false for everything else, and
+  // a blended group with no texture is deliberately skipped rather than drawn
+  // grey (see above). Six of this car's 31 stock textures are uncompressed —
+  // Glass.dds and LOGO_500.dds at 32-bit BGRA, INTERNAL_Glass.dds at 16-bit
+  // luminance-plus-alpha, LCD.dds and Rim500_BLUR.dds at 24-bit — so those six
+  // parts were never drawn at all.
+  //
+  // The decoder that reads all of it was already in this file, used by
+  // `uploadDetail` since the carbon weave turned out to be plain BGRA. Two
+  // upload paths, one archive, different ideas of what a texture can be.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const body = src.slice(src.indexOf('function uploadDds('),
+    src.indexOf('function uploadDecoded('));
+  assert.match(body, /if \(!format\) return uploadDecoded\(target, buffer\);/,
+    'a format the driver cannot take as blocks goes to the CPU decoder');
+  assert.ok(!/if \(!format\) return false;/.test(body),
+    'and is not refused outright');
+
+  // CLAMPED, like the block path it stands in for: this is one image over a
+  // part, not a tiling detail map, and REPEAT on a whole sheet smears its
+  // last row across whatever runs past 1.
+  const decoded = src.slice(src.indexOf('function uploadDecoded('),
+    src.indexOf('function centreOf('));
+  assert.match(decoded, /gl\.TEXTURE_WRAP_S, gl\.CLAMP_TO_EDGE/);
+  assert.match(decoded, /gl\.TEXTURE_WRAP_T, gl\.CLAMP_TO_EDGE/);
+  // A mipmap filter over a texture with no chain renders solid black in
+  // WebGL 1, and generateMipmap wants a power of two — so the filter has to
+  // follow what was built rather than what was wanted.
+  assert.match(decoded, /const mipped = isPot\(img\.width\) && isPot\(img\.height\);/);
+  assert.match(decoded, /mipped \? gl\.LINEAR_MIPMAP_LINEAR : gl\.LINEAR/);
+});
+
+test('the decoder reads every pixel format this fleet actually ships', async () => {
+  // Read through the channel MASKS, not an assumed byte order: the same file
+  // format holds BGRA, RGB and luminance-plus-alpha, and guessing turns a red
+  // car blue rather than failing.
+  const { decodeDds } = await import('../src/ui/view3d.js');
+
+  /** A DDS of `data`, described by the header fields that decide how to read it. */
+  const dds = (width, height, { pfFlags, fourCC = 0, bits = 0, masks = [0, 0, 0, 0] }, data) => {
+    const buf = new ArrayBuffer(128 + data.length);
+    const h = new DataView(buf);
+    h.setUint32(0, 0x20534444, true);            // 'DDS '
+    h.setUint32(4, 124, true);
+    h.setUint32(12, height, true);
+    h.setUint32(16, width, true);
+    h.setUint32(28, 1, true);                    // mipMapCount
+    h.setUint32(76, 32, true);                   // pixelformat size
+    h.setUint32(80, pfFlags, true);
+    h.setUint32(84, fourCC, true);
+    h.setUint32(88, bits, true);
+    masks.forEach((m, i) => h.setUint32(92 + (i * 4), m, true));
+    new Uint8Array(buf, 128).set(data);
+    return buf;
+  };
+  const px = (img, i) => Array.from(img.pixels.slice(i * 4, (i * 4) + 4));
+
+  // 32-BIT BGRA — Glass.dds, LOGO_500.dds, MAT_Vetro_INTERNO.dds. Stored
+  // blue-first, and the masks are the only thing that says so.
+  const bgra = decodeDds(dds(2, 1,
+    { pfFlags: 0x41, bits: 32, masks: [0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000] },
+    new Uint8Array([10, 20, 30, 40, 200, 100, 50, 0])));
+  assert.deepEqual([bgra.width, bgra.height], [2, 1]);
+  assert.deepEqual(px(bgra, 0), [30, 20, 10, 40], 'B,G,R,A on disk comes back R,G,B,A');
+  assert.deepEqual(px(bgra, 1), [50, 100, 200, 0], 'including a fully cut-out texel');
+
+  // 24-BIT BGR — LCD.dds, Rim500_BLUR.dds. No alpha channel at all, which is
+  // opaque rather than transparent: a zero here is how a rim goes invisible.
+  const bgr = decodeDds(dds(1, 1,
+    { pfFlags: 0x40, bits: 24, masks: [0xff0000, 0x00ff00, 0x0000ff, 0] },
+    new Uint8Array([1, 2, 3])));
+  assert.deepEqual(px(bgr, 0), [3, 2, 1, 255], 'no alpha mask means opaque');
+
+  // 16-BIT LUMINANCE PLUS ALPHA — INTERNAL_Glass.dds, and the brushed metal
+  // detail map. One grey value across all three colour channels.
+  const al = decodeDds(dds(1, 1,
+    { pfFlags: 0x20001, bits: 16, masks: [0x00ff, 0, 0, 0xff00] },
+    new Uint8Array([90, 128])));
+  assert.deepEqual(px(al, 0), [90, 90, 90, 128], 'luminance fills R, G and B');
+
+  // DXT5, the format most of the car is in, through the same door. One block:
+  // both alpha endpoints 255, then two identical colour endpoints so every
+  // interpolation scheme agrees on the answer.
+  const red565 = 0xf800;
+  const block = new Uint8Array(16);
+  block[0] = 255; block[1] = 255;                       // alpha endpoints
+  block[8] = red565 & 0xff; block[9] = red565 >> 8;     // colour 0
+  block[10] = red565 & 0xff; block[11] = red565 >> 8;   // colour 1
+  const dxt5 = decodeDds(dds(4, 4, { pfFlags: 0x4, fourCC: 0x35545844 }, block));
+  assert.deepEqual([dxt5.width, dxt5.height], [4, 4]);
+  assert.deepEqual(px(dxt5, 0), [255, 0, 0, 255]);
+  assert.deepEqual(px(dxt5, 15), [255, 0, 0, 255], 'every texel in the block');
+
+  // AND AN HONEST NULL for what it cannot read, because the caller's fallback
+  // is grey and a wrong guess would be worse than none.
+  assert.equal(decodeDds(new ArrayBuffer(8)), null, 'too short to be a header');
+  assert.equal(decodeDds(dds(1, 1, { pfFlags: 0x40, bits: 12, masks: [0xf00, 0xf0, 0xf, 0] },
+    new Uint8Array([0, 0]))), null, 'a bit depth that is not whole bytes');
+  const noMagic = dds(1, 1, { pfFlags: 0x40, bits: 24, masks: [0xff0000, 0xff00, 0xff, 0] },
+    new Uint8Array([1, 2, 3]));
+  new DataView(noMagic).setUint32(0, 0, true);
+  assert.equal(decodeDds(noMagic), null, 'not a DDS at all');
+});
