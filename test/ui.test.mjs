@@ -4309,3 +4309,138 @@ test('the decoder reads every pixel format this fleet actually ships', async () 
   new DataView(noMagic).setUint32(0, 0, true);
   assert.equal(decodeDds(noMagic), null, 'not a DDS at all');
 });
+
+test('an alpha-tested material states a threshold, and an unset one gets AC\'s', async () => {
+  // A hard cutout: the grille, the stitching, the badge on the nose. The model
+  // says which materials are drawn that way in the byte beside `alphaBlendMode`
+  // — the one the parser used to skip — and the threshold itself is a material
+  // property.
+  //
+  // 253 alpha-tested materials across the 64 readable cars here, and 218 of
+  // them state `ksAlphaRef` 0, which is the property being absent rather than a
+  // request to keep every texel. AC's own default for its AT shaders stands in.
+  // The 35 that do state one mostly say 0.5 anyway; the outliers say 0.2, 0.24,
+  // 0.3, 0.4 and — once — 1, meaning nothing but a fully opaque texel survives.
+  const { alphaTest, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
+
+  assert.equal(alphaTest({ shader: 'ksPerPixelAT', props: {} }), null,
+    'not stated by the model is not alpha tested, whatever the shader is called');
+  assert.equal(alphaTest(undefined), null);
+  assert.equal(alphaTest({ alphaTested: true, props: {} }), 0.5, 'AC\'s own default');
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0 } }), 0.5,
+    'and zero is the property missing, not a threshold nothing fails');
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0.24 } }), 0.24);
+  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 1 } }), 1);
+
+  // Out of a real header, so the byte and the property arrive together.
+  const model = parseKn5Buffer(buildKn5({
+    materials: [{ name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 }],
+  }));
+  assert.equal(alphaTest(model.materials[0]), 0.5);
+});
+
+test('a cutout group carries its threshold, and a blended one does not', async () => {
+  // On the group, from the DOMINANT material, for the same reason glass is:
+  // a sheet is worn by several materials and this one is a fact about how the
+  // surface is drawn. The Abarth's stitching is the case — `INT_cuciture_NM`
+  // is alpha tested and `INT_cuciture_NM_skin` composites, on one sheet.
+  const { wholeModelGeometry } = await import('../src/ui/server.mjs');
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
+
+  const quad = (name, materialId) => ({
+    name, materialId,
+    verts: [vert(0, 0, 0, 0.1, 0.1), vert(1, 0, 0, 0.2, 0.1), vert(1, 1, 0, 0.2, 0.2)],
+    indices: [0, 1, 2],
+  });
+  const groupOf = (materials, ids) => {
+    const model = parseKn5Buffer(buildKn5({
+      materials,
+      bodyMesh: quad('m0', ids[0]),
+      extraMeshes: ids.slice(1).map((id, i) => quad(`m${i + 1}`, id)),
+    }));
+    return wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups[0];
+  };
+
+  const grille = groupOf([{ name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 }], [0]);
+  assert.equal(grille.alphaTest, 0.5);
+  assert.equal(grille.blend, false, 'a cutout does not composite and does not need sorting');
+
+  const stitching = groupOf([
+    { name: 'INT_cuciture_NM', shader: 'ksPerPixelAT', alphaTested: 1 },
+    { name: 'INT_cuciture_NM_skin', shader: 'ksSkinnedMesh', alphaBlendMode: 1 },
+  ], [1, 1, 0]);
+  assert.equal(stitching.alphaTest, null, 'the dominant material composites, so nothing is cut');
+  assert.equal(stitching.blend, true);
+
+  const paint = groupOf([{ name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' }], [0]);
+  assert.equal(paint.alphaTest, null, 'and an ordinary surface keeps every texel');
+});
+
+test('the viewer throws away a cutout texel instead of painting it black', async () => {
+  // Read out of the source because the alternative is a GPU, like the
+  // transparent-surface tests above.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+
+  // DISCARD, not a low alpha: an alpha-tested surface is in the OPAQUE pass,
+  // where alpha is not composited at all, and it writes depth. Handing a zero
+  // alpha to a pass that ignores alpha is what drew the badge on this car's
+  // nose as a black rectangle.
+  const main = src.slice(src.indexOf('void main() {\n  vec4 texel'), src.indexOf('function compile('));
+  assert.match(main, /if \(alphaTest > 0\.0 && texel\.a < alphaTest\) discard;/);
+  assert.ok(main.indexOf('discard') < main.indexOf('vec3 c = texel.rgb'),
+    'thrown away before anything is computed from it');
+
+  // AND RESET in the per-surface pass, like every other per-group uniform. A
+  // leftover threshold there would punch holes in the sheet being edited.
+  const surfacePass = src.slice(src.indexOf('if (!groups) {'), src.indexOf('// One draw call per painted surface.'));
+  assert.match(surfacePass, /gl\.uniform1f\(loc\.alphaTest, 0\);/);
+  // And set from the group in the whole-car pass, where a group states one.
+  assert.match(src, /gl\.uniform1f\(loc\.alphaTest, g\.alphaTest \?\? 0\);/);
+});
+
+test('a cut-out texel is not drawn and does not hide what is behind it', async () => {
+  // The software renderer's half of the same rule, and the half with a trap in
+  // it: this rasteriser wrote depth as soon as a fragment passed the depth
+  // TEST, before it had sampled the texture. A thrown-away texel that had
+  // already written depth occludes what is behind it, so a grille would be a
+  // hole in the car rather than a grille.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  // Two panels facing the camera, one behind the other. The `left` view looks
+  // from +x, so the cutout is the quad at x = 1 and the solid green panel
+  // behind it is at x = -1.
+  const quads = {
+    positions: new Float32Array([
+      -1, -1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1,       // behind
+      1, -1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1,           // the cutout, nearer
+    ]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [-1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  // Half opaque magenta, half BLACK AND TRANSPARENT — which is what a cutout
+  // sheet actually holds, and why getting this wrong is so visible.
+  const cutout = { w: 2, h: 1, data: Buffer.from([0, 0, 0, 0, 255, 0, 255, 255]) };
+  const solid = { w: 1, h: 1, data: Buffer.from([0, 255, 0, 255]) };
+  const sheets = new Map([['cut', cutout], ['back', solid]]);
+  const shot = (alphaTest) => rasterise(quads, [
+    { role: 'cut', start: 6, count: 6, alphaTest },
+    { role: 'back', start: 0, count: 6 },
+  ], sheets, { view: 'left', width: 60, height: 60, floor: false });
+  const at = (img, x) => [0, 1, 2].map((k) => img.data[(((30 * img.width) + x) * 4) + k]);
+
+  const cut = shot(0.5);
+  assert.ok(at(cut, 20)[0] > 100 && at(cut, 20)[1] === 0, 'the cutout draws where it is opaque');
+  const through = at(cut, 38);
+  assert.ok(through[1] > 100 && through[0] < 40,
+    `the panel behind shows through the cut part: ${through}`);
+
+  // Without a threshold the transparent half is drawn anyway, as the colour
+  // sitting under the alpha — a near-black rectangle over the green panel.
+  // That is the grille, the stitching and the 500 badge on this car's nose.
+  const kept = at(shot(null), 38);
+  assert.ok(kept[1] < 40 && kept.reduce((a, b) => a + b, 0) < 40,
+    `no threshold, and the cutout is a black slab: ${kept}`);
+});

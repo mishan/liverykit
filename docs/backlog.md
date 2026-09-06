@@ -235,19 +235,6 @@ If that ever matters, the fix is to take the fractional part before the
 multiply survives the precision loss, or to cap the effective tiling. Both
 change what the material looks like, so neither should be done on a guess.
 
-## Alpha test is read and not honoured
-
-The parser now keeps `alphaTested` beside `alphaBlendMode`, and nothing draws
-with it. An alpha-tested material is a hard cutout — a grille, a stitch line, a
-badge — and both renderers draw it as a solid rectangle with the cutout painted
-in as opaque black. On the Abarth that is `CAR_Griglia` (the front grille),
-`INT_cuciture_NM` (the stitching) and `INT_Logo_500` (the badge on the nose).
-
-The fix is a `discard` below the material's `ksAlphaRef` in the viewer's
-fragment shader and the same threshold in the software rasteriser, on groups
-whose dominant material states it. Neither renderer needs sorting for it, which
-is the whole point of alpha test.
-
 ## `additive` is still read off the filename
 
 `additive(file)` matches `/emissive/i` and says so plainly, because at the time
