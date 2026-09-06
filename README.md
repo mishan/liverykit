@@ -492,6 +492,7 @@ and several other things:
 | `unreadable` | too small in millimetres at the car's real scale |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
+| `clipped` | a spanning region stops at a panel edge the profile has no seam for |
 | `unpainted-twin` | a sheet you paint has an unpainted duplicate on top of it |
 | `bad-constraint` | a constraint nothing enforces — refused, not ignored |
 

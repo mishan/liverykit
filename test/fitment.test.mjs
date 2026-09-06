@@ -113,6 +113,28 @@ test('artwork outside the readable part of a panel is reported', () => {
   assert.equal(out[0].severity, 'high');
 });
 
+test('a band that cannot span is a finding, not an exception', () => {
+  // A spanning region on a profile with no seam maps is clipped to its home
+  // panel and reported — see spanPlacements. It used to throw from inside
+  // `placements`, which this module turned into one `fatal` finding saying the
+  // surface could not be placed at all: true, unhelpful, and it hid everything
+  // else on that surface behind it.
+  const seamless = structuredClone(profile);
+  const r = fitment(design([
+    { id: 'band', treatment: 'stripe', panel: 'L', span: true, at: [0.5, 0, 1.4, 0.4], color: 'ink' },
+    { id: 'name', treatment: 'text', panel: 'L', span: true, at: [0.5, 0.5, 1.4, 0.3], text: 'T' },
+  ]), seamless);
+
+  assert.deepEqual(r.findings.filter((f) => f.severity === 'fatal'), [],
+    'the surface is placed, and everything else about it is still checked');
+  const clipped = r.findings.filter((f) => f.kind === 'clipped');
+  assert.deepEqual(clipped.map((f) => f.ids[0]).sort(), ['band', 'name']);
+  assert.deepEqual(clipped.map((f) => f.severity).sort(), ['high', 'low'],
+    'words stop being words when half of them is missing; a stripe stops short');
+  assert.match(clipped[0].why, /no seam maps/);
+  assert.ok(r.checked.includes('clipped'), 'and it is named as having run');
+});
+
 test('a region that names no panel is checked, not skipped', () => {
   // Placements with no panel were filtered out before any check ran, so a
   // design written in whole-sheet coordinates — which is what a design does on

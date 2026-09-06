@@ -198,7 +198,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // short list of findings that reads like a clean bill of health.
     let placed;
     try {
-      placed = placements(profile, t, spec, fit);
+      placed = placements(profile, t, spec, fit, sayHere);
     } catch (e) {
       failed.push(t.from);
       say({
@@ -238,7 +238,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 }
 
 const ALL_CHECKS = ['overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
-  'unseen', 'off-mesh', 'crossed', 'bad-constraint', 'unpainted-twin'];
+  'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -249,7 +249,7 @@ const ALL_CHECKS = ['overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unm
  * order `renderSurface` uses, because any other order asks about a car nobody
  * is looking at.
  */
-function placements(profile, t, spec, fit) {
+function placements(profile, t, spec, fit, say = () => {}) {
   // `surfaceKey` is not optional in practice. Fit ids for unnamed regions are
   // `${surfaceKey}#${index}` — omitting it produced `#0`, which matches nothing
   // a fit ever wrote, so every override and copy on an unnamed region was
@@ -279,7 +279,26 @@ function placements(profile, t, spec, fit) {
     // rectangle alone would report the part past the panel's edge as
     // off-mesh, which is the one place it is meant to be.
     if (r.span === true && frac.panel) {
-      return spanPlacements(profile, t.role, r.panel, frac).map((p) => ({
+      // A span the car cannot honour is clipped to its home panel and reported
+      // — see spanPlacements. It is a finding here as well as a note in the
+      // render, because this is where somebody looks to find out what is wrong
+      // with a design on a car, and "the band stops at the door's edge" is
+      // exactly that.
+      const clipped = [];
+      const pieces = spanPlacements(profile, t.role, r.panel, frac, { notes: clipped });
+      for (const n of clipped) {
+        say({
+          kind: 'clipped',
+          // Words stop being words when half of them is missing; a band that
+          // stops short is wrong and legible.
+          severity: r.treatment === 'text' || r.treatment === 'radialText' ? 'high' : 'low',
+          surface: t.from,
+          panel: r.panel,
+          ids: [key],
+          why: n.text,
+        });
+      }
+      return pieces.map((p) => ({
         region: { ...r, panel: p.panel },
         key,
         spilled: p.hops > 0,
