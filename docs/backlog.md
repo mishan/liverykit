@@ -258,3 +258,37 @@ artwork that is now a bake.
 The profile records the model's size and mtime already. Comparing them at load
 and saying "this profile was made against a different model" costs one `stat`
 and would have caught this class of thing before a picture did.
+
+## The glass fresnel is invented where the material states one
+
+Both renderers build a windscreen's transparency as `0.15 + 0.75 * rim` with
+`rim = (1 - n·v)^2.5`. Every number in that is mine. The materials state their
+own: `fresnelC` is the head-on term, `fresnelEXP` the falloff, and
+`fresnelMaxLevel` the ceiling — 272 of the 328 composited reflective materials
+across the 64 readable cars here state a maximum, ranging from 0 to 2.3 with a
+median of 0.3, against the 0.9 this hard-codes.
+
+That is the same shape of mistake as `alphaBlendMode`, `alphaTested` and the
+glass alpha above it: a fact the model carries, replaced by a constant that
+happened to look right on one car. It is also why the Abarth's side glass and
+the NSX's read as the same material when they are not.
+
+The lighting terms went through this exactly once already and it worked — see
+`lightingFor`, which scales each material's own ksAmbient/ksDiffuse/ksSpecular.
+The fresnel wants the same treatment, and the same calibration note: these are
+AC's numbers for AC's renderer, so they need a reference point here rather than
+being used raw.
+
+## What else is inferred that the model states
+
+Worth keeping the list in one place, since three of them have now bitten:
+
+- `isGlass` is still a set of shader NAMES. It is gated on the model's blend
+  flag now, which is what made it safe, but the question it answers — does this
+  surface get a fresnel — is really the fresnel properties above being present.
+- `additive` reads the filename; `isAdditive` is in the material's props.
+- `trustworthyDiffuse` reads the shader name (its own entry, above).
+- The cockpit eye is estimated from a steering wheel's position. AC states the
+  driver's eye in `car.ini` as `[GRAPHICS] DRIVEREYES` on most cars — a fact
+  beside the model rather than in it, which is why it is listed here and not
+  fixed with the rest.
