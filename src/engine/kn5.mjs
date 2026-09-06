@@ -503,6 +503,33 @@ export function blends(material) {
 }
 
 /**
+ * The alpha below which this material's fragments are thrown away, or null
+ * where it keeps every texel.
+ *
+ * A HARD CUTOUT, not a composite: a grille, a stitch line, a badge. It is
+ * drawn in the opaque pass, writes depth and needs no sorting — which is the
+ * whole point of alpha test, and why `blends` deliberately answers no for it.
+ *
+ * The model states WHETHER in the byte beside `alphaBlendMode` and the
+ * threshold itself as `ksAlphaRef`, and 218 of the 253 alpha-tested materials
+ * across the cars here state that as 0. Zero is the property being absent
+ * rather than a request to keep every texel — a threshold nothing can fail —
+ * so AC's own default for its AT shaders stands in. The 35 that do state one
+ * mostly say 0.5 anyway; the rest say 0.2, 0.24, 0.3, 0.4 and, once, 1, which
+ * keeps only a fully opaque texel.
+ *
+ * The textures agree that the exact number rarely matters: this Abarth's
+ * grille is 96% of the way to binary — 49% of its texels below 10% alpha and
+ * 47% above 90% — with the remainder an antialiased fringe. Its stitching is
+ * the soft one, and there AC cuts the fringe off too.
+ */
+export function alphaTest(material) {
+  if (!material?.alphaTested) return null;
+  const ref = material.props?.ksAlphaRef;
+  return Number.isFinite(ref) && ref > 0 ? ref : 0.5;
+}
+
+/**
  * Whether a material is reflective glass, specifically — a narrower question
  * than `blends`: `ksPerPixelAlpha` composites too (a decal, a number plate)
  * but is not glass and should not go mirror-like at a grazing angle.

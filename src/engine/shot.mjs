@@ -734,10 +734,6 @@ export function rasterise(model, groups, sheets, {
           const z = w0 * A.z + w1 * B.z + w2 * C.z;
           const at = y * width + x;
           if (z >= depth[at]) continue;
-          // Depth WRITE only for opaque groups, so two blended surfaces do not
-          // occlude each other. Depth TEST still applies to both, so bodywork
-          // hides what is behind it.
-          if (!g.blend) depth[at] = z;
 
           let rgb = BARE;
           let alpha = 1;
@@ -787,6 +783,24 @@ export function rasterise(model, groups, sheets, {
               ];
             }
           }
+
+          // A CUTOUT TEXEL IS NOT DRAWN AT ALL — see `alphaTest` in kn5.mjs. A
+          // grille, a stitch line, the badge on this car's nose: the surface is
+          // opaque where it is drawn and absent where it is not, and there is
+          // no third state. Composited instead, the absent part is drawn as
+          // whatever colour sits under it, which on a cutout sheet is black.
+          if (g.alphaTest != null && alpha < g.alphaTest) continue;
+
+          // Depth WRITE only for opaque groups, so two blended surfaces do not
+          // occlude each other. Depth TEST still applies to both, so bodywork
+          // hides what is behind it.
+          //
+          // AFTER the cutout, and that ordering is the point: this used to
+          // write depth the moment a fragment passed the depth test, before it
+          // had sampled anything. A thrown-away texel that had already written
+          // depth occludes what is behind it, so a grille would be a hole in
+          // the car rather than a grille.
+          if (!g.blend) depth[at] = z;
 
           let n = norm([
             w0 * normals[ia * 3] + w1 * normals[ib * 3] + w2 * normals[ic * 3],

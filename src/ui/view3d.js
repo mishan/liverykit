@@ -124,6 +124,9 @@ uniform float glass;      // 1 = this group is reflective glass
 // through the car. Only the alpha-blended pass asks for this, and only for
 // groups that are not glass — glass builds its own from the fresnel below.
 uniform float texAlpha;
+// The alpha below which a fragment is thrown away, or 0 for a surface that
+// keeps every texel. A hard cutout -- see alphaTest in kn5.mjs.
+uniform float alphaTest;
 uniform vec3 eye;         // camera position, for the specular lobes
 varying vec2 vUv;
 varying vec3 vN;
@@ -189,6 +192,12 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v, float glassRim) {
 
 void main() {
   vec4 texel = texture2D(map, vUv);
+  // DISCARDED, not composited. An alpha-tested surface is drawn in the OPAQUE
+  // pass, which ignores alpha and writes depth: handing it a zero alpha draws
+  // the absent part as whatever colour sits under it, and on a cutout sheet
+  // that is black. A grille came out a solid panel, the badge on this car's
+  // nose a black rectangle.
+  if (alphaTest > 0.0 && texel.a < alphaTest) discard;
   vec3 c = texel.rgb;
   // Two ways to put the layers together, and which one is right depends
   // entirely on what the DIFFUSE underneath actually is.
@@ -860,6 +869,7 @@ export function createViewer(canvas) {
     lit: gl.getUniformLocation(prog, 'lit'),
     glass: gl.getUniformLocation(prog, 'glass'),
     texAlpha: gl.getUniformLocation(prog, 'texAlpha'),
+    alphaTest: gl.getUniformLocation(prog, 'alphaTest'),
     eye: gl.getUniformLocation(prog, 'eye'),
   };
 
@@ -1025,6 +1035,9 @@ export function createViewer(canvas) {
       // belong in it too.
       gl.uniform1f(loc.glass, 0);
       gl.uniform1f(loc.texAlpha, 0);
+      // A leftover threshold would punch the last part's cutout into the sheet
+      // being edited — a grille's holes across somebody's artwork.
+      gl.uniform1f(loc.alphaTest, 0);
       // And the detail layer, for the same reason: a leftover 1 here would
       // multiply the sheet being edited by a carbon weave at five hundred
       // times tiling.
@@ -1169,6 +1182,14 @@ export function createViewer(canvas) {
       // the page shows through the car; glass overrides alpha with its fresnel;
       // additive uses blendFunc(ONE, ONE) and never reads it.
       gl.uniform1f(loc.texAlpha, g.blend && !g.glass && !g.add ? 1 : 0);
+      // A hard cutout, where the group's dominant material states one. Nothing
+      // to reset per group: every group states its own, and a group with none
+      // states zero.
+      //
+      // The grey `unpainted` fallback below is opaque, so a cutout part whose
+      // texture never arrived stays a solid grey part rather than vanishing —
+      // which is the honest picture of "no artwork here".
+      gl.uniform1f(loc.alphaTest, g.alphaTest ?? 0);
       gl.bindTexture(gl.TEXTURE_2D, tex ?? unpainted);
       gl.drawElements(gl.TRIANGLES, g.count, type, g.start * bytes);
     };
