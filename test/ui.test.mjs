@@ -4256,7 +4256,7 @@ test('the decoder reads every pixel format this fleet actually ships', async () 
   // Read through the channel MASKS, not an assumed byte order: the same file
   // format holds BGRA, RGB and luminance-plus-alpha, and guessing turns a red
   // car blue rather than failing.
-  const { decodeDds } = await import('../src/ui/view3d.js');
+  const { decodeDds } = await import('../src/ui/dds.js');
 
   /** A DDS of `data`, described by the header fields that decide how to read it. */
   const dds = (width, height, { pfFlags, fourCC = 0, bits = 0, masks = [0, 0, 0, 0] }, data) => {
@@ -4457,4 +4457,106 @@ test('a cut-out texel is not drawn and does not hide what is behind it', async (
   const kept = at(shot(null), 38);
   assert.ok(kept[1] < 40 && kept.reduce((a, b) => a + b, 0) < 40,
     `no threshold, and the cutout is a black slab: ${kept}`);
+});
+
+test('a format ImageMagick refuses is decoded anyway, by the decoder the viewer uses', async () => {
+  // TWO RENDERERS, ONE CAR, AND ONLY ONE OF THEM COULD READ THE FILE. The
+  // browser has had a JS decoder for every DDS format in this fleet since the
+  // carbon weave turned out to be plain BGRA; Node shells out to ImageMagick,
+  // which reads DXT and refuses 16-bit luminance-plus-alpha. On this Abarth
+  // that is INTERNAL_Glass.dds — a 2048-square sheet whose alpha carries the
+  // black band at the base of the windscreen — so the software renderer drew
+  // the glass without it and the browser drew it with.
+  //
+  // Same decoder now, with ImageMagick still first: it is faster, and it
+  // downsizes on the way out.
+  const { decodeDds } = await import('../src/engine/pipeline.mjs');
+
+  // 2x2 of 16-bit A8L8, which is what the interior glass and the brushed metal
+  // detail map are stored as.
+  const buf = Buffer.alloc(128 + 8);
+  buf.write('DDS ', 0, 'ascii');
+  buf.writeUInt32LE(124, 4);
+  buf.writeUInt32LE(2, 12);                   // height
+  buf.writeUInt32LE(2, 16);                   // width
+  buf.writeUInt32LE(1, 28);                   // mipMapCount
+  buf.writeUInt32LE(32, 76);                  // pixelformat size
+  buf.writeUInt32LE(0x20001, 80);             // DDPF_LUMINANCE | DDPF_ALPHAPIXELS
+  buf.writeUInt32LE(16, 88);                  // bits
+  buf.writeUInt32LE(0x00ff, 92);              // luminance mask
+  buf.writeUInt32LE(0xff00, 104);             // alpha mask
+  Buffer.from([10, 0, 200, 255, 90, 128, 40, 64]).copy(buf, 128);
+
+  const img = await decodeDds(buf);
+  assert.ok(img, 'a format one decoder refuses is still a texture');
+  assert.deepEqual([img.w, img.h], [2, 2]);
+  const px = (i) => Array.from(img.data.slice(i * 4, (i * 4) + 4));
+  assert.deepEqual(px(0), [10, 10, 10, 0], 'luminance across RGB, alpha its own channel');
+  assert.deepEqual(px(1), [200, 200, 200, 255]);
+});
+
+test('glass keeps the opacity its own texture states', async () => {
+  // THE GAP WHERE THE COWL SHOULD BE. Looking down at the base of the
+  // windscreen you could see the dashboard and the seats through a band that
+  // is solid on the real car — the black frit printed around the edge of the
+  // glass, which on this Abarth is the bottom 128 rows of INTERNAL_Glass.dds
+  // at alpha 255 while the rest of the sheet sits near 16.
+  //
+  // Glass alpha was REPLACED by a fresnel term, deliberately: AC's glass
+  // shaders take their transparency from the shader rather than the diffuse,
+  // and a windscreen drawn from a texture that is mostly opaque read as a grey
+  // slab. That reasoning was about which SURFACES are glass, and it was
+  // settled properly when blending started coming from the model. What it
+  // cost was the one thing the texture really does say.
+  //
+  // So the fresnel ADDS to the sheet's own alpha rather than standing in for
+  // it: a windscreen is still see-through, its frit is still solid, and a
+  // glass surface with no texture at all still gets the rim it always had.
+  const { rasterise } = await import('../src/engine/shot.mjs');
+
+  const quads = {
+    positions: new Float32Array([
+      -1, -1, -1, -1, -1, 1, -1, 1, 1, -1, 1, -1,       // behind
+      1, -1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1,           // the glass, nearer
+    ]),
+    uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0]),
+    normals: new Float32Array(Array.from({ length: 8 }, () => [-1, 0, 0]).flat()),
+    indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+  };
+  // Half clear, half solid black: a windscreen and its frit.
+  const pane = { w: 2, h: 1, data: Buffer.from([20, 20, 20, 0, 20, 20, 20, 255]) };
+  const solid = { w: 1, h: 1, data: Buffer.from([0, 255, 0, 255]) };
+  const groups = [
+    { role: 'glass', start: 6, count: 6, blend: true, glass: true },
+    { role: 'back', start: 0, count: 6 },
+  ];
+  const img = rasterise(quads, groups, new Map([['glass', pane], ['back', solid]]),
+    { view: 'left', width: 60, height: 60, floor: false });
+  const at = (x) => [0, 1, 2].map((k) => img.data[(((30 * img.width) + x) * 4) + k]);
+
+  // The sheet's second texel is the frit and lands on the left of the frame;
+  // its first, the clear half, on the right.
+  const frit = at(20);
+  assert.ok(frit[1] < 60, `the opaque band hides what is behind it: ${frit}`);
+  const clear = at(38);
+  assert.ok(clear[1] > 100, `and the clear half still shows the panel: ${clear}`);
+
+  // A glass group with no artwork keeps the fresnel it always had — this
+  // repository has several cars whose glass texture nothing could decode, and
+  // an empty hole where a windscreen belongs is worse than a grey pane.
+  const bare = rasterise(quads, [{ role: 'glass', start: 6, count: 6, blend: true, glass: true }],
+    new Map(), { view: 'left', width: 60, height: 60, floor: false });
+  const pale = [0, 1, 2].map((k) => bare.data[(((30 * bare.width) + 30) * 4) + k]);
+  assert.ok(pale.reduce((a, b) => a + b, 0) > 60, `a bare windscreen is still drawn: ${pale}`);
+});
+
+test('the viewer builds glass alpha from the sheet and the fresnel together', async () => {
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const main = src.slice(src.indexOf('void main() {\n  vec4 texel'), src.indexOf('function compile('));
+  // The rim is a FLOOR under the texture's own alpha, not a replacement for
+  // it: max, not assignment. A frit band at alpha 1 stays at 1.
+  assert.match(main, /max\(/);
+  assert.ok(/glass > 0\.5/.test(main));
+  assert.match(main, /hasArt/,
+    'and whether there is a texture at all decides whether its alpha means anything');
 });

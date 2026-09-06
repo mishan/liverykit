@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { decodeDds as decodeDdsHere } from '../ui/dds.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { access, constants, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
@@ -109,27 +110,54 @@ export async function toPNG(srcPath, outPath) {
  * show and decoding it at full size is seconds spent on nothing anybody
  * would see.
  *
- * `null` on anything ImageMagick cannot make sense of — an unsupported DXT
- * variant, a corrupt blob — rather than throwing: one texture a renderer
- * cannot decode is a part drawn grey, not a build that stops.
+ * ImageMagick FIRST and the shared JS decoder behind it, because ImageMagick
+ * is faster and downsizes on the way out — and because it refuses formats that
+ * are really in these cars. It reads DXT and turns down 16-bit
+ * luminance-plus-alpha, which on the Abarth is INTERNAL_Glass.dds: a
+ * 2048-square sheet whose alpha carries the black band at the base of the
+ * windscreen. The browser has decoded that since its detail maps turned out
+ * not to be DXT either, so for a while the two renderers were drawing
+ * different cars. Same decoder now — see src/ui/dds.js.
+ *
+ * `null` only when NEITHER can make sense of it: one texture no renderer can
+ * decode is a part drawn grey, not a build that stops.
  */
 export async function decodeDds(buffer, { maxSize = 512 } = {}) {
-  const bin = await magickBin();
+  const bin = await magickBin().catch(() => null);
   const id = randomBytes(8).toString('hex');
   const src = join(tmpdir(), `liverykit-dds-${id}.dds`);
   const dst = join(tmpdir(), `liverykit-dds-${id}.png`);
   try {
+    if (!bin) throw new Error('no ImageMagick');
     await writeFile(src, buffer);
     await run(bin, [src, '-resize', `${maxSize}x${maxSize}>`, dst]);
     const { data, info } = await sharp(await readFile(dst))
       .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     return { data, w: info.width, h: info.height };
   } catch {
-    return null;
+    return decodeHere(buffer, maxSize);
   } finally {
     await unlink(src).catch(() => {});
     await unlink(dst).catch(() => {});
   }
+}
+
+/**
+ * The same picture, decoded in process and downsized the way the path above
+ * would have, so a caller cannot tell which decoder answered.
+ */
+async function decodeHere(buffer, maxSize) {
+  const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+  const img = decodeDdsHere(view);
+  if (!img) return null;
+  const big = Math.max(img.width, img.height);
+  if (big <= maxSize) return { data: Buffer.from(img.pixels), w: img.width, h: img.height };
+  const scale = maxSize / big;
+  const { data, info } = await sharp(Buffer.from(img.pixels),
+    { raw: { width: img.width, height: img.height, channels: 4 } })
+    .resize(Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)))
+    .raw().toBuffer({ resolveWithObject: true });
+  return { data, w: info.width, h: info.height };
 }
 
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {
