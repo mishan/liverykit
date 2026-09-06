@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -150,6 +150,10 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // opaque is a shiny solid, and this car has five of those on the sheet
         // its bumpers share with its paint.
         glass: blend && isGlass(model.materials?.[dominant]?.shader),
+        // A HARD CUTOUT — see `alphaTest`. From the dominant material for the
+        // same reason glass is: one sheet, several materials, and this says how
+        // the surface is drawn rather than what is on it.
+        alphaTest: alphaTest(model.materials?.[dominant]),
       });
     }
   };
