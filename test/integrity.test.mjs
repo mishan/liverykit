@@ -2005,7 +2005,10 @@ test('unpainted meshes are grouped by their own texture, not lumped together', a
   // `triangles` reads uint16 indices out of the same buffer, so they need a real
   // home in it — a mesh with no readable indices emits no geometry and no group.
   for (let m = 0; m < 3; m++) for (let k = 0; k < 3; k++) buf.writeUInt16LE(k, verts + m * 6 + k * 2);
+  // `name` and `path` because a mesh out of a kn5 always has both, and the
+  // rules that read which way a car faces read them.
   const mesh = (i) => ({
+    name: `mesh_${i}`, path: `FBX: car.fbx/root/mesh_${i}`,
     materialId: i, vertexCount: 3, vertexStart: i * 3 * stride, stride,
     indexCount: 3, indexStart: verts + i * 6,
     world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
@@ -2127,4 +2130,73 @@ test('every constraint is documented where somebody would look for it', async ()
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
   const missing = Object.keys(CONSTRAINTS).filter((k) => !readme.includes(k));
   assert.deepEqual(missing, [], `README does not mention: ${missing.join(', ')}`);
+});
+
+test('the wheel is where the model hangs it, not what the artist called it', async () => {
+  // The Abarth 500 has a steering wheel, renders one, and got "no cockpit eye
+  // for this car" in the editor. Its wheel meshes are called Geometry81_SUB0
+  // through SUB7 — the author named nothing — and they hang under a node
+  // called STEER_HR, which is the convention AC needs to turn the thing.
+  //
+  // Matching mesh NAMES asks the artist to have been helpful. The node is
+  // where the model states the fact, and the whole cockpit hangs off named
+  // nodes for the same reason.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { cockpitEye } = await import('../src/engine/visibility.mjs');
+
+  const anonymous = panelMesh('Geometry81_SUB1', 0.4, 1);
+  for (const v of anonymous.verts) v[0] += 0.33;
+  const m = parseKn5Buffer(buildKn5({ wrapped: [{ name: 'STEER_HR', meshes: [anonymous] }] }));
+
+  const eye = cockpitEye(m, { front: 1 });
+  assert.equal(eye?.from, 'Geometry81_SUB1');
+  assert.ok(Math.abs(eye.x - 0.33) < 0.05, `the eye follows the wheel, got x=${eye.x}`);
+
+  // Two nodes down is still the wheel: this car's real path is
+  // STEER_HR / Geometry81 / Geometry81_SUB4.
+  const deep = panelMesh('Geometry81_SUB4', 0.4, 1);
+  for (const v of deep.verts) v[0] += 0.33;
+  const nested = parseKn5Buffer(buildKn5({
+    wrapped: [{ name: 'STEER_HR', children: [{ name: 'Geometry81', meshes: [deep] }] }],
+  }));
+  assert.equal(cockpitEye(nested, { front: 1 })?.from, 'Geometry81_SUB4');
+
+  // And it has to be the wheel's node, not merely one above it: every one of
+  // these meshes is under COCKPIT_HR too, and a cockpit is not a steering
+  // wheel.
+  const cockpit = parseKn5Buffer(buildKn5({
+    wrapped: [{ name: 'COCKPIT_HR', meshes: [panelMesh('Geometry82_SUB4', 0.4, 1)] }],
+  }));
+  assert.equal(cockpitEye(cockpit, { front: 1 }), null,
+    'a mesh in the cockpit is not the wheel');
+});
+
+test('the editor puts the driver behind the wheel on a car that faces -Z', async () => {
+  // The profile's visibility pass reads which way the model calls forward and
+  // flips the eye offset with it; the geometry the EDITOR draws from called
+  // `cockpitEye` with the default. So on a car modelled nose-down-Z, the two
+  // disagreed: the tag on a panel said "readable from the driver's seat"
+  // measured from one point, and the cockpit view put the camera at the other,
+  // out in front of the windscreen looking back.
+  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { wholeModelGeometry } = await import('../src/engine/geometry.mjs');
+
+  const wheel = panelMesh('STEER_HR_wheel', 0.4, 1);
+  // Wheel nodes are the exact source for which way a car faces — the front
+  // pair at -Z here.
+  const facing = (front) => parseKn5Buffer(buildKn5({
+    extraMeshes: [wheel],
+    dummies: [
+      { name: 'WHEEL_LF', at: [0.7, 0.3, 1.2 * front] },
+      { name: 'WHEEL_RF', at: [-0.7, 0.3, 1.2 * front] },
+      { name: 'WHEEL_LR', at: [0.7, 0.3, -1.2 * front] },
+      { name: 'WHEEL_RR', at: [-0.7, 0.3, -1.2 * front] },
+    ],
+  }));
+
+  const plusZ = wholeModelGeometry(facing(1), []).cockpit;
+  const minusZ = wholeModelGeometry(facing(-1), []).cockpit;
+  assert.ok(plusZ && minusZ, 'both models have a steering wheel');
+  assert.ok(plusZ.z < 0.4, `+Z forward: the eye sits behind the wheel, got ${plusZ.z}`);
+  assert.ok(minusZ.z > 0.4, `-Z forward: it sits the other side, got ${minusZ.z}`);
 });

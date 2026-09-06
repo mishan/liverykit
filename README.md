@@ -262,6 +262,64 @@ node bin/liverykit.mjs my-livery --ui
 
 ---
 
+## Decals: images a livery brings with it
+
+Everything else a design does is code that emits vectors, which is what lets one
+livery render on several cars and read as a diff. A sponsor's logo is not that:
+it is somebody else's artwork, it arrives as a file, and the honest thing to do
+is put its pixels on the car.
+
+So a livery can be a **folder** instead of a file:
+
+```
+liveries/my-livery/
+  livery.mjs          the design (livery.json works too)
+  decals/
+    sponsor.png
+    flag.svg
+```
+
+Everything in `decals/` is loaded when the livery is opened or built, and a
+design addresses one by its name without the extension:
+
+```js
+{ id: 'sponsor-left', treatment: 'decal', image: 'sponsor',
+  panel: 'flankLeft', at: [0.1, 0.4, 0.6, 0.2] }
+```
+
+A decal is an ordinary region, so everything that already works on regions works
+on it: `panel` or `tags`, `rotate`, `span`, a fit that moves it per car, and
+dragging it in the editor.
+
+| option | what it does |
+|---|---|
+| `image` | the file's name in `decals/`, without its extension |
+| `fit` | `contain` (default), `cover` — filled and clipped to the region — or `stretch` |
+| `opacity` | 0 to 1 |
+| `glow` | put it in the emissive pass as well, so it lights |
+
+**Aspect ratio is handled for you.** A square of texture does not land square on
+the car, and a logo fitted to its own pixel ratio comes out stretched by exactly
+the panel's distortion. `contain` and `cover` fit the artwork to the aspect it
+should have ON the car, using the panel's measured `anisotropy` — the same
+correction the `text` treatment makes. `stretch` is there for when you mean it.
+
+**PNG, JPEG and SVG.** An SVG is rasterised when it is loaded, at 2048 on its
+longest side, and never travels as markup: a design is a file people download
+from each other and the editor renders the finished sheet as `innerHTML`, so
+foreign markup inside it is a way to lose. Its pixels are what reach the car.
+
+**A decal that cannot be placed says so.** An image the livery does not carry, a
+region with no `image` at all, a file that is not an image, two files whose names
+a design could not tell apart — each is reported by name, in the build's own
+report and in the editor, rather than rendering as nothing and looking like a
+design that paints nothing there.
+
+Single-file liveries still work exactly as before; they simply have nowhere to
+keep images, and a decal in one is told so.
+
+[`liveries/decal-demo/`](liveries/decal-demo/) is a working example.
+
 ## Making a livery that works on more than one car
 
 The problem: cars do not agree on anything. Across a 235-car survey the
