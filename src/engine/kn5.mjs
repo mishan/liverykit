@@ -358,7 +358,9 @@ export function vertex(model, mesh, i) {
  * would have gone unnoticed without checking the magnitudes against real cars.
  */
 function under(mesh, nodeName) {
-  const parts = mesh.path.toUpperCase().split('/');
+  // A mesh out of a kn5 always has a path; one assembled in memory need not,
+  // and "under no node at all" is a true answer for it rather than a crash.
+  const parts = String(mesh.path ?? '').toUpperCase().split('/');
   // Ancestors only — the last segment is the mesh's own name, and it is the one
   // that lies. A mesh that IS the node is still accepted, but only on an exact
   // match rather than on containing the string.
