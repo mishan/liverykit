@@ -84,12 +84,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       const props = model.materials?.[dominant]?.props ?? {};
       const num = (v) => (Number.isFinite(v) ? v : null);
 
-      // Whether this group composites, taken from the MATERIAL rather than from
-      // the texture. A group is one draw call and one texture, and in practice
-      // one shader — but `some` rather than `every`, because a blended mesh
-      // drawn in the opaque pass is a black slab and an opaque one drawn in the
-      // blended pass merely sorts oddly. Wrong in the cheaper direction.
-      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
+      // Whether this group composites, as the MODEL states it — see `blends`.
+      // A group is one draw call and one texture, and in practice one shader,
+      // but `some` rather than `every`: a blended mesh drawn in the opaque pass
+      // is a black slab and an opaque one drawn in the blended pass merely
+      // sorts oddly. Wrong in the cheaper direction.
+      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]));
       groups.push({
         ...group, start, count: indices.length - start, blend,
         // `null` for anything the material does not state, so the viewer keeps
@@ -112,7 +112,44 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         add: blend && additive(group.file),
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
-        glass: blend && meshes.some((m) => isGlass(model.materials?.[m.materialId]?.shader)),
+        //
+        // A SHADER AND A MEASUREMENT, and it needs both.
+        //
+        // `ksPerPixelReflection` means "has a reflection map", which a car uses
+        // for its windows and for every shiny solid on it alike — this Abarth
+        // wears it on the side glass, the mirrors, the exhaust, the white metal
+        // trim and a 25,000-triangle plastic dashboard. Glass does not
+        // composite here, it REPLACES the surface's alpha with a fresnel that
+        // is 15% opaque head-on, so calling all of that glass made most of the
+        // car see-through.
+        //
+        // Nothing in the material separates them: the real side glass states
+        // fresnelMaxLevel 0 and the metal trim states 0.3. The texture does —
+        // glass carries real alpha and a shiny solid is 255 everywhere — and
+        // the profile records it, because deciding it at draw time would mean
+        // deciding it twice in two renderers.
+        //
+        // THE DOMINANT MATERIAL, where `blend` above takes any of them.
+        //
+        // `some` is right for blending and wrong here, and the difference is
+        // what each flag does when it is wrong. A blended mesh drawn opaque is
+        // a black slab and an opaque one drawn blended merely sorts oddly, so
+        // blend errs towards the cheap mistake. Glass does not composite — it
+        // REPLACES the surface's alpha with a fresnel that is 0.15 head-on, so
+        // one mesh in the group being glass makes the whole group see-through.
+        //
+        // The Abarth 500 is the case: its body sheet is worn by four materials
+        // — the livery itself, the underbody, the exhaust and the plastic trim
+        // — and the last two are `ksPerPixelReflection`, which is glass by
+        // name. Nineteen meshes of bodywork went transparent because eight of
+        // them are shiny. The dominant material is the livery, and the livery
+        // is what that sheet is.
+        //
+        // Gated on `blend`, which is now the model's own word rather than a
+        // reading of the shader's name: a reflective material the model calls
+        // opaque is a shiny solid, and this car has five of those on the sheet
+        // its bumpers share with its paint.
+        glass: blend && isGlass(model.materials?.[dominant]?.shader),
       });
     }
   };
