@@ -316,10 +316,50 @@ test('a spanning region on a profile with no seam maps is refused, not silently 
   assert.throws(() => spanPlacements(profile, 'body', 'L', over), /regenerate/,
     'the design asked for two panels and would have got one, quietly');
 
+  // GIVEN SOMEWHERE TO SAY IT, it clips and says it instead.
+  //
+  // The throw is the right answer for a caller that cannot report and the
+  // wrong one for the editor: it came out of here with nothing to catch it,
+  // /api/preview answered 500, and the car did not draw at all — for every
+  // profile made before seam maps existed, which was two of the three in this
+  // repo. Nobody can fix a design they cannot see.
+  const notes = [];
+  const clipped = spanPlacements(profile, 'body', 'L', over, { notes });
+  assert.deepEqual(clipped.map((p) => p.panel), ['L'], 'clipped to the panel it started on');
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].status, 'clipped');
+  assert.match(notes[0].text, /stops at the edge/);
+  assert.match(notes[0].text, /--from-kn5/, 'and says what would fix it');
+  assert.ok(Array.isArray(clipped[0].poly) && clipped[0].poly.length >= 3,
+    'and it is a placement like any other, shape and all');
+
   // A spanning rectangle that stays inside its panel asks nothing of the
   // seams, and is as valid on this profile as on any other.
   const within = resolveRect(profile, 'body', { panel: 'L', span: true, at: [0.1, 0.1, 0.8, 0.8] });
   assert.deepEqual(spanPlacements(profile, 'body', 'L', within).map((p) => p.panel), ['L']);
+});
+
+test('a seamless profile still renders, and the note travels with the artwork', async () => {
+  // The editor's whole failure mode: renderTexture is what /api/render and the
+  // build both go through, and an exception here is an editor that will not
+  // open rather than a stripe that stops short.
+  await import('../src/index.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const profile = {
+    id: 'c', textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    panels: { body: { L: { rect: [0, 0, 0.5, 1] } } },
+  };
+  const regionNotes = [];
+  const out = renderTexture({
+    profile, role: 'body', treatments: resolveTreatments(['core']), palette: {},
+    rng: Math.random, font: 'sans-serif', tokens: {}, regionNotes,
+    regions: [{ id: 'band', treatment: 'stripe', panel: 'L', span: true, at: [0.5, 0, 0.8, 1], color: '#fff' }],
+  });
+  assert.match(out.base, /<rect /, 'the artwork is drawn, clipped to the panel it has');
+  const clipped = regionNotes.filter((n) => n.status === 'clipped');
+  assert.equal(clipped.length, 1, 'said once, not once per pass over the regions');
+  assert.match(clipped[0].text, /body\.L/);
 });
 
 test('a placement carries the shape it is, not only the box around it', async () => {
