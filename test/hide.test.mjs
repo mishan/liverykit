@@ -12,21 +12,25 @@ import { hidePlan } from '../src/build.mjs';
 const profile = {
   id: 'car',
   textures: {
-    igt_plate:   { file: 'IGT_Plate.dds', width: 1024, height: 1024, alpha: false, shaders: ['ksPerPixelAlpha'], hiddenByCar: true },
-    imsa_plate:  { file: 'IMSA_Plate.dds', width: 32, height: 32, alpha: false, shaders: ['ksPerPixelAlpha'] },
-    mirror:      { file: 'Mirror.dds', width: 512, height: 512, alpha: false, shaders: ['ksPerPixel'] },
-    mixed:       { file: 'Mixed.dds', width: 512, height: 512, alpha: false, shaders: ['ksPerPixel', 'ksPerPixelAlpha'] },
-    odd:         { file: 'Odd.dds', width: 68, height: 64, alpha: false, shaders: ['ksPerPixelAlpha'] },
-    body:        { file: 'Body.dds', width: 2048, height: 2048, alpha: false, shaders: ['ksPerPixel'] },
+    igt_plate:   { file: 'IGT_Plate.dds', width: 1024, height: 1024, alpha: false, shaders: ['ksPerPixelAlpha'], alphaHides: true, hiddenByCar: true },
+    imsa_plate:  { file: 'IMSA_Plate.dds', width: 32, height: 32, alpha: false, shaders: ['ksPerPixelAlpha'], alphaHides: true },
+    mirror:      { file: 'Mirror.dds', width: 512, height: 512, alpha: false, shaders: ['ksPerPixel'], alphaHides: false },
+    mixed:       { file: 'Mixed.dds', width: 512, height: 512, alpha: false, shaders: ['ksPerPixel', 'ksPerPixelAlpha'], alphaHides: false },
+    odd:         { file: 'Odd.dds', width: 68, height: 64, alpha: false, shaders: ['ksPerPixelAlpha'], alphaHides: true },
+    body:        { file: 'Body.dds', width: 2048, height: 2048, alpha: false, shaders: ['ksPerPixel'], alphaHides: false },
     // Hidden by the car's config AND drawn opaque: nothing we ship can hide
     // it, and only the game (with CSP) will.
-    lamp:        { file: 'Lamp.dds', width: 256, height: 256, alpha: false, shaders: ['ksPerPixel'], hiddenByCar: true },
+    lamp:        { file: 'Lamp.dds', width: 256, height: 256, alpha: false, shaders: ['ksPerPixel'], alphaHides: false, hiddenByCar: true },
+    // A profile written before the blend modes were recorded. The shader names
+    // are no substitute — `ksPerPixelReflection` reads as glass and an Abarth
+    // wears it on its bumpers — so an unrecorded answer is not an answer.
+    old:         { file: 'Old.dds', width: 256, height: 256, alpha: false, shaders: ['ksPerPixelAlpha'] },
   },
 };
 
 test('each hidden role gets one of five answers, and none of them is silence', () => {
   const plan = hidePlan(profile, {
-    hide: ['igt_plate', 'imsa_plate', 'mirror', 'mixed', 'odd', 'lamp', 'no_such_role'],
+    hide: ['igt_plate', 'imsa_plate', 'mirror', 'mixed', 'odd', 'lamp', 'old', 'no_such_role'],
     paint: {},
   });
   const by = Object.fromEntries(plan.map((p) => [p.role, p]));
@@ -55,6 +59,10 @@ test('each hidden role gets one of five answers, and none of them is silence', (
   // An odd-sized original is no obstacle: the clear sheet is shipped at its
   // own tiny size, not the texture's.
   assert.equal(by.odd.action, 'ship-transparent');
+  // Recorded by nothing: reported as a profile to regenerate, not as a hide
+  // that will work.
+  assert.equal(by.old.action, 'cannot');
+  assert.match(by.old.why, /regenerate/);
   // A role this car does not have: designs travel, so it is not an error, but
   // it is still a line in the report.
   assert.equal(by.no_such_role.action, 'absent');
@@ -80,26 +88,27 @@ test('painting through a surface term counts as painting it', () => {
   assert.equal(asBuilt[0].action, 'ship-transparent');
 });
 
-test('a PNG is judged by its shader like everything else', () => {
+test('a PNG is judged by its material like everything else', () => {
   // `.png` used to skip the question entirely, on the unspoken theory that a
   // PNG is what a car uses for things that composite. The format has nothing
   // to say about it: what composites is the material, and a clear sheet drawn
-  // by a shader that ignores alpha is a solid black part — reported as hidden,
-  // which is the worst of the outcomes here.
+  // by a material that ignores alpha is a solid black part — reported as
+  // hidden, which is the worst of the outcomes here.
   const png = {
     id: 'car',
     textures: {
-      opaque: { file: 'Decal.png', width: 256, height: 256, shaders: ['ksPerPixel'] },
-      blended: { file: 'Sticker.png', width: 256, height: 256, shaders: ['ksPerPixelAlpha'] },
+      opaque: { file: 'Decal.png', width: 256, height: 256, shaders: ['ksPerPixel'], alphaHides: false },
+      blended: { file: 'Sticker.png', width: 256, height: 256, shaders: ['ksPerPixelAlpha'], alphaHides: true },
       unrecorded: { file: 'Old.png', width: 256, height: 256 },
     },
   };
   const by = Object.fromEntries(
     hidePlan(png, { hide: ['opaque', 'blended', 'unrecorded'] }).map((p) => [p.role, p]));
   assert.equal(by.opaque.action, 'cannot');
-  assert.match(by.opaque.why, /ksPerPixel/);
+  assert.match(by.opaque.why, /ksPerPixel/, 'and the shader names are still in the sentence');
   assert.equal(by.blended.action, 'ship-transparent');
-  assert.equal(by.unrecorded.action, 'cannot', 'an unrecorded shader is treated as opaque');
+  assert.equal(by.unrecorded.action, 'cannot', 'an unrecorded answer is treated as opaque');
+  assert.match(by.unrecorded.why, /regenerate/);
 });
 
 test('no hide list, no plan', () => {

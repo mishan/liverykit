@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, certainlyGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -84,12 +84,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       const props = model.materials?.[dominant]?.props ?? {};
       const num = (v) => (Number.isFinite(v) ? v : null);
 
-      // Whether this group composites, taken from the MATERIAL rather than from
-      // the texture. A group is one draw call and one texture, and in practice
-      // one shader — but `some` rather than `every`, because a blended mesh
-      // drawn in the opaque pass is a black slab and an opaque one drawn in the
-      // blended pass merely sorts oddly. Wrong in the cheaper direction.
-      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]?.shader));
+      // Whether this group composites, as the MODEL states it — see `blends`.
+      // A group is one draw call and one texture, and in practice one shader,
+      // but `some` rather than `every`: a blended mesh drawn in the opaque pass
+      // is a black slab and an opaque one drawn in the blended pass merely
+      // sorts oddly. Wrong in the cheaper direction.
+      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]));
       groups.push({
         ...group, start, count: indices.length - start, blend,
         // `null` for anything the material does not state, so the viewer keeps
@@ -144,9 +144,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // name. Nineteen meshes of bodywork went transparent because eight of
         // them are shiny. The dominant material is the livery, and the livery
         // is what that sheet is.
-        glass: blend && isGlass(model.materials?.[dominant]?.shader)
-          && (certainlyGlass(model.materials?.[dominant]?.shader)
-            || seeThrough(model.materials?.[dominant]?.slots?.txDiffuse ?? group.file)),
+        //
+        // Gated on `blend`, which is now the model's own word rather than a
+        // reading of the shader's name: a reflective material the model calls
+        // opaque is a shiny solid, and this car has five of those on the sheet
+        // its bumpers share with its paint.
+        glass: blend && isGlass(model.materials?.[dominant]?.shader),
       });
     }
   };
@@ -183,24 +186,6 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   for (const t of Object.values(profile.textures ?? {})) {
     if (t?.bake && typeof t.file === 'string') bakes.add(t.file.toLowerCase());
   }
-
-  // How opaque each sheet measured, where the generator measured it. See
-  // `alphaMean` in profilegen and `glass` below: the shader cannot tell a
-  // window from a shiny dashboard and this can.
-  const alphaOf = new Map();
-  for (const t of Object.values(profile.textures ?? {})) {
-    if (typeof t?.alphaMean === 'number' && typeof t.file === 'string') {
-      alphaOf.set(t.file.toLowerCase(), t.alphaMean);
-    }
-  }
-  // 250 rather than 255: a DXT5 block round-trips an opaque alpha to 254 often
-  // enough that exact equality would call a solid sheet transparent.
-  const seeThrough = (file) => {
-    const mean = alphaOf.get(String(file ?? '').toLowerCase());
-    // No measurement — a profile made before this was recorded. The shader's
-    // own claim stands, which is what this did for every car until now.
-    return mean === undefined ? true : mean < 250;
-  };
 
   const hidden = new Set();
   for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
