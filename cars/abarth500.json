@@ -84,7 +84,7 @@
   "calibration": {
     "method": "kn5",
     "source": "abarth500.kn5",
-    "date": "2026-09-05",
+    "date": "2026-09-06",
     "axes": {
       "left": "+X",
       "front": "+Z",
@@ -105,7 +105,8 @@
         "ksPerPixel",
         "ksPerPixelMultiMap_damage_dirt",
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaMean": 44
     },
     "display_simboli": {
       "file": "Display_Simboli.DDS",
@@ -115,6 +116,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 255,
       "sizeFrom": "model"
     },
     "skin": {
@@ -167,6 +169,7 @@
         "ksPerPixelNM",
         "ksPerPixelReflection"
       ],
+      "alphaMean": 255,
       "sizeFrom": "model"
     },
     "interior": {
@@ -249,6 +252,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 140,
       "sizeFrom": "model"
     },
     "loghi": {
@@ -340,6 +344,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 255,
       "sizeFrom": "model"
     },
     "glass_3": {
@@ -440,6 +445,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 255,
       "sizeFrom": "model"
     },
     "tappetino_ambocc": {
@@ -483,6 +489,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 255,
       "sizeFrom": "model"
     },
     "mat_vetro_interno": {
@@ -493,6 +500,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaMean": 60,
       "sizeFrom": "model"
     },
     "logo_3": {

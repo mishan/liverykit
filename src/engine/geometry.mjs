@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, additive, trustworthyDiffuse, detailLayer, isGlass, certainlyGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -113,6 +113,22 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
         //
+        // A SHADER AND A MEASUREMENT, and it needs both.
+        //
+        // `ksPerPixelReflection` means "has a reflection map", which a car uses
+        // for its windows and for every shiny solid on it alike — this Abarth
+        // wears it on the side glass, the mirrors, the exhaust, the white metal
+        // trim and a 25,000-triangle plastic dashboard. Glass does not
+        // composite here, it REPLACES the surface's alpha with a fresnel that
+        // is 15% opaque head-on, so calling all of that glass made most of the
+        // car see-through.
+        //
+        // Nothing in the material separates them: the real side glass states
+        // fresnelMaxLevel 0 and the metal trim states 0.3. The texture does —
+        // glass carries real alpha and a shiny solid is 255 everywhere — and
+        // the profile records it, because deciding it at draw time would mean
+        // deciding it twice in two renderers.
+        //
         // THE DOMINANT MATERIAL, where `blend` above takes any of them.
         //
         // `some` is right for blending and wrong here, and the difference is
@@ -128,7 +144,9 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // name. Nineteen meshes of bodywork went transparent because eight of
         // them are shiny. The dominant material is the livery, and the livery
         // is what that sheet is.
-        glass: blend && isGlass(model.materials?.[dominant]?.shader),
+        glass: blend && isGlass(model.materials?.[dominant]?.shader)
+          && (certainlyGlass(model.materials?.[dominant]?.shader)
+            || seeThrough(model.materials?.[dominant]?.slots?.txDiffuse ?? group.file)),
       });
     }
   };
@@ -165,6 +183,24 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   for (const t of Object.values(profile.textures ?? {})) {
     if (t?.bake && typeof t.file === 'string') bakes.add(t.file.toLowerCase());
   }
+
+  // How opaque each sheet measured, where the generator measured it. See
+  // `alphaMean` in profilegen and `glass` below: the shader cannot tell a
+  // window from a shiny dashboard and this can.
+  const alphaOf = new Map();
+  for (const t of Object.values(profile.textures ?? {})) {
+    if (typeof t?.alphaMean === 'number' && typeof t.file === 'string') {
+      alphaOf.set(t.file.toLowerCase(), t.alphaMean);
+    }
+  }
+  // 250 rather than 255: a DXT5 block round-trips an opaque alpha to 254 often
+  // enough that exact equality would call a solid sheet transparent.
+  const seeThrough = (file) => {
+    const mean = alphaOf.get(String(file ?? '').toLowerCase());
+    // No measurement — a profile made before this was recorded. The shader's
+    // own claim stands, which is what this did for every car until now.
+    return mean === undefined ? true : mean < 250;
+  };
 
   const hidden = new Set();
   for (const role of Array.isArray(livery.hide) ? livery.hide : []) {
