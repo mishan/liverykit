@@ -47,8 +47,9 @@ export function buildKn5({
   // with `===` has been wrong about that.
   material = {},
   // SEVERAL materials on the one texture, for the rules that have to choose
-  // between them: `[{ name, shader, slots, props }, ...]`. A mesh picks one
-  // with `materialId`. Empty means the single `material` above, as before.
+  // between them: `[{ name, shader, slots, props, alphaBlendMode }, ...]`. A
+  // mesh picks one with `materialId`. Empty means the single `material` above,
+  // as before.
   materials = [],
   // What the one texture is CALLED. Several rules read a texture's name — the
   // bake seed is one — so a test about those needs to choose it.
@@ -87,7 +88,10 @@ export function buildKn5({
     const props = m.props ?? {};
     parts.push(
       str(m.name ?? 'BodyMat'), str(m.shader ?? 'ksPerPixel'),
-      Buffer.from([0, 0]), u32(0),
+      // alphaBlendMode, alphaTested. The model's own answer to "does this
+      // composite" — 0 opaque, 1 alpha blend, 2 alpha to coverage — which this
+      // fixture wrote as two zeroes for as long as the parser skipped them.
+      Buffer.from([m.alphaBlendMode ?? 0, m.alphaTested ?? 0]), u32(0),
       // Each property is its key, then valueA, then 36 bytes of the vec2/3/4
       // behind it that the parser skips as one.
       u32(Object.keys(props).length),

@@ -601,11 +601,12 @@ test('a twin nobody draws is not a twin', () => {
   const art = [{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }];
   const withPlateRole = {
     ...profile,
-    // Drawn by a shader that composites alpha, which is what makes a clear
-    // sheet work — and the only thing that makes hiding it silence this check.
+    // Drawn by a material that composites alpha, as the model stated and the
+    // profile recorded — which is what makes a clear sheet work, and the only
+    // thing that makes hiding it silence this check.
     textures: {
       ...profile.textures,
-      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixelAlpha'] },
+      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixelAlpha'], alphaHides: true },
     },
   };
 
@@ -642,7 +643,7 @@ test('a hide that cannot work silences nothing', () => {
     ...profile,
     textures: {
       ...profile.textures,
-      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixel'] },
+      plate: { file: 'plate.dds', width: 64, height: 64, shaders: ['ksPerPixel'], alphaHides: false },
     },
   };
 
@@ -650,16 +651,16 @@ test('a hide that cannot work silences nothing', () => {
   assert.equal(asked.findings.filter((f) => f.kind === 'unpainted-twin').length, 1,
     'the plate is still drawn, so the twin is still a finding');
 
-  // A profile from before shaders were recorded is treated the same way, for
-  // the same reason the build refuses to claim it hid something: nobody knows
-  // that it did.
+  // A profile from before blend modes were recorded is treated the same way,
+  // for the same reason the build refuses to claim it hid something: nobody
+  // knows that it did.
   const unrecorded = {
     ...profile,
     textures: { ...profile.textures, plate: { file: 'plate.dds', width: 64, height: 64 } },
   };
   const old = fitment({ ...design(art), hide: ['plate'] }, unrecorded, null, { model: twinned });
   assert.equal(old.findings.filter((f) => f.kind === 'unpainted-twin').length, 1,
-    'an unrecorded shader is not evidence that a clear sheet would work');
+    'an unrecorded answer is not evidence that a clear sheet would work');
 });
 
 test('the back of a panel is not a twin', () => {

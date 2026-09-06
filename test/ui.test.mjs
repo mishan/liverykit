@@ -3355,34 +3355,56 @@ test('an op the editor does not know is refused, not silently dropped', async ()
   assert.equal(design.surfaces.body.regions[0].constraints, undefined);
 });
 
-test('what blends is decided by the material, not by the texture', async () => {
-  // My first attempt at this used the profile's `alpha` flag, which means
-  // "this DDS carries an alpha channel" — true of a DXT5 body texture that is
-  // entirely opaque. 62 of the Honda's 75 textures are flagged, so nearly every
-  // panel went into the blended pass with depth write off, and a car whose
-  // bodywork does not write depth cannot hide its own interior. It came back as
-  // a screenshot of a see-through car.
-  const { blends } = await import('../src/engine/kn5.mjs');
+test('what blends is what the model says blends', async () => {
+  // THREE GUESSES AT A BYTE WE WERE SKIPPING.
+  //
+  // First the profile's `alpha` flag, which means "this DDS carries an alpha
+  // channel" — true of a DXT5 body texture that is entirely opaque, so nearly
+  // every panel went into the blended pass with depth write off, and a car
+  // whose bodywork does not write depth cannot hide its own interior.
+  //
+  // Then a list of shader NAMES. `ksPerPixelReflection` is on it because it
+  // draws side glass; the Abarth also wears it on its bumpers, its exhaust and
+  // its underbody, all sharing the one body sheet — so the painted bodywork
+  // blended, and the front of the car was see-through.
+  //
+  // Then the texture's mean alpha, to tell those apart. Better, and still a
+  // guess: a kn5 material states `alphaBlendMode` two bytes after its shader
+  // name, and the parser had skipped those two bytes since the first commit.
+  const { blends, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { buildKn5 } = await import('./fixtures/kn5.mjs');
 
-  assert.equal(blends('ksPerPixelAlpha'), true, 'the number plates');
-  assert.equal(blends('ksWindscreen'), true);
-  assert.equal(blends('ksPerPixelReflection'), true, 'side glass and mirrors');
+  const model = parseKn5Buffer(buildKn5({
+    materials: [
+      { name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' },
+      { name: 'CAR_PLASTICA', shader: 'ksPerPixelReflection' },
+      { name: 'CAR_Vetro', shader: 'ksPerPixelReflection', alphaBlendMode: 1 },
+      { name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 },
+      { name: 'COVERAGE', shader: 'ksPerPixel', alphaBlendMode: 2 },
+    ],
+  }));
+  const [livery, plastic, glass, grille, coverage] = model.materials;
 
-  // The bodywork, which is what went wrong.
-  assert.equal(blends('ksPerPixelMultiMap_damage_dirt'), false, 'the doors');
-  assert.equal(blends('ksPerPixelNM'), false);
-  assert.equal(blends('ksPerPixel'), false);
+  assert.equal(blends(livery), false, 'the paint');
+  assert.equal(blends(plastic), false,
+    'the same shader as the glass below it, and the model calls it opaque — ' +
+    'this is the Abarth bumper, and the reason the front went transparent');
+  assert.equal(blends(glass), true, 'and this is the window');
 
-  // Alpha TEST is a hard cutout: it neither blends nor needs sorting, and
-  // treating it as blended would put grilles and bolt heads in the sorted pass
-  // for nothing.
-  assert.equal(blends('ksPerPixelAT'), false, 'alpha test is not alpha blend');
-  assert.equal(blends('ksPerPixelAT_NM'), false);
+  // Alpha TEST is a hard cutout: it neither composites nor needs sorting, and
+  // treating it as blended puts grilles and badges in the sorted pass for
+  // nothing. Read, because it is the difference between a grille and a slab,
+  // and because the byte is right there.
+  assert.equal(grille.alphaTested, true);
+  assert.equal(blends(grille), false, 'alpha test is not alpha blend');
+  // Alpha to coverage is the same bargain, resolved by the multisampler.
+  assert.equal(blends(coverage), false);
 
-  assert.equal(blends(undefined), false, 'and an unknown shader is opaque');
-  assert.equal(blends('ksSomethingNobodyHasWrittenYet'), false,
-    'unknown means opaque: a wrongly opaque surface looks solid, a wrongly ' +
-    'blended one can disappear');
+  assert.equal(blends(undefined), false, 'and a material we do not have is opaque');
+  assert.equal(blends({ shader: 'ksWindscreen' }), false,
+    'including one carrying nothing but a name: unrecorded means opaque, ' +
+    'because a wrongly opaque surface looks solid and a wrongly blended one ' +
+    'can disappear');
 });
 
 test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
@@ -3932,14 +3954,16 @@ test('one shiny material on a sheet does not turn the whole car to glass', async
   const [group] = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups;
   assert.equal(group.role, 'body', 'one group, because a group is one texture');
   assert.equal(group.glass, false, 'the livery is what that sheet is');
-  assert.equal(group.blend, true,
-    'and blending still takes any of them: a blended mesh drawn opaque is the worse mistake');
+  // And it does not blend either, which the shiny trim's NAME once decided for
+  // the whole sheet. The model states the trim opaque, so the sheet is opaque:
+  // that is the transparent bumper, hood and fenders.
+  assert.equal(group.blend, false);
 
-  // A sheet that really is glass still is. Same shader, this time as the
-  // material the geometry is mostly made of.
+  // A sheet that really is glass still is. Same shader, this time composited
+  // and as the material the geometry is mostly made of.
   const windows = parseKn5Buffer(buildKn5({
     materials: [
-      { name: 'GLASS', shader: 'ksPerPixelReflection' },
+      { name: 'GLASS', shader: 'ksPerPixelReflection', alphaBlendMode: 1 },
       { name: 'SEAL', shader: 'ksPerPixel' },
     ],
     bodyMesh: quad('glass_1', 0),
@@ -3947,60 +3971,56 @@ test('one shiny material on a sheet does not turn the whole car to glass', async
   }));
   const [pane] = wholeModelGeometry(windows, [{ role: 'body', file: 'body.dds' }]).groups;
   assert.equal(pane.glass, true);
+  assert.equal(pane.blend, true,
+    'and blending still takes ANY mesh in the group: drawn opaque, a blended ' +
+    'mesh is a black slab, while an opaque one drawn blended merely sorts oddly');
 });
 
-test('a reflective sheet is glass only if the sheet is see-through', async () => {
-  // The other half of the ghost car, and the one a restart did not fix.
+test('a reflective material is glass only where the model says it composites', async () => {
+  // The other half of the ghost car. `ksPerPixelReflection` means "has a
+  // reflection map", not "is a window": the Abarth wears it on its side glass
+  // AND on its mirrors, its exhaust, its white metal trim, a 25,000-triangle
+  // plastic dashboard and the bumpers that share the body sheet.
   //
-  // `ksPerPixelReflection` means "has a reflection map", not "is a window". The
-  // Abarth wears it on its side glass AND on its mirrors, its exhaust, its
-  // white metal trim and a 25,000-triangle plastic dashboard — so making the
-  // dominant material decide still left a quarter of the car see-through,
-  // because the dashboard's own material is that shader.
-  //
-  // Nothing in the material separates them: the real side glass states
-  // fresnelMaxLevel 0 and the metal trim states 0.3. The TEXTURE does, and
-  // cleanly on every car checked — glass carries real alpha (140 on this car's
-  // Glass.dds, 70 on the Honda's, 2 on its interior glass) and a shiny solid is
-  // 255 everywhere. That is also what AC composites with.
+  // Nothing in the material's PROPERTIES separates them — the real side glass
+  // states fresnelMaxLevel 0 and the metal trim states 0.3 — which is what
+  // sent me measuring texture alpha. The blend mode separates them exactly,
+  // and the model has always carried it.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
   const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
   const { buildKn5 } = await import('./fixtures/kn5.mjs');
 
-  const car = (shader) => parseKn5Buffer(buildKn5({ material: { name: 'M', shader } }));
-  const withAlpha = (mean) => ({
-    id: 'c',
-    textures: { body: { file: 'body.dds', width: 64, height: 32, ...(mean === null ? {} : { alphaMean: mean }) } },
-  });
-  const glassOf = (model, profile) =>
-    wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }], { profile }).groups[0].glass;
+  const car = (shader, alphaBlendMode) =>
+    parseKn5Buffer(buildKn5({ materials: [{ name: 'M', shader, alphaBlendMode }] }));
+  // NO PROFILE. What composites is a fact about the model, and needing a
+  // profile to answer it was how a regenerated profile became the difference
+  // between a solid car and a transparent one.
+  const groupOf = (model) =>
+    wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]).groups[0];
 
-  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(255)), false,
-    'a shiny solid: opaque everywhere, so it is not a window');
-  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(140)), true,
-    'and real glass carries real alpha');
+  const bumper = groupOf(car('ksPerPixelReflection', 0));
+  assert.equal(bumper.blend, false, 'a shiny solid does not composite');
+  assert.equal(bumper.glass, false, 'so it cannot be glass');
 
-  // A windscreen shader is worn by windscreens. It does not have to prove
-  // itself, which also keeps glass working on a car whose glass texture cannot
-  // be decoded at all — this repository has several.
-  assert.equal(glassOf(car('ksWindscreen'), withAlpha(255)), true);
+  const pane = groupOf(car('ksPerPixelReflection', 1));
+  assert.equal(pane.blend, true);
+  assert.equal(pane.glass, true, 'reflective and composited is a window');
+
+  assert.equal(groupOf(car('ksWindscreen', 1)).glass, true);
+
+  // Composited but not reflective: a decal, a number plate, the blurred rim.
+  // It blends, and it does not get glass's fresnel rim.
+  const decal = groupOf(car('ksPerPixelAlpha', 1));
+  assert.equal(decal.blend, true);
+  assert.equal(decal.glass, false);
 
   // `ksBrokenGlass` never gets that far: a damage overlay is dropped before
   // any of this, because at zero damage the correct picture has no crack mesh
   // in it at all. Worth pinning, since it is the one glass shader whose
   // classification nothing here can reach.
   assert.deepEqual(
-    wholeModelGeometry(car('ksBrokenGlass'), [{ role: 'body', file: 'body.dds' }], { profile: withAlpha(255) }).groups,
+    wholeModelGeometry(car('ksBrokenGlass', 1), [{ role: 'body', file: 'body.dds' }]).groups,
     []);
-
-  // No measurement — a profile made before this was recorded, or a texture
-  // nothing could decode. The shader's own claim stands, which is what every
-  // car did until now.
-  assert.equal(glassOf(car('ksPerPixelReflection'), withAlpha(null)), true);
-  assert.equal(glassOf(car('ksPerPixelReflection'), {}), true, 'and with no profile at all');
-
-  // Nothing here makes an opaque shader into glass.
-  assert.equal(glassOf(car('ksPerPixel'), withAlpha(10)), false);
 });
 
 test('the whole car keeps both cockpits and tags which is which', async () => {
