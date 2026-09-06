@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -363,6 +363,13 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // eventually. `null` when the model has nothing that looks like a
     // steering wheel — an open passenger view, or a car this project has
     // not seen before.
-    cockpit: cockpitEye(model),
+    //
+    // WHICH WAY THE CAR FACES, by the same rule the profile's visibility pass
+    // uses: the eye sits BACK from the wheel, so on a model where +Z is
+    // rearward that offset has to flip. This called the default and the pass
+    // did not, so on such a car the cockpit view sat out in front of the
+    // windscreen looking back, at a point no panel's `readable from the
+    // driver's seat` tag was ever measured from.
+    cockpit: cockpitEye(model, { front: (axesFromWheels(model) ?? axisHints(model))?.front ?? 1 }),
   };
 }

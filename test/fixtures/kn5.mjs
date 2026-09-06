@@ -37,7 +37,9 @@ export function buildKn5({
   // Meshes under a NAMED PARENT NODE, for the rules that read a mesh's path
   // rather than its name — which cockpit LOD selection does, since both
   // cockpits contain meshes called the same thing and only the node above
-  // them says which is which. `[{ name, meshes: [...] }]`.
+  // them says which is which. `[{ name, meshes: [...], children: [...] }]`,
+  // where a child is a node of the same shape: a real car buries its steering
+  // wheel two nodes below the one that turns it.
   wrapped = [],
   // The one material this fixture emits, for tests about MATERIALS rather than
   // about geometry: `{ shader, props: { detailUVMultiplier: 377 }, slots: {
@@ -122,10 +124,14 @@ export function buildKn5({
 
   // A dummy with children, which is how a kn5 states COCKPIT_HR and everything
   // under it. The parser builds each mesh's `path` from this.
-  for (const w of wrapped) {
-    parts.push(u32(1), str(w.name), u32(w.meshes.length), Buffer.from([1]), IDENTITY);
-    for (const m of w.meshes) parts.push(mesh(m));
-  }
+  const wrap = (w) => {
+    const kids = w.children ?? [];
+    const own = w.meshes ?? [];
+    parts.push(u32(1), str(w.name), u32(own.length + kids.length), Buffer.from([1]), IDENTITY);
+    for (const m of own) parts.push(mesh(m));
+    for (const k of kids) wrap(k);
+  };
+  for (const w of wrapped) wrap(w);
 
   // Dummies carry no geometry but do carry a transform, which is how AC states
   // where a wheel is — and therefore the only exact source for which way this

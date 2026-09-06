@@ -425,8 +425,20 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], across, poly = null) {
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
   let best = null;
   for (const mesh of model.meshes) {
-    // Names vary by author and language — an Italian mod calls it 'volante'.
-    if (!/steer|sterzo|volante|wheel_chassis/i.test(mesh.name)) continue;
+    // THE NODE IT HANGS FROM, not only what it is called. AC turns the wheel by
+    // rotating a `STEER_HR` / `STEER_LR` node, so every car states this in its
+    // tree whether or not the artist named the meshes under it — and the Abarth
+    // 500 did not: its wheel is `Geometry81_SUB0` through `SUB7`, and the
+    // editor told somebody looking straight at a rendered steering wheel that
+    // this car has none.
+    //
+    // The WHOLE path, because the wheel can hang a node or two below the one
+    // that turns it — this car's is STEER_HR / Geometry81 / Geometry81_SUB4 —
+    // and because the names above it say nothing that matches: a cockpit is
+    // COCKPIT_HR, and a suspension's steering arm is out by a road wheel where
+    // the sideways test below throws it out. Names still vary by author and
+    // language, an Italian mod calling it 'volante'.
+    if (!/steer|sterzo|volante|wheel_chassis/i.test(`${mesh.name} ${mesh.path ?? ''}`)) continue;
     if (mesh.vertexCount < 200) continue;
     let x = 0, y = 0, z = 0;
     for (let i = 0; i < mesh.vertexCount; i++) {
