@@ -8,7 +8,6 @@
 // would go quiet about a part the game still draws.
 // ---------------------------------------------------------------------------
 
-import { blends } from './engine/kn5.mjs';
 import { isPngTexture } from './engine/pipeline.mjs';
 import { resolveTargets } from './profile.mjs';
 
@@ -76,12 +75,21 @@ export function hidePlan(profile, livery, { paintedRoles = null } = {}) {
       : { ...base, action: 'cannot', why: `${role}: ${why}, so the game will show it` });
     // No size check: the sheet is not shipped at the texture's size (see
     // CLEAR_SHEET), so an odd-sized original is no obstacle.
-    // Unknown shaders — a profile from before this was recorded — are treated
-    // as opaque. Wrong in the cheaper direction: a needless warning, rather
-    // than a file that claims to hide something and does not.
-    const opaque = (tex.shaders ?? ['(shader not recorded — regenerate the profile)']).filter((s) => !blends(s));
-    if (opaque.length) {
-      return cannot(`${tex.file} is drawn by ${opaque.join(', ')}, which ignores alpha — a transparent texture would not hide it`);
+    //
+    // WHETHER ALPHA HIDES IT is recorded in the profile, because the model is
+    // not here to ask. This used to be read off the shader NAMES recorded
+    // beside it, and `ksPerPixelReflection` reads as glass while an Abarth
+    // wears it on its bumpers — so the guess promised a hide the game would
+    // ignore, and a build reported a part hidden that is still there.
+    //
+    // A profile from before the fact was recorded says nothing, and nothing is
+    // treated as opaque. Wrong in the cheaper direction: a needless warning,
+    // rather than a file that claims to hide something and does not.
+    if (tex.alphaHides !== true) {
+      const drawn = tex.shaders?.length ? ` (${tex.shaders.join(', ')})` : '';
+      return cannot(tex.alphaHides === false
+        ? `${tex.file} is drawn by a material that ignores alpha${drawn} — a transparent texture would not hide it`
+        : `this profile does not record whether the materials drawing ${tex.file}${drawn} honour alpha; regenerate it`);
     }
     return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
   });

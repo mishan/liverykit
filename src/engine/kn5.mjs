@@ -110,7 +110,12 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   for (let i = 0; i < matCount; i++) {
     const name = c.str();
     const shader = c.str();
-    c.skip(2);                            // alphaBlendMode, alphaTested
+    // THE MODEL'S OWN ANSWER to whether this material composites, skipped here
+    // since the first commit and guessed at three times since. 0 is opaque, 1
+    // is alpha blend, 2 is alpha to coverage; `alphaTested` is the hard cutout
+    // beside it, which a grille and a badge use and which is not blending.
+    const alphaBlendMode = c.u8();
+    const alphaTested = c.u8() !== 0;
     c.u32();                              // depthMode
     // Read and dropped for a long time, which cost nothing while no shader
     // here sampled a second texture. `detailUVMultiplier` lives in here, and
@@ -136,7 +141,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
       c.u32();                            // slot index
       slots[sample] = c.str();
     }
-    materials.push({ name, shader, slots, props });
+    materials.push({ name, shader, alphaBlendMode, alphaTested, slots, props });
   }
 
   // --- node tree ---
@@ -456,29 +461,6 @@ export function triangles(model, mesh) {
 }
 
 /**
- * Shaders that BLEND, by name.
- *
- * The property I need is "does this material composite against what is behind
- * it", and it lives on the material, not on the texture. My first attempt used
- * the profile's `alpha` flag instead — which means "this DDS carries an alpha
- * channel", true of a DXT5 body texture that is entirely opaque. 62 of 75
- * textures on the Honda are flagged, so nearly every panel went transparent and
- * the car stopped being able to hide its own interior.
- *
- * This list is 48 of that car's 151 meshes and the bodywork is not among them.
- *
- * `ksPerPixelAT` and `ksPerPixelAT_NM` are deliberately absent: AT is alpha
- * TEST, a hard cutout that neither blends nor needs sorting, and treating it as
- * blended would put grilles and bolt heads into the sorted pass for nothing.
- */
-const BLENDS = new Set([
-  'ksPerPixelAlpha',        // number plates, decals, banners
-  'ksPerPixelReflection',   // side glass, mirrors
-  'ksWindscreen',
-  'ksBrokenGlass',
-]);
-
-/**
  * Whether a surface ADDS light rather than covering what is behind it.
  *
  * An emissive sheet is a glow map: black where nothing glows. Assetto Corsa
@@ -496,9 +478,28 @@ export function additive(file) {
   return /emissive/i.test(String(file ?? ''));
 }
 
-/** Whether a material composites against what is behind it. */
-export function blends(shader) {
-  return BLENDS.has(String(shader ?? ''));
+/**
+ * Whether a material composites against what is behind it.
+ *
+ * READ OUT OF THE MODEL rather than inferred from the shader's name. A kn5
+ * material states `alphaBlendMode` two bytes after its shader: 0 opaque, 1
+ * alpha blend, 2 alpha to coverage. The name is not a substitute for it —
+ * `ksPerPixelReflection` draws this Abarth's side glass and also its bumpers,
+ * its exhaust and its underbody, and taking the name's word for it put the
+ * painted bodywork in the blended pass with depth write off. The front of the
+ * car was see-through, and no amount of refining the guess fixed it.
+ *
+ * Alpha TEST is not alpha blend: a hard cutout neither composites nor needs
+ * sorting, and treating it as blended would put grilles and bolt heads into
+ * the sorted pass for nothing. Alpha to coverage is the same bargain settled
+ * by the multisampler. Neither is 1, so neither is blending here.
+ *
+ * A material we do not have, or one built by hand without the field, is
+ * opaque: a wrongly opaque surface looks solid, and a wrongly blended one can
+ * disappear.
+ */
+export function blends(material) {
+  return material?.alphaBlendMode === 1;
 }
 
 /**
