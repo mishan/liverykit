@@ -181,7 +181,7 @@ const FACTS = [
  * Whether a verdict passes: every field true, every requirement present and
  * nothing cut off. Notes are prose, and the gate reads none of them.
  */
-const passes = (v) => Boolean(v && !v.error && v.reads_at_distance && v.number_legible && v.palette_ok
+export const passes = (v) => Boolean(v && !v.error && v.reads_at_distance && v.number_legible && v.palette_ok
   && v.matches_brief && !(v.requirements ?? []).some((r) => !r.present) && !(v.cut_off ?? []).length
   && !(v.unreadable ?? []).length);
 
@@ -310,6 +310,9 @@ export async function run({
         case 'check_fitment':
           return mcp.callTool('check_fitment', { proposal: draft });
         case 'finish_round':
+          // Kept by the harness from the call itself, not left to whichever
+          // planner remembers to hand it back: a replay reads it from here.
+          if (typeof args?.summary === 'string' && args.summary.trim()) summary = args.summary;
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
@@ -497,6 +500,12 @@ export async function run({
       critic: verdict,
       ...(second ? { secondLook: second } : {}),
       renders: images.map((i) => i.path),
+      // What the planner said it made and what it drafted, as they stood: a
+      // replay puts the same design in front of new code without paying a
+      // model to draw it again. The final draft alone could replay only the
+      // last round.
+      summary,
+      draft: { design: [...draft.design], fit: [...draft.fit] },
     };
     // A rejected round is the gate working, not an error. AgentOps drew the
     // two rounds a run needed before it passed as failures, in red, beside
@@ -537,7 +546,9 @@ export async function run({
     const deciding = second && !second.error ? second : verdict;
     const mustFix = [...reasons, ...(criticPass || !criticGates ? [] : blockingOf(deciding))];
     const advice = deciding?.error ? [] : (deciding?.notes ?? []);
-    const { renders, ...forPlanner } = record;
+    // The draft and summary are the planner's own words back; resent every
+    // round they would only be paid for again.
+    const { renders, draft: _draft, summary: _summary, ...forPlanner } = record;
     return {
       passed,
       broke,

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
 import { run } from './loop.mjs';
+import { loadRecording, createReplayPlanner } from './replay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVERYKIT = resolve(HERE, '../bin/liverykit.mjs');
@@ -27,6 +28,10 @@ The loop:
   --looks <n>            planner renders per round before render_car says no (default 2)
   --no-seed              let the planner fetch the car's description itself, rather
                          than starting with it in its first message
+  --replay <run dir>     no planner: put back what that run drafted, round by
+                         round, and judge it with today's gate. The brief comes
+                         from the run, the critic and second look default to the
+                         local server, and nothing is proposed: free, by default
   --out <dir>            renders, trace and result.json (default autolivery/runs/<time>)
   --no-propose           keep the passing design out of the editor's inbox
 
@@ -72,6 +77,7 @@ const { values, positionals } = parseArgs({
     effort: { type: 'string', default: 'medium' },
     'critic-effort': { type: 'string', default: 'medium' },
     referee: { type: 'string' },
+    replay: { type: 'string' },
     'advisory-critic': { type: 'boolean', default: false },
     views: { type: 'string', default: 'sheet' },
     looks: { type: 'string', default: '2' },
@@ -86,7 +92,7 @@ const { values, positionals } = parseArgs({
   },
 });
 
-if (values.help || !positionals.length) {
+if (values.help || (!positionals.length && !values.replay)) {
   process.stdout.write(USAGE);
   process.exit(values.help ? 0 : 1);
 }
@@ -97,8 +103,19 @@ const fail = (m) => {
 };
 const log = (m) => console.log(m);
 
-const brief = positionals.join(' ');
-const rounds = Number(values.rounds);
+// A replay brings its own brief and its own number of rounds: it is the same
+// designs, asked of today's gate.
+let recording = null;
+if (values.replay) {
+  try {
+    recording = await loadRecording(resolve(values.replay));
+  } catch (e) {
+    fail(`--replay: ${e.message}`);
+  }
+}
+const replaying = Boolean(recording);
+const brief = positionals.join(' ') || recording?.brief || '';
+const rounds = replaying ? recording.rounds.length : Number(values.rounds);
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
 if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number, not ${values.looks}`);
@@ -115,7 +132,9 @@ if (values.sampling) {
   }
 }
 
-const criticBackend = values['critic-backend'] ?? values.backend;
+// A replay's point is to cost nothing, so its critic is the local one unless
+// told otherwise.
+const criticBackend = values['critic-backend'] ?? (replaying ? 'openai' : values.backend);
 const sides = {
   planner: { backend: values.backend, baseUrl: values['base-url'], model: values.model, effort: values.effort },
   critic: {
@@ -194,13 +213,18 @@ const build = async (role, s) => {
   const opts = { endpoint, model, trace, sampling, fresh: !values['full-history'] };
   return { model, made: role === 'planner' ? local.createPlanner(opts) : local.createCritic(opts) };
 };
-const planner = await build('planner', sides.planner);
+const planner = replaying
+  ? { model: `replay of ${relative(process.cwd(), recording.dir) || recording.dir}` +
+      (recording.perRound ? '' : ' (final draft only: recorded before rounds were kept)'),
+    made: createReplayPlanner(recording) }
+  : await build('planner', sides.planner);
 const critic = await build('critic', sides.critic);
 // The second look: Claude beside a local critic, when there is a key. It is
 // asked only of a round that measured clean and failed on the critic's word
 // alone, which is where a local model's false alarms cost a round each.
 const refereeMode = values.referee
-  ?? (process.env.ANTHROPIC_API_KEY || sides.planner.backend === 'anthropic' ? 'anthropic' : 'critic');
+  ?? (replaying ? 'critic'
+    : process.env.ANTHROPIC_API_KEY || sides.planner.backend === 'anthropic' ? 'anthropic' : 'critic');
 if (!['anthropic', 'critic', 'none'].includes(refereeMode)) {
   fail(`--referee must be anthropic, critic or none, not ${JSON.stringify(refereeMode)}`);
 }
@@ -220,10 +244,13 @@ try {
 }
 
 console.log(`brief: ${brief}`);
-console.log(`planner: ${planner.model} (${sides.planner.backend}) · critic: ${critic.model} (${sides.critic.backend})` +
+// A replay's planner is no model at all, and its run pays for nothing unless
+// the critic or second look is Claude: say so, rather than print a budget.
+console.log(`planner: ${planner.model}${replaying ? '' : ` (${sides.planner.backend})`} · ` +
+  `critic: ${critic.model} (${sides.critic.backend})` +
   (referee ? ` · second look: ${referee.model} (anthropic)` : refereeMode === 'none' ? ' · no second look' : '') +
-  (sides.planner.backend === 'anthropic' || sides.critic.backend === 'anthropic' || referee
-    ? ` · budget $${maxCost.toFixed(2)}` : '') + '\n');
+  ((!replaying && sides.planner.backend === 'anthropic') || sides.critic.backend === 'anthropic' || referee
+    ? ` · budget $${maxCost.toFixed(2)}` : ' · no paid calls') + '\n');
 let result;
 try {
   result = await run({
@@ -236,7 +263,8 @@ try {
     views: values.views.split(',').map((v) => v.trim()).filter(Boolean),
     criticGates: !values['advisory-critic'],
     looks,
-    propose: !values['no-propose'],
+    // A replay is a test of the gate, not a design for the inbox.
+    propose: !values['no-propose'] && !replaying,
     planner: planner.made,
     critic: critic.made,
     referee: referee?.made ?? null,
