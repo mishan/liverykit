@@ -13,6 +13,15 @@ export const CONSTRAINTS = {
     'replacing the global 25 mm floor. Applies to any treatment, not just text.',
   minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
     'A background fill is meant to bleed off an island; a name is not.',
+  minVisible: 'number 0-1 — the fraction of the box that must be seen from trackside, ' +
+    'by the same ray casting as the visibility check, which otherwise only speaks up ' +
+    'below 35%. A roundel tucked under a window frame is on the car and still cut off.',
+  minMargin: 'number, mm — clean bodywork the box must have all round: with this much added ' +
+    'on every side it must still be on the car and visible. Keeps a roundel off shut lines, ' +
+    'window frames and arches.',
+  groupWith: 'string, the id of another region — this one must be on the same panel as that ' +
+    'one, as a team name belongs beside the race number. Checked only where a design declares ' +
+    'it: a brief may want the name somewhere else.',
 };
 
 
@@ -37,15 +46,20 @@ export function opSetConstraint(design, { id, key, value }) {
       `Known constraints: ${Object.keys(CONSTRAINTS).join(', ')}.`);
   }
   if (value !== null) {
-    const want = key === 'keepClear' ? 'boolean' : 'number';
+    const want = key === 'keepClear' ? 'boolean' : key === 'groupWith' ? 'string' : 'number';
     if (typeof value !== want) {
       throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
     }
-    if (key === 'minOnCar' && (value < 0 || value > 1)) {
-      throw new Error(`Constraint "minOnCar" is a fraction between 0 and 1; got ${value}.`);
+    // Exactly: the browser trims what is typed, and an operation from an agent
+    // is not typed. `'team '` was stored as written and named no region.
+    if (key === 'groupWith' && (!value.trim() || value !== value.trim() || value === id)) {
+      throw new Error(`Constraint "groupWith" names another region's id, exactly; got ${JSON.stringify(value)}.`);
     }
-    if (key === 'minMm' && !(value > 0)) {
-      throw new Error(`Constraint "minMm" is a size in millimetres, above zero; got ${value}.`);
+    if ((key === 'minOnCar' || key === 'minVisible') && (value < 0 || value > 1)) {
+      throw new Error(`Constraint "${key}" is a fraction between 0 and 1; got ${value}.`);
+    }
+    if ((key === 'minMm' || key === 'minMargin') && !(value > 0)) {
+      throw new Error(`Constraint "${key}" is a size in millimetres, above zero; got ${value}.`);
     }
   }
   for (const grp of ['surfaces', 'paint']) {
@@ -278,10 +292,25 @@ export function applyFitOp(fit, op) {
   }
 }
 
+const shapeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'a list'
+  : typeof v === 'object' ? 'an object' : `a ${typeof v}`);
+
 export function applyProposalDiff({ design: currentDesign, fit: currentFit }, proposal) {
   const design = structuredClone(currentDesign ?? {});
   const fit = structuredClone(currentFit ?? { regions: {}, copies: {} });
   fit.regions ??= {};
+
+  // Refused, not skipped. Operations used to be applied only `if` they were a
+  // list, so a design sent as one operation object, or as the JSON string of
+  // a list, applied nothing — and a draft measured that way came back with
+  // the working design's verdict, clean, as if it were the draft's.
+  for (const key of ['design', 'fit']) {
+    const ops = proposal?.[key];
+    if (ops !== undefined && !Array.isArray(ops)) {
+      throw new Error(`A proposal's "${key}" must be a list of operations; got ${shapeOf(ops)}: ` +
+        `${String(JSON.stringify(ops)).slice(0, 200)}.`);
+    }
+  }
 
   if (JSON.stringify(proposal ?? {}).includes('"source":"human"') || JSON.stringify(proposal ?? {}).includes('"source": "human"')) {
     throw new Error('Proposals may not specify source: "human". Confirming bindings is a human action.');

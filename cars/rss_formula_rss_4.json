@@ -140,6 +140,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "body": {
@@ -150,6 +151,7 @@
       "shaders": [
         "ksPerPixelMultiMap_damage_dirt"
       ],
+      "alphaHides": false,
       "modelSize": [
         512,
         512
@@ -163,6 +165,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "tyres": {
@@ -173,6 +176,7 @@
       "shaders": [
         "ksTyres"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "interior": {
@@ -183,6 +187,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "hub_1": {
@@ -193,6 +198,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "steeringWheel": {
@@ -203,6 +209,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "grips": {
@@ -213,6 +220,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "interior_2": {
@@ -223,6 +231,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "skin_cable": {
@@ -233,6 +242,7 @@
       "shaders": [
         "ksSkinnedMesh_NMDetaill"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rss4_cables": {
@@ -243,6 +253,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "rss4_disc": {
@@ -253,6 +264,7 @@
       "shaders": [
         "ksBrakeDisc"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "belts": {
@@ -263,6 +275,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rubbers": {
@@ -273,6 +286,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "steeringWheel_2": {
@@ -283,6 +297,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "belts_2": {
@@ -293,6 +308,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "black_plastics": {
@@ -303,6 +319,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "koni_spring_1": {
@@ -313,6 +330,7 @@
       "shaders": [
         "ksSkinnedMesh"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "koni_spring_2": {
@@ -323,6 +341,7 @@
       "shaders": [
         "ksSkinnedMesh"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "glass": {
@@ -333,6 +352,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "mirror": {
@@ -343,6 +363,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rims_2": {
@@ -353,6 +374,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "glass_2": {
@@ -363,6 +385,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "logo": {
@@ -373,6 +396,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "belts_3": {
@@ -383,6 +407,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "wheelLogo": {
@@ -393,6 +418,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "rss_tv_cam_mesh_lens": {
@@ -403,6 +429,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "logo_2": {
@@ -413,6 +440,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rims_3": {
@@ -423,6 +451,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "belts_4": {
@@ -433,6 +462,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "rss4_radiator": {
@@ -443,6 +473,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "hub_lods": {
@@ -453,6 +484,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "2017_plaque": {
@@ -463,6 +495,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "suit": {
@@ -471,6 +504,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew": {
@@ -479,6 +513,7 @@
       "height": 1024,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "suit_2": {
@@ -487,6 +522,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet": {
@@ -495,6 +531,7 @@
       "height": 512,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "metal_detail": {
@@ -503,6 +540,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "gloves": {
@@ -511,6 +549,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet_2": {
@@ -519,6 +558,7 @@
       "height": 128,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "rimFace": {
@@ -529,6 +569,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": true,
       "sizeFrom": "model",
       "modelSize": [
         28,
@@ -544,6 +585,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rimsBlur": {
@@ -554,6 +596,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "heatShield": {
@@ -564,6 +607,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     }
   },

@@ -50,7 +50,7 @@ const dist = (a, b) => (Array.isArray(a) && Array.isArray(b)
 export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   const report = {
     roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
-    name: null, skinOnly: [], dangling: [],
+    name: null, skinOnly: [], dangling: [], textureNotes: [], notesMoved: [], notesLost: [],
   };
   if (!prior) return report;
 
@@ -61,6 +61,7 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   preserveSkinOnlyRoles(profile, prior, report, skinsGiven);
   preserveBlocks(profile, prior, report);
   preserveTextureSizes(profile, prior, report);
+  preserveTextureNotes(profile, prior, report);
   preserveUnmeasuredPanels(profile, prior, report);
   preserveAliases(profile, prior, report);
   dropDanglingBindings(profile, report);
@@ -93,7 +94,12 @@ function preserveSkinOnlyRoles(profile, prior, report, skinsGiven) {
   if (skinsGiven) return;
   for (const [role, was] of Object.entries(prior.textures ?? {})) {
     if (was?.sizeFrom !== 'skin' || profile.textures?.[role]) continue;
-    (profile.textures ??= {})[role] = structuredClone(was);
+    // Said outright, as the generator says it of a skin-only texture it finds.
+    // Copied as it was, a prior from before `inModel` carried nothing, and the
+    // hide check sent `hide: ['suit']` to a regeneration that cannot answer —
+    // every regeneration without --skins carrying it forward still unflagged,
+    // though this one has just looked through the model and not found it.
+    (profile.textures ??= {})[role] = { ...structuredClone(was), inModel: false };
     const panels = prior.panels?.[role];
     if (panels && Object.keys(panels).length) (profile.panels ??= {})[role] = structuredClone(panels);
     else (profile.panels ??= {})[role] ??= {};
@@ -243,8 +249,43 @@ function preserveTextureSizes(profile, prior, report) {
     now.modelSize = [...was.modelSize];
     now.width = was.width;
     now.height = was.height;
-    if (was.notes && !now.notes) now.notes = was.notes;
     report.sizes.push({ role, width: was.width, height: was.height, modelSize: now.modelSize });
+  }
+}
+
+/**
+ * A note a person wrote on one texture.
+ *
+ * It used to travel only with a hand-set size, above. The NSX's windscreen
+ * banner had hand-written panels, kept by `preserveUnmeasuredPanels`, and a
+ * page on why its two faces must never be spanned — and no size override, so
+ * a regeneration kept the panels and dropped the reason for them. A model has
+ * nothing to say about a note, so any texture still here keeps its own.
+ *
+ * Followed by FILE, and by role name only for a prior entry that has none. It
+ * was followed by name, and numbered roles are handed out afresh each run: a
+ * `tyres_2` that became the brake duct kept the tyre's note on mirrored
+ * sidewalls, which then read as the truth about the wrong texture. The file is
+ * what the note was written about, as it is for role names above. A note whose
+ * file nothing wears any more is reported with its text, not dropped.
+ */
+function preserveTextureNotes(profile, prior, report) {
+  const byFile = new Map();
+  for (const [role, t] of Object.entries(profile.textures ?? {})) {
+    if (t?.file) byFile.set(t.file.toLowerCase(), role);
+  }
+  for (const [role, was] of Object.entries(prior.textures ?? {})) {
+    if (was?.notes === undefined) continue;
+    const to = was.file ? byFile.get(was.file.toLowerCase()) : (profile.textures?.[role] ? role : undefined);
+    if (to === undefined) {
+      report.notesLost.push({ role, file: was.file ?? null, notes: structuredClone(was.notes) });
+      continue;
+    }
+    const now = profile.textures[to];
+    if (now.notes !== undefined) continue;
+    now.notes = structuredClone(was.notes);
+    report.textureNotes.push(to);
+    if (to !== role) report.notesMoved.push({ from: role, to, file: was.file });
   }
 }
 
@@ -320,6 +361,20 @@ export function describeHandwork(report, source) {
   for (const s of report.sizes) {
     out.push(`  kept hand-set size for ${s.role}: ${s.width}x${s.height} ` +
       `(the model says ${s.modelSize.join('x')})`);
+  }
+  if (report.textureNotes.length) {
+    out.push(`  kept the hand-written note on ${report.textureNotes.length} texture(s): ${report.textureNotes.join(', ')}`);
+  }
+  if (report.notesMoved.length) {
+    out.push(`  ${report.notesMoved.length} texture note(s) followed their file to a new role name:`);
+    for (const m of report.notesMoved) out.push(`    ${m.from} -> ${m.to}  (${m.file})`);
+  }
+  if (report.notesLost.length) {
+    out.push(`  ${report.notesLost.length} texture note(s) were not kept: no role wears their file any more:`);
+    for (const l of report.notesLost) {
+      const text = Array.isArray(l.notes) ? l.notes.join(' ') : typeof l.notes === 'string' ? l.notes : JSON.stringify(l.notes);
+      out.push(`    ${l.role}  (${l.file ?? 'no file'}): ${text}`);
+    }
   }
   if (report.panels.length) {
     out.push(`  kept hand-written panels for ${report.panels.length} role(s) the model ` +

@@ -217,6 +217,51 @@ test('a hand-set texture size survives while the model still says what it said',
   assert.equal(report.sizes.length, 1);
 });
 
+test("a texture's hand-written note survives the regeneration it was written to outlive", () => {
+  // The NSX's windscreen banner carried a page on why its two faces must not
+  // be spanned. Its hand-written panels were kept, and the note that explained
+  // them was dropped: it rode along only with a hand-set SIZE, and the banner
+  // has none.
+  const prior = { textures: { banner: { file: 'Banner.dds', width: 1024, height: 1024, notes: 'two-sided; never span it' } } };
+  const fresh = { textures: { banner: { file: 'Banner.dds', width: 1024, height: 1024 } } };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.textures.banner.notes, 'two-sided; never span it');
+  assert.deepEqual(report.textureNotes, ['banner']);
+  assert.ok(describeHandwork(report, 'prior.json').some((l) => /note.*banner/.test(l)), 'and says so');
+
+  const written = { textures: { banner: { file: 'Banner.dds', notes: 'fresh' } } };
+  preserveHandwork(written, prior);
+  assert.equal(written.textures.banner.notes, 'fresh', 'never over a note the new profile has');
+});
+
+test("a texture's note follows its file when the generated role name is reused", () => {
+  // Numbered roles are handed out afresh on every run, so `tyres_2` can be a
+  // different texture next time. Carried by role name, the tyre's note stayed
+  // on `tyres_2` and so landed on the brake duct that now wears the name.
+  const prior = { textures: {
+    tyres_2: { file: 'Tyre_Old.dds', width: 512, height: 512, notes: 'sidewall is mirrored; paint the left one' },
+    tyres_4: { file: 'Rim_Gone.dds', width: 512, height: 512, notes: 'the rim is shared with the spare' },
+  } };
+  const fresh = { textures: {
+    tyres_2: { file: 'Brake_Duct.dds', width: 256, height: 256 },
+    tyres_3: { file: 'Tyre_Old.dds', width: 512, height: 512 },
+  } };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.textures.tyres_2.notes, undefined, 'the brake duct is not told about a sidewall');
+  assert.equal(fresh.textures.tyres_3.notes, 'sidewall is mirrored; paint the left one', 'the tyre keeps its note');
+  assert.deepEqual(report.textureNotes, ['tyres_3']);
+  assert.deepEqual(report.notesMoved, [{ from: 'tyres_2', to: 'tyres_3', file: 'Tyre_Old.dds' }]);
+
+  // A note whose file no role wears any more is said to be lost, with its text,
+  // rather than dropped quietly or pinned on whatever took the name.
+  assert.deepEqual(report.notesLost, [{ role: 'tyres_4', file: 'Rim_Gone.dds', notes: 'the rim is shared with the spare' }]);
+  const lines = describeHandwork(report, 'prior.json');
+  assert.ok(lines.some((l) => /tyres_2 -> tyres_3/.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /note\(s\) were not kept/.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /tyres_4 +\(Rim_Gone\.dds\): the rim is shared with the spare/.test(l)),
+    'the lost note is printed, so it can be put back by hand');
+});
+
 test('a hand-set size is abandoned once the model itself changes size', () => {
   // The override was a judgement about a 28x28 texture. If the model now ships
   // 512x512, that judgement was about something else.
@@ -295,6 +340,26 @@ test('a regeneration without --skins keeps the roles only skins know about', () 
   const said = preserveHandwork(measured, prior, { skinsGiven: true });
   assert.equal(measured.textures.crew, undefined);
   assert.deepEqual(said.skinOnly, []);
+});
+
+test('a skin-only role carried across says no mesh in the model wears it', async () => {
+  // Carried across as it was, and a prior written before `inModel` existed
+  // did not say so: the hide check then sent `hide: ['crew']` to "regenerate
+  // it", and every regeneration without --skins carried the entry forward
+  // still unflagged. That the role is absent from the model is exactly what
+  // this run established by not finding it.
+  const { hidePlan } = await import('../src/hide.mjs');
+  const prior = {
+    textures: { body: { file: 'B.dds', sizeFrom: 'model' }, crew: { file: 'ac_crew.dds', width: 512, height: 512, sizeFrom: 'skin' } },
+    panels: { body: {} },
+  };
+  const fresh = { textures: { body: { file: 'B.dds', sizeFrom: 'model' } }, panels: { body: {} } };
+  preserveHandwork(fresh, prior, { skinsGiven: false });
+  assert.equal(fresh.textures.crew.inModel, false);
+  assert.equal(prior.textures.crew.inModel, undefined, 'and the prior it came from is left alone');
+  const [plan] = hidePlan(fresh, { hide: ['crew'] });
+  assert.doesNotMatch(plan.why, /regenerate/);
+  assert.match(plan.why, /no mesh in this car's model wears ac_crew\.dds/);
 });
 
 test('a binding naming a role that is really gone is dropped, loudly', () => {

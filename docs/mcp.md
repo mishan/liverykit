@@ -87,6 +87,12 @@ liverykit, and this is which copy of the code it is running.
 If nothing answers, the MCP does not fall back to working on files, and does not
 start a headless editor. It reports that no editor is open and stops.
 
+An editor that stops answering after that is reported the same way, by every
+tool, and the tool result says so as data too: `_meta: { "liverykit/editor":
+"unreachable" }`. A client can end its work on that rather than read it as a
+tool refusing, which is how an agent went on paying for turns against an editor
+that was no longer there.
+
 That refusal is the whole safety mechanism and is worth stating as a rule rather
 than an implementation detail: **the eye is not an optional part of this system.**
 An MCP that quietly worked without one would be the demo version described at the
@@ -105,6 +111,7 @@ So the server grows a small **inbox**, and it is not the working state:
 POST /api/proposal      an agent offers a change; returns an id
 GET  /api/proposal      what is pending, if anything
 POST /api/proposal/ack  the browser reports accepted or discarded
+POST /api/proposal/evaluate   what a proposal WOULD do, measured; nothing is pending
 ```
 
 The browser polls `GET /api/proposal` while it is idle — once a second is
@@ -157,7 +164,10 @@ Two groups, and the boundary between them is the point.
 | `list_constraints` | the constraints a region may declare, and what each one enforces |
 
 `read_design` and `read_fit` come from the editor rather than from disk, so the
-agent sees what the person is looking at, including their unsaved work.
+agent sees what the person is looking at, including their unsaved work. Both take
+a `proposal`, like `check_fitment`, and answer for the design or fit those
+operations would make, with `read_fit` still reporting stale ids, now against
+the draft. Nothing is proposed.
 
 **Measuring, and seeing.** Also read-only, and the second of these was an open
 question when this was written — see below.
@@ -165,6 +175,7 @@ question when this was written — see below.
 | tool | answers |
 |---|---|
 | `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimetres, mirroring, coverage, occlusion |
+| `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, clear of edges — as ranked spots with their clearance in mm; with `largest` and an `aspect`, the largest shape of that proportion that fits, found by sweeping sizes |
 | `render_view` | the rendered texture and placements for one surface, or all of them |
 | `render_car` | a picture of the working design on the car |
 
@@ -343,6 +354,28 @@ vocabulary, and `render_car`. None of these were in this document when it was
 written, and the shape of the work was right about that: they came out of using
 the thing, not out of designing it. What the plan got wrong was assuming the
 profile made them unnecessary.
+
+**6. Drafts. (Done, and forced by a loop.)** `check_fitment` and `render_car`
+take a `proposal`, measure the working design with it applied, and adopt nothing;
+`read_design` and `read_fit` take one too, and show what it amounts to.
+The before/after these tools' descriptions ask for never quite worked. A proposal
+reaches the working state only once accepted, so checking after proposing
+measured the design *without* the change. With nobody at the editor, the change
+could not be measured at all, which is what an agent iterating by itself
+(`autolivery/`) ran into first. The rejected alternative was letting an agent
+accept its own proposals behind a flag, which would have made the inbox optional.
+A draft is staged by the same code as a proposal, so one that measures clean is
+one the inbox will take.
+
+**7. Space. (Done, and forced by a roundel.)** `find_space` sweeps a panel with
+the same ray casting `check_fitment` uses and returns where a shape of a given
+size fits whole, ranked by clearance in millimetres; `minMargin` makes "not too
+close to an edge" a constraint the check enforces. It exists because a panel's
+box is not the panel. On the NSX the top quarter of the door's box is not door
+and its middle is under the window line, so everything that placed a roundel "in
+the middle of the panel" cut its top edge off, and an agent took to probing the
+door with tiny rings to find out where it was. It still only says where a shape
+CAN go; where it should go is the design's decision.
 
 The order is deliberate. Step 1 is the whole protocol surface with none of the
 risk, and if it turns out an agent asking questions about a car profile is the

@@ -115,6 +115,196 @@ test('a profile records what the car hides, and a texture worn only by hidden me
   assert.equal(Object.values(plain.textures)[0].hiddenByCar, undefined);
 });
 
+/**
+ * A sheet parallel to the left flank at `x`, over most of it, in small
+ * triangles: occupancy samples a triangle at most twelve times along a side,
+ * so one 2.4 m triangle is a sieve. A real plate or shell is small and dense.
+ * `facing` is its normal's x: out from the car, or in. `uv` is where it lands
+ * on the sheet: a speck by default, and big enough to be a panel of its own
+ * where a test reads the sheet's own `visible`.
+ */
+function flankSheet(name, x, facing = 1, [u0, v0, du, dv] = [0.99, 0.99, 0.005, 0.005]) {
+  const N = 40;
+  const sheet = { name, verts: [], indices: [] };
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      sheet.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N),
+        u0 + du * (i / N), v0 + dv * (j / N), [facing, 0, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      sheet.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  return sheet;
+}
+
+/** A flank's `visible`, from a profile generated off `kn5` (and a car config, if given). */
+async function leftVisible(kn5, config, side = 'left') {
+  const dir = await mkdtemp(join(tmpdir(), 'lk-occl-'));
+  await writeFile(join(dir, 'fixture.kn5'), kn5);
+  if (config) {
+    await mkdir(join(dir, 'extension'));
+    await writeFile(join(dir, 'extension', 'ext_config.ini'), config);
+  }
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const panels = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+  const [u, v] = side === 'left' ? [0.02, 0.02] : [0.35, 0.02];
+  return panels.find((q) => Math.abs(q.rect[0] - u) < 0.01 && Math.abs(q.rect[1] - v) < 0.01).visible;
+}
+
+test('a mesh the car hides stands in front of nothing when the profile measures visibility', async () => {
+  // The NSX's sixteen door plates are hidden by its config and drawn by
+  // nothing, and `fitment` already leaves them out of the cast. The profile
+  // did not, and the plates took the doors from 88% visible to 56%, and every
+  // tag and safe area that reads `visible` moved with them.
+  const plate = flankSheet('PLATE_L', 0.95 + 0.03);          // a voxel out from the flank
+  const bare = await leftVisible(carKn5());
+  const plated = await leftVisible(carKn5({ extraMeshes: [plate] }));
+  const hidden = await leftVisible(carKn5({ extraMeshes: [plate] }), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
+  assert.ok(plated < bare - 0.2, `a drawn plate covers the flank: ${plated} against ${bare}`);
+  assert.ok(Math.abs(hidden - bare) < 0.02, `a hidden one covers nothing: ${hidden} against ${bare}`);
+});
+
+test('a mesh the car hides is seen by nobody, whatever its own rays say', async () => {
+  // Taken out of the occluders, a hidden mesh's own island measured clear:
+  // a plate the car's config hides came out visible and safe, a place to paint
+  // that the game never draws.
+  const x = 0.95 + 0.03, N = 40;
+  const plate = { name: 'PLATE_L', verts: [], indices: [] };
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      // In the gap between the flanks on the sheet, big enough to be a panel.
+      plate.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N),
+        0.315 + 0.03 * (i / N), 0.05 + 0.4 * (j / N), [1, 0, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      plate.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-hidden-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5({ extraMeshes: [plate] }));
+  await mkdir(join(dir, 'extension'));
+  await writeFile(join(dir, 'extension', 'ext_config.ini'), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const found = Object.values(p.panels).flatMap((ps) => Object.values(ps)).find((q) => q.source?.mesh === 'PLATE_L');
+  assert.ok(found, 'the plate is a panel of the texture it wears');
+  assert.equal(found.visible, 0);
+  assert.equal(found.hidden, true);
+});
+
+test('a mesh behind the paint stands in front of nothing either, and one flush in front still does', async () => {
+  // A door's inner shell, a bonnet's carbon liner: a few millimetres behind
+  // the skin, in the same voxels, and a shared voxel stopped every ray that
+  // left it. The NSX's doors went from 88% visible to 64% and its bonnet from
+  // 95% to 61%, and nothing on the car had moved.
+  //
+  // Where the cells fall is pinned, because it decides everything here. The
+  // grid starts two cells below the car's lowest x, and every face of this
+  // fixture lies on a multiple of 2.5 cm, so each flank sits exactly on a
+  // cell boundary and a shell behind it lands in the next cell over: no test
+  // on this fixture could see the problem. A speck 3 mm outside the right
+  // flank, far behind the car, makes the grid start so that the left flank
+  // is 3 mm into its cell, sharing it with anything just behind or in front.
+  const speck = { name: 'SPECK', indices: [0, 1, 2],
+    verts: [vert(-0.953, 0, -3, 0.999, 0.999), vert(-0.953, 0.01, -3, 0.999, 0.999), vert(-0.953, 0, -3.01, 0.999, 0.999)] };
+  const left = (...extra) => leftVisible(carKn5({ extraMeshes: [speck, ...extra] }));
+  const bare = await left();
+  const shell = await left(flankSheet('DOOR_L_INT', 0.95 - 0.002, -1));
+  assert.ok(Math.abs(shell - bare) < 0.02, `a shell 2 mm behind the flank hides nothing: ${shell} against ${bare}`);
+  // What ownership was introduced to catch, and must go on catching: a plate
+  // a few millimetres proud, in the very voxels the flank stands in, which
+  // only the exact test along the normal can now tell from the shell.
+  const flush = await left(flankSheet('PLATE_L', 0.95 + 0.004));
+  assert.ok(flush < bare - 0.2, `a plate 4 mm proud covers the flank: ${flush} against ${bare}`);
+});
+
+test('a motion-blur rim is measured as the rim it stands in for, not as something behind it', async () => {
+  // AC swaps WHEEL_xx/RIM_xx for WHEEL_xx/RIM_BLUR_xx by wheel speed, so the
+  // two are never drawn together. The NSX's rim sheet is also worn by its
+  // static blur rim, 1.2 mm behind the drawn one, and 39 panels measured on
+  // that copy fell from 0.87 visible to under 0.1 once the exact test along
+  // the normal found the drawn rim standing in front of it.
+  const drawnAt = [0.315, 0.05, 0.03, 0.2], blurAt = [0.315, 0.26, 0.03, 0.2];
+  const rims = async (behind) => {
+    const dir = await mkdtemp(join(tmpdir(), 'lk-blur-'));
+    await writeFile(join(dir, 'fixture.kn5'), carKn5({ wrapped: [
+      { name: 'RIM_LF', meshes: [flankSheet('EXT_RIM_LF', 0.98, 1, drawnAt)] },
+      { name: behind.node, meshes: [flankSheet(behind.mesh, 0.98 - 0.0012, 1, blurAt)] },
+    ] }));
+    const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+    const all = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+    return [all.find((q) => q.source?.mesh === 'EXT_RIM_LF'), all.find((q) => q.source?.mesh === behind.mesh)];
+  };
+
+  const [drawn, blur] = await rims({ node: 'RIM_BLUR_LF', mesh: 'EXT_RIM_BLUR_STATIC_LF' });
+  assert.ok(drawn && blur, 'both rims are panels of the sheet they wear');
+  assert.ok(drawn.visible > 0.5, `the drawn rim is in plain view: ${drawn.visible}`);
+  assert.ok(Math.abs(blur.visible - drawn.visible) < 0.05,
+    `the blur rim is as visible as the rim it replaces: ${blur.visible} against ${drawn.visible}`);
+
+  // The same sheet 1.2 mm behind, drawn at rest: that one IS behind the rim.
+  const [, inner] = await rims({ node: 'RIM_INNER_LF', mesh: 'EXT_RIM_INNER_LF' });
+  assert.ok(inner.visible < 0.1, `a drawn mesh behind the rim is covered by it: ${inner.visible}`);
+});
+
+test('a mesh touching the caster far along the ray still blocks it', async () => {
+  // A ray steps over a voxel it shares with another mesh, so that a shell a
+  // few millimetres behind the paint does not stop it where it starts. It did
+  // so along the whole ray: anywhere on the car where another mesh came within
+  // a voxel of the caster's own surface — a mirror foot, a wing mount, a
+  // wheel-arch lip against the body — let that mesh's rays through.
+  //
+  // A floor panel inside a box of its own mesh, which it sees straight
+  // through (a surface does not occlude itself), and a separate wrap 2 mm
+  // outside the box, in the box's own voxels 30 cm from the floor. A speck
+  // far off pins the grid's origin so every face is well inside its cell.
+  const { occupancyFor, rectVisibility } = await import('../src/engine/visibility.mjs');
+  const h = 0.3133, N = 12;
+  // One face as a dense grid: `at(s, t)` is the point, the rect its place on the sheet.
+  const face = (mesh, at, [u0, v0, du, dv], n) => {
+    const base = mesh.verts.length;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) mesh.verts.push(vert(...at(i / N, j / N), u0 + du * (i / N), v0 + dv * (j / N), n));
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = base + j * (N + 1) + i;
+        mesh.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+      }
+    }
+  };
+  const lerp = (s) => -1 + 2 * s;
+  const sheet = [0.6, 0.6, 0.3, 0.3];
+  const box = (mesh, r) => {
+    face(mesh, (s, t) => [lerp(s) * r, r, lerp(t) * r], sheet, [0, 1, 0]);
+    face(mesh, (s, t) => [r, t * r, lerp(s) * r], sheet, [1, 0, 0]);
+    face(mesh, (s, t) => [-r, t * r, lerp(s) * r], sheet, [-1, 0, 0]);
+    face(mesh, (s, t) => [lerp(s) * r, t * r, r], sheet, [0, 0, 1]);
+    face(mesh, (s, t) => [lerp(s) * r, t * r, -r], sheet, [0, 0, -1]);
+  };
+  const tub = { name: 'TUB', verts: [], indices: [] };
+  face(tub, (s, t) => [lerp(s) * 0.2, 0.0037, lerp(t) * 0.2], [0.1, 0.1, 0.3, 0.3], [0, 1, 0]);
+  box(tub, h);
+  const wrap = { name: 'WRAP', verts: [], indices: [] };
+  box(wrap, h + 0.002);
+  const speck = { name: 'SPECK', indices: [0, 1, 2],
+    verts: [vert(-0.5, -0.5, -0.5, 0.99, 0.99), vert(-0.49, -0.5, -0.5, 0.99, 0.99), vert(-0.5, -0.49, -0.5, 0.99, 0.99)] };
+
+  const seen = (...others) => {
+    const model = parseKn5Buffer(buildKn5({ bodyMesh: tub, extraMeshes: [speck, ...others] }));
+    return rectVisibility(model, occupancyFor(model), [model.meshes[0]], [0.15, 0.15, 0.2, 0.2]).fraction;
+  };
+  const bare = seen();
+  assert.ok(bare > 0.9, `the floor sees out through its own box: ${bare}`);
+  assert.equal(seen(wrap), 0, 'and not through another mesh wrapped round it');
+});
+
 test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {
   // Absent is the common case and is not an error. Unreadable is a different
   // fact wearing the same clothes: the car has hide rules, they were not

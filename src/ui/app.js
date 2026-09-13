@@ -1852,6 +1852,19 @@ function constraintControls(id) {
       <label>at least <input data-con="minOnCar" size="4"
         value="${has('minOnCar') ? esc(Math.round(c.minOnCar * 100)) : ''}"
         placeholder="%"> % on bodywork</label>
+    </div>
+    <div class="row">
+      <label>at least <input data-con="minVisible" size="4"
+        value="${has('minVisible') ? esc(Math.round(c.minVisible * 100)) : ''}"
+        placeholder="%"> % seen from trackside</label>
+    </div>
+    <div class="row">
+      <label>at least <input data-con="minMargin" size="4"
+        value="${has('minMargin') ? esc(c.minMargin) : ''}" placeholder="mm"> mm from any edge</label>
+    </div>
+    <div class="row">
+      <label>on the same panel as <input data-con="groupWith" size="12"
+        value="${has('groupWith') ? esc(c.groupWith) : ''}" placeholder="region id"></label>
     </div>`;
 }
 
@@ -1876,6 +1889,10 @@ function wireConstraintControls(id) {
       el.onchange = () => write(el.checked ? true : null);
       continue;
     }
+    if (key === 'groupWith') {
+      el.onchange = () => write(String(el.value ?? '').trim() || null);
+      continue;
+    }
     el.onchange = () => {
       const raw = String(el.value ?? '').trim();
       if (!raw) return write(null);                    // cleared means no constraint
@@ -1883,7 +1900,7 @@ function wireConstraintControls(id) {
       if (!Number.isFinite(n)) return status(`${key}: ${JSON.stringify(raw)} is not a number`);
       // Shown as a percentage because that is how the finding reads back;
       // stored as the fraction the checker actually compares against.
-      return write(key === 'minOnCar' ? n / 100 : n);
+      return write(key === 'minOnCar' || key === 'minVisible' ? n / 100 : n);
     };
   }
 }

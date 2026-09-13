@@ -1,0 +1,17 @@
+{
+  "name": "autolivery",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An agent that paints race cars through liverykit's MCP server, checked in metres rather than judged from a picture",
+  "type": "module",
+  "bin": {
+    "autolivery": "bin.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0"
+  }
+}

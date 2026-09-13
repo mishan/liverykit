@@ -21,14 +21,17 @@ import { resolveTargets } from './profile.mjs';
  * fact about one car, not a property of the feature.
  *
  * The honest tool is a transparent texture, and it only works when the
- * material composites alpha. So this is a decision per role, and every branch
- * is reported, because the one that would be silent — a transparent file for
- * an opaque shader, encoded without complaint — is a part that still shows.
+ * material honours alpha — blends it, tests it, or turns it into coverage. So
+ * this is a decision per role, and every branch is reported, because the one
+ * that would be silent — a transparent file for an opaque material, encoded
+ * without complaint — is a part that still shows.
  *
- *   ship-transparent  alpha-blended material: ship a clear sheet
+ *   ship-transparent  every material wearing it honours alpha: ship a clear sheet
  *   car-hides         a clear sheet would not work, but the car's config hides
  *                     every mesh wearing it, so under CSP nothing shows anyway
- *   cannot            an opaque shader; the game will show it
+ *   cannot            an opaque material, a texture no mesh in this model
+ *                     wears, or a profile that does not say; the game will
+ *                     show it
  *   painted           the design also paints it, and painting wins
  *   absent            this car has no such role — designs travel, so not an error
  *
@@ -87,6 +90,18 @@ export function hidePlan(profile, livery, { paintedRoles = null } = {}) {
     // rather than a file that claims to hide something and does not.
     if (tex.alphaHides !== true) {
       const drawn = tex.shaders?.length ? ` (${tex.shaders.join(', ')})` : '';
+      // A texture only the skins folder knows has no wearer in this model to
+      // measure: the driver's suit, the crew, a part an extension model
+      // draws. "Regenerate it" sent people to a regeneration that cannot
+      // answer, and every shipped profile has a few.
+      // By `inModel`, which says so, and not by `sizeFrom: 'skin'`, which an
+      // encrypted model's own textures carry too: those are worn, and an old
+      // profile of one does need regenerating.
+      if (tex.alphaHides === undefined && tex.inModel === false) {
+        return cannot(`no mesh in this car's model wears ${tex.file}: it is known only from the skins folder and ` +
+          'drawn by another model, so whether a transparent texture hides it cannot be measured here, and it is ' +
+          'treated as opaque');
+      }
       return cannot(tex.alphaHides === false
         ? `${tex.file} is drawn by a material that ignores alpha${drawn} — a transparent texture would not hide it`
         : `this profile does not record whether the materials drawing ${tex.file}${drawn} honour alpha; regenerate it`);

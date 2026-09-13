@@ -543,16 +543,24 @@ and several other things:
 
 | finding | what it means |
 |---|---|
-| `overlap` | two placements share space, and at least one is text |
+| `unmatched` | a region whose tags select no panel, or whose panel this car lacks — it paints nothing |
+| `overflows` | a ring drawn past its own box, so part of it is outside everything the checks measure |
+| `margin` | a region that asked for clean bodywork all round it (`minMargin`) is too near an edge, gap or hidden area |
+| `overlap` | two placements share space and at least one is text; high when both are, or when a ring's edge runs through text |
 | `crossed` | something is painted across a region that asked to be kept clear |
 | `off-mesh` | the box lands on texture space no triangle uses |
-| `unseen` | the bodywork hides it from trackside |
+| `unseen` | the bodywork hides it from trackside, or a fitting stands on it (a door handle, a number plate) |
+| `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
+| `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimetres at the car's real scale |
+| `ungrouped` | a region that declared `groupWith` is not on the same panel as the region it names |
+| `too-small` | a race number's capitals under 140 mm tall on the car, or a team or driver name's under 45 mm, measured on the letters after the text is shrunk to fit its box |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
 | `clipped` | a spanning region stops at a panel edge the profile has no seam for |
 | `unpainted-twin` | a sheet you paint has an unpainted duplicate on top of it |
 | `bad-constraint` | a constraint nothing enforces — refused, not ignored |
+| `unknown-field` | a field on a region that its treatment does not take and nothing else reads, such as `drop`, which belongs in a fit |
 
 The panel leads with what it could **not** check. "No findings" from a run that
 skipped the geometry and "no findings" from a run that did all of it are the same
@@ -597,7 +605,20 @@ flank is artwork by that measure, and the team name under it is still lost.
 `minMm` replaces the global 25 mm floor for this region and applies to any
 treatment. `minOnCar` does the same for how much of the box must land on
 geometry, since a background fill is meant to bleed off an island and a name is
-not. A misspelled constraint is refused rather than ignored: it would otherwise
+not. `minVisible` sets a floor on how much of the box can be seen from trackside,
+by the same ray casting as `unseen`, which on its own only speaks up below 35% — a
+roundel tucked under a window frame is on the car and still cut off. Paint with a
+fitting standing on it counts as unseen however many angles slip round the fitting:
+the ray straight out from the surface is tested exactly against the triangles within
+5 cm, since a door handle a few millimetres proud is finer than the voxel grid. A region
+with any of these constraints is sampled every 5 mm or so, so its edges are tested
+too. `minMargin`, in
+millimetres, asks for that much clean bodywork all round: with it added on every
+side, the box must still be on the car and visible. `groupWith` names another region
+this one must share a panel with, as a team name belongs beside the race number,
+and they are reported as `ungrouped` when they part. Unlike the floors it is never
+assumed: a brief may want the name on the roof, so it applies only where the design
+declares it. A misspelled constraint is refused rather than ignored: it would otherwise
 read as a rule in force and enforce nothing.
 
 ### Surfaces the car should not draw
@@ -616,12 +637,23 @@ the design paints is never hidden.
 
 In the editor a hidden surface is simply not drawn. In the game there is no such
 switch, so the build ships a **fully transparent texture** for it — which works
-when the part's material composites alpha, and not otherwise. The profile records
-each texture's `shaders` so the build can tell, and it says which of four things
-happened to every hidden role: shipped transparent (a 4x4 sheet — a texture
-with nothing on it needs no resolution); an opaque shader, so no sheet would
-work, but the car's own config hides the mesh in the game; an opaque shader and
-nothing else will hide it, so the game will show it; or not on this car at all.
+when the part's material honours alpha, and not otherwise. The profile records
+`alphaHides` for each texture: true when every material that wears it blends,
+alpha-tests or uses alpha to coverage, each of which draws nothing of a fully
+transparent texel. The build reads it and says what happened to every hidden
+role:
+
+- shipped transparent (a 4x4 sheet — a texture with nothing on it needs no
+  resolution);
+- no sheet would work, but the car's own config hides every mesh wearing it in
+  the game;
+- no sheet would work and nothing else hides it, so the game will show it —
+  because a material wearing it draws every texel, because no mesh in the car's
+  model wears it at all (the driver's suit, the crew: known only from the skins
+  folder, drawn by another model, and treated as opaque), or because the profile
+  predates `alphaHides` and needs regenerating;
+- the design paints it too, and painting wins;
+- or the car has no such role.
 
 That "car's own config" is `extension/ext_config.ini` beside the model, where a
 Custom Shaders Patch `MODEL_REPLACEMENT` can hide meshes — the usual arrangement
@@ -675,6 +707,7 @@ design written for one car will always look better on it.
 
 - **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
 - **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
+- **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, and furthest from any edge — as ranked panel-relative spots with their clearance in mm, measured by the same ray casting as `check_fitment`.
 - **`list_treatments`**: Catalogue of all loaded treatment options and schemas.
 - **`list_constraints`**: The constraints a region may declare, and what each enforces.
 - **`read_design`**: Read working design data held in the running editor.
@@ -688,21 +721,28 @@ design written for one car will always look better on it.
   car's real scale, broken mirroring, placements painted into texture space no
   triangle uses, and placements the bodywork hides. Read `notChecked`: it names
   checks that could not run, and an empty findings list from a partial run does
-  not mean the design is good.
+  not mean the design is good. Pass `proposal` — operations in the shape
+  `propose_design` takes — to measure a change before offering it; nothing is
+  proposed and nothing in the editor changes.
 - **`render_view`**: Texture SVG and placement data for one surface, or all of them.
 - **`render_car`**: A picture of the working design on the car, returned as an
-  image. Seven named views, with the car's own textures on whatever the design
+  image. Eight named views — or `sheet`, six of them in one picture — with the car's own textures on whatever the design
   leaves unpainted. Its limits are in the tool description rather than left to be
-  discovered: no environment reflections, and one fixed light rig.
+  discovered: no environment reflections, and one fixed light rig. Takes
+  `proposal` the same way `check_fitment` does.
 
 **Proposing.**
 
-- **`propose_design`**: Propose design changes (palette, regions, options, identity, constraints) to the editor's inbox.
+- **`propose_design`**: Propose design changes (palette, regions, options, identity, constraints) to the editor's inbox, optionally with the fit operations that place what it adds, so they are reviewed as one change.
 - **`propose_fit`**: Propose fit placement overrides or copies to the editor's inbox.
 
 Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect, drag, and **Accept** or **Discard** them using the undo stack. The MCP server never writes directly to disk.
 
 See [docs/mcp.md](docs/mcp.md) for full protocol details and design rationale.
+
+[`autolivery/`](autolivery/README.md) is an agent built on these tools. It takes
+a brief, iterates on a draft until the fitment check and a critic both pass, and
+then sends the result here for a person to accept.
 
 ---
 

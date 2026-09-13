@@ -1,6 +1,19 @@
 /**
  * HTTP client for communicating with the running fitting editor server.
  */
+
+/**
+ * Nothing answered at the editor's address: not the editor saying no, but no
+ * editor. Its own class so a tool passes it on rather than answering it as a
+ * failure of its own, and the protocol marks the result with EDITOR_META.
+ * Said only in words, an editor that had stopped read as a tool refusing, and
+ * an agent kept paying for turns that could reach nothing.
+ */
+export class EditorUnreachable extends Error {}
+
+/** The `_meta` key of a tool result that could not reach the editor; its value is 'unreachable'. */
+export const EDITOR_META = 'liverykit/editor';
+
 export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
   const url = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
@@ -10,7 +23,7 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       const headers = { connection: 'close', ...options.headers };
       res = await fetch(new URL(path, url).href, { ...options, headers });
     } catch (e) {
-      throw new Error(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
+      throw new EditorUnreachable(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
     }
 
     const contentType = res.headers.get('content-type') ?? '';
@@ -41,19 +54,32 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
     }),
     // No design or fit in the body: the editor answers about the working ones
     // it already holds, which are the ones a proposal would land on top of.
-    checkFitment: async () => request('api/fitment', {
+    // With a proposal, about those with it applied — and nothing is proposed.
+    // `count` is the frame the pictures being judged were drawn at, which the
+    // evaluation counts what each view shows in.
+    checkFitment: async (proposal, count = null) => request(proposal ? 'api/proposal/evaluate' : 'api/fitment', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify(proposal ? { ...proposal, ...(count ? { count } : {}) } : {}),
+    }),
+    findSpace: async (args) => request('api/space', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(args ?? {}),
     }),
     /** A PNG of the car. Binary, so it cannot go through `request`. */
-    shoot: async (view = 'left', width, height) => {
+    shoot: async (view = 'left', width, height, proposal) => {
       const q = new URLSearchParams({ view });
       if (width) q.set('width', String(width));
       if (height) q.set('height', String(height));
-      const res = await fetch(new URL(`api/shot?${q}`, url).href, {
-        headers: { connection: 'close' },
-      }).catch(() => { throw new Error(`No fitting editor is listening at ${url}.`); });
+      const res = await fetch(new URL(`api/shot?${q}`, url).href, proposal
+        ? {
+            method: 'POST',
+            headers: { connection: 'close', 'content-type': 'application/json' },
+            body: JSON.stringify({ proposal }),
+          }
+        : { headers: { connection: 'close' } },
+      ).catch(() => { throw new EditorUnreachable(`No fitting editor is listening at ${url}.`); });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);

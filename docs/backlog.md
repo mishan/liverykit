@@ -9,6 +9,10 @@ Ordered roughly by how much they cost the person looking at the preview.
 
 ## Portability, measured: what a portable design does on an untouched car
 
+> The fixes for the five entries under this heading are planned in
+> [portability-plan.md](portability-plan.md); the wider direction they sit in
+> is [roadmap.md](roadmap.md).
+
 Written from a sweep rather than an impression, so the entries under it can be
 argued with. 26 cars were sampled from a 254-car install — every eleventh, plus
 the three this repository already knows — profiled from scratch with
@@ -93,6 +97,25 @@ per-car `--explain` and a human confirmation, which is a thirty-second job
 repeated eleven times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than eleven.
+
+## A panel only a secondary texture has cannot be painted through its surface
+
+**Symptom.** Where a term binds two textures, as the RSS4's `body` binds
+`body` and `bodyRear`, `find_panels` and `find_space` answer about the second
+texture's panels. But a region naming one of them through `surfaces.body` is a
+high `unmatched`, and the build throws on it. Naming it through
+`paint.bodyRear` instead is refused, because `surfaces.body` already paints
+that texture.
+
+**Cause.** A region on a surface is drawn on every texture the term binds.
+That is right for tags and wrong for a panel name only one of them has. `once`
+keeps a region on the primary (`src/build.mjs`), but nothing keeps one on the
+texture that has its panel.
+
+**What the fix has to establish.** That a region naming a panel is placed only
+on the bound textures that have it, in the build, the renderer, fitment and the
+editor alike, or they disagree about the car; and that a panel no bound texture
+has is still `unmatched`.
 
 ## The CLI renderer has one light rig, not the car's materials
 

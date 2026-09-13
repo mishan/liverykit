@@ -48,9 +48,25 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
-import { shoot, carSheets, VIEWS } from '../engine/shot.mjs';
+import { inView } from '../inview.mjs';
+import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
+import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
+import { findSpace, largestSpace, cleanGrid, spaceRole } from '../space.mjs';
+
+/**
+ * A cache with a ceiling. The editor runs for hours, and every panel an agent
+ * sweeps and every size it asks about was kept for good; past `max`, the entry
+ * asked about longest ago goes. A Map iterates in insertion order, and a hit
+ * is re-inserted, so the first key is always the stalest.
+ */
+function remember(map, key, value, max) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > max) map.delete(map.keys().next().value);
+  return value;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Where the profiles this checkout ships live. A profile is the entirety of what
@@ -374,6 +390,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         tags: p.tags ?? [],
         instances: p.instances,
         anisotropy: p.anisotropy ?? 1,
+        visible: p.visible,
         // Which way the sheet runs across this panel. The editor needs it to
         // mirror a placement onto the opposite flank; without it, copying `at`
         // across sends artwork to the wrong end of the twin.
@@ -485,6 +502,25 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     regionIds: Object.fromEntries(ids),
     fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
+    // The other textures a term binds, with their panels. `surfaces` holds one
+    // entry per term, the primary, because that is the one the editor edits;
+    // but a region can be placed on a panel of any of them, and asking where
+    // (find_panels, find_space) needs them all. A formula car's `body` binds
+    // body AND bodyRear, and the rear's panels were unanswerable.
+    secondarySurfaces: targets.filter((t) => !t.primary).map((t) => ({
+      from: t.from,
+      role: t.role,
+      panels: Object.entries(profile.panels?.[t.role] ?? {}).map(([name, p]) => ({
+        name,
+        rect: p.rect,
+        tags: p.tags ?? [],
+        anisotropy: p.anisotropy ?? 1,
+        visible: p.visible,
+        uAxis: p.uAxis,
+        vAxis: p.vAxis,
+        mirrorOf: p.mirrorOf,
+      })),
+    })),
     // EVERY role this design paints, not just the one entry per term that
     // `surfaces` carries. A vocabulary term may bind to several textures — the
     // RSS4 spreads its bodywork across two — and `surfaces` deliberately holds
@@ -849,12 +885,50 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
     return stock.get(String(file).toLowerCase()) ?? null;
   };
 
+  /**
+   * The whole car as the renderer draws it for one design: the design's
+   * surfaces, and the car's own parts around them. Shared by the picture and by
+   * the count of what a picture shows, so the two are of the same car.
+   */
+  //
+  // The last one built is kept, by the two things of a design it depends on:
+  // the roles it paints and the parts it hides. It was built afresh for every
+  // evaluate, 350 ms of the NSX with the editor's event loop waiting, while a
+  // run's drafts nearly always paint the same roles. One entry, because the
+  // count keeps its per-view passes on the geometry (see piecesInView), and
+  // several geometries would hold several sets of those.
+  let lastCar = null;
+  const carFor = (m, design) => {
+    // EVERY role, not just the primary one per term. `editorState` returns
+    // one entry per vocabulary term — right for a surface picker, wrong
+    // here: `surfaces.body` on a formula car binds body AND bodyRear, the
+    // design paints both, and taking only the first drew half the car grey
+    // and called it unpainted.
+    const roles = [];
+    for (const t of resolveTargets(profile, design).targets) {
+      if (roles.some((r) => r.role === t.role)) continue;
+      roles.push({ role: t.role, file: texture(profile, t.role).file });
+    }
+    const key = JSON.stringify([roles, Array.isArray(design.hide) ? design.hide : null]);
+    if (lastCar?.m !== m || lastCar.key !== key) {
+      lastCar = { m, key, g: wholeModelGeometry(m, roles, { livery: design, profile }) };
+    }
+    return { g: lastCar.g, roles };
+  };
+
   // A missing fit is the normal case — most cars have never been tuned. A fit
   // that exists and is wrong is not, and starting anyway would give an editor
   // that looks fine and fails only when you press Save, by which point you have
   // done the work twice. Validated on the way in, same as the save path.
   const started = new Date().toISOString().slice(11, 19);
   let pendingProposal = null;
+  // find_space answers, by question, and the panel sweeps behind them, by
+  // panel: the sweep does not depend on the size asked about, and an agent
+  // asks one door six sizes. It is one walk over the car's triangles now, a
+  // few tens of milliseconds, and kept anyway because it never changes.
+  const spaces = new Map();
+  const grids = new Map();
+  let spacePrepared = null;
   let fit = null;
   let workingFit = null;
   let workingDesign = livery;
@@ -870,6 +944,30 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       throw new Error(`Could not load ${fitPath}: ${e.message}`);
     }
   }
+
+  // A proposal applied to the working state, and everything a save would
+  // refuse about the result. Shared by the inbox and by the endpoints that
+  // measure a proposal without offering it, so the two cannot disagree about
+  // what is acceptable.
+  const stage = (prop) => {
+    try {
+      const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
+      const baseDesign = workingDesign ?? livery;
+      const next = applyProposalDiff({ design: baseDesign, fit: baseFit }, prop);
+      if (liveryPath && Array.isArray(prop?.design) && prop.design.length > 0) {
+        const refusal = designRefusal(next.design, liveryPath);
+        if (refusal) return { status: 409, refused: `Proposed design rejected: ${refusal}` };
+      }
+      try {
+        validateFit(next.fit, fitPath);
+      } catch (e) {
+        return { status: 409, refused: `Proposed fit rejected: ${e.message}` };
+      }
+      return next;
+    } catch (e) {
+      return { status: 400, refused: e.message };
+    }
+  };
 
   const server = createServer(async (req, res) => {
     const send = (code, type, body) => {
@@ -975,30 +1073,31 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       //
       // Rendered from the WORKING design and fit, like everything else here,
       // and from the same geometry the browser gets.
-      if (req.method === 'GET' && url.pathname === '/api/shot') {
+      //
+      // POST takes a PROPOSAL and draws the working design with it applied,
+      // adopting nothing — see /api/proposal/evaluate for why that exists.
+      if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/shot') {
+        let design = workingDesign ?? livery;
+        let useFit = workingFit ?? fit;
+        if (req.method === 'POST') {
+          const sent = await body();
+          if (sent.proposal !== undefined) {
+            const staged = stage(sent.proposal);
+            if (staged.refused) return json(staged.status, { error: staged.refused });
+            ({ design, fit: useFit } = staged);
+          }
+        }
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const view = url.searchParams.get('view') ?? 'left';
         // hasOwn, not a truthy lookup: `VIEWS['toString']` is a function from
         // the prototype, so it passed the check and then destructured to
         // undefined yaw and pitch — NaN camera, blank picture, 200 OK.
-        if (!Object.hasOwn(VIEWS, view)) {
+        if (view !== 'sheet' && !Object.hasOwn(VIEWS, view)) {
           return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
-            `Known views: ${Object.keys(VIEWS).join(', ')}` });
+            `Known views: ${Object.keys(VIEWS).join(', ')}, sheet` });
         }
-        const design = workingDesign ?? livery;
-        const useFit = workingFit ?? fit;
-        // EVERY role, not just the primary one per term. `editorState` returns
-        // one entry per vocabulary term — right for a surface picker, wrong
-        // here: `surfaces.body` on a formula car binds body AND bodyRear, the
-        // design paints both, and taking only the first drew half the car grey
-        // and called it unpainted.
-        const roles = [];
-        for (const t of resolveTargets(profile, design).targets) {
-          if (roles.some((r) => r.role === t.role)) continue;
-          roles.push({ role: t.role, file: texture(profile, t.role).file });
-        }
-        const g = wholeModelGeometry(m, roles, { livery: design, profile });
+        const { g, roles } = carFor(m, design);
         const surfaces = roles.map((r) => ({
           role: r.role,
           svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals }).svg,
@@ -1019,12 +1118,21 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
         }
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
-        const shot = await shoot(g, g.groups, surfaces, {
-          view,
-          sheets: stock,
-          width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
-          height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
-        });
+        // A sheet is several views at a fraction of the size each, so it may
+        // have more pixels than one view across and down: its cells are then
+        // nearly as sharp as a single picture.
+        const shot = view === 'sheet'
+          ? await shootSheet(g, g.groups, surfaces, {
+              sheets: stock,
+              width: clamp(url.searchParams.get('width') ?? 1400, 400, 2400),
+              height: clamp(url.searchParams.get('height') ?? 840, 300, 1440),
+            })
+          : await shoot(g, g.groups, surfaces, {
+              view,
+              sheets: stock,
+              width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
+              height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
+            });
         res.writeHead(200, {
           'content-type': 'image/png',
           'cache-control': 'no-store',
@@ -1204,6 +1312,48 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         return json(200, { saved: fitPath });
       }
 
+      // Where a shape of a given size fits whole on a panel — see space.mjs.
+      // Waits for the model, like evaluate: without it there is no answer.
+      if (req.method === 'POST' && url.pathname === '/api/space') {
+        const q = await body();
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
+        if (where.error) return json(400, { error: where.error });
+        // Normalised before anything is keyed on it: "300" and 300, or a
+        // default left out and the same default sent, are one question.
+        const num = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : Number(v));
+        const cellMm = num(q.cellMm, undefined) || undefined;
+        const largest = q.largest === true || q.largest === 'true';
+        const widthMm = num(q.widthMm, undefined);
+        const ask = largest
+          ? { largest: true, aspect: num(q.aspect, 1), marginMm: num(q.marginMm, 0) }
+          : { widthMm, heightMm: num(q.heightMm, widthMm), marginMm: num(q.marginMm, 0), count: num(q.count, 5) };
+        const key = JSON.stringify([where.role, q.panel, cellMm, ask]);
+        try {
+          // A hit is re-inserted like a miss, so the stalest entry is the one
+          // evicted. Only misses were, which made "least recently used" first
+          // in, first out, and let the door an agent asks about most go first.
+          if (spaces.has(key)) {
+            remember(spaces, key, spaces.get(key), 256);
+          } else {
+            spacePrepared ??= occupancyFor(m, { occluders: carOccluders(m, profile) });
+            const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
+            const grid = remember(grids, gridKey, grids.get(gridKey) ?? cleanGrid({ profile, model: m,
+              prepared: spacePrepared, role: where.role, panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
+            remember(spaces, key, largest
+              ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
+              : findSpace({ grid, model: m, prepared: spacePrepared, ...ask }), 256);
+          }
+          // Said about THIS request, not cached with the answer: the same
+          // question asked with the role spelled out and with it inferred gets
+          // the same spots, and only the second was chosen for anybody.
+          return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+        } catch (e) {
+          return json(400, { error: e.message });
+        }
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/proposal') {
         return json(200, { proposal: pendingProposal });
       }
@@ -1216,26 +1366,86 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!prop.why || typeof prop.why !== 'string' || !prop.why.trim()) {
           return json(400, { error: 'Proposal requires a non-empty "why" field explaining the change.' });
         }
-        try {
-          const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
-          const baseDesign = workingDesign ?? livery;
-          const { design: nextDesign, fit: nextFit } = applyProposalDiff({ design: baseDesign, fit: baseFit }, prop);
-          if (liveryPath && Array.isArray(prop.design) && prop.design.length > 0) {
-            const refusal = designRefusal(nextDesign, liveryPath);
-            if (refusal) return json(409, { error: `Proposed design rejected: ${refusal}` });
-          }
-          try {
-            validateFit(nextFit, fitPath);
-          } catch (e) {
-            return json(409, { error: `Proposed fit rejected: ${e.message}` });
-          }
+        const staged = stage(prop);
+        if (staged.refused) return json(staged.status, { error: staged.refused });
+        const id = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        pendingProposal = { id, why: prop.why.trim(), design: prop.design ?? [], fit: prop.fit ?? [] };
+        return json(200, { id });
+      }
 
-          const id = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-          pendingProposal = { id, why: prop.why.trim(), design: prop.design ?? [], fit: prop.fit ?? [] };
-          return json(200, { id });
-        } catch (e) {
-          return json(400, { error: e.message });
+      // What a proposal WOULD do, measured, without offering it to anybody.
+      //
+      // The inbox applies a proposal in the browser, and only an accepted one
+      // reaches the working state that check_fitment and the shot read. So an
+      // agent that proposed and then checked was checking the design BEFORE its
+      // own change, and one working with nobody at the editor could not check
+      // its change at all — the proposal sat pending and every measurement
+      // described the car without it. The alternative was letting an agent
+      // accept its own proposals, which is the one thing the inbox exists to
+      // prevent. This lets it measure a draft instead, and still leaves the
+      // only way onto the car through a person.
+      //
+      // The same staging as a real proposal, so a draft that passes here is
+      // one the inbox will take. And unlike /api/fitment this WAITS for the
+      // model: that one serves a panel a person is looking at, where a partial
+      // answer now beats a full one in two seconds, but a caller deciding
+      // whether its draft passes needs the geometry checks to have run.
+      if (req.method === 'POST' && url.pathname === '/api/proposal/evaluate') {
+        const asked = await body();
+        const staged = stage(asked);
+        if (staged.refused) return json(staged.status, { error: staged.refused });
+        await getModel();
+        const found = fitment(staged.design, profile, staged.fit, { model });
+        // Counted at the frame the pictures being judged were drawn at, given
+        // as render_car was and clamped as /api/shot clamps it; a sheet's is
+        // the frame of one of its cells. It was 900x540 whatever the critic
+        // saw, and the camera's distance is fitted to the frame's aspect.
+        const c = asked?.count ?? null;
+        const clamp = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Number(v ?? d) || 0));
+        const frame = !c ? { width: 900, height: 540 }
+          : c.view === 'sheet' ? sheetCell(clamp(c.width, 400, 2400, 1400), clamp(c.height, 300, 1440, 840))
+            : { width: clamp(c.width, 200, 1400, 760), height: clamp(c.height, 150, 900, 460) };
+        // And how much of each whole piece the gate's views show, counted in
+        // the renderer. Only here, not in /api/fitment: that one answers a
+        // panel while somebody drags, and this is the caller deciding whether
+        // a draft passes. A count that could not be taken is NOT RUN, which
+        // fails a gate, rather than an empty list, which would pass one.
+        let measured = null;
+        let inViewError = null;
+        if (model) {
+          try {
+            const { g } = carFor(model, staged.design);
+            const { sheets } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
+            const seen = inView(staged.design, profile, staged.fit, g, sheets, frame);
+            found.findings.push(...seen.findings);
+            found.checked = [...found.checked, 'hidden-in-view'];
+            measured = seen.measured;
+          } catch (e) {
+            inViewError = e.message;
+            log(`  ! could not count what each view shows: ${e.message}`);
+          }
         }
+        if (!measured) found.notChecked = [...found.notChecked, 'hidden-in-view'];
+        // The staged design and fit ride along: what a draft AMOUNTS to is the
+        // other question a caller holding a list of operations has, and this
+        // is the one place that has already worked it out.
+        //
+        // Stale ids too, against the DRAFT: read_fit promises them, and a draft
+        // answering with the bare fit dropped them. Measured the way the build
+        // measures them, and said rather than swallowed if that cannot be done
+        // — fitment reports the same design as unresolvable, and the rest of
+        // this answer still stands.
+        let staleIds = null, staleIdsError;
+        try {
+          staleIds = unusedFitIds(staged.fit, fitUsage(staged.design, profile, staged.fit));
+        } catch (e) {
+          staleIdsError = e.message;
+        }
+        return json(200, {
+          ...found, inView: measured, ...(measured ? { inViewAt: frame } : {}),
+          ...(inViewError ? { inViewError } : {}), modelError,
+          design: staged.design, fit: staged.fit, staleIds, staleIdsError,
+        });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/proposal/ack') {
