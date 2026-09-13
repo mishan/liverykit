@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clip } from './trace.mjs';
+import { ServerGone } from './mcp.mjs';
 
 /**
  * A brief in; a design out that has passed a check it cannot argue with.
@@ -253,18 +254,33 @@ export async function run({
   let summary = '';
   let passedIn = null;
   let stopped = null;
+  // `base` identifies the working design and fit the run started from, which
+  // its operations were written against: a replay onto another is not one.
+  const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), passed: passedIn !== null, passedIn,
+    rounds: history.length, summary, draft, history, ...(stopped ? { stopped } : {}) });
+  const save = (result) => writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
   const traced = async (parent, name, args, fn) => {
+    // The arguments whole. They were clipped to 2000 characters here, so the
+    // local trace lost every full draft, while the export clips on its own
+    // way out (trace.mjs) and the local file keeps what it is given.
     const span = trace.start('tool', name, {
       parent,
-      attrs: { 'tool.name': name, 'tool.parameters': clip(args), 'agentops.entity.input': clip(args) },
+      attrs: { 'tool.name': name, 'tool.parameters': args, 'agentops.entity.input': args },
     });
     let r;
     try {
       r = await fn();
     } catch (e) {
+      // A dead server is the end of the run, not a refusal. Handed to the
+      // planner as one, every call after it was refused too, and the planner
+      // kept turning, up to thirty paid turns a round for six rounds.
+      if (e instanceof ServerGone) {
+        await span.end({ ok: false, error: e.message });
+        throw e;
+      }
       r = refuse(e.message);
     }
     await span.end({
@@ -423,6 +439,9 @@ export async function run({
         images: [],
         design,
       };
+      // Saved like any other round, so the rounds a crash leaves behind include
+      // one that was not submitted.
+      await save({ ...snapshot(), finished: false });
       continue;
     }
 
@@ -434,12 +453,16 @@ export async function run({
       attrs: { 'round.passed': gate.passed, 'round.fitment': gate.record.gates.fitment, 'round.critic': gate.record.gates.critic },
     });
     await trace.flush();
-    if (gate.passed) { passedIn = n; break; }
+    if (gate.passed) passedIn = n;
     if (gate.stop) {
       stopped = gate.stop;
       log(`  stopped: ${stopped}`);
-      break;
     }
+    // Written every round, not once at the end. The workstation lost power
+    // several times on 2026-09-12, and run 15's round-2 draft went with it.
+    // A run that dies leaves the rounds it finished, and says it did not.
+    await save({ ...snapshot(), finished: false });
+    if (gate.passed || gate.stop) break;
     feedback = gate.feedback;
   }
 
@@ -695,11 +718,8 @@ export async function run({
     };
   }
 
-  const passed = passedIn !== null;
-  // `base` identifies the working design and fit the run started from, which
-  // its operations were written against: a replay onto another is not one.
-  const result = { brief: theBrief, ...(base ? { base } : {}), passed, passedIn, rounds: history.length, summary, draft, history,
-    ...(stopped ? { stopped } : {}) };
+  const result = { ...snapshot(), finished: true };
+  const { passed } = result;
 
   if (passed && propose) {
     const last = history.at(-1);
@@ -727,6 +747,6 @@ export async function run({
     }
   }
 
-  await writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  await save(result);
   return result;
 }
