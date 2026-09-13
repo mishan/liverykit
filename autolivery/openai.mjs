@@ -252,7 +252,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
   };
 }
 
-export function createCritic({ endpoint, model, trace, sampling = {} }) {
+export function createCritic({ endpoint, model, trace, sampling = {}, maxTokens = 8192 }) {
   return {
     async judge({ brief, summary, images, parent, recheck = null, name = 'critic' }) {
       const parts = [];
@@ -264,11 +264,19 @@ export function createCritic({ endpoint, model, trace, sampling = {} }) {
       const choice = await ask(endpoint, {
         ...sampling,
         model,
-        max_tokens: 2048,
+        max_tokens: maxTokens,
         temperature: 0.2,
         messages: [{ role: 'system', content: CRITIC_SYSTEM }, { role: 'user', content: parts }],
         response_format: { type: 'json_schema', json_schema: { name: 'verdict', strict: true, schema: VERDICT } },
       }, { trace, parent, name });
+      // Said as the limit, not as a verdict that was not JSON. A thinking
+      // model spent the 2048 tokens this once allowed on its reasoning, and
+      // the run said only that the verdict did not parse, which sent somebody
+      // to the prompt rather than to the limit.
+      if (choice.finish_reason === 'length') {
+        throw new Error(`the critic's reply was cut off at its ${maxTokens}-token limit before the verdict was ` +
+          'complete; a model that thinks first can spend all of it reasoning. Raise it with --critic-max-tokens.');
+      }
       return verdictOf(choice.message?.content ?? '');
     },
   };
