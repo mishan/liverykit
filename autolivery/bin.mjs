@@ -38,7 +38,8 @@ The models:
   --critic-backend <b>   default: the planner's
   --critic-base-url <u>  default: the planner's
   --critic-model <id>    default: the planner's, when the backend is the same
-  --effort <level>       Claude's effort: low, medium, high, xhigh, max (default high)
+  --effort <level>       Claude's effort: low, medium, high, xhigh, max (default medium,
+                         which planned a round in half the time high did)
   --critic-effort <l>    the critic's (default medium)
   --referee <who>        a closer second look when fitment passes and the critic
                          does not: anthropic (the default when a key is set),
@@ -68,7 +69,7 @@ const { values, positionals } = parseArgs({
     'critic-backend': { type: 'string' },
     'critic-base-url': { type: 'string' },
     'critic-model': { type: 'string' },
-    effort: { type: 'string', default: 'high' },
+    effort: { type: 'string', default: 'medium' },
     'critic-effort': { type: 'string', default: 'medium' },
     referee: { type: 'string' },
     'advisory-critic': { type: 'boolean', default: false },
@@ -269,4 +270,7 @@ if (result.proposalId) {
 } else if (result.proposalError) {
   console.log(`\nthe editor refused the proposal: ${result.proposalError}`);
 }
-process.exit(result.passed ? 0 : 1);
+// Success is a design in front of a person. A pass the editor refused to take
+// delivered nothing, and a script reading the exit code must not be told
+// otherwise.
+process.exit(result.passed && (result.proposalId || values['no-propose']) ? 0 : 1);
