@@ -643,6 +643,129 @@ test('check_fitment answers about the working fit, not the file on disk', async 
   }
 });
 
+test('find_panels knows a surface by the name a design uses, and refuses one it does not', async () => {
+  // An agent asked for `role: "body"` four times — the name the design itself
+  // writes, `surfaces.body` — and was told four times there were no panels,
+  // because on the NSX the texture behind it is `ext_skin_sponsors`. It
+  // concluded the car had no usable panels and gave up the round.
+  const profile = await loadProfile(join(ROOT, 'cars/ac_friends_honda_nsx_gt3_evo.json'));
+  const livery = { name: 'Primer', folder: 'primer', car: profile.id, packs: ['core'],
+    palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const { server, url } = await startUi({
+    livery, profile, fitPath: join(ROOT, 'fits/primer@nsx-test.json'),
+    liveryId: 'primer', liveryPath: join(ROOT, 'liveries/primer.json'), port: 0, log: () => {},
+  });
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const ask = async (args) => tools.callTool('find_panels', args);
+
+    for (const role of ['body', 'surfaces.body', 'ext_skin_sponsors']) {
+      const r = JSON.parse((await ask({ role, tag: 'left' })).content[0].text);
+      assert.ok(r.count > 0, `"${role}" finds the bodywork: ${JSON.stringify(r).slice(0, 200)}`);
+      assert.equal(r.panels[0].surface, 'surfaces.body', 'and says which surface to write it under');
+    }
+
+    const wrong = await ask({ role: 'bodywork' });
+    assert.ok(wrong.isError, 'a name nothing answers to is refused, not answered with nothing');
+    assert.match(wrong.content[0].text, /ext_skin_sponsors \(surfaces\.body\)/);
+
+    const none = JSON.parse((await ask({ role: 'body', tag: 'body' })).content[0].text);
+    assert.equal(none.count, 0);
+    assert.match(none.note, /tags among them are: .*left.*visible/, 'an empty answer says what was there');
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  }
+});
+
+test('a draft is measured without being proposed, and refused as a proposal would be', async () => {
+  // A proposal reaches the working state only once a person accepts it, so an
+  // agent that proposed and then called check_fitment was measuring the design
+  // WITHOUT its own change — and with nobody at the editor, could not measure
+  // its change at all. Letting it accept its own proposals was the other way
+  // out, and would have switched off the one thing the inbox is for.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const ask = async (args) => {
+      const r = await tools.callTool('check_fitment', args);
+      assert.ok(!r.isError, r.content[0].text);
+      return JSON.parse(r.content[0].text);
+    };
+    // A misspelled constraint: fitment reports it as fatal and needs no model,
+    // so this stays a test of plumbing.
+    const draft = { design: [{ op: 'add-region', surface: 'surfaces.body',
+      region: { id: 'name', treatment: 'text', text: 'X', tags: ['centre'], constraints: { keepclear: true } } }] };
+
+    const plain = await ask({});
+    assert.equal(plain.findings.some((f) => f.kind === 'bad-constraint'), false);
+    const drafted = await ask({ proposal: draft });
+    // Tag selection places one copy per matching panel, each as `name@<panel>`.
+    assert.ok(drafted.findings.some((f) => f.kind === 'bad-constraint' && f.ids[0]?.startsWith('name@')),
+      `the draft is what gets measured: ${JSON.stringify(drafted.findings)}`);
+
+    assert.equal((await ask({})).findings.some((f) => f.kind === 'bad-constraint'), false,
+      'measuring a draft adopts nothing');
+    const pending = await (await fetch(new URL('api/proposal', url).href)).json();
+    assert.equal(pending.proposal, null, 'and proposes nothing');
+
+    // Refused in the inbox's own words, because it is the inbox's own staging.
+    const bad = await tools.callTool('check_fitment', { proposal: { design: [{ op: 'no-such-op' }] } });
+    assert.ok(bad.isError);
+    assert.match(bad.content[0].text, /No design op called "no-such-op"/);
+  } finally {
+    await stop();
+  }
+});
+
+test('read_design shows what a draft amounts to, and proposes nothing', async () => {
+  // A list of operations is not a design. An agent re-sending whole regions
+  // had sixty operations for a handful of regions, and nothing could tell it
+  // which ids it already had.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const draft = { design: [
+      { op: 'add-region', surface: 'surfaces.body', region: { id: 'band', treatment: 'stripe', tags: ['centre'] } },
+      { op: 'set-option', id: 'band', key: 'color', value: 'gulf-blue' },
+      { op: 'set-option', id: 'band', key: 'color', value: 'gulf-blue' },
+    ], fit: [{ op: 'set-override', id: 'band', at: [0, 0.2, 1, 0.1] }] };
+
+    const d = JSON.parse((await tools.callTool('read_design', { proposal: draft })).content[0].text);
+    const band = d.surfaces.body.regions.filter((r) => r.id === 'band');
+    assert.equal(band.length, 1, 'three operations, one region');
+    assert.equal(band[0].color, 'gulf-blue');
+    const f = JSON.parse((await tools.callTool('read_fit', { proposal: draft })).content[0].text);
+    assert.deepEqual(f.regions.band.at, [0, 0.2, 1, 0.1]);
+
+    const plain = JSON.parse((await tools.callTool('read_design', {})).content[0].text);
+    assert.equal(plain.surfaces.body.regions.some((r) => r.id === 'band'), false, 'the working design is untouched');
+    assert.equal((await (await fetch(new URL('api/proposal', url).href)).json()).proposal, null, 'and nothing is proposed');
+
+    const bad = await tools.callTool('read_design', { proposal: { design: [{ op: 'no-such-op' }] } });
+    assert.ok(bad.isError, 'a draft the inbox would refuse is refused here too');
+  } finally {
+    await stop();
+  }
+});
+
+test('propose_design carries the fit that places what it adds, as one proposal', async () => {
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const res = await tools.callTool('propose_design', {
+      why: 'a band, placed for this car',
+      design: [{ op: 'add-region', surface: 'surfaces.body', region: { id: 'band', treatment: 'stripe', tags: ['centre'] } }],
+      fit: [{ op: 'set-override', id: 'band', at: [0, 0.2, 1, 0.1] }],
+    });
+    assert.ok(!res.isError, res.content[0].text);
+    const { proposal } = await (await fetch(new URL('api/proposal', url).href)).json();
+    assert.deepEqual(proposal.fit, [{ op: 'set-override', id: 'band', at: [0, 0.2, 1, 0.1] }]);
+  } finally {
+    await stop();
+  }
+});
+
 test('render_car returns an image, and refuses a view it does not have', async () => {
   // The tool that exists because three changes in a row were shipped blind.
   // The editor draws with WebGL in a browser an MCP tool cannot reach, so an

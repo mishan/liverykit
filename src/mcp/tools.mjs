@@ -63,10 +63,29 @@ async function toolDescribeCar(client) {
 
 async function toolFindPanels(client, args) {
   const state = await client.getState();
+  // A surface goes by three names — the texture role (`ext_skin_sponsors`),
+  // the design's key for it (`surfaces.body`) and the vocabulary term alone
+  // (`body`) — and this matched only the first two. The third is the one a
+  // design is written in, so an agent asked for `role: "body"` four times,
+  // was told four times that there were no panels, and concluded the car had
+  // none. An empty answer to a question about a name that does not exist is
+  // not an answer; it is refused, with the names that do.
+  const named = (s) => [s.role, s.from, s.from?.replace(/^(surfaces|paint)\./, '')].includes(args.role);
+  const surfaces = args.role ? state.surfaces.filter(named) : state.surfaces;
+  if (args.role && !surfaces.length) {
+    return {
+      content: [{ type: 'text', text: `No surface called ${JSON.stringify(args.role)} on this car. ` +
+        `Ask by texture role or by the design's surface: ${state.surfaces.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
+      isError: true,
+    };
+  }
   const results = [];
-  for (const s of state.surfaces) {
-    if (args.role && s.role !== args.role && s.from !== args.role) continue;
+  let before = 0;
+  const tagsSeen = new Set();
+  for (const s of surfaces) {
     for (const p of s.panels ?? []) {
+      before++;
+      for (const t of p.tags ?? []) tagsSeen.add(t);
       if (args.tag && !(p.tags ?? []).includes(args.tag)) continue;
       if (typeof args.minVisibility === 'number' && typeof p.visible === 'number' && p.visible < args.minVisibility) continue;
       const area = p.rect ? (p.rect[2] * p.rect[3]) : 0;
@@ -77,6 +96,7 @@ async function toolFindPanels(client, args) {
 
       results.push({
         role: s.role,
+        surface: s.from,
         panel: p.name,
         rect: p.rect,
         area: Number(area.toFixed(4)),
@@ -87,8 +107,15 @@ async function toolFindPanels(client, args) {
       });
     }
   }
+  const answer = { count: results.length, panels: results };
+  // Nothing passed: say what there was, so the next question can be a better
+  // one rather than the same one with the numbers loosened.
+  if (!results.length) {
+    answer.note = `No panel passed every filter. Before filtering there were ${before} panel(s) on ` +
+      `${surfaces.map((s) => s.role).join(', ')}; the tags among them are: ${[...tagsSeen].sort().join(', ') || 'none'}.`;
+  }
   return {
-    content: [{ type: 'text', text: JSON.stringify({ count: results.length, panels: results }, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(answer, null, 2) }],
   };
 }
 
@@ -99,14 +126,34 @@ async function toolListTreatments(client) {
   };
 }
 
-async function toolReadDesign(client) {
+/**
+ * The design or fit a draft makes, without proposing it.
+ *
+ * A caller building a change as a list of operations otherwise sees only the
+ * list — which, from an agent that re-sends whole regions each time it moves
+ * one, was sixty operations deep and repeated itself, while the design it
+ * amounted to was a handful of regions. Staged by the same code as a
+ * proposal, so a draft the inbox would refuse is refused here too.
+ */
+async function draftApplied(client, args, key) {
+  try {
+    const r = await client.checkFitment(draftOf(args));
+    return { content: [{ type: 'text', text: JSON.stringify(r[key], null, 2) }] };
+  } catch (e) {
+    return { content: [{ type: 'text', text: e.message }], isError: true };
+  }
+}
+
+async function toolReadDesign(client, args = {}) {
+  if (draftOf(args)) return draftApplied(client, args, 'design');
   const state = await client.getState();
   return {
     content: [{ type: 'text', text: JSON.stringify(state.design, null, 2) }],
   };
 }
 
-async function toolReadFit(client) {
+async function toolReadFit(client, args = {}) {
+  if (draftOf(args)) return draftApplied(client, args, 'fit');
   const state = await client.getState();
   const fit = state.fit;
 
@@ -182,8 +229,15 @@ async function toolReport(client) {
  * rendered perfectly and was on no part of the car — and every number available
  * to me at the time said the move was fine.
  */
-async function toolCheckFitment(client) {
-  const r = await client.checkFitment();
+async function toolCheckFitment(client, args = {}) {
+  let r;
+  try {
+    r = await client.checkFitment(draftOf(args));
+  } catch (e) {
+    // A draft the inbox would refuse is refused here too, in the same words,
+    // and that is an answer about the draft rather than a broken tool.
+    return { content: [{ type: 'text', text: e.message }], isError: true };
+  }
   const findings = r.findings ?? [];
   const count = (sev) => findings.filter((f) => f.severity === sev).length;
 
@@ -209,6 +263,15 @@ async function toolCheckFitment(client) {
         ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
     }, null, 2) }],
   };
+}
+
+async function toolFindSpace(client, args = {}) {
+  try {
+    const r = await client.findSpace(args);
+    return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+  } catch (e) {
+    return { content: [{ type: 'text', text: e.message }], isError: true };
+  }
 }
 
 async function toolRenderView(client, args = {}) {
@@ -243,6 +306,32 @@ async function toolRenderView(client, args = {}) {
   };
 }
 
+/**
+ * The draft a measuring tool was asked about, or null for the working state.
+ *
+ * Same shape as a proposal and staged by the same code, so a draft that
+ * measures clean is one propose_design will take. `why` is not asked for: a
+ * draft is not being offered to anyone, and the reason belongs on the
+ * proposal that eventually is.
+ */
+function draftOf(args) {
+  const d = args?.proposal;
+  if (d === undefined || d === null) return null;
+  return { design: d.design ?? [], fit: d.fit ?? [] };
+}
+
+const DRAFT_SCHEMA = {
+  type: 'object',
+  description:
+    'Optional. Operations to apply ON TOP of the working design before answering, in the ' +
+    'shape propose_design takes: { design: [...ops], fit: [...ops] }. Nothing is proposed ' +
+    'and nothing in the editor changes — this is how to measure a change before offering it.',
+  properties: {
+    design: { type: 'array', items: { type: 'object' } },
+    fit: { type: 'array', items: { type: 'object' } },
+  },
+};
+
 async function toolProposeDesign(client, args) {
   if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
     return {
@@ -254,7 +343,7 @@ async function toolProposeDesign(client, args) {
     const res = await client.postProposal({
       why: args.why.trim(),
       design: args.design ?? [],
-      fit: [],
+      fit: args.fit ?? [],
     });
     return {
       content: [{ type: 'text', text: JSON.stringify({ status: 'proposed', proposalId: res.id, why: args.why }) }],
@@ -339,18 +428,18 @@ export function createToolHandler(client) {
     },
     {
       name: 'read_design',
-      description: `Read the working design as currently held in the fitting editor. ${PROMPT_NOTE}`,
+      description: `Read the working design as currently held in the fitting editor. Pass \`proposal\` to read the design those operations would make instead, without proposing it. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: { proposal: DRAFT_SCHEMA },
       },
     },
     {
       name: 'read_fit',
-      description: `Read the working fit as currently held in the fitting editor, including stale region ids. ${PROMPT_NOTE}`,
+      description: `Read the working fit as currently held in the fitting editor, including stale region ids. Pass \`proposal\` to read the fit those operations would make instead. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: { proposal: DRAFT_SCHEMA },
       },
     },
     {
@@ -362,12 +451,37 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'find_space',
+      description:
+        'Where on a panel a shape of a given size fits whole: all of it on the car, all of it ' +
+        'visible from trackside, and as far as possible from any edge, shut line or hidden area. ' +
+        'Measured by sweeping the panel with the ray casting check_fitment uses. A panel\'s box is ' +
+        'not the panel — its middle is often against a window frame, an arch or a shut line — so ' +
+        'ask this before placing a roundel, logo or number box. Returns the roomiest spots as ' +
+        'panel-relative `at` rectangles, each with its clearance in mm, and a coarse map of the ' +
+        `panel, texture top first ('#' clean, '.' not). ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          panel: { type: 'string', description: 'Panel name, as find_panels lists it' },
+          role: { type: 'string', description: 'Texture role or surface, when the panel name is on more than one' },
+          widthMm: { type: 'number', description: 'Width of the shape on the car, in mm' },
+          heightMm: { type: 'number', description: 'Height on the car, in mm; defaults to widthMm, as a roundel is' },
+          marginMm: { type: 'number', description: 'Only spots with at least this much clean bodywork all round (default 0)' },
+          count: { type: 'number', description: 'How many spots (default 5)' },
+        },
+        required: ['panel', 'widthMm'],
+      },
+    },
+    {
       name: 'render_car',
       description:
         'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
         'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
-        'Views: ' + Object.keys(VIEWS).join(', ') + '. Unpainted parts wear the car\'s own ' +
+        'Views: ' + [...Object.keys(VIEWS), 'sheet'].join(', ') + '. "sheet" is four labelled views in ' +
+        'one picture (three-quarter, left, right, rear-left), the cheapest way to look all round. ' +
+        'Unpainted parts wear the car\'s own ' +
         'textures, where the model carries them. Note the limits — no normal maps, no ' +
         'environment reflections and one fixed light rig, so it answers "does the artwork land ' +
         'where I said" and not ' +
@@ -375,9 +489,10 @@ export function createToolHandler(client) {
       inputSchema: {
         type: 'object',
         properties: {
-          view: { type: 'string', description: `One of: ${Object.keys(VIEWS).join(', ')}` },
-          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760)' },
-          height: { type: 'number', description: 'Pixels down, 150-900 (default 460)' },
+          view: { type: 'string', description: `One of: ${[...Object.keys(VIEWS), 'sheet'].join(', ')}` },
+          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760); a sheet 400-2400 (default 1400)' },
+          height: { type: 'number', description: 'Pixels down, 150-900 (default 460); a sheet 300-1440 (default 840)' },
+          proposal: DRAFT_SCHEMA,
         },
       },
     },
@@ -390,10 +505,12 @@ export function createToolHandler(client) {
         'uses, and placements the bodywork hides. Call this BEFORE proposing a fit change and ' +
         'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
         'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
-        `findings list from a partial run does not mean the design is good. ${PROMPT_NOTE}`,
+        'findings list from a partial run does not mean the design is good. Pass `proposal` ' +
+        'to measure a change BEFORE offering it: a proposal only reaches the working design ' +
+        `once a person accepts it. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: { proposal: DRAFT_SCHEMA },
       },
     },
     {
@@ -412,7 +529,7 @@ export function createToolHandler(client) {
       description:
         'Propose design changes (palette, regions, options, identity, constraints, ' +
         "adopt-surface) to the running editor's inbox for human review. Use " +
-        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar — ' +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible — ' +
         'which is often the right proposal when check_fitment reports the same problem ' +
         'twice: the constraint states the requirement once, on the design, for every car, ' +
         'rather than being re-fixed per car. Call list_constraints first; a name that is ' +
@@ -424,6 +541,12 @@ export function createToolHandler(client) {
           design: {
             type: 'array',
             description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-constraint, set-identity, set-region, adopt-surface). set-constraint takes { op, id, key, value }, where key is one of the names list_constraints returns and value null removes it.',
+            items: { type: 'object' },
+          },
+          fit: {
+            type: 'array',
+            description: 'Optional fit operations, as propose_fit takes them, for placing the regions ' +
+              'this same proposal adds — so the person reviews one change and not two halves of it.',
             items: { type: 'object' },
           },
         },
@@ -464,15 +587,16 @@ export function createToolHandler(client) {
       case 'describe_car': return toolDescribeCar(client);
       case 'find_panels': return toolFindPanels(client, args);
       case 'list_treatments': return toolListTreatments(client);
-      case 'read_design': return toolReadDesign(client);
-      case 'read_fit': return toolReadFit(client);
+      case 'read_design': return toolReadDesign(client, args);
+      case 'read_fit': return toolReadFit(client, args);
       case 'report': return toolReport(client);
       case 'render_car': {
         // Reported, not thrown. Without a car model there is no picture, and the
         // useful answer is "no model" — a blank image would look like a car
         // wearing nothing, which is a lie about the design rather than a gap.
         try {
-          const { png, skipped, absent } = await client.shoot(args.view ?? 'left', args.width, args.height);
+          const { png, skipped, absent } = await client.shoot(
+            args.view ?? 'left', args.width, args.height, draftOf(args));
           const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
           // Named, not silently absent. Transparent surfaces with no artwork —
           // glass, emissive masks — are left out rather than drawn as grey
@@ -499,7 +623,8 @@ export function createToolHandler(client) {
           return { content: [{ type: 'text', text: e.message }], isError: true };
         }
       }
-      case 'check_fitment': return toolCheckFitment(client);
+      case 'check_fitment': return toolCheckFitment(client, args);
+      case 'find_space': return toolFindSpace(client, args);
       case 'list_constraints':
         return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };
       case 'render_view': return toolRenderView(client, args);

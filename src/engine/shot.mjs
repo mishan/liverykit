@@ -56,6 +56,10 @@ export const VIEWS = {
   'front-left': { yaw: Math.PI / 4, pitch: 0.22 },
   'rear-left': { yaw: 3 * Math.PI / 4, pitch: 0.22 },
   top: { yaw: Math.PI / 2, pitch: 1.35 },
+  // From above and ahead, the way a person first looks at a car. The low
+  // front-left misses the bonnet and roof, and that is where a stripe or a
+  // roundel cut by a shut line shows.
+  'three-quarter': { yaw: Math.PI / 4, pitch: 0.55 },
 };
 
 /**
@@ -891,6 +895,48 @@ export function rasterise(model, groups, sheets, {
  * alone — see carSheets — and the design's own surfaces are laid over it. The
  * two cannot collide: those are keyed by file and these by role.
  */
+/** The four views on a contact sheet, in reading order. */
+export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'rear-left'];
+
+/**
+ * Four views of the car in one picture, each labelled.
+ *
+ * For a caller that pays per look. A model reading a picture is charged
+ * roughly by its area, so four half-size views cost about what four separate
+ * pictures would — but every look is also a turn, and a turn re-reads the
+ * whole conversation and thinks again. Measured on a real run, that was most
+ * of the bill and the pictures were a tenth of it. One sheet is one turn.
+ *
+ * The design's textures are rasterised once and shared by the four cameras,
+ * so here too it costs little more than one view.
+ */
+export async function shootSheet(model, groups, surfaces, { sheets: stock = null, width = 1400, height = 840, views = SHEET_VIEWS } = {}) {
+  const sheets = new Map(stock ?? []);
+  for (const s of surfaces) {
+    if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
+  }
+  const cw = Math.floor(width / 2);
+  const ch = Math.floor(height / 2);
+  const cells = [];
+  let skipped = 0;
+  for (const [i, view] of views.entries()) {
+    const img = rasterise(model, groups, sheets, { view, width: cw, height: ch });
+    skipped = Math.max(skipped, img.skipped);
+    cells.push({ input: img.data, raw: { width: img.width, height: img.height, channels: 4 },
+      left: (i % 2) * cw, top: Math.floor(i / 2) * ch });
+  }
+  // Named on the picture itself: a reader told "the rear three-quarter shows a
+  // cut roundel" has to be able to find which quarter that is.
+  const labels = views.map((v, i) => `<text x="${(i % 2) * cw + 10}" y="${Math.floor(i / 2) * ch + 22}" ` +
+    `font-family="DejaVu Sans, sans-serif" font-size="16" fill="#d8dde3">${v}</text>`).join('');
+  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${cw * 2}" height="${ch * 2}">${labels}</svg>`);
+  const png = await sharp({ create: { width: cw * 2, height: ch * 2, channels: 4, background: { r: 12, g: 13, b: 16, alpha: 1 } } })
+    .composite([...cells, { input: overlay, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+  return { png, skipped };
+}
+
 export async function shoot(model, groups, surfaces, { sheets: stock = null, ...opts } = {}) {
   const sheets = new Map(stock ?? []);
   for (const s of surfaces) {

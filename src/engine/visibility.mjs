@@ -35,7 +35,7 @@
 // It is still a heuristic, and it is labelled as one in the profile it produces.
 // ---------------------------------------------------------------------------
 
-import { vertex, triangles } from './kn5.mjs';
+import { vertex, triangles, damageOnly, motionBlurOnly } from './kn5.mjs';
 import { inPoly } from './poly.mjs';
 
 /**
@@ -170,6 +170,100 @@ function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
 }
 
 /**
+ * Whether something stands directly on top of a point of paint: the ray
+ * straight out along its normal meets another mesh within `reach`.
+ *
+ * The voxel grid cannot see this at any affordable setting. Its cells are
+ * 2.5 cm and a ray's first test is 1.75 cm out, and on the Honda NSX the door
+ * handle is a chrome strip 2-10 mm proud of the door. A team name laid across
+ * it measured 100% seen — 99% even at five times the angles — while in the
+ * render the strip ran through its last letter. So the near field is asked
+ * exactly, ray against triangle, and a point covered there is not seen however
+ * many oblique rays slip round the ends of the strip: looked at straight on,
+ * which is how a flank is seen from trackside, it is behind the handle.
+ *
+ * `floor` passes over what lies ON the surface rather than in front of it. On
+ * the same door an interior shell sharing the top edge meets the ray at
+ * 0.2-0.6 mm, which is two meshes modelled along one line; the nearest real
+ * fixture, a number plate, is 2.2 mm out.
+ */
+const NEAR_CELL = 0.05;
+const nearKey = (i, j, k) => ((i + 512) * 1024 + (j + 512)) * 1024 + (k + 512);
+
+function buildNear(model, meshes) {
+  const cells = new Map();
+  const cell = (v) => Math.floor(v / NEAR_CELL);
+  for (const mesh of meshes) {
+    // Not drawn until the car is damaged, or only when a wheel is spinning:
+    // nothing that covers paint in any view a livery is judged in.
+    if (damageOnly(model.materials?.[mesh.materialId]?.shader) || motionBlurOnly(mesh.name)) continue;
+    const own = model.meshes.indexOf(mesh);
+    for (const [a, b, c] of triangles(model, mesh)) {
+      const A = vertex(model, mesh, a), B = vertex(model, mesh, b), C = vertex(model, mesh, c);
+      const i0 = cell(Math.min(A.x, B.x, C.x)), i1 = cell(Math.max(A.x, B.x, C.x));
+      const j0 = cell(Math.min(A.y, B.y, C.y)), j1 = cell(Math.max(A.y, B.y, C.y));
+      const k0 = cell(Math.min(A.z, B.z, C.z)), k1 = cell(Math.max(A.z, B.z, C.z));
+      // A triangle half a metre across in every direction is a floor or a
+      // shell, not a fitting; the voxels have it, and filing it into a
+      // thousand cells would buy nothing.
+      if ((i1 - i0 + 1) * (j1 - j0 + 1) * (k1 - k0 + 1) > 1000) continue;
+      const t = {
+        ax: A.x, ay: A.y, az: A.z,
+        e1x: B.x - A.x, e1y: B.y - A.y, e1z: B.z - A.z,
+        e2x: C.x - A.x, e2y: C.y - A.y, e2z: C.z - A.z,
+        own,
+      };
+      for (let i = i0; i <= i1; i++) {
+        for (let j = j0; j <= j1; j++) {
+          for (let k = k0; k <= k1; k++) {
+            const key = nearKey(i, j, k);
+            const list = cells.get(key);
+            if (list) list.push(t); else cells.set(key, [t]);
+          }
+        }
+      }
+    }
+  }
+  return cells;
+}
+
+/** Distance along the ray to triangle `t`, either face, or Infinity. */
+function rayTriangle(ox, oy, oz, dx, dy, dz, t) {
+  const px = dy * t.e2z - dz * t.e2y, py = dz * t.e2x - dx * t.e2z, pz = dx * t.e2y - dy * t.e2x;
+  const det = t.e1x * px + t.e1y * py + t.e1z * pz;
+  if (Math.abs(det) < 1e-12) return Infinity;
+  const inv = 1 / det;
+  const sx = ox - t.ax, sy = oy - t.ay, sz = oz - t.az;
+  const u = (sx * px + sy * py + sz * pz) * inv;
+  if (u < 0 || u > 1) return Infinity;
+  const qx = sy * t.e1z - sz * t.e1y, qy = sz * t.e1x - sx * t.e1z, qz = sx * t.e1y - sy * t.e1x;
+  const v = (dx * qx + dy * qy + dz * qz) * inv;
+  if (v < 0 || u + v > 1) return Infinity;
+  return (t.e2x * qx + t.e2y * qy + t.e2z * qz) * inv;
+}
+
+function covered(near, p, reach = 0.05, floor = 0.001) {
+  const cell = (v) => Math.floor(v / NEAR_CELL);
+  const ex = p.x + p.nx * reach, ey = p.y + p.ny * reach, ez = p.z + p.nz * reach;
+  const tested = new Set();
+  // Every cell the segment's box touches, so a ray clipping a corner is not
+  // missed: at 5 cm cells and 5 cm of reach that is at most 27 of them.
+  for (let i = cell(Math.min(p.x, ex)); i <= cell(Math.max(p.x, ex)); i++) {
+    for (let j = cell(Math.min(p.y, ey)); j <= cell(Math.max(p.y, ey)); j++) {
+      for (let k = cell(Math.min(p.z, ez)); k <= cell(Math.max(p.z, ez)); k++) {
+        for (const t of near.get(nearKey(i, j, k)) ?? []) {
+          if (t.own === p.mesh || tested.has(t)) continue;
+          tested.add(t);
+          const d = rayTriangle(p.x, p.y, p.z, p.nx, p.ny, p.nz, t);
+          if (d >= floor && d <= reach) return t.own;   // which mesh: the thing to move away from
+        }
+      }
+    }
+  }
+  return -1;
+}
+
+/**
  * Annotate islands with a `safe` UV rect covering only their visible part.
  *
  * `occluders` should be every mesh in the car, not just the painted ones — a
@@ -285,6 +379,7 @@ export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025
     cellSize,
     dirs: viewDirections(),
     maxSteps: Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5),
+    near: buildNear(model, occluders),
   };
 }
 
@@ -310,28 +405,42 @@ export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025
  * really a design painting a diagonal.
  */
 export function rectVisibility(model, prepared, meshes, rect, {
-  minDirections = 4, across = 14, poly = null,
+  minDirections = 4, across = 14, poly = null, grid = null,
 } = {}) {
-  const { occ, cellSize, dirs, maxSteps } = prepared;
+  const { occ, cellSize, dirs, maxSteps, near } = prepared;
+  // `grid` is [columns, rows] for a rectangle that is not square on the car:
+  // a team name is ten times wider than it is tall, and `across` cells each
+  // way spend nine tenths of the samples on its height.
+  const [nu, nv] = grid ?? [across, across];
   // Zero, and that is the point. `escapes` steps BEFORE it tests, so any lift
   // at all skips past the cell the surface stands in — which is precisely the
   // cell a flush occluder shares with it. Self-occlusion is handled by
   // ownership now, so the ray has no reason to start anywhere but the surface.
   const lift = 0;
-  const { points, cells } = sampleRect(model, meshes, rect, across, poly);
+  const { points, cells } = sampleRect(model, meshes, rect, nu, nv, poly);
   if (!points.length) return null;
 
   let seen = 0;
+  const under = {};
   for (const p of points) {
+    const over = near ? covered(near, p) : -1;
+    if (over >= 0) {
+      const n = model.meshes[over]?.name ?? `mesh ${over}`;
+      under[n] = (under[n] ?? 0) + 1;
+      continue;
+    }
     const sx = p.x + p.nx * lift, sy = p.y + p.ny * lift, sz = p.z + p.nz * lift;
     let clear = 0;
     for (const [dx, dy, dz] of dirs) {
       if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
-      if (escapes(occ, sx, sy, sz, dx, dy, dz, maxSteps, p.mesh)) clear++;
+      if (escapes(occ, sx, sy, sz, dx, dy, dz, maxSteps, p.mesh) && ++clear >= minDirections) break;
     }
     if (clear >= minDirections) seen++;
   }
-  return { fraction: seen / points.length, samples: points.length, of: cells };
+  return {
+    fraction: seen / points.length, samples: points.length, of: cells,
+    ...(Object.keys(under).length ? { under } : {}),
+  };
 }
 
 /**
@@ -357,38 +466,52 @@ export function rectVisibility(model, prepared, meshes, rect, {
  * counted, so the coverage figure stays a fraction of the artwork rather than
  * of the box drawn around it.
  */
-function sampleRect(model, meshes, [rx, ry, rw, rh], across, poly = null) {
+function sampleRect(model, meshes, [rx, ry, rw, rh], nu, nv, poly = null) {
   if (!(rw > 0) || !(rh > 0)) return { points: [], cells: 0 };
-  const hit = new Array(across * across).fill(null);
-  const step = (n) => (n + 0.5) / across;          // cell centres, not edges
 
   // Which cells are in play, decided once: the inner loop runs per triangle
   // per cell, and a point-in-polygon test in there would be asked the same
   // question thousands of times over.
-  const asked = new Array(across * across).fill(true);
-  let cells = across * across;
+  const asked = new Array(nu * nv).fill(true);
+  let cells = nu * nv;
   if (Array.isArray(poly) && poly.length >= 3) {
     cells = 0;
-    for (let j = 0; j < across; j++) {
-      for (let i = 0; i < across; i++) {
-        const inside = inPoly(poly, [rx + step(i) * rw, ry + step(j) * rh]);
-        asked[j * across + i] = inside;
+    for (let j = 0; j < nv; j++) {
+      for (let i = 0; i < nu; i++) {
+        // Cell centres, not edges.
+        const inside = inPoly(poly, [rx + ((i + 0.5) / nu) * rw, ry + ((j + 0.5) / nv) * rh]);
+        asked[j * nu + i] = inside;
         if (inside) cells++;
       }
     }
   }
   if (!cells) return { points: [], cells: 0 };
+  const hit = scanGrid(model, meshes, [rx, ry, rw, rh], nu, nv, asked);
+  return { points: hit.filter(Boolean), cells };
+}
 
+/**
+ * One surface point per cell of an `nu` x `nv` grid over a uv rectangle, or
+ * null where no triangle covers the cell's centre. Indexed `j * nu + i`.
+ *
+ * The walk is over EVERY triangle of the meshes, whatever the rectangle, so
+ * it costs the same for a small rectangle as for a large one — which is why a
+ * sweep asks it once for a whole panel rather than once per cell. Asked 609
+ * times over one door, it took half a minute to do 609 times what it could
+ * have done once.
+ */
+function scanGrid(model, meshes, [rx, ry, rw, rh], nu, nv, asked = null) {
+  const hit = new Array(nu * nv).fill(null);
   for (const mesh of meshes) {
     const own = model.meshes.indexOf(mesh);
     for (const [ia, ib, ic] of triangles(model, mesh)) {
       const A = vertex(model, mesh, ia), B = vertex(model, mesh, ib), C = vertex(model, mesh, ic);
 
       // Only the grid cells this triangle could possibly cover.
-      const lo = (v, r, d) => Math.floor(((Math.min(A[v], B[v], C[v]) - r) / d) * across);
-      const hi = (v, r, d) => Math.ceil(((Math.max(A[v], B[v], C[v]) - r) / d) * across);
-      const i0 = Math.max(0, lo('u', rx, rw)), i1 = Math.min(across - 1, hi('u', rx, rw));
-      const j0 = Math.max(0, lo('v', ry, rh)), j1 = Math.min(across - 1, hi('v', ry, rh));
+      const i0 = Math.max(0, Math.floor(((Math.min(A.u, B.u, C.u) - rx) / rw) * nu));
+      const i1 = Math.min(nu - 1, Math.ceil(((Math.max(A.u, B.u, C.u) - rx) / rw) * nu));
+      const j0 = Math.max(0, Math.floor(((Math.min(A.v, B.v, C.v) - ry) / rh) * nv));
+      const j1 = Math.min(nv - 1, Math.ceil(((Math.max(A.v, B.v, C.v) - ry) / rh) * nv));
       if (i1 < i0 || j1 < j0) continue;
 
       // Barycentric coordinates in UV, which is where the question is asked.
@@ -397,9 +520,9 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], across, poly = null) {
 
       for (let j = j0; j <= j1; j++) {
         for (let i = i0; i <= i1; i++) {
-          const slot = j * across + i;
-          if (hit[slot] || !asked[slot]) continue;  // first triangle to cover it wins
-          const u = rx + step(i) * rw, v = ry + step(j) * rh;
+          const slot = j * nu + i;
+          if (hit[slot] || (asked && !asked[slot])) continue;  // first triangle to cover it wins
+          const u = rx + ((i + 0.5) / nu) * rw, v = ry + ((j + 0.5) / nv) * rh;
           const b1 = ((u - A.u) * (C.v - A.v) - (C.u - A.u) * (v - A.v)) / d;
           const b2 = ((B.u - A.u) * (v - A.v) - (u - A.u) * (B.v - A.v)) / d;
           const b0 = 1 - b1 - b2;
@@ -419,7 +542,38 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], across, poly = null) {
       }
     }
   }
-  return { points: hit.filter(Boolean), cells };
+  return hit;
+}
+
+/**
+ * `rectVisibility` for every cell of a `cols` x `rows` grid over one
+ * rectangle, from ONE walk over the triangles.
+ *
+ * The same sample points, cell for cell, as asking `rectVisibility` of each
+ * cell with `across: per` — a cell's samples are the centres of a `per` x
+ * `per` grid inside it either way — and the same rule for a point being seen:
+ * clear of the car in at least `minDirections` of the directions it faces.
+ */
+export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per = 5, minDirections = 4 } = {}) {
+  const { occ, dirs, maxSteps, near } = prepared;
+  const nu = cols * per, nv = rows * per;
+  const hit = scanGrid(model, meshes, rect, nu, nv);
+  const tally = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ samples: 0, seen: 0 })));
+  hit.forEach((p, slot) => {
+    if (!p) return;
+    const cell = tally[Math.floor(Math.floor(slot / nu) / per)][Math.floor((slot % nu) / per)];
+    cell.samples++;
+    if (near && covered(near, p) >= 0) return;     // on the car, and under something
+    let clear = 0;
+    for (const [dx, dy, dz] of dirs) {
+      if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
+      if (escapes(occ, p.x, p.y, p.z, dx, dy, dz, maxSteps, p.mesh) && ++clear >= minDirections) break;
+    }
+    if (clear >= minDirections) cell.seen++;
+  });
+  return tally.map((row) => row.map((c) => ({
+    samples: c.samples, of: per * per, fraction: c.samples ? c.seen / c.samples : 0,
+  })));
 }
 
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
