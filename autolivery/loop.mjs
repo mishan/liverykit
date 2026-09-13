@@ -298,7 +298,8 @@ export async function run({
     } catch (e) {
       // A dead server is the end of the run, not a refusal. Handed to the
       // planner as one, every call after it was refused too, and the planner
-      // kept turning, up to thirty paid turns a round for six rounds.
+      // kept turning, up to thirty paid turns a round for six rounds. The
+      // editor behind it stopping is the same end, and an EditorGone is one.
       if (e instanceof ServerGone) {
         await span.end({ ok: false, error: e.message });
         throw e;

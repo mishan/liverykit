@@ -402,6 +402,27 @@ test('refusal: no editor, no service', async () => {
   );
 });
 
+test('an editor that stops answering is marked as such in the tool result, not only in its words', async () => {
+  // Every tool turned "No fitting editor is listening" into an ordinary tool
+  // error, so a client could tell an editor that had gone from one that said
+  // no only by matching prose. An agent read it as a refusal and kept paying
+  // for turns. Here the handshake passes and the tool's own request finds
+  // nobody, the case that each tool's catch had swallowed.
+  const client = { ...createEditorClient('http://127.0.0.1:1/'), checkEditor: async () => ({}) };
+  const server = createProtocolServer({ toolHandler: createToolHandler(client) });
+  for (const name of ['check_fitment', 'render_car', 'find_space', 'read_design']) {
+    const args = name === 'read_design' ? { proposal: { design: [] } } : {};
+    const { result } = await server.handleRequest({ jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name, arguments: args } });
+    assert.equal(result.isError, true, name);
+    assert.match(result.content[0].text, /No fitting editor is listening/, name);
+    assert.equal(result._meta?.['liverykit/editor'], 'unreachable', `${name} says so as data`);
+  }
+  const refused = await server.handleRequest({ jsonrpc: '2.0', id: 2, method: 'tools/call',
+    params: { name: 'propose_design', arguments: {} } });
+  assert.equal(refused.result._meta, undefined, 'a refusal is not an editor gone');
+});
+
 test('refusal: source: "human" is refused', async () => {
   const { url, stop } = await setupTestEditor();
   try {

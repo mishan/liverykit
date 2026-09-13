@@ -46,12 +46,15 @@ async function fixtureEditor({ kn5 = {}, tweak = null } = {}) {
     port: 0, log: () => {},
   });
   const mcp = await connect({ args: [join(ROOT, 'bin/liverykit.mjs'), '--mcp', '--editor', url] });
+  const closeEditor = async () => {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  };
   return {
-    dir, url, mcp,
+    dir, url, mcp, closeEditor,
     async stop() {
       mcp.close();
-      if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
-      await new Promise((ok) => server.close(ok));
+      await closeEditor();
       await rm(dir, { recursive: true, force: true });
     },
   };
@@ -268,6 +271,44 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
     const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     const drafted = spans.find((s) => s.name === 'draft_design');
     assert.deepEqual(drafted.attrs['tool.parameters'], { design: palette }, 'and the trace keeps the draft whole');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('an editor that stops answering ends the run at once, like a dead MCP server', async () => {
+  // Only the MCP child dying was fatal. With the editor gone and the child
+  // alive, every tool answered "No fitting editor is listening" as an
+  // ordinary tool error, which reached the planner as a refusal, and the
+  // planner went on paying for turns against an editor that was not there.
+  const ed = await fixtureEditor();
+  try {
+    const asked = [];
+    let afterDeath = 0;
+    const planner = {
+      async round({ n, call }) {
+        asked.push(n);
+        if (n === 1) {
+          await call('draft_design', { design: [{ op: 'set-palette', name: 'ink', value: '#101014' }] });
+          await call('finish_round', { summary: 'a palette' });
+          return;
+        }
+        await ed.closeEditor();
+        afterDeath++;
+        await call('check_fitment');
+        afterDeath++;
+      },
+    };
+    const critic = { async judge() {
+      return { reads_at_distance: false, number_legible: false, palette_ok: true, matches_brief: false, notes: ['nothing yet'] };
+    } };
+    const out = join(ed.dir, 'run');
+    await assert.rejects(run({ brief: 'b', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 4, views: ['left'], shot: { width: 200, height: 150 } }),
+    (e) => e instanceof ServerGone && /No fitting editor is listening/.test(e.message));
+    assert.deepEqual(asked, [1, 2], 'the planner is not asked again');
+    assert.equal(afterDeath, 1, 'and its one call after the editor stopped was its last');
+    assert.equal(JSON.parse(await readFile(join(out, 'result.json'), 'utf8')).rounds, 1, 'round 1 is on disk');
   } finally {
     await ed.stop();
   }

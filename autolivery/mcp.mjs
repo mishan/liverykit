@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { EDITOR_META } from '../src/mcp/client.mjs';
 
 /**
  * An MCP client over stdio: the other half of `liverykit --mcp`.
@@ -20,6 +21,15 @@ import { createInterface } from 'node:readline';
  * dead server read as a tool saying no, and the planner kept paying for turns.
  */
 export class ServerGone extends Error {}
+
+/**
+ * The editor behind the server stopped answering, which the server marks in
+ * the tool result. A ServerGone, because for a run it is the same end: every
+ * tool reaches the editor, and with the child still alive each call came back
+ * an ordinary tool error that the planner took for a refusal and kept paying
+ * to turn on.
+ */
+export class EditorGone extends ServerGone {}
 
 export async function connect({
   command = process.execPath, args = [], cwd, env,
@@ -113,7 +123,14 @@ export async function connect({
 
   return {
     listTools: async () => (await request('tools/list', {})).tools,
-    callTool: (name, args = {}) => request('tools/call', { name, arguments: args }),
+    callTool: async (name, args = {}) => {
+      const r = await request('tools/call', { name, arguments: args });
+      if (r?._meta?.[EDITOR_META] === 'unreachable') {
+        const said = (r.content ?? []).map((c) => c.text).filter(Boolean).join(' ');
+        throw new EditorGone(`the editor stopped answering: ${said || 'no reason given'}`);
+      }
+      return r;
+    },
     // Gone from this moment, not from whenever the exit event gets round to
     // it: a call in between wrote to a stream that had already ended.
     close: () => {

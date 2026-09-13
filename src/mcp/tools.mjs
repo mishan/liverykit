@@ -1,5 +1,6 @@
 import { CONSTRAINTS } from '../fitment.mjs';
 import { VIEWS } from '../engine/shot.mjs';
+import { EditorUnreachable } from './client.mjs';
 
 // Updated when render_car arrived. The old wording — "you cannot visually see
 // the 3D car" — became false and, worse, discouraging: an agent that believes
@@ -201,6 +202,16 @@ async function toolListTreatments(client) {
 }
 
 /**
+ * A tool's failure as its answer, except an editor that could not be reached:
+ * that goes on to the protocol, which marks it so. Answered here, it came back
+ * as this tool refusing, and a client could not tell it from one.
+ */
+const failed = (e, prefix = '') => {
+  if (e instanceof EditorUnreachable) throw e;
+  return { content: [{ type: 'text', text: `${prefix}${e.message}` }], isError: true };
+};
+
+/**
  * The design or fit a draft makes, without proposing it.
  *
  * A caller building a change as a list of operations otherwise sees only the
@@ -214,7 +225,7 @@ async function draftApplied(client, args, shape) {
     const r = await client.checkFitment(draftOf(args));
     return { content: [{ type: 'text', text: JSON.stringify(shape(r), null, 2) }] };
   } catch (e) {
-    return { content: [{ type: 'text', text: e.message }], isError: true };
+    return failed(e);
   }
 }
 
@@ -317,7 +328,7 @@ async function toolCheckFitment(client, args = {}) {
   } catch (e) {
     // A draft the inbox would refuse is refused here too, in the same words,
     // and that is an answer about the draft rather than a broken tool.
-    return { content: [{ type: 'text', text: e.message }], isError: true };
+    return failed(e);
   }
   const findings = r.findings ?? [];
   const count = (sev) => findings.filter((f) => f.severity === sev).length;
@@ -357,7 +368,7 @@ async function toolFindSpace(client, args = {}) {
     const r = await client.findSpace(args);
     return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
   } catch (e) {
-    return { content: [{ type: 'text', text: e.message }], isError: true };
+    return failed(e);
   }
 }
 
@@ -447,10 +458,7 @@ async function toolProposeDesign(client, args) {
       content: [{ type: 'text', text: JSON.stringify({ status: 'proposed', proposalId: res.id, why: args.why }) }],
     };
   } catch (e) {
-    return {
-      content: [{ type: 'text', text: `Proposal refused: ${e.message}` }],
-      isError: true,
-    };
+    return failed(e, 'Proposal refused: ');
   }
 }
 
@@ -471,10 +479,7 @@ async function toolProposeFit(client, args) {
       content: [{ type: 'text', text: JSON.stringify({ status: 'proposed', proposalId: res.id, why: args.why }) }],
     };
   } catch (e) {
-    return {
-      content: [{ type: 'text', text: `Proposal refused: ${e.message}` }],
-      isError: true,
-    };
+    return failed(e, 'Proposal refused: ');
   }
 }
 
@@ -740,7 +745,7 @@ export function createToolHandler(client) {
           }
           return { content };
         } catch (e) {
-          return { content: [{ type: 'text', text: e.message }], isError: true };
+          return failed(e);
         }
       }
       case 'check_fitment': return toolCheckFitment(client, args);

@@ -87,6 +87,12 @@ liverykit, and this is which copy of the code it is running.
 If nothing answers, the MCP does not fall back to working on files, and does not
 start a headless editor. It reports that no editor is open and stops.
 
+An editor that stops answering after that is reported the same way, by every
+tool, and the tool result says so as data too: `_meta: { "liverykit/editor":
+"unreachable" }`. A client can end its work on that rather than read it as a
+tool refusing, which is how an agent went on paying for turns against an editor
+that was no longer there.
+
 That refusal is the whole safety mechanism and is worth stating as a rule rather
 than an implementation detail: **the eye is not an optional part of this system.**
 An MCP that quietly worked without one would be the demo version described at the
