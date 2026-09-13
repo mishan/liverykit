@@ -207,7 +207,7 @@
         "ksPerPixelAT",
         "ksSkinnedMesh"
       ],
-      "alphaHides": false,
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "mat_gomma": {
@@ -385,7 +385,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
-      "alphaHides": false,
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "rims_4": {
@@ -542,7 +542,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
-      "alphaHides": false,
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "crew": {

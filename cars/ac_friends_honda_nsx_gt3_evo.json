@@ -258,7 +258,7 @@
         "ksPerPixelAT_NM",
         "ksPerPixelMultiMap_emissive"
       ],
-      "alphaHides": false
+      "alphaHides": true
     },
     "ext_decals_colour": {
       "file": "EXT_Decals_Colour.dds",
@@ -422,7 +422,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
-      "alphaHides": false
+      "alphaHides": true
     },
     "interior_8": {
       "file": "INT_SAS_Colour.dds",
@@ -476,7 +476,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
-      "alphaHides": false
+      "alphaHides": true
     },
     "chrome": {
       "file": "chrome.dds",
@@ -660,7 +660,7 @@
       "shaders": [
         "ksPerPixelAT"
       ],
-      "alphaHides": false
+      "alphaHides": true
     },
     "display": {
       "file": "Display.dds",

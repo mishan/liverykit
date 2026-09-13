@@ -532,6 +532,24 @@ export function alphaTest(material) {
 }
 
 /**
+ * Whether a fully transparent texture on this material draws nothing at all.
+ *
+ * Wider than `blends`, which is about sorting and depth: a hard cutout throws
+ * away every texel under its threshold, and every texel of a clear sheet is at
+ * zero, which any threshold `alphaTest` returns will fail. Alpha to coverage
+ * keeps no sample of a texel at zero either. Asking `blends` alone reported
+ * the NSX's grilles, on ksPerPixelAT_NM, as drawn by a material that ignores
+ * alpha, and a hide that works as one that cannot.
+ *
+ * The flag, not the shader's name: every AT shader on the three cars here
+ * states `alphaTested`, and the RSS 4 also states it on a ksPerPixelNM_UVMult
+ * that no name would have given away.
+ */
+export function discardsClear(material) {
+  return blends(material) || material?.alphaBlendMode === 2 || alphaTest(material) !== null;
+}
+
+/**
  * Whether a material is reflective glass, specifically — a narrower question
  * than `blends`: `ksPerPixelAlpha` composites too (a decal, a number plate)
  * but is not glass and should not go mirror-like at a grazing angle.
