@@ -134,6 +134,20 @@ both are kept. `--referee anthropic`, the default when there is a key, asks
 Claude beside a local critic; `critic` asks the critic again; `none` turns it
 off. A round that failed fitment costs no second look.
 
+Most of those false alarms were one mistake: a whole roundel called "cut off". The
+renders are liverykit's own, so whether a piece is whole in a view is a count, not a
+judgement. `check_fitment` on a draft draws each view twice more, with no shading:
+once for the whole car, keeping which triangle and texture coordinate each pixel
+shows, and once per number, word or ring with nothing in front of it. Pixels of the
+piece in the second that the first also shows are seen. The piece is judged in the
+view that shows most of it, and a piece that asked for `minVisible` and is partly
+behind something there is `hidden-in-view`, which names the mesh in the way. The
+critic is told the counts, and names a piece's id when it calls it cut off. The gate
+then drops any "cut off" whose id was measured whole and has no high fitment finding
+against it, and keeps it in the record as `overruled`. The pieces the count covers
+are text (by its letters, not its box), rings, and anything declaring `minVisible`.
+It costs about a second for six views.
+
 The planner hears a failed round as `mustFix` (what failed it, from fitment and
 from the verdict's lists) and `advice` (everything else the critic said). Told
 everything at once, it acted on everything: a note that a Gulf livery's centre

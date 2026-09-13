@@ -44,6 +44,8 @@ The renders come from a software rasteriser: one fixed light rig, no environment
 
 Artwork that is cut off — a roundel, logo, number or word missing a slice where it meets a panel edge, shut line, door gap, window frame or another part of the car — goes in cut_off, one entry per piece, however small the slice. That is for pieces meant to be whole: a number, a roundel, lettering, a logo. A stripe or a colour field that the car's own glass, vents, louvres, grilles or openings interrupt is not cut off, because paint cannot go on a hole; it is cut off only if a stretch of bodywork it should cover is left bare.
 
+You may be given measurements: the renderer that drew these pictures counted, in the same views, how much of each number, word and roundel is in the picture and how much something stands in front of. A piece measured whole is whole, whatever an edge beside it looks like at this size: do not list it in cut_off, and a requirement that it be whole, fully visible or clear of the edges is present. When you do list a piece in cut_off, give its id from the measurements in "id" if it is one of them, and "" if it is not.
+
 Lettering, a number or a logo that would not read from trackside — too small, too little contrast with what is behind it, or broken by a shut line — goes in unreadable, one entry per piece. If you would write in a note that something will not read, it belongs in unreadable instead.
 
 Answer each field strictly:
@@ -79,12 +81,16 @@ export const VERDICT = {
     // A list, for the same reason as requirements. A critic wrote "the
     // roundel is cut off where it meets the door gap" in its notes and passed
     // the round in the same verdict; a note is prose, and the gate reads none.
+    //
+    // `id` names the measured piece, when it is one, so the gate can hold the
+    // entry against the count rather than against a guess at what "the white
+    // disc on the door" refers to.
     cut_off: {
       type: 'array',
       items: {
         type: 'object',
-        properties: { what: { type: 'string' }, where: { type: 'string' } },
-        required: ['what', 'where'],
+        properties: { what: { type: 'string' }, where: { type: 'string' }, id: { type: 'string' } },
+        required: ['what', 'where', 'id'],
         additionalProperties: false,
       },
     },
@@ -129,6 +135,33 @@ export function recheckOf(first) {
     'picture, flagged:\n' + (flagged.length ? flagged.map((f) => `- ${f}`).join('\n') : '- (nothing specific)') +
     '\nCheck each flagged item in the closer views, then judge the whole brief again from every picture. ' +
     'A piece is cut off only if you can see a slice of it missing; a thing is missing only if it is in none of the pictures.';
+}
+
+/**
+ * What the renderer counted, as the critic reads it: one line per piece meant
+ * to be seen whole, from `check_fitment`'s `inView`.
+ *
+ * Told rather than left to the gate alone, so a critic that can see "whole"
+ * beside a picture of a roundel near a shut line has a reason not to call it
+ * cut off. The gate holds it to that either way — see `overrule` in loop.mjs.
+ */
+export function measuredNote(measured) {
+  const pct = (v) => `${Number((v * 100).toFixed(1))}%`;
+  const lines = (measured ?? []).filter((m) => m.home).map((m) => {
+    const others = Object.entries(m.views ?? {}).filter(([v]) => v !== m.home).map(([v, f]) => `${v} ${pct(f)}`);
+    return `- ${m.id}: ${m.what}${m.panel ? `, on ${m.panel}` : ''}. ` +
+      (m.whole
+        ? `Whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it.`
+        : `Not whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it; ` +
+          `the rest is behind ${m.hiddenBy ?? 'another part of the car'}.`) +
+      (others.length ? ` Other views: ${others.join(', ')}.` : '');
+  });
+  if (!lines.length) return null;
+  return 'Measured, not judged — the renderer that drew these pictures counted each piece\'s pixels in them:\n' +
+    lines.join('\n') +
+    '\nA piece measured whole is not cut off: do not list it in cut_off, and count a requirement that it be ' +
+    'whole or fully visible as present. Whether it reads, and whether it is where the brief wants it, is ' +
+    'still yours to judge.';
 }
 
 /**

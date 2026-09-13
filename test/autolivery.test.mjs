@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 import { startUi } from '../src/ui/server.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { carKn5 } from './fixtures/kn5.mjs';
+import { carKn5, vert, CAR } from './fixtures/kn5.mjs';
 import { connect } from '../autolivery/mcp.mjs';
 import { createTrace } from '../autolivery/trace.mjs';
 import { run } from '../autolivery/loop.mjs';
@@ -25,10 +25,10 @@ const ROOT = process.cwd();
 // scripts. What is under test is the harness — that the gate is the harness's
 // measurement and not the planner's word, and that nothing reaches the editor
 // until a draft has passed.
-async function fixtureEditor() {
+async function fixtureEditor({ kn5 = {} } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'autolivery-'));
   const modelPath = join(dir, 'fixture.kn5');
-  await writeFile(modelPath, carKn5());
+  await writeFile(modelPath, carKn5(kn5));
   const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
   // Primer and nothing else, like the demo's starting design: a design that
   // paints nothing at all is refused outright, which is right for a build.
@@ -1323,5 +1323,112 @@ test('a critic\'s verdict is scored against what a person said about the same pi
   assert.match(score(verdict(), { palette_ok: false })[0], /palette_ok true; a person says false/);
   assert.match(score(verdict({ cut_off: [{ what: 'x', where: 'y' }] }), { passes: true })[0], /the gate would fail this/);
   assert.match(score({ error: 'timeout' }, {})[0], /no verdict/);
+});
+
+// A panel standing 10 cm off the left flank over its front half, the way a
+// mirror or a handle stands off a door. It wears the body's own texture, at a
+// corner of the sheet no island uses, because on the NSX the handle is on the
+// same painted sheet as the door it hides — the case where "what is in front"
+// cannot be told apart by texture alone.
+const SHIELD = (() => {
+  const x = CAR.width / 2 + 0.1;
+  const n = [1, 0, 0];
+  return {
+    name: 'MIRROR_L',
+    verts: [vert(x, 0.2, 0.3, 0.990, 0.990, n), vert(x, 0.2, 1.85, 0.995, 0.990, n),
+      vert(x, 1.3, 1.85, 0.995, 0.995, n), vert(x, 1.3, 0.3, 0.990, 0.995, n)],
+    indices: [0, 1, 2, 0, 2, 3],
+  };
+})();
+
+// On the fixture's left panel `at` x runs nose to tail from z = -1.85 and y up
+// from the ground, so the shield covers x from 0.58 and y from 0.13 to 0.87.
+const plate = (id, panel, at) => ({ op: 'add-region', surface: 'surfaces.body', region: {
+  id, treatment: 'fill', panel, at, color: 'ink', constraints: { minVisible: 0.5 } } });
+
+test('each view is counted for how much of a piece it shows, and what stands in front is named', async () => {
+  // The critic called a whole roundel "cut off" in four of six cases a person
+  // had checked. Whether a piece is whole in a picture this project draws is
+  // a count, not an opinion.
+  const ed = await fixtureEditor({ kn5: { extraMeshes: [SHIELD] } });
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const left = panels[0].panel;
+    const proposal = { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('plate-clear', left, [0.1, 0.3, 0.3, 0.4]),
+      plate('plate-hidden', left, [0.5, 0.3, 0.3, 0.4]),
+    ] };
+    const r = await ed.mcp.callTool('check_fitment', { proposal });
+    assert.ok(!r.isError, r.content[0].text);
+    const out = JSON.parse(r.content[0].text);
+    assert.ok(out.checked.includes('hidden-in-view'), JSON.stringify(out.checked));
+    const by = Object.fromEntries(out.inView.map((m) => [m.id, m]));
+
+    assert.equal(by['plate-clear'].home, 'left', 'held to the view that shows it best');
+    assert.equal(by['plate-clear'].whole, true, JSON.stringify(by['plate-clear']));
+    assert.equal(by['plate-clear'].views.right, undefined, 'the far side does not count through the car');
+
+    const hidden = by['plate-hidden'];
+    assert.equal(hidden.whole, false);
+    assert.ok(hidden.visible > 0.1 && hidden.visible < 0.5, JSON.stringify(hidden));
+    assert.equal(hidden.hiddenBy, 'MIRROR_L', 'by the mesh, not the texture it shares with the door');
+
+    const found = out.findings.filter((f) => f.kind === 'hidden-in-view');
+    assert.deepEqual(found.map((f) => [f.ids[0], f.severity]), [['plate-hidden', 'high']]);
+    assert.match(found[0].why, /MIRROR_L, a part painted from the same texture/);
+
+    // Without a proposal this is the editor's panel, which answers while
+    // somebody drags and does not pay for the count.
+    const plain = JSON.parse((await ed.mcp.callTool('check_fitment', {})).content[0].text);
+    assert.equal(plain.inView, undefined);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a "cut off" the count contradicts is overruled, and one it cannot place is not', async () => {
+  const ed = await fixtureEditor({ kn5: { extraMeshes: [SHIELD] } });
+  try {
+    const planner = {
+      async round({ call }) {
+        const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+        await call('draft_design', { design: [
+          { op: 'set-palette', name: 'ink', value: '#101014' },
+          plate('plate-clear', panels[0].panel, [0.1, 0.3, 0.3, 0.4]),
+        ] });
+        await call('finish_round', { summary: 'a plate' });
+      },
+    };
+    const verdict = (cut) => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [{ asked: 'a plate', present: true, where: 'left door' }], cut_off: cut, unreadable: [], notes: [] });
+    const go = async (cut, tag) => {
+      const asked = [];
+      const lines = [];
+      const out = join(ed.dir, tag);
+      const result = await run({
+        brief: 'a plate', mcp: ed.mcp, planner, critic: { judge: async (a) => { asked.push(a); return verdict(cut); } },
+        trace: await createTrace({ dir: out }), out, rounds: 1, views: ['left'], shot: { width: 200, height: 150 },
+        closer: [], propose: false, log: (l) => lines.push(l),
+      });
+      return { result, asked, lines };
+    };
+
+    const cleared = await go([{ what: 'the plate', where: 'left view, front edge', id: 'plate-clear' }], 'cleared');
+    assert.equal(cleared.result.passed, true, cleared.lines.join('\n'));
+    const kept = cleared.result.history[0].critic;
+    assert.deepEqual(kept.cut_off, []);
+    assert.deepEqual(kept.overruled.map((c) => c.id), ['plate-clear'], 'kept beside the verdict, not thrown away');
+    assert.ok(cleared.lines.some((l) => /measured whole, so not cut off: plate-clear/.test(l)), cleared.lines.join('\n'));
+    assert.ok(cleared.asked[0].measured.some((m) => m.id === 'plate-clear' && m.whole), 'and the critic was told');
+    assert.deepEqual(cleared.result.history[0].fitment.inView.map((m) => m.id), ['plate-clear']);
+
+    // No id, or one the count never measured: nothing to hold it against.
+    const upheld = await go([{ what: 'the plate', where: 'left view', id: '' }], 'upheld');
+    assert.equal(upheld.result.passed, false);
+    assert.equal(upheld.result.history[0].critic.overruled, undefined);
+  } finally {
+    await ed.stop();
+  }
 });
 

@@ -48,6 +48,7 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
+import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
@@ -884,6 +885,25 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
     return stock.get(String(file).toLowerCase()) ?? null;
   };
 
+  /**
+   * The whole car as the renderer draws it for one design: the design's
+   * surfaces, and the car's own parts around them. Shared by the picture and by
+   * the count of what a picture shows, so the two are of the same car.
+   */
+  const carFor = (m, design) => {
+    // EVERY role, not just the primary one per term. `editorState` returns
+    // one entry per vocabulary term — right for a surface picker, wrong
+    // here: `surfaces.body` on a formula car binds body AND bodyRear, the
+    // design paints both, and taking only the first drew half the car grey
+    // and called it unpainted.
+    const roles = [];
+    for (const t of resolveTargets(profile, design).targets) {
+      if (roles.some((r) => r.role === t.role)) continue;
+      roles.push({ role: t.role, file: texture(profile, t.role).file });
+    }
+    return { g: wholeModelGeometry(m, roles, { livery: design, profile }), roles };
+  };
+
   // A missing fit is the normal case — most cars have never been tuned. A fit
   // that exists and is wrong is not, and starting anyway would give an editor
   // that looks fine and fails only when you press Save, by which point you have
@@ -1065,17 +1085,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
             `Known views: ${Object.keys(VIEWS).join(', ')}, sheet` });
         }
-        // EVERY role, not just the primary one per term. `editorState` returns
-        // one entry per vocabulary term — right for a surface picker, wrong
-        // here: `surfaces.body` on a formula car binds body AND bodyRear, the
-        // design paints both, and taking only the first drew half the car grey
-        // and called it unpainted.
-        const roles = [];
-        for (const t of resolveTargets(profile, design).targets) {
-          if (roles.some((r) => r.role === t.role)) continue;
-          roles.push({ role: t.role, file: texture(profile, t.role).file });
-        }
-        const g = wholeModelGeometry(m, roles, { livery: design, profile });
+        const { g, roles } = carFor(m, design);
         const surfaces = roles.map((r) => ({
           role: r.role,
           svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals }).svg,
@@ -1370,6 +1380,28 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const staged = stage(await body());
         if (staged.refused) return json(staged.status, { error: staged.refused });
         await getModel();
+        const found = fitment(staged.design, profile, staged.fit, { model });
+        // And how much of each whole piece the gate's views show, counted in
+        // the renderer. Only here, not in /api/fitment: that one answers a
+        // panel while somebody drags, and this is the caller deciding whether
+        // a draft passes. A count that could not be taken is NOT RUN, which
+        // fails a gate, rather than an empty list, which would pass one.
+        let measured = null;
+        let inViewError = null;
+        if (model) {
+          try {
+            const { g } = carFor(model, staged.design);
+            const { sheets } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
+            const seen = inView(staged.design, profile, staged.fit, g, sheets);
+            found.findings.push(...seen.findings);
+            found.checked = [...found.checked, 'hidden-in-view'];
+            measured = seen.measured;
+          } catch (e) {
+            inViewError = e.message;
+            log(`  ! could not count what each view shows: ${e.message}`);
+          }
+        }
+        if (!measured) found.notChecked = [...found.notChecked, 'hidden-in-view'];
         // The staged design and fit ride along: what a draft AMOUNTS to is the
         // other question a caller holding a list of operations has, and this
         // is the one place that has already worked it out.
@@ -1386,7 +1418,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           staleIdsError = e.message;
         }
         return json(200, {
-          ...fitment(staged.design, profile, staged.fit, { model }), modelError,
+          ...found, inView: measured, ...(inViewError ? { inViewError } : {}), modelError,
           design: staged.design, fit: staged.fit, staleIds, staleIdsError,
         });
       }
