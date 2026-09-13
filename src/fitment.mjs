@@ -26,7 +26,7 @@ import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, s
 import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
-import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
+import { occupancyFor, rectVisibility, carOccluders } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly } from './engine/poly.mjs';
 import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
 // From the editor's op module, because the BROWSER needs this list too — to
@@ -247,7 +247,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   // Prepared once for the whole car, not once per region: the occupancy grid is
   // the expensive part of a visibility question and it does not depend on which
   // rectangle is being asked about.
-  const seen = model ? { model, prepared: occupancyFor(model) } : null;
+  const seen = model ? { model, prepared: occupancyFor(model, { occluders: carOccluders(model, profile) }) } : null;
 
   const failed = [];
   let wantsMargin = false;
@@ -289,7 +289,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     if (placed.some((p) => typeof p.constraints.minMargin === 'number')) wantsMargin = true;
 
     const size = texSize(profile, t.role);
-    overlaps(placed, t, sayHere, size);
+    overlaps(placed, t, sayHere, size, design.identity ?? {});
     ringOverflow(placed, t, sayHere);
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
@@ -455,7 +455,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
  * line of text landing on another, which is why this is measured against the
  * smaller box rather than reported for any intersection at all.
  */
-function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
+function overlaps(placed, t, say, size = { w: 1, h: 1 }, identity = {}) {
   for (let a = 0; a < placed.length; a++) {
     for (let b = a + 1; b < placed.length; b++) {
       const A = placed[a], B = placed[b];
@@ -495,14 +495,14 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
       const aRing = A.region.treatment === 'ring', bRing = B.region.treatment === 'ring';
       if ((aRing && bText) || (bRing && aText)) {
         const [ring, text] = aRing ? [A, B] : [B, A];
-        if (bRing && ringOnText(ring, text, size)) {
+        if (bRing && ringOnText(ring, text, size, identity)) {
           say({
             kind: 'overlap', severity: 'high', surface: t.from, panel: A.region.panel,
             ids: [ring.id, text.id], share: round(share),
             why: `${name(t, ring.id)} paints over ${name(t, text.id)}: the ring comes later in the design, ` +
               'so its stroke is drawn on top of the text. Move the text after the ring, or the ring off it.',
           });
-        } else if (ringThroughText(ring, text, size)) {
+        } else if (ringThroughText(ring, text, size, identity)) {
           say({
             kind: 'overlap', severity: 'high', surface: t.from, panel: A.region.panel,
             ids: [ring.id, text.id], share: round(share),
@@ -656,26 +656,69 @@ function ringGeometry(p, size) {
   };
 }
 
-/** A ring's stroke, and how near and how far from its centre a text box reaches. */
-function ringAndText(ring, text, size) {
+/**
+ * Where a text placement's letters are, in pixels: not its box.
+ *
+ * The core text treatment sets the letters at `scale` (0.7) of the box's
+ * height, shrinks them until an estimated advance fits the width, centres
+ * them and puts the baseline at 0.78 of the height. So a number's box is
+ * mostly air at the corners, and a ring tested against the box failed a
+ * roundel a person had laid out by hand, whose "85" sat well inside the disc.
+ * Worked out the same way here, but estimated wider than the treatment does
+ * (0.72 em a glyph against its 0.62), so an error leans toward the ring
+ * touching. Turned a quarter, or anything else not undone by a half turn,
+ * the answer is the whole box.
+ */
+function inkBox(p, size, identity = {}) {
+  const T = p.frac;
+  const x0 = T.x * size.w, y0 = T.y * size.h, w = T.w * size.w, h = T.h * size.h;
+  const box = [x0, y0, x0 + w, y0 + h];
+  const o = p.region;
+  // "auto" is whatever turn the panel's unwrap needs, which the profile
+  // states; left as "not 0" it sent every upright number back to its box.
+  const turn = o.rotate === 'auto' ? (T.panel?.textRotation ?? 0) : (o.rotate ?? 0);
+  if (o.treatment !== 'text' || (turn !== 0 && turn !== 180)) return box;
+  const s = String(o.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
+  if (!s.length) return box;
+  const tracking = o.tracking ?? 0.08;
+  const ax = o.aspect ?? (T.panel?.anisotropy ? 1 / T.panel.anisotropy : 1);
+  let em = h * (o.scale ?? 0.7);
+  if (o.fit !== false) {
+    const est = s.length * em * (0.62 + tracking) * ax;
+    if (est > w) em *= w / est;
+  }
+  const inkW = Math.min(w, s.length * em * (0.72 + tracking) * ax);
+  const anchor = o.anchor ?? 'middle';
+  let left = anchor === 'start' ? x0 : anchor === 'end' ? x0 + w - inkW : x0 + (w - inkW) / 2;
+  const base = y0 + h * 0.78;
+  let top = base - 0.75 * em;
+  let bottom = base + (/[a-z]/.test(s) ? 0.22 * em : 0.02 * em);
+  if (turn === 180) {                               // the box turned about its centre
+    [top, bottom] = [y0 + y0 + h - bottom, y0 + y0 + h - top];
+    left = x0 + x0 + w - (left + inkW);
+  }
+  return [Math.max(x0, left), Math.max(y0, top), Math.min(x0 + w, left + inkW), Math.min(y0 + h, bottom)];
+}
+
+/** A ring's stroke, and how near and how far from its centre a text placement's letters reach. */
+function ringAndText(ring, text, size, identity = {}) {
   const g = ringGeometry(ring, size);
-  const T = text.frac;
-  const x0 = T.x * size.w, y0 = T.y * size.h, x1 = x0 + T.w * size.w, y1 = y0 + T.h * size.h;
+  const [x0, y0, x1, y1] = inkBox(text, size, identity);
   const nearest = Math.hypot(Math.max(x0, Math.min(g.cx, x1)) - g.cx, Math.max(y0, Math.min(g.cy, y1)) - g.cy);
   const farthest = Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - g.cx, y - g.cy)));
   return { g, nearest, farthest };
 }
 
-/** Whether either edge of a ring's stroke passes through a text placement's box. */
-function ringThroughText(ring, text, size) {
-  const { g, nearest, farthest } = ringAndText(ring, text, size);
+/** Whether either edge of a ring's stroke passes through the letters of a text placement. */
+function ringThroughText(ring, text, size, identity = {}) {
+  const { g, nearest, farthest } = ringAndText(ring, text, size, identity);
   const crosses = (edge) => edge > 0 && nearest < edge && edge < farthest;
   return crosses(g.inner) || crosses(g.outer);
 }
 
-/** Whether any of a ring's stroke lands on a text placement's box. */
-function ringOnText(ring, text, size) {
-  const { g, nearest, farthest } = ringAndText(ring, text, size);
+/** Whether any of a ring's stroke lands on the letters of a text placement. */
+function ringOnText(ring, text, size, identity = {}) {
+  const { g, nearest, farthest } = ringAndText(ring, text, size, identity);
   return nearest < g.outer && farthest > g.inner;
 }
 

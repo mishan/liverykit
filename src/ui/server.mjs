@@ -51,7 +51,7 @@ import { fitment } from '../fitment.mjs';
 import { shoot, carSheets, VIEWS, shootSheet } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
-import { occupancyFor } from '../engine/visibility.mjs';
+import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { findSpace, cleanGrid, spaceRole } from '../space.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1287,7 +1287,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         const key = JSON.stringify([where.role, q.panel, q.widthMm, q.heightMm, q.marginMm, q.count, cellMm]);
         try {
           if (!spaces.has(key)) {
-            spacePrepared ??= occupancyFor(m);
+            spacePrepared ??= occupancyFor(m, { occluders: carOccluders(m, profile) });
             const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
             if (!grids.has(gridKey)) {
               grids.set(gridKey, cleanGrid({ profile, model: m, prepared: spacePrepared, role: where.role,
