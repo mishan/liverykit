@@ -120,10 +120,13 @@ const BLEED_IS_FINE_BELOW = 0.15;
  * Known is what the treatment DESCRIBES plus what the placement code itself
  * reads. A treatment its pack does not describe is left alone: there is
  * nothing to compare against, and guessing would report fields that work.
+ *
+ * Not `drop`. It was listed here because the editor offers it, but only a fit
+ * reads it, so `drop: true` on a design region removed nothing and passed.
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'limit', 'constraints', 'drop', '__key',
+  'span', 'once', 'limit', 'constraints', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */
@@ -150,9 +153,11 @@ function unknownFields(regions, t, design, say) {
       if (PLACEMENT_FIELDS.has(field) || Object.hasOwn(options, field)) continue;
       const instead = field === 'options'
         ? ` Options go on the region itself — e.g. "scale": 1.5 — not inside "options".`
-        : Object.hasOwn(CONSTRAINTS, field)
-          ? ` ${field} is a constraint: write "constraints": { "${field}": ${JSON.stringify(region[field])} }.`
-          : '';
+        : field === 'drop'
+          ? ` drop belongs in a fit, which is what removes a region on one car: "regions": { "${id}": { "drop": true } }.`
+          : Object.hasOwn(CONSTRAINTS, field)
+            ? ` ${field} is a constraint: write "constraints": { "${field}": ${JSON.stringify(region[field])} }.`
+            : '';
       say({
         kind: 'unknown-field', severity: 'high', surface: t.from, ids: [id], field,
         why: `${id} has "${field}", which ${region.treatment} does not take and nothing else reads, ` +
