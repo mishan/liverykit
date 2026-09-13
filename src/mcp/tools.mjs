@@ -408,8 +408,9 @@ function draftOf(args) {
     throw new Error('A draft must be an object { design: [...ops], fit: [...ops] }; ' +
       `got ${Array.isArray(d) ? 'a list' : `a ${typeof d}`}: ${String(JSON.stringify(d)).slice(0, 200)}.`);
   }
-  // Whatever was sent goes on as sent; the staging refuses anything but a list.
-  return { design: d.design ?? [], fit: d.fit ?? [] };
+  // Whatever was sent goes on as sent, `null` included, and the staging
+  // refuses anything but a list. Only a key left out means "no operations".
+  return { design: d.design === undefined ? [] : d.design, fit: d.fit === undefined ? [] : d.fit };
 }
 
 const DRAFT_SCHEMA = {

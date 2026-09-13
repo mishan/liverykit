@@ -899,6 +899,7 @@ test('a draft whose design or fit is not a list is refused, not measured as noth
       [{ design: { op: 'set-palette' } }, /"design" must be a list of operations; got an object/],
       [{ fit: 'set-override' }, /"fit" must be a list of operations; got a string/],
       ['{"design":[]}', /must be an object .*; got a string/],
+      [{ design: null }, /"design" must be a list of operations; got null/],
     ];
     for (const [proposal, says] of cases) {
       const r = await tools.callTool('check_fitment', { proposal });

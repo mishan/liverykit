@@ -436,6 +436,16 @@ export async function profileFromKn5(path, {
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
       if (eye) computeCockpitVisibility(model, keep, { eye, occluders, log });
+      // An island on a mesh the car's own config hides is on nothing anybody
+      // sees, whatever its rays say: the mesh is not drawn, and taken out of
+      // the occluders, it measured clear, a place to paint the game never shows.
+      for (const i of keep) {
+        if (!hides?.hidden.has(i.mesh)) continue;
+        i.visibleFraction = 0;
+        i.hidden = true;
+        delete i.safe;
+        if (i.cockpitFraction !== undefined) i.cockpitFraction = 0;
+      }
     }
 
     log(`  ${role.padEnd(8)} ${texName.padEnd(26)} ${islands.length} islands, ${keep.length} above threshold`);
