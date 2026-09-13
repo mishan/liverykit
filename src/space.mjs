@@ -276,7 +276,9 @@ export function largestSpace({
     const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1 });
     if (r.candidates.length) {
       lo = w;
-      largest = { widthMm: Math.round(w), heightMm: Math.round(w * aspect), ...r.candidates[0] };
+      // Down, not to the nearest: the shape that was measured is w wide, and a
+      // size rounded up past it is one nobody checked.
+      largest = { widthMm: Math.floor(w), heightMm: Math.floor(w * aspect), ...r.candidates[0] };
     } else {
       hi = w;
     }

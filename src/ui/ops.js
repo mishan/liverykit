@@ -50,8 +50,10 @@ export function opSetConstraint(design, { id, key, value }) {
     if (typeof value !== want) {
       throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
     }
-    if (key === 'groupWith' && (!value.trim() || value === id)) {
-      throw new Error(`Constraint "groupWith" names another region's id; got ${JSON.stringify(value)}.`);
+    // Exactly: the browser trims what is typed, and an operation from an agent
+    // is not typed. `'team '` was stored as written and named no region.
+    if (key === 'groupWith' && (!value.trim() || value !== value.trim() || value === id)) {
+      throw new Error(`Constraint "groupWith" names another region's id, exactly; got ${JSON.stringify(value)}.`);
     }
     if ((key === 'minOnCar' || key === 'minVisible') && (value < 0 || value > 1)) {
       throw new Error(`Constraint "${key}" is a fraction between 0 and 1; got ${value}.`);

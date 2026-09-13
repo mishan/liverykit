@@ -98,6 +98,25 @@ repeated eleven times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than eleven.
 
+## A panel only a secondary texture has cannot be painted through its surface
+
+**Symptom.** Where a term binds two textures, as the RSS4's `body` binds
+`body` and `bodyRear`, `find_panels` and `find_space` answer about the second
+texture's panels. But a region naming one of them through `surfaces.body` is a
+high `unmatched`, and the build throws on it. Naming it through
+`paint.bodyRear` instead is refused, because `surfaces.body` already paints
+that texture.
+
+**Cause.** A region on a surface is drawn on every texture the term binds.
+That is right for tags and wrong for a panel name only one of them has. `once`
+keeps a region on the primary (`src/build.mjs`), but nothing keeps one on the
+texture that has its panel.
+
+**What the fix has to establish.** That a region naming a panel is placed only
+on the bound textures that have it, in the build, the renderer, fitment and the
+editor alike, or they disagree about the car; and that a panel no bound texture
+has is still `unmatched`.
+
 ## A panel measured on a mesh the car does not draw at rest
 
 **Symptom.** The NSX's front rim panels measure 0% visible (0.87 in a profile

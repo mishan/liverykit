@@ -1060,6 +1060,8 @@ test('find_space can sweep sizes and say how big a shape of a given proportion c
   // a tall shape gets the height a square cannot use.
   const tall = largestSpace({ grid, model: half, prepared, aspect: 2, marginMm: 50 });
   assert.ok(tall.largest.heightMm > r.largest.heightMm, `a taller shape can be taller: ${JSON.stringify(tall.largest)}`);
+  assert.equal(findSpace({ grid, model: half, prepared, widthMm: r.largest.widthMm, heightMm: r.largest.heightMm,
+    marginMm: 50, count: 1 }).candidates.length, 1, 'the size it reports is one that fits');
   assert.throws(() => largestSpace({ grid, model: half, prepared, aspect: 0 }), /aspect above zero/);
 });
 
@@ -1232,6 +1234,16 @@ test('contrast is measured whatever the palette calls a colour, and on the backg
   assert.equal(low({ blue: '#7BB3D9', white: '#fff' }, [base, name('white')]).length, 1, '#fff on Gulf blue');
   assert.equal(low({ blue: 'lightsteelblue' }, [base, name('white')]).length, 1, 'white on a colour named in CSS');
   assert.deepEqual(low({ blue: '#7BB3D9', navy: 'navy' }, [base, name('navy')]), [], 'and a pair that reads still passes');
+  // A fill that names no colour wears the core treatment's own pink.
+  const onDefault = low({}, [{ id: 'base', treatment: 'fill' }, name('white')]);
+  assert.equal(onDefault.length, 1, 'white on the pink a fill wears by default');
+  assert.match(onDefault[0].why, /white on pink/);
+});
+
+test('a groupWith with space around the id is refused, not stored as a name nothing answers to', async () => {
+  const { opSetConstraint } = await import('../src/ui/ops.js');
+  assert.throws(() => opSetConstraint(design([{ id: 'team' }, { id: 'number' }]), { id: 'team', key: 'groupWith', value: 'number ' }),
+    /"groupWith" names another region's id, exactly/);
 });
 
 test('a number on a panel laid a quarter turn is judged by its letters too', () => {

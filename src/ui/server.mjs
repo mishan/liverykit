@@ -390,6 +390,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         tags: p.tags ?? [],
         instances: p.instances,
         anisotropy: p.anisotropy ?? 1,
+        visible: p.visible,
         // Which way the sheet runs across this panel. The editor needs it to
         // mirror a placement onto the opposite flank; without it, copying `at`
         // across sends artwork to the wrong end of the twin.

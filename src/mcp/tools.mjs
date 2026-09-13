@@ -116,7 +116,10 @@ async function toolFindPanels(client, args) {
       before++;
       for (const t of p.tags ?? []) tagsSeen.add(t);
       if (args.tag && !(p.tags ?? []).includes(args.tag)) continue;
-      if (typeof args.minVisibility === 'number' && typeof p.visible === 'number' && p.visible < args.minVisibility) continue;
+      // A panel nobody measured cannot meet a floor on what was measured. It
+      // used to pass, and every primary panel went unmeasured here because the
+      // editor's state left `visible` out of them.
+      if (typeof args.minVisibility === 'number' && !(p.visible >= args.minVisibility)) continue;
       const area = p.rect ? (p.rect[2] * p.rect[3]) : 0;
       if (typeof args.minArea === 'number' && area < args.minArea) continue;
       if (typeof args.maxAnisotropy === 'number' && p.anisotropy > args.maxAnisotropy) continue;
@@ -358,8 +361,9 @@ function draftOf(args) {
     throw new Error('A draft must be an object { design: [...ops], fit: [...ops] }; ' +
       `got ${Array.isArray(d) ? 'a list' : `a ${typeof d}`}: ${String(JSON.stringify(d)).slice(0, 200)}.`);
   }
-  // Whatever was sent goes on as sent; the staging refuses anything but a list.
-  return { design: d.design ?? [], fit: d.fit ?? [] };
+  // Whatever was sent goes on as sent, `null` included, and the staging
+  // refuses anything but a list. Only a key left out means "no operations".
+  return { design: d.design === undefined ? [] : d.design, fit: d.fit === undefined ? [] : d.fit };
 }
 
 const DRAFT_SCHEMA = {
@@ -581,7 +585,8 @@ export function createToolHandler(client) {
       description:
         'Propose design changes (palette, regions, options, identity, constraints, ' +
         "adopt-surface) to the running editor's inbox for human review. Use " +
-        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible — ' +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible, ' +
+        'minMargin, groupWith — ' +
         'which is often the right proposal when check_fitment reports the same problem ' +
         'twice: the constraint states the requirement once, on the design, for every car, ' +
         'rather than being re-fixed per car. Call list_constraints first; a name that is ' +

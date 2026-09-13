@@ -1003,7 +1003,11 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
     for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
     if (g.lod === 'LR' || g.glass || g.add) continue;
     const art = sheets.get(sheetKey(g)) ?? null;
-    if (g.blend && !art) continue;                  // not drawn in the picture either
+    // An unpainted blended part with no sheet of its own is not drawn in the
+    // picture either. A painted one is, and has no car-owned sheet because it
+    // wears the design: skipped too, a painted number plate stood in front of
+    // a door name and hid nothing, while the picture showed it covering.
+    if (g.blend && !art && !g.role) continue;
     const cut = art ? (g.alphaTest ?? (g.blend ? 0.5 : null)) : null;
     for (let t = g.start; t < g.start + g.count; t += 3) {
       walk(t, 0, 0, width, height, (x, y, z, w0, w1, w2, ia, ib, ic) => {
@@ -1149,12 +1153,12 @@ export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'top', 'front', 'r
  * Several views of the car in one picture, each labelled.
  *
  * For a caller that pays per look. A model reading a picture is charged
- * roughly by its area, so four half-size views cost about what four separate
+ * roughly by its area, so six small views cost about what six separate
  * pictures would — but every look is also a turn, and a turn re-reads the
  * whole conversation and thinks again. Measured on a real run, that was most
  * of the bill and the pictures were a tenth of it. One sheet is one turn.
  *
- * The design's textures are rasterised once and shared by the four cameras,
+ * The design's textures are rasterised once and shared by every camera on it,
  * so here too it costs little more than one view.
  */
 export async function shootSheet(model, groups, surfaces, { sheets: stock = null, width = 1400, height = 840, views = SHEET_VIEWS } = {}) {

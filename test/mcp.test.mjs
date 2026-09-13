@@ -817,6 +817,24 @@ test('every tool reads what its schema declares, and declares what it reads', as
   assert.deepEqual(drift, []);
 });
 
+test('the tools name every constraint, and minVisibility holds every panel to it', async () => {
+  // propose_design listed four of the six constraints, and an agent reads a
+  // list as the list. And the editor's state sent primary panels without
+  // `visible`, so minVisibility filtered only the secondary ones.
+  const { CONSTRAINTS } = await import('../src/ui/ops.js');
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const propose = (await tools.listTools()).find((t) => t.name === 'propose_design');
+    for (const key of Object.keys(CONSTRAINTS)) assert.match(propose.description, new RegExp(`\\b${key}\\b`), `${key} is named`);
+    const { panels } = JSON.parse((await tools.callTool('find_panels', { minVisibility: 0.99 })).content[0].text);
+    assert.ok(panels.length > 0);
+    for (const p of panels) assert.ok(p.visible >= 0.99, `${p.role}.${p.panel} is ${p.visible}`);
+  } finally {
+    await stop();
+  }
+});
+
 test('a draft whose design or fit is not a list is refused, not measured as nothing', async () => {
   // `draftOf` defaulted a missing list, and the staging applied operations
   // only from an array. So a design sent as one object, or a whole proposal
@@ -829,6 +847,7 @@ test('a draft whose design or fit is not a list is refused, not measured as noth
       [{ design: { op: 'set-palette' } }, /"design" must be a list of operations; got an object/],
       [{ fit: 'set-override' }, /"fit" must be a list of operations; got a string/],
       ['{"design":[]}', /must be an object .*; got a string/],
+      [{ design: null }, /"design" must be a list of operations; got null/],
     ];
     for (const [proposal, says] of cases) {
       const r = await tools.callTool('check_fitment', { proposal });
