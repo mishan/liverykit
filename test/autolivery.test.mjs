@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { startUi } from '../src/ui/server.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { carKn5, vert, CAR } from './fixtures/kn5.mjs';
-import { connect } from '../autolivery/mcp.mjs';
+import { connect, ServerGone } from '../autolivery/mcp.mjs';
+import { existsSync } from 'node:fs';
 import { createTrace } from '../autolivery/trace.mjs';
 import { run } from '../autolivery/loop.mjs';
 import { piecesInView } from '../src/engine/shot.mjs';
@@ -253,7 +254,7 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
     const out = join(ed.dir, 'run');
     const trace = await createTrace({ dir: out });
     await assert.rejects(run({ brief: 'b', mcp: ed.mcp, planner, critic, trace, out, rounds: 4,
-      views: ['left'], shot: { width: 200, height: 150 } }), /MCP server exited/);
+      views: ['left'], shot: { width: 200, height: 150 }, base: 'b1' }), /MCP server exited/);
     assert.deepEqual(asked, [1, 2], 'the planner is not asked again');
     assert.equal(afterDeath, 1, 'and its one call after the server died was its last');
 
@@ -261,6 +262,8 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
     assert.equal(saved.finished, false);
     assert.equal(saved.rounds, 1);
     assert.equal(saved.draft.design.length, 60, 'the draft round 1 ended with is on disk');
+    assert.equal(saved.base, 'b1', 'with the design it was written against');
+    assert.equal(existsSync(join(out, 'result.json.partial')), false, 'renamed into place, not written over it');
 
     const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     const drafted = spans.find((s) => s.name === 'draft_design');
@@ -270,6 +273,16 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
   }
 });
 
+
+test('a call after close() is the server gone, not a write to a closed pipe', async () => {
+  const ed = await fixtureEditor();
+  try {
+    ed.mcp.close();
+    await assert.rejects(ed.mcp.callTool('describe_car'), (e) => e instanceof ServerGone);
+  } finally {
+    await ed.stop();
+  }
+});
 
 test('the planner answers every tool call before saying anything else, across rounds too', async () => {
   // The API refuses a conversation in which a tool call goes unanswered, or is
@@ -1468,6 +1481,16 @@ test('a draft the gate cannot read back fails the round, and says the gate broke
       JSON.stringify(result.history[0].failures));
     const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.match(spans.find((s) => s.name === 'gate').error, /read_design: the editor went away/);
+
+    // An error with no text is still an error.
+    const silent = { ...ed.mcp, callTool: (name, args) => (name === 'read_design' && args?.proposal
+      ? Promise.resolve({ isError: true, content: [] })
+      : ed.mcp.callTool(name, args)) };
+    const quietOut = join(ed.dir, 'quiet');
+    const quiet = await run({ brief: 'b', mcp: silent, planner, critic, trace: await createTrace({ dir: quietOut }),
+      out: quietOut, rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, propose: false });
+    assert.ok(quiet.history[0].failures.some((f) => /read_design could not say .*an error, with no message/.test(f)),
+      JSON.stringify(quiet.history[0].failures));
   } finally {
     await ed.stop();
   }
