@@ -117,31 +117,20 @@ on the bound textures that have it, in the build, the renderer, fitment and the
 editor alike, or they disagree about the car; and that a panel no bound texture
 has is still `unmatched`.
 
-## A profile's `visible` counts meshes behind the paint as in front of it
+## A panel measured on a mesh the car does not draw at rest
 
-**Symptom.** Regenerating the NSX takes its doors from 88% visible to 64% and
-its bonnet from 95% to about 61%, and moves 191 tags and 363 safe areas with
-them, though nothing about the car changed. The checked-in NSX profile keeps
-its older measurements for this reason, with only `alphaHides` grafted onto
-them; the Abarth and RSS4 were regenerated after the cause and carry it.
+**Symptom.** The NSX's front rim panels measure 0% visible (0.87 in a profile
+from before 097ded3), so no portable design's `visible` tag selects them.
 
-**Cause.** Since 097ded3, `computeSafeAreas` (`src/engine/visibility.mjs`)
-casts from each vertex with no lift and relies on voxel ownership to step over
-the surface's own cells, and a voxel marked by two meshes stops every ray. At
-2.5 cm cells any mesh within about 2.5 cm of the skin shares its voxels,
-including meshes BEHIND it: on the NSX door, `DOOR_Left_INT` (the door's inner
-shell), `COCKPIT_LR_SUB0` and `EXT_Carpaint_Inst_SUB0`; on the bonnet,
-`Front_Hood_SUB3`, the carbon liner, which blocks every vertex that fails. Of
-9,862 blocked rays from the door, 9,637 die on the first step.
+**Cause.** The rims texture is worn by the drawn rim, `EXT_RIM_RF`, and by its
+motion-blur copy, `EXT_RIM_BLUR_STATIC_RF`, and the panel's island came from the
+copy. The drawn rim stands 1.2 mm in front of it, so what is measured is a mesh
+the game shows only when the wheel is spinning, from behind the one it shows
+at rest.
 
-**What the fix has to establish.** That a shared voxel stops a ray only when
-the other mesh is in front of the surface — by testing the first steps exactly
-against the triangles on the outward side, as `rectVisibility`'s near-field
-test (95c26bb) does, or by ignoring a shared voxel whose other owner lies
-behind the normal. It must still catch what 097ded3 was for, a plate or a
-handle a few millimetres proud. Then check fitment's `rectVisibility`, which
-steps through the same grid, for the same artifact, regenerate all three
-profiles, and drop the NSX graft.
+**What the fix has to establish.** That an island a drawn mesh shares with a
+motion-blur or damage-only one is measured on the drawn one. `carOccluders`
+already knows which meshes those are.
 
 ## The CLI renderer has one light rig, not the car's materials
 
