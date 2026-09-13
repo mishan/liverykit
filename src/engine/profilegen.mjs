@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, blends } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -184,6 +184,9 @@ export async function profileFromKn5(path, {
   // standing flush on the paint, the NSX's sixteen door plates — hidden by
   // its config, drawn by nothing — took its doors from 88% visible to 56%.
   const occluders = carOccluders(model, { hiddenByCar: { meshes: Object.fromEntries(hides?.hidden ?? []) } });
+  // Built once for the car, not once per texture: the grid and the index of
+  // triangles depend on the car alone.
+  const prepared = visibility ? occupancyFor(model, { occluders }) : null;
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -431,11 +434,11 @@ export async function profileFromKn5(path, {
     // Every drawn mesh occludes, not just the painted ones — a wheel hides
     // bodywork as effectively as bodywork does.
     if (visibility) {
-      computeSafeAreas(model, keep, { occluders, log });
+      computeSafeAreas(model, keep, { prepared, log });
       // Visibility isn't a property of a surface, it's a property of a surface
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
-      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, log });
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, log });
     }
 
     log(`  ${role.padEnd(8)} ${texName.padEnd(26)} ${islands.length} islands, ${keep.length} above threshold`);
