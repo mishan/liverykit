@@ -342,6 +342,26 @@ test('a regeneration without --skins keeps the roles only skins know about', () 
   assert.deepEqual(said.skinOnly, []);
 });
 
+test('a skin-only role carried across says no mesh in the model wears it', async () => {
+  // Carried across as it was, and a prior written before `inModel` existed
+  // did not say so: the hide check then sent `hide: ['crew']` to "regenerate
+  // it", and every regeneration without --skins carried the entry forward
+  // still unflagged. That the role is absent from the model is exactly what
+  // this run established by not finding it.
+  const { hidePlan } = await import('../src/hide.mjs');
+  const prior = {
+    textures: { body: { file: 'B.dds', sizeFrom: 'model' }, crew: { file: 'ac_crew.dds', width: 512, height: 512, sizeFrom: 'skin' } },
+    panels: { body: {} },
+  };
+  const fresh = { textures: { body: { file: 'B.dds', sizeFrom: 'model' } }, panels: { body: {} } };
+  preserveHandwork(fresh, prior, { skinsGiven: false });
+  assert.equal(fresh.textures.crew.inModel, false);
+  assert.equal(prior.textures.crew.inModel, undefined, 'and the prior it came from is left alone');
+  const [plan] = hidePlan(fresh, { hide: ['crew'] });
+  assert.doesNotMatch(plan.why, /regenerate/);
+  assert.match(plan.why, /no mesh in this car's model wears ac_crew\.dds/);
+});
+
 test('a binding naming a role that is really gone is dropped, loudly', () => {
   // The backstop. `mergeBindings` keeps what a human confirmed and cannot know
   // whether the role still exists; left in, the profile does not load. A
