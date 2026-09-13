@@ -13,6 +13,14 @@ import { createInterface } from 'node:readline';
  * Only what the loop needs: initialize, tools/list, tools/call. Requests are
  * answered by id, so nothing depends on the server replying in order.
  */
+
+/**
+ * The server is gone, and every call from here on fails the same way. Its own
+ * class so the loop can tell it from a refusal: fed to the planner as one, a
+ * dead server read as a tool saying no, and the planner kept paying for turns.
+ */
+export class ServerGone extends Error {}
+
 export async function connect({ command = process.execPath, args = [], cwd, env } = {}) {
   const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
@@ -26,7 +34,7 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
   let nextId = 1;
   let gone = null;
   const failAll = (why) => {
-    for (const { reject } of pending.values()) reject(new Error(why));
+    for (const { reject } of pending.values()) reject(new ServerGone(why));
     pending.clear();
   };
   child.on('exit', (code, signal) => {
@@ -51,7 +59,7 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
 
   const send = (msg) => child.stdin.write(JSON.stringify(msg) + '\n');
   const request = (method, params) => new Promise((resolve, reject) => {
-    if (gone) return reject(new Error(gone));
+    if (gone) return reject(new ServerGone(gone));
     const id = nextId++;
     pending.set(id, { resolve, reject, method });
     send({ jsonrpc: '2.0', id, method, params });
