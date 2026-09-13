@@ -1,4 +1,4 @@
-import { mkdir, writeFile, rename } from 'node:fs/promises';
+import { mkdir, writeFile, rename, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clip } from './trace.mjs';
 import { ServerGone } from './mcp.mjs';
@@ -256,7 +256,7 @@ export async function run({
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
   // .partial was left passed just as well with no rename at all.
-  write = (path, text) => writeFile(path, text),
+  write = writeSynced,
 }) {
   await mkdir(out, { recursive: true });
   const tools = plannerTools(await mcp.listTools());
@@ -279,6 +279,7 @@ export async function run({
     const partial = join(out, 'result.json.partial');
     await write(partial, JSON.stringify(result, null, 2) + '\n');
     await rename(partial, join(out, 'result.json'));
+    await syncDir(out);
   };
 
   // One door for every tool call, planner's and gate's alike, so each is
@@ -763,6 +764,42 @@ export async function run({
 
   await save(result);
   return result;
+}
+
+/**
+ * A file written and flushed to the disk before this returns. The rename a
+ * save ends with puts in place only what the disk already holds: without the
+ * flush, a filesystem that commits the rename before the data could still
+ * greet the power loss that motivated renaming with an empty result.json.
+ */
+async function writeSynced(path, text) {
+  const fh = await open(path, 'w');
+  try {
+    await fh.writeFile(text);
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+}
+
+/**
+ * The directory flushed too, so the rename itself is on the disk. Only where
+ * the platform allows it: Windows will not open a directory to flush (EISDIR)
+ * or will not flush the handle (EPERM), and some filesystems refuse fsync on a
+ * directory (EINVAL). There the rename is as durable as the platform makes
+ * it, and failing a round that saved would lose more than it kept. Any other
+ * failure is thrown.
+ */
+async function syncDir(dir) {
+  let fh = null;
+  try {
+    fh = await open(dir, 'r');
+    await fh.sync();
+  } catch (e) {
+    if (!['EISDIR', 'EPERM', 'EINVAL'].includes(e.code)) throw e;
+  } finally {
+    await fh?.close();
+  }
 }
 
 /**
