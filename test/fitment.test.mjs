@@ -900,6 +900,35 @@ test('a region can ask for clean bodywork all round it, and find_space finds whe
   assert.match(none.note, /No spot on L fits 900 x 900 mm/);
 });
 
+test('find_space can sweep sizes and say how big a shape of a given proportion can be', async () => {
+  // An agent told "about 400 mm" put a 240 mm roundel on a door that held 400.
+  // Asked for the limit, it gets the limit: the largest that fits, and the
+  // next size up does not.
+  const { findSpace, largestSpace, cleanGrid } = await import('../src/space.mjs');
+  const half = withPlate(plane({ rows: 8, cols: 8 }), 0.005);
+  half.meshes[1].world[0] = 0.5;                    // the plate hides the left 0.8 m of 1.6
+  const prepared = occupancyFor(half);
+  const grid = cleanGrid({ profile, model: half, prepared, role: 'body', panel: 'L', cellMm: 100 });
+
+  const r = largestSpace({ grid, model: half, prepared, aspect: 1, marginMm: 50 });
+  assert.ok(r.largest, JSON.stringify(r));
+  // The clean half is 750 mm wide beside the plate's cell. find_space centres
+  // a shape on whole 100 mm cells here, so a 50 mm margin can cost up to a cell
+  // each side: 500 is the honest answer at this resolution, not a shortfall.
+  assert.ok(r.largest.widthMm >= 450 && r.largest.widthMm <= 800, `about the clean half, less the margin: ${r.largest.widthMm}`);
+  assert.equal(r.largest.heightMm, r.largest.widthMm, 'aspect 1 is square');
+  assert.ok(r.largest.at[0] * 1600 >= 850 - 1, 'in the clean half');
+  assert.ok(r.sizesTried <= 16);
+  const over = findSpace({ grid, model: half, prepared, widthMm: r.largest.widthMm + 100, marginMm: 50, count: 1 });
+  assert.deepEqual(over.candidates, [], 'and 100 mm more does not fit');
+
+  // The clean half is narrow and tall, so the proportion decides what grows:
+  // a tall shape gets the height a square cannot use.
+  const tall = largestSpace({ grid, model: half, prepared, aspect: 2, marginMm: 50 });
+  assert.ok(tall.largest.heightMm > r.largest.heightMm, `a taller shape can be taller: ${JSON.stringify(tall.largest)}`);
+  assert.throws(() => largestSpace({ grid, model: half, prepared, aspect: 0 }), /aspect above zero/);
+});
+
 test('a surface bound to two textures is asked about on the one that has the panel', async () => {
   // A formula car's body binds body AND bodyRear. Asked for a panel only the
   // second has, taking the first bound texture reported the panel absent.

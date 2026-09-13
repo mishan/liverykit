@@ -242,7 +242,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   // Prepared once for the whole car, not once per region: the occupancy grid is
   // the expensive part of a visibility question and it does not depend on which
   // rectangle is being asked about.
-  const seen = model ? { model, prepared: occupancyFor(model, { occluders: carOccluders(model, profile) }) } : null;
+  const seen = model ? { model, prepared: preparedFor(model, profile) } : null;
 
   const failed = [];
   let wantsMargin = false;
@@ -309,6 +309,23 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     notPlaced: failed,
     findings,
   };
+}
+
+/**
+ * The occupancy grid for a car, built once and kept with the model.
+ *
+ * It depends on the geometry and on which meshes the car hides, not on the
+ * design, and it was being rebuilt for every call: an agent checks a draft a
+ * dozen times a round, and each paid a second for the same grid. Keyed on the
+ * model object, so a model that is let go takes its grid with it.
+ */
+const preparedCache = new WeakMap();
+function preparedFor(model, profile) {
+  const hides = JSON.stringify(Object.keys(profile?.hiddenByCar?.meshes ?? {}).sort());
+  let byHides = preparedCache.get(model);
+  if (!byHides) preparedCache.set(model, (byHides = new Map()));
+  if (!byHides.has(hides)) byHides.set(hides, occupancyFor(model, { occluders: carOccluders(model, profile) }));
+  return byHides.get(hides);
 }
 
 const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
