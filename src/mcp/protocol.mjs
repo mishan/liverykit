@@ -1,4 +1,5 @@
 import { createInterface } from 'node:readline';
+import { EditorUnreachable, EDITOR_META } from './client.mjs';
 
 /**
  * Hand-rolled JSON-RPC 2.0 stdio transport handler for MCP.
@@ -90,6 +91,10 @@ export function createProtocolServer({ toolHandler, serverInfo = { name: 'livery
         result: {
           content: [{ type: 'text', text: `Error: ${err.message}` }],
           isError: true,
+          // As data as well as words. Matched by prose, a client would break
+          // on the first rewording; unmarked, an agent took an editor that
+          // had gone for a tool that said no, and kept paying for turns.
+          ...(err instanceof EditorUnreachable ? { _meta: { [EDITOR_META]: 'unreachable' } } : {}),
         },
       };
       send(res);

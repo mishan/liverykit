@@ -1,6 +1,19 @@
 /**
  * HTTP client for communicating with the running fitting editor server.
  */
+
+/**
+ * Nothing answered at the editor's address: not the editor saying no, but no
+ * editor. Its own class so a tool passes it on rather than answering it as a
+ * failure of its own, and the protocol marks the result with EDITOR_META.
+ * Said only in words, an editor that had stopped read as a tool refusing, and
+ * an agent kept paying for turns that could reach nothing.
+ */
+export class EditorUnreachable extends Error {}
+
+/** The `_meta` key of a tool result that could not reach the editor; its value is 'unreachable'. */
+export const EDITOR_META = 'liverykit/editor';
+
 export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
   const url = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
 
@@ -10,7 +23,7 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       const headers = { connection: 'close', ...options.headers };
       res = await fetch(new URL(path, url).href, { ...options, headers });
     } catch (e) {
-      throw new Error(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
+      throw new EditorUnreachable(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
     }
 
     const contentType = res.headers.get('content-type') ?? '';
@@ -66,7 +79,7 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
             body: JSON.stringify({ proposal }),
           }
         : { headers: { connection: 'close' } },
-      ).catch(() => { throw new Error(`No fitting editor is listening at ${url}.`); });
+      ).catch(() => { throw new EditorUnreachable(`No fitting editor is listening at ${url}.`); });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);
