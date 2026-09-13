@@ -1460,10 +1460,11 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     const moved = join(ed.dir, 'moved');
     await mkdir(moved);
     await writeFile(join(moved, 'result.json'), JSON.stringify({ brief: 'b', base: 'not-this-design', passed: false,
-      history: [{ draft: { design: [], fit: [] }, summary: 's' }] }));
+      finished: false, history: [{ draft: { design: [], fit: [] }, summary: 's' }] }));
     const wrong = await cli('bin.mjs', '--replay', moved, '--editor', ed.url);
     assert.equal(wrong.code, 1);
     assert.match(wrong.stderr, /--replay: the editor's working design is not the one/);
+    assert.match(wrong.stdout, /from a run that did not finish/, 'and a mid-run result.json says what it is');
 
     // A replay judges the drafts against the brief they were drafted for; one
     // typed beside it is refused, not silently judged against instead.
@@ -1499,6 +1500,18 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     // result.json, costing nothing. Refused again while one is pending.
     const passedDir = join(ed.dir, 'passed');
     await go(drafting, 'passed', 3);
+    // But only onto the design it was measured on. Sent in front of another
+    // one, after a proposal was accepted or with another livery open, the same
+    // operations went onto a design they were never measured against, under a
+    // why saying they had been.
+    const elsewhere = await bin('--propose', passedDir, '--editor', ed.url);
+    assert.equal(elsewhere.code, 1);
+    assert.match(elsewhere.stderr, /--propose: the editor's working design is not the one .* started from.*The editor holds design \w+, fit \w+; .* recorded design b1\./s);
+    assert.equal((await get(ed.url, 'api/proposal')).proposal, null, 'and nothing was sent');
+    const [, hereDesign, hereFit] = /The editor holds design (\w+), fit (\w+)/.exec(elsewhere.stderr);
+    const here = { design: hereDesign, fit: hereFit };
+    const passedResult = JSON.parse(await readFile(join(passedDir, 'result.json'), 'utf8'));
+    await writeFile(join(passedDir, 'result.json'), JSON.stringify({ ...passedResult, base: here }));
     const sent = await bin('--propose', passedDir, '--editor', ed.url);
     assert.equal(sent.code, 0, sent.stderr);
     const { proposal } = await get(ed.url, 'api/proposal');
@@ -1510,6 +1523,41 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     assert.match(again.stderr, /the editor refused the proposal: .*already pending/);
     const failed = await bin('--propose', refusedDir, '--editor', ed.url);
     assert.match(failed.stderr, /did not pass its gate/);
+
+    // A run that recorded no design to start from cannot be checked, so it is
+    // not sent under a why that says it was measured.
+    const { base: _base, ...unbased } = passedResult;
+    const unbasedDir = join(ed.dir, 'unbased');
+    await mkdir(unbasedDir);
+    await writeFile(join(unbasedDir, 'result.json'), JSON.stringify(unbased));
+    await fetch(new URL('api/proposal/ack', ed.url).href, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: proposal.id, status: 'discarded' }) });
+    const blind = await bin('--propose', unbasedDir, '--editor', ed.url);
+    assert.equal(blind.code, 1);
+    assert.match(blind.stderr, /did not record the design it started from/);
+    assert.equal((await get(ed.url, 'api/proposal')).proposal, null);
+
+    // One recorded before the fit was: its design matches, and nothing can say
+    // whether the fit does, so it is refused as one with no record is.
+    const designOnlyDir = join(ed.dir, 'design-only');
+    await mkdir(designOnlyDir);
+    await writeFile(join(designOnlyDir, 'result.json'), JSON.stringify({ ...passedResult, base: here.design }));
+    const halfSeen = await bin('--propose', designOnlyDir, '--editor', ed.url);
+    assert.equal(halfSeen.code, 1);
+    assert.match(halfSeen.stderr, /recorded the design it started from but not the fit/);
+    assert.equal((await get(ed.url, 'api/proposal')).proposal, null);
+
+    // One delivered before, and discarded, is sent again, and says so. So is
+    // one whose result.json a run left mid-way, between its pass and its proposal.
+    const resentDir = join(ed.dir, 'resent');
+    await mkdir(resentDir);
+    await writeFile(join(resentDir, 'result.json'), JSON.stringify({ ...passedResult, base: here,
+      proposalId: 'prop_earlier', finished: false }));
+    const resent = await bin('--propose', resentDir, '--editor', ed.url);
+    assert.equal(resent.code, 0, resent.stderr);
+    assert.match(resent.stdout, /delivered before as proposal prop_earlier/);
+    assert.match(resent.stdout, /from a run that did not finish/);
+    assert.ok((await get(ed.url, 'api/proposal')).proposal, 'and it is in the inbox');
   } finally {
     await ed.stop();
   }
