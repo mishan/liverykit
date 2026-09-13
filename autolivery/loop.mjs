@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clip } from './trace.mjs';
 import { ServerGone } from './mcp.mjs';
@@ -269,7 +269,13 @@ export async function run({
   // its operations were written against: a replay onto another is not one.
   const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), passed: passedIn !== null, passedIn,
     rounds: history.length, summary, draft, history, ...(stopped ? { stopped } : {}) });
-  const save = (result) => writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  // Whole or not at all. Written in place, a crash mid-write left half a file
+  // where the last round's had been, and nothing could replay or propose it.
+  const save = async (result) => {
+    const partial = join(out, 'result.json.partial');
+    await writeFile(partial, JSON.stringify(result, null, 2) + '\n');
+    await rename(partial, join(out, 'result.json'));
+  };
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
@@ -538,7 +544,7 @@ export async function run({
     let unread = null;
     const { r: rd } = await traced(span, 'read_design', { proposal: '(the draft)' }, () =>
       mcp.callTool('read_design', { proposal: draft }));
-    if (rd.isError) unread = textOf(rd);
+    if (rd.isError) unread = textOf(rd) || 'an error, with no message';
     else {
       try {
         effective = JSON.parse(textOf(rd));
