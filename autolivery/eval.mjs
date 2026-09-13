@@ -52,6 +52,15 @@ if (values.help) {
 const set = JSON.parse(await readFile(resolve(values.cases), 'utf8'));
 const wanted = values.only ? new Set(values.only.split(',').map((s) => s.trim())) : null;
 const cases = set.cases.filter((c) => !wanted || wanted.has(c.id));
+// Refused before anything is judged or paid for. A misspelled --only judged
+// nothing and exited green; a --max-cost that is not a number compared false
+// against every spend, and the cap it advertised was off.
+const quit = (m) => { console.error(`eval: ${m}`); process.exit(1); };
+const unknown = [...(wanted ?? [])].filter((id) => !set.cases.some((c) => c.id === id));
+if (unknown.length) quit(`--only names no case called ${unknown.join(', ')}; the cases are ${set.cases.map((c) => c.id).join(', ')}`);
+if (!cases.length) quit('there are no cases to judge');
+const maxCost = Number(values['max-cost']);
+if (!(maxCost > 0 && Number.isFinite(maxCost))) quit(`--max-cost must be a positive number of dollars, not ${values['max-cost']}`);
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const trace = await createTrace({ dir: join(HERE, 'runs', `eval-${stamp}`), name: 'autolivery-eval', tags: ['eval'] });
@@ -64,7 +73,7 @@ if (backend === 'anthropic') {
   const client = await claude.createClient();
   model = values['critic-model'] ?? 'claude-opus-5';
   critic = claude.createCritic({ client, model, effort: values['critic-effort'], trace,
-    budget: { max: Number(values['max-cost']), spent: 0 } });
+    budget: { max: maxCost, spent: 0 } });
 } else if (backend === 'openai') {
   const local = await import('./openai.mjs');
   const endpoint = await local.connectEndpoint({ baseUrl: values['critic-base-url'],

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
+import { createHash } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from './mcp.mjs';
@@ -9,6 +10,13 @@ import { loadRecording, createReplayPlanner } from './replay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVERYKIT = resolve(HERE, '../bin/liverykit.mjs');
+
+/** A short fingerprint of the editor's working design, or null if it could not be read. */
+async function designDigest(mcp) {
+  const r = await mcp.callTool('read_design', {});
+  const text = r.isError ? null : r.content?.[0]?.text;
+  return text ? createHash('sha256').update(text).digest('hex').slice(0, 16) : null;
+}
 
 const USAGE = `autolivery — give it a brief; it designs a livery, fits it to the car's real
 model, and revises until the fitment check and a critic both pass. The result
@@ -185,6 +193,27 @@ for (const [role, s] of Object.entries(sides)) {
   }
 }
 
+// Attached before any model is set up or any trace begun, so a missing editor
+// or a replay against the wrong design costs nothing and leaves nothing behind.
+let mcp;
+try {
+  mcp = await connect({ args: [LIVERYKIT, '--mcp', '--editor', values.editor] });
+} catch (e) {
+  fail(e.message);
+}
+// Which working design the run starts from. A draft is operations on it, so a
+// replay put in front of another design — after a proposal was accepted, or
+// with another livery open — replays different operations and is not a replay.
+const base = await designDigest(mcp);
+if (replaying && recording.result.base && recording.result.base !== base) {
+  mcp.close();
+  fail(`--replay: the editor's working design is not the one ${recording.dir} started from, so its ` +
+    'operations would land on a different design. Open the livery that run was made against, as it was then.');
+}
+if (replaying && !recording.result.base) {
+  log('  (this run did not record the design it started from, so the replay cannot check the editor holds it)');
+}
+
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const out = resolve(values.out ?? join(HERE, 'runs', stamp));
 const trace = await createTrace({
@@ -271,13 +300,6 @@ const referee = refereeMode === 'anthropic' && sides.critic.backend !== 'anthrop
   })
   : null;
 
-let mcp;
-try {
-  mcp = await connect({ args: [LIVERYKIT, '--mcp', '--editor', values.editor] });
-} catch (e) {
-  fail(e.message);
-}
-
 console.log(`brief: ${brief}`);
 // A replay's planner is no model at all, and its run pays for nothing unless
 // the critic or second look is Claude: say so, rather than print a budget.
@@ -305,6 +327,7 @@ try {
     referee: referee?.made ?? null,
     closer: refereeMode === 'none' ? [] : undefined,
     seed: !values['no-seed'],
+    base,
   });
 } catch (e) {
   await trace.finish({ ok: false, attrs: { error: e.message } });
@@ -312,7 +335,12 @@ try {
   fail(e.message);
 }
 
-const s = await trace.finish({ ok: result.passed, attrs: { rounds: result.rounds } });
+// Success is a design in front of a person, and the trace says what the exit
+// code says. It said passed for a pass the editor refused to take, which
+// delivered nothing. A replay proposes nothing by design, so its pass is the
+// gate's.
+const delivered = result.passed && Boolean(result.proposalId || values['no-propose'] || replaying);
+const s = await trace.finish({ ok: delivered, attrs: { rounds: result.rounds, passed: result.passed } });
 mcp.close();
 
 const secs = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
@@ -333,7 +361,4 @@ if (result.proposalId) {
 } else if (result.proposalError) {
   console.log(`\nthe editor refused the proposal: ${result.proposalError}`);
 }
-// Success is a design in front of a person. A pass the editor refused to take
-// delivered nothing, and a script reading the exit code must not be told
-// otherwise. A replay proposes nothing by design, so its pass is the gate's.
-process.exit(result.passed && (result.proposalId || values['no-propose'] || replaying) ? 0 : 1);
+process.exit(delivered ? 0 : 1);
