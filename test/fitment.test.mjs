@@ -1174,6 +1174,49 @@ test('a number in a roundel is judged by where its letters are, not by its box',
   assert.match(edge[0].why, /circle runs through/);
 });
 
+test('a size that could not be measured is named, not passed', () => {
+  // `unreadable` and `too-small` returned early without a word on a panel with
+  // no metresPerUv, and stayed in `checked`; `too-small` did the same for a
+  // name that spans panels or is set at an angle. Each read as a pass.
+  const team = { id: 'team', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.8, 0.2], text: '{team}' };
+  const unscaled = structuredClone(profile);
+  delete unscaled.panels.body.L.metresPerUv;
+
+  const r = fitment(design([team]), unscaled);
+  assert.ok(r.notChecked.some((s) => /^unreadable for .*team: its panel L has no measured scale/.test(s)), r.notChecked.join('\n'));
+  assert.ok(r.notChecked.some((s) => /^too-small for .*team: its panel L has no measured scale/.test(s)), r.notChecked.join('\n'));
+  const asked = fitment(design([{ ...team, constraints: { minMm: 40 } }]), unscaled).findings
+    .filter((f) => f.kind === 'unreadable');
+  assert.equal(asked[0]?.severity, 'high', 'a declared floor that cannot be measured is high, as a margin is');
+  assert.match(asked[0].why, /asks for at least 40 mm, and its panel L has no measured scale/);
+
+  const tilted = fitment(design([{ ...team, rotate: 30 }]), profile).findings.filter((f) => f.kind === 'too-small');
+  assert.equal(tilted.length, 1, 'a name at an angle is said to be unmeasured');
+  assert.equal(tilted[0].severity, 'low');
+  assert.equal(tilted[0].measured, false);
+  assert.match(tilted[0].why, /could not be measured, because it is turned to 30/);
+
+  assert.deepEqual(fitment(design([team]), profile).notChecked.filter((s) => /unreadable|too-small/.test(s)), [],
+    'and a panel with a scale leaves nothing unmeasured');
+});
+
+test('contrast is measured whatever the palette calls a colour, and on the background the renderer paints', () => {
+  // Only `#rrggbb` was read, so `#fff` or `steelblue` switched the check off
+  // without a word; and a surface with no background was skipped, while the
+  // renderer paints black there.
+  const low = (palette, regions) => fitment({ ...design(regions), palette }, profile)
+    .findings.filter((f) => f.kind === 'low-contrast');
+  const name = (color) => ({ id: 'team', treatment: 'text', panel: 'L', at: [0.2, 0.6, 0.6, 0.1], text: '{team}', color });
+  const base = { id: 'base', treatment: 'fill', color: 'blue' };
+
+  const navy = low({ navy: '#0E2233' }, [name('navy')]);
+  assert.equal(navy.length, 1, 'navy on the black the renderer paints');
+  assert.match(navy[0].why, /navy on black/);
+  assert.equal(low({ blue: '#7BB3D9', white: '#fff' }, [base, name('white')]).length, 1, '#fff on Gulf blue');
+  assert.equal(low({ blue: 'lightsteelblue' }, [base, name('white')]).length, 1, 'white on a colour named in CSS');
+  assert.deepEqual(low({ blue: '#7BB3D9', navy: 'navy' }, [base, name('navy')]), [], 'and a pair that reads still passes');
+});
+
 test('a number on a panel laid a quarter turn is judged by its letters too', () => {
   // The Abarth's doors measure 90 and 270. `inkBox` gave up on a quarter turn
   // and answered with the whole box, so a number in a roundel there got the

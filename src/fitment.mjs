@@ -29,12 +29,17 @@ import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
 import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
+import { colord, extend } from 'colord';
+import namesPlugin from 'colord/plugins/names';
 // From the editor's op module, because the BROWSER needs this list too — to
 // build the controls and to refuse a constraint nothing enforces — and
 // `fitment.mjs` is not one of the files served to it. One list, so the thing
 // the editor lets you write and the thing this checks cannot drift apart.
 export { CONSTRAINTS } from './ui/ops.js';
 import { CONSTRAINTS } from './ui/ops.js';
+
+// CSS colour names, as the palette accepts them (see ui/uses.js).
+extend([namesPlugin]);
 
 /**
  * How little of a placement may be visible before it is worth saying so.
@@ -249,6 +254,11 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
   const failed = [];
   let wantsMargin = false;
+  // A check that could not measure one region, by name. It used to skip the
+  // region and stay in `checked`, so a name nobody measured read exactly
+  // like one that passed.
+  const unmeasured = [];
+  const skip = (s) => unmeasured.push(s);
   // Every surface's placements, for the one check that asks about two regions
   // that may be on different surfaces.
   const all = [];
@@ -296,8 +306,8 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     contrast(placed, t, design, sayHere, size);
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
-    unreadable(placed, profile, t, sayHere);
-    tooSmall(placed, t, sayHere, size, design.identity ?? {});
+    unreadable(placed, profile, t, sayHere, skip);
+    tooSmall(placed, t, sayHere, size, design.identity ?? {}, skip);
     unmirrored(placed, profile, t, sayHere);
     if (seen) unseen(placed, profile, t, seen, sayHere);
     if (seen) margins(placed, profile, t, seen, sayHere);
@@ -312,7 +322,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     name: profile.name || profile.id,
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin', 'margin'].includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : [])],
+    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : [])]), ...unmeasured],
     // Surfaces that threw. Empty is the answer callers want; non-empty means
     // the findings below cover less of the car than they appear to.
     notPlaced: failed,
@@ -822,10 +832,9 @@ function ringThroughText(ring, text, size, identity = {}) {
  */
 const CONTRAST_FLOOR = 3;
 
-function luminance(hex) {
+function luminance({ r, g, b }) {
   const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return 0.2126 * lin(r / 255) + 0.7152 * lin(g / 255) + 0.0722 * lin(b / 255);
 }
 
 const contrastRatio = (a, b) => {
@@ -835,9 +844,13 @@ const contrastRatio = (a, b) => {
 
 function contrast(placed, t, design, say, size) {
   const palette = design.palette ?? {};
-  const hex = (c) => {
+  // Whatever the palette accepts, which is anything colord parses. Only
+  // `#rrggbb` used to be read, so `#fff`, `steelblue` or the text treatment's
+  // own default of `white` switched the check off without a word.
+  const rgb = (c) => {
     const v = palette[c] ?? c;
-    return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+    const parsed = typeof v === 'string' ? colord(v) : null;
+    return parsed?.isValid() ? parsed.toRgb() : null;
   };
   // What `q` paints at (x, y), in texture fractions: a colour name, undefined
   // where it paints nothing there, or null where it paints something whose
@@ -858,10 +871,11 @@ function contrast(placed, t, design, say, size) {
   for (const [i, p] of placed.entries()) {
     if (p.region.treatment !== 'text' || p.region.glow) continue;
     const inkName = p.region.color ?? 'white';     // the text treatment's default
-    const ink = hex(inkName);
+    const ink = rgb(inkName);
     if (!ink) continue;
     const cx = p.frac.x + p.frac.w / 2, cy = p.frac.y + p.frac.h / 2;
-    let underName = t.spec?.background ?? null, what = 'the surface\'s background';
+    // Black where none is declared, because that is what render.mjs paints.
+    let underName = t.spec?.background ?? 'black', what = 'the surface\'s background';
     for (let j = i - 1; j >= 0; j--) {
       const c = paintAt(placed[j], cx, cy);
       if (c === undefined) continue;
@@ -869,7 +883,7 @@ function contrast(placed, t, design, say, size) {
       what = placed[j].id;
       break;
     }
-    const under = underName ? hex(underName) : null;
+    const under = underName ? rgb(underName) : null;
     if (!under) continue;
     const ratio = contrastRatio(ink, under);
     if (ratio >= CONTRAST_FLOOR) continue;
@@ -1038,16 +1052,23 @@ function hiddenFace(placed, profile, t, say) {
   }
 }
 
+/** Why a placement has no size on the car, for the checks that need one. */
+const noScale = (p) => (p.frac.panel
+  ? `its panel ${p.region.panel} has no measured scale (metresPerUv); regenerate the profile with --from-kn5`
+  : 'it names no panel, so nothing says how big it is on the car');
+
 /**
  * Text too small to read on the car.
  *
- * Needs `metresPerUv`, which only profiles regenerated since it existed carry —
- * so this reports nothing rather than guessing on an older one. The height is
- * the region's box, not the glyphs: `text` fits itself to the box and may end
- * up smaller, so this is an upper bound and a clean one. If the box is 20 mm
- * the lettering cannot be bigger than that.
+ * Needs `metresPerUv`, which only profiles regenerated since it existed carry.
+ * Without it nothing is guessed, and nothing is passed either: a region that
+ * declared a floor gets the high finding `margins` gives the same absence, and
+ * any other is named in `notChecked`. The height is the region's box, not the
+ * glyphs: `text` fits itself to the box and may end up smaller, so this is an
+ * upper bound and a clean one. If the box is 20 mm the lettering cannot be
+ * bigger than that.
  */
-function unreadable(placed, profile, t, say) {
+function unreadable(placed, profile, t, say, skip) {
   for (const p of placed) {
     // A declared floor applies to ANY treatment, because a design that says
     // "never smaller than 40 mm" knows something about its artwork that the
@@ -1058,7 +1079,14 @@ function unreadable(placed, profile, t, say) {
     // The narrowest the SHAPE is, which for a piece that crossed a seam is not
     // the short side of the box around it.
     const m = metresNarrowest(p.frac);
-    if (m === null) continue;
+    if (m === null) {
+      if (declared === null) skip(`unreadable for ${name(t, p.id)}: ${noScale(p)}`);
+      else {
+        say({ kind: 'unreadable', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
+          why: `${name(t, p.id)} asks for at least ${declared} mm, and ${noScale(p)}.` });
+      }
+      continue;
+    }
     const mm = m * 1000;
     const floor = declared ?? TOO_SMALL_MM;
     if (mm >= floor) continue;
@@ -1120,15 +1148,22 @@ function textIs(region, identity) {
  * the treatment draws in the box turned about its centre, so the letters stand
  * along the texture's u rather than its v.
  *
- * Null where it cannot be said: no `metresPerUv`, an angle that is not a
- * multiple of a quarter turn, or a spanning region, whose pieces are the band
- * cut up by seams rather than the frame it was drawn in.
+ * `{ why }` where it cannot be said: no `metresPerUv` (`noScale` too), an
+ * angle that is not a multiple of a quarter turn, or a spanning region, whose
+ * pieces are the band cut up by seams rather than the frame it was drawn in.
  */
 function letterSize(p, size, identity) {
   const per = p.frac.panel?.metresPerUv;
-  if (!Array.isArray(per) || per.length !== 2 || p.region.span === true) return null;
+  if (!Array.isArray(per) || per.length !== 2) return { noScale: true, why: noScale(p) };
+  if (p.region.span === true) {
+    return { why: 'it spans panels, and its pieces are the band cut up by seams rather than the frame its letters were set in' };
+  }
   const f = textFrame(p, size, identity);
-  if (!f) return null;
+  if (!f) {
+    const o = p.region;
+    return { why: `it is turned to ${o.rotate === 'auto' ? `${p.frac.panel?.textRotation}° (its panel's own turn)` : `${o.rotate}°`}, ` +
+      'and only a quarter turn keeps its letters along one axis of the texture' };
+  }
   const { quarter, w, h, em, shrunk } = f;
   // Pixels along the axis the letters stand on, to metres along that axis.
   const mm = (px, alongU) => (alongU ? (px / size.w) * per[0] : (px / size.h) * per[1]) * 1000;
@@ -1149,13 +1184,22 @@ function letterSize(p, size, identity) {
  * every name, and run 18's 125 would have waved through letters a third that
  * size.
  */
-function tooSmall(placed, t, say, size, identity) {
+function tooSmall(placed, t, say, size, identity, skip) {
   for (const p of placed) {
     if (p.region.treatment !== 'text') continue;
     const is = textIs(p.region, identity);
-    if (!is) continue;
+    if (!is || !String(p.region.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? '')).trim()) continue;
     const got = letterSize(p, size, identity);
-    if (!got) continue;
+    // Unmeasured is said, never passed. No scale is the profile's to fix, and
+    // named in `notChecked` as `unreadable` names it; a span or an angle is the
+    // design's own choice, so a low finding says so without failing a gate
+    // over something no planner could measure either.
+    if (got.noScale) { skip(`too-small for ${name(t, p.id)}: ${got.why}`); continue; }
+    if (got.why) {
+      say({ kind: 'too-small', severity: 'low', surface: t.from, panel: p.region.panel, ids: [p.id], measured: false,
+        why: `${name(t, p.id)}'s letters could not be measured, because ${got.why}; check their size in a picture of the car.` });
+      continue;
+    }
     const floor = is === 'number' ? NUMBER_MM : NAME_MM;
     if (got.mm >= floor) continue;
     const [bw, bh] = got.boxMm.map(Math.round);
