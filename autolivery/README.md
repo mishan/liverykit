@@ -132,6 +132,16 @@ both are kept. `--referee anthropic`, the default when there is a key, asks
 Claude beside a local critic; `critic` asks the critic again; `none` turns it
 off. A round that failed fitment costs no second look.
 
+The planner hears a failed round as `mustFix` (what failed it, from fitment and
+from the verdict's lists) and `advice` (everything else the critic said). Told
+everything at once, it acted on everything: a note that a Gulf livery's centre
+stripe was "broken where it crosses the roof" failed nothing, and the planner
+shortened the stripe twice and then deleted it. It is told to fix every mustFix
+item, to take advice only if nothing the brief asks for is lost, and to repair a
+flagged element rather than delete it. For a brief that names a style, the critic
+lists that style's signature elements as requirements of their own, so deleting
+one fails the round instead of passing it.
+
 ## The trust boundary
 
 **The agent never commits anything.** It works on a draft: the same list of

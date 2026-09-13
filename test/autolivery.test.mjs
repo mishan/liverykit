@@ -83,6 +83,9 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
         const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
         const panel = panels[0].panel;
         const region = (at) => ({ id: 'number-left', treatment: 'text', text: '85', panel, at, color: 'ink' });
+        // A refused operation must leave the draft as it was.
+        const bad = await call('draft_design', { design: [{ op: 'no-such-op' }] });
+        assert.ok(bad.isError, 'an operation the editor would refuse is refused');
         if (n === 1) {
           // Claims to be done having drafted nothing. The gate must not take
           // its word for it: an empty draft measures clean.
@@ -97,9 +100,11 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
           await call('draft_design', { design: [{ op: 'set-region', id: 'number-left', region: region([0.1, 0.3, 0.8, 0.4]) }] });
           await call('finish_round', { summary: 'a number on the left, big enough to read' });
         }
-        // A refused operation must leave the draft as it was.
-        const bad = await call('draft_design', { design: [{ op: 'no-such-op' }] });
-        assert.ok(bad.isError, 'an operation the editor would refuse is refused');
+        // Submitted is sealed: a call after finish_round is not run, so the
+        // gate judges the draft the summary describes.
+        const late = await call('draft_design', { design: [{ op: 'remove-region', id: 'number-left' }] });
+        assert.ok(late.isError);
+        assert.match(late.content[0].text, /already submitted/);
       },
     };
     const critic = {
@@ -300,6 +305,7 @@ test('the local critic is held to the schema, and a verdict that is not one is r
       words(JSON.stringify(good)),
       words('It looks great!'),
       words(JSON.stringify({ ...good, number_legible: 'false' })),
+      words(JSON.stringify({ ...good, requirements: [{ asked: 'number 85', present: true }] })),
     ] });
     const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
     const critic = local.createCritic({ endpoint, model: 'local-model', trace: await createTrace({ dir }) });
@@ -313,6 +319,9 @@ test('the local critic is held to the schema, and a verdict that is not one is r
     await assert.rejects(ask(), /not JSON/);
     // "false" is truthy. A gate that took it would pass a round the critic failed.
     await assert.rejects(ask(), /number_legible/);
+    // A server need not honour response_format: a requirement ticked with no
+    // "where" is a critic that did not say where it saw it.
+    await assert.rejects(ask(), /requirements/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -513,11 +522,21 @@ test('a Claude run stops before the call that would go past its budget', async (
 
     const unknown = { beta: { messages: { create: async () => ({ id: 'm', model: 'claude-mystery', stop_reason: 'end_turn',
       usage: pricey, content: [{ type: 'text', text: 'hi' }] }) } } };
+    const traced = await createTrace({ dir: join(dir, 'unpriced') });
     await assert.rejects(
       createPlanner({ client: unknown, model: 'claude-mystery', effort: 'high', fallback: false,
-        trace: await createTrace({ dir }), budget: { max: 7, spent: 0 } })
+        trace: traced, budget: { max: 7, spent: 0 } })
         .round({ n: 1, rounds: 1, brief: 'b', feedback: null, tools: [], call: async () => ({ content: [] }) }),
       /no known price, so a --max-cost budget cannot be enforced/);
+    // The call was made and paid for before its price was found unknown, so it
+    // is in the trace, failed, with its tokens: not lost with the error.
+    await traced.flush();
+    const spans = (await readFile(join(dir, 'unpriced', 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    const call = spans.find((s) => s.kind === 'llm');
+    assert.ok(call, 'the unpriced call is traced');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /no known price/);
+    assert.equal(call.attrs['gen_ai.usage.prompt_tokens'], 1_000_000);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -534,6 +553,10 @@ test('a sheet is four different views in one picture, the size it was asked for'
     assert.deepEqual([meta.width, meta.height], [400, 300]);
     const quarter = (left, top) => sharp(png).extract({ left, top, width: 200, height: 150 }).raw().toBuffer();
     assert.notDeepEqual(await quarter(0, 150), await quarter(200, 150), 'left and right are different pictures');
+    // Odd sizes too: halving 401 x 301 used to lose a pixel each way.
+    const odd = await ed.mcp.callTool('render_car', { view: 'sheet', width: 401, height: 301 });
+    const oddMeta = await sharp(Buffer.from(odd.content[0].data, 'base64')).metadata();
+    assert.deepEqual([oddMeta.width, oddMeta.height], [401, 301]);
     const listed = (await ed.mcp.listTools()).find((t) => t.name === 'render_car');
     assert.match(listed.description, /"sheet" is four labelled views/);
   } finally {
@@ -679,6 +702,19 @@ test('a critic that fails a clean draft gets a closer second look, and the secon
     assert.equal(upheld.result.passed, false);
     assert.equal(upheld.result.history[0].gates.critic, 'fail');
     assert.ok(upheld.lines.some((l) => /→ closer look FAIL \(cut off: the roundel behind 85/.test(l)), upheld.lines.join('\n'));
+
+    // Closer views that do not render leave the second look nothing new to see:
+    // the critic's verdict stands, and the referee is not asked to clear it.
+    const blind = judging({ ...flagged, cut_off: [] });
+    const out = join(ed.dir, 'blind');
+    const unseen = await run({
+      brief: 'number 85', mcp: ed.mcp, planner: drafting, critic: judging(flagged), referee: blind,
+      trace: await createTrace({ dir: out }), out, rounds: 1, views: ['left'], shot: { width: 200, height: 150 },
+      closer: ['no-such-view'], closeShot: { width: 200, height: 150 }, propose: false,
+    });
+    assert.equal(unseen.passed, false);
+    assert.equal(blind.asked.length, 0);
+    assert.match(unseen.history[0].secondLook.error, /closer views did not render/);
 
     // And a draft that failed fitment is revised anyway: no second look to pay for.
     const idle = { async round({ call }) { await call('finish_round', { summary: 'nothing yet' }); } };
