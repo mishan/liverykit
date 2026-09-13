@@ -1152,6 +1152,22 @@ test('a number in a roundel is judged by where its letters are, not by its box',
   assert.match(edge[0].why, /circle runs through/);
 });
 
+test('a disc dipping into the top of a name is found, however little their boxes share', () => {
+  // A name band under a roundel shares an eighth of its box with the disc's
+  // at most, and pairs sharing under a quarter were passed over before the
+  // circle was ever measured, so letters with the disc's rim through them
+  // passed every round.
+  const disc = { id: 'roundel', treatment: 'ring', panel: 'L', at: [0.3, 0.1, 0.4, 0.4], color: 'ink',
+    radius: 0.25, width: 0.5 };
+  const team = (y) => ({ id: 'team', treatment: 'text', panel: 'L', at: [0.1, y, 0.8, 0.12], text: 'DOLL', scale: 1 });
+  const found = (y) => fitment(design([disc, team(y)]), profile).findings.filter((f) => f.kind === 'overlap');
+  const under = found(0.48);
+  assert.equal(under.length, 1, 'the disc reaches 0.5 and the letters start above it');
+  assert.equal(under[0].severity, 'high');
+  assert.match(under[0].why, /circle runs through/);
+  assert.deepEqual(found(0.52), [], 'the same name clear of the disc');
+});
+
 test('lettering too close in colour to what is under it is measured, not left to the critic', () => {
   // Round one of three runs in a row failed on the team name for this alone:
   // white on Gulf blue, then thin orange on Gulf blue, each found a whole round
