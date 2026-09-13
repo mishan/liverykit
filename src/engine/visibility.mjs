@@ -88,10 +88,17 @@ function buildOccupancy(model, meshes, cellSize) {
   // things that hide artwork. On the Honda the number plates stand a few
   // millimetres proud of the doors: nearer than the lift, and at 2.5 cm cells
   // in the same voxel as the door, so NO starting distance can tell them apart.
-  // Ownership can. The shared voxel is -1, which is not the door's own mark,
-  // so it occludes.
+  //
+  // Nor can the voxel. A shared cell used to stop every ray, as a plate in
+  // front of the paint, and a mesh a few millimetres BEHIND the paint shares
+  // the cell just the same: the NSX's inner door shell, cockpit tub and carbon
+  // bonnet liner took its doors from 88% visible to 64% and its bonnet from
+  // 95% to 61%. So `shared` keeps who marked each shared cell, a ray steps over
+  // one its own surface is part of, and what stands close in FRONT is found by
+  // `covered`, exactly, along the normal.
   const grid = new Int32Array(nx * ny * nz);
   const idx = (i, j, k) => (k * ny + j) * nx + i;
+  const shared = new Map();                     // cell -> Set of owner marks, for cells at -1
 
   let owner = 0;                                // set per mesh in the loop below
   const mark = (px, py, pz) => {
@@ -101,7 +108,11 @@ function buildOccupancy(model, meshes, cellSize) {
     if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return;
     const c = idx(i, j, k);
     const was = grid[c];
-    grid[c] = was === 0 ? owner : (was === owner ? was : -1);
+    if (was === 0) grid[c] = owner;
+    else if (was > 0 && was !== owner) {
+      grid[c] = -1;
+      shared.set(c, new Set([was, owner]));
+    } else if (was === -1) shared.get(c).add(owner);
   };
 
   // Triangles are sampled rather than just their vertices: a large flat panel
@@ -139,17 +150,18 @@ function buildOccupancy(model, meshes, cellSize) {
       }
     }
   }
-  return { grid, x0, y0, z0, nx, ny, nz, cellSize, idx };
+  return { grid, shared, x0, y0, z0, nx, ny, nz, cellSize, idx };
 }
 
 /**
  * March a ray through the grid; true if it escapes without hitting geometry.
  *
- * `own` is the mesh index the ray starts on, and cells marked by that mesh
- * ALONE are stepped over: a surface does not occlude itself, and a curved one
- * marks the cells just outside itself. Anything else stops the ray, including a
- * cell the surface shares with a second mesh — that share is exactly what a
- * panel lying flush against another looks like in a coarse grid.
+ * `own` is the mesh index the ray starts on, and cells that mesh marked are
+ * stepped over, alone or shared: a surface does not occlude itself, a curved
+ * one marks the cells just outside itself, and what shares a cell with it may
+ * be behind it as easily as in front. Every other occupied cell stops the ray.
+ * A voxel cannot tell a plate 5 mm proud of the paint from a shell 5 mm behind
+ * it, so the plate is `covered`'s to find, not this.
  *
  * Default -1 means "not standing on anything", under which every occupied cell
  * blocks, which is what every caller wanted before ownership existed.
@@ -163,8 +175,11 @@ function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
     const j = Math.floor((y - occ.y0) / occ.cellSize);
     const k = Math.floor((z - occ.z0) / occ.cellSize);
     if (i < 0 || j < 0 || k < 0 || i >= occ.nx || j >= occ.ny || k >= occ.nz) return true;
-    const c = occ.grid[occ.idx(i, j, k)];
-    if (c !== 0 && c !== own + 1) return false;
+    const at = occ.idx(i, j, k);
+    const c = occ.grid[at];
+    if (c === 0 || c === own + 1) continue;
+    if (c === -1 && own >= 0 && occ.shared.get(at).has(own + 1)) continue;
+    return false;
   }
   return true;
 }
@@ -267,19 +282,20 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
  * Annotate islands with a `safe` UV rect covering only their visible part.
  *
  * `occluders` should be every mesh in the car, not just the painted ones — a
- * wheel or a wing hides bodywork just as well as bodywork does.
+ * wheel or a wing hides bodywork just as well as bodywork does. `prepared`,
+ * from `occupancyFor`, is the same grid built once for every texture of a car
+ * instead of once per texture.
  */
 export function computeSafeAreas(model, islands, {
   occluders = model.meshes,
   cellSize = 0.025,                 // 2.5 cm
+  prepared = null,
   minDirections = 4,                // viewing angles needed to count as visible
   minVisibleFraction = 0.02,        // below this the panel is treated as hidden
   shrinkThreshold = 0.02,           // ignore trims smaller than this, as noise
   log = () => {},
 } = {}) {
-  const occ = buildOccupancy(model, occluders, cellSize);
-  const dirs = viewDirections();
-  const maxSteps = Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5);
+  const { occ, dirs, maxSteps, near } = prepared ?? occupancyFor(model, { occluders, cellSize });
   // Was cellSize * 1.6 — 4 cm, chosen to clear the surface's own voxel, and so
   // wide it stepped over anything sitting closer than that. Ownership clears
   // the surface instead, and `escapes` tests only AFTER stepping, so a lift of
@@ -293,6 +309,9 @@ export function computeSafeAreas(model, islands, {
 
     for (const i of isl.vertices) {
       const p = vertex(model, isl.meshRef, i);
+      // A plate or a handle standing on the paint shares its voxels, which
+      // `escapes` now steps over, so it is asked about exactly here.
+      if (covered(near, { ...p, mesh: own }) >= 0) continue;
       const sx = p.x + p.nx * lift, sy = p.y + p.ny * lift, sz = p.z + p.nz * lift;
       // Count the directions, don't stop at the first. "Visible from at least
       // one angle out of forty-nine" is a much weaker claim than it sounds: the
@@ -643,7 +662,7 @@ export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
  * happens to be in between.
  */
 export function computeCockpitVisibility(model, islands, {
-  eye = null, occluders = model.meshes, cellSize = 0.02, log = () => {},
+  eye = null, occluders = model.meshes, cellSize = 0.02, near = null, log = () => {},
 } = {}) {
   const point = eye ?? cockpitEye(model);
   if (!point) {
@@ -651,6 +670,8 @@ export function computeCockpitVisibility(model, islands, {
     return islands;
   }
   const occ = buildOccupancy(model, occluders, cellSize);
+  // What stands flush in front is `covered`'s to find; see `escapes`.
+  const nearby = near ?? buildNear(model, occluders);
   const maxSteps = Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5);
   const lift = 0;                   // ownership clears the surface; see `escapes`
 
@@ -675,6 +696,7 @@ export function computeCockpitVisibility(model, islands, {
       const d = Math.hypot(dx, dy, dz) || 1;
       dx /= d; dy /= d; dz /= d;
       if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;   // facing away
+      if (covered(nearby, { ...p, nx: dx, ny: dy, nz: dz, mesh: own }, Math.min(0.05, d)) >= 0) continue;
       // March the WHOLE way to the eye. Stopping short leaves a blind spot at
       // the near end of the ray, so anything sitting just in front of the
       // driver — a wheel rim, a roll hoop — fails to occlude and the panel
