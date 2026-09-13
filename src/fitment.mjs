@@ -24,6 +24,7 @@
 
 import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, spanPlacements, panel as panelOf } from './profile.mjs';
 import { applyFit } from './fit.mjs';
+import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly } from './engine/poly.mjs';
@@ -93,7 +94,73 @@ const BLEED_IS_FINE_BELOW = 0.15;
  *   minOnCar    the fraction of the box that must land on actual geometry,
  *               replacing the default. A background fill is meant to bleed off
  *               an island; a name is not.
+ *   minVisible  the fraction of the box that must be seen from trackside,
+ *               replacing the 35% below which `unseen` speaks up. Being on the
+ *               car is not being visible: a roundel measured 99% on the door
+ *               and had its top strip 44% visible, under the window frame, and
+ *               nothing said so.
+ *   minMargin   millimetres of clean bodywork all round: with that much added
+ *               on every side, the box must still be on the car and seen. A
+ *               roundel does not sit against a shut line or tuck its top edge
+ *               under a window frame, and "not too close to an edge" is only a
+ *               rule once it has a number.
  */
+
+/**
+ * Fields on a region that nothing will read.
+ *
+ * The renderer hands a treatment the whole region as `ctx.opts` and the
+ * treatment takes what it wants, so a field it does not know is carried along
+ * and ignored. An agent spent four rounds making a race number bigger with
+ * `options: { scale: 1.5 }` — a wrapper no treatment reads — and the number
+ * stayed exactly the size it was, with every check passing, because nothing
+ * about a field that does nothing is measurable. Same shape as a misspelled
+ * constraint, which is already refused for the same reason.
+ *
+ * Known is what the treatment DESCRIBES plus what the placement code itself
+ * reads. A treatment its pack does not describe is left alone: there is
+ * nothing to compare against, and guessing would report fields that work.
+ */
+const PLACEMENT_FIELDS = new Set([
+  'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
+  'span', 'once', 'limit', 'constraints', 'drop', '__key',
+]);
+
+/** What a treatment describes, by the design's own packs, later packs winning. */
+function describedOptions(design, treatment) {
+  let options = null;
+  for (const name of design.packs ?? ['core']) {
+    let pack;
+    try {
+      pack = getPack(name);
+    } catch { continue; }                     // an unknown pack is reported where it is loaded
+    if (!pack.treatments[treatment]) continue;
+    options = pack.describe?.[treatment]?.options ?? null;
+  }
+  return options;
+}
+
+function unknownFields(regions, t, design, say) {
+  regions.forEach((region, i) => {
+    if (!region || typeof region !== 'object') return;
+    const options = describedOptions(design, region.treatment);
+    if (!options) return;
+    const id = region.id ?? `${t.from}#${i}`;
+    for (const field of Object.keys(region)) {
+      if (PLACEMENT_FIELDS.has(field) || Object.hasOwn(options, field)) continue;
+      const instead = field === 'options'
+        ? ` Options go on the region itself — e.g. "scale": 1.5 — not inside "options".`
+        : Object.hasOwn(CONSTRAINTS, field)
+          ? ` ${field} is a constraint: write "constraints": { "${field}": ${JSON.stringify(region[field])} }.`
+          : '';
+      say({
+        kind: 'unknown-field', severity: 'high', surface: t.from, ids: [id], field,
+        why: `${id} has "${field}", which ${region.treatment} does not take and nothing else reads, ` +
+          `so it does nothing.${instead} ${region.treatment} takes: ${Object.keys(options).join(', ') || 'no options'}.`,
+      });
+    }
+  });
+}
 
 /**
  * A region's declared constraints, or a complaint that it tried and failed.
@@ -137,9 +204,9 @@ function constraintsOf(region, id, t, say) {
       if (typeof v !== 'boolean') { bad(k, 'must be true or false.'); continue; }
     } else if (typeof v !== 'number' || !Number.isFinite(v)) {
       bad(k, 'must be a number.'); continue;
-    } else if (k === 'minOnCar' && (v < 0 || v > 1)) {
+    } else if ((k === 'minOnCar' || k === 'minVisible') && (v < 0 || v > 1)) {
       bad(k, 'must be a fraction between 0 and 1.'); continue;
-    } else if (k === 'minMm' && v <= 0) {
+    } else if ((k === 'minMm' || k === 'minMargin') && v <= 0) {
       bad(k, 'must be a size in millimetres above zero.'); continue;
     }
     kept[k] = v;
@@ -178,6 +245,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   const seen = model ? { model, prepared: occupancyFor(model) } : null;
 
   const failed = [];
+  let wantsMargin = false;
   for (const t of targets) {
     const spec = t.spec ?? {};
 
@@ -192,6 +260,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // checker. The role is what tells them apart, and it is also what somebody
     // needs in order to go and look at the right sheet.
     const sayHere = (f) => say({ role: t.role, ...f });
+    unknownFields(spec.regions ?? [], t, design, sayHere);
 
     // Per TARGET, so one broken surface does not hide the findings on the rest
     // — and so the run says which surface went unchecked instead of returning a
@@ -212,13 +281,17 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // Parsed once, before any check reads them, so a misspelled constraint is
     // reported rather than quietly enforcing nothing.
     for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, sayHere);
+    if (placed.some((p) => typeof p.constraints.minMargin === 'number')) wantsMargin = true;
 
-    overlaps(placed, t, sayHere);
+    const size = texSize(profile, t.role);
+    overlaps(placed, t, sayHere, size);
+    ringOverflow(placed, t, sayHere);
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
     unreadable(placed, profile, t, sayHere);
     unmirrored(placed, profile, t, sayHere);
     if (seen) unseen(placed, profile, t, seen, sayHere);
+    if (seen) margins(placed, profile, t, seen, sayHere);
   }
 
   // Across surfaces rather than within one, so it cannot live in the loop above.
@@ -227,9 +300,9 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   return {
     car: profile.id,
     name: profile.name || profile.id,
-    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin'].includes(c)),
+    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin', 'margin'].includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: model ? [] : ['unseen', 'off-mesh', 'unpainted-twin'],
+    notChecked: model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : [])],
     // Surfaces that threw. Empty is the answer callers want; non-empty means
     // the findings below cover less of the car than they appear to.
     notPlaced: failed,
@@ -237,7 +310,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
+const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
   'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
 
 /**
@@ -262,11 +335,29 @@ function placements(profile, t, spec, fit, say = () => {}) {
   // swallowing this here made a livery that cannot be resolved at all look
   // identical to one that is clean. The caller turns the throw into a `fatal`.
   const expanded = expandRegions(profile, t.role, fitted);
+  // A region that lands NOWHERE, said out loud.
+  //
+  // Both of these used to vanish here: the tag selection's note was dropped
+  // on the floor, and a panel this car lacks was caught and returned as no
+  // placements. So a design whose every region selected a tag the car does
+  // not have — an agent wrote `tags: ['left', 'body']` for three rounds
+  // running — came back with no findings at all, and read as a clean pass
+  // over a car that was still bare primer. Nothing about artwork that paints
+  // nothing is measurable, which is exactly why it has to be a finding.
+  for (const n of expanded.notes) {
+    if (n.status !== 'no-match') continue;
+    say({ kind: 'unmatched', severity: 'high', surface: t.from, ids: [n.id ?? t.from], why: n.text });
+  }
   const out = expanded.regions.flatMap((r, i) => {
     let frac = null;
     try {
       frac = resolveRect(profile, t.role, r);
-    } catch { /* a panel this car lacks; portability reports that one */ }
+    } catch (e) {
+      say({ kind: 'unmatched', severity: 'high', surface: t.from, panel: r.panel,
+        ids: [r.id ?? r.__key ?? `${t.from}#${i}`],
+        why: `${r.id ?? 'a region'} names a panel this car does not have, so it paints nothing: ${e.message}` });
+      return [];
+    }
     if (!frac) return [];
     // A region with no `id` is addressed by position, and a TAG selection
     // becomes one entry per matching panel — so position alone is not unique
@@ -349,7 +440,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
  * line of text landing on another, which is why this is measured against the
  * smaller box rather than reported for any intersection at all.
  */
-function overlaps(placed, t, say) {
+function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
   for (let a = 0; a < placed.length; a++) {
     for (let b = a + 1; b < placed.length; b++) {
       const A = placed[a], B = placed[b];
@@ -373,6 +464,28 @@ function overlaps(placed, t, say) {
       // name is not a layer, it is one of them lost, and neither can be read.
       const aText = A.region.treatment === 'text';
       const bText = B.region.treatment === 'text';
+
+      // A RING and some text: measured by the circle, not by the boxes.
+      //
+      // The box of a halo contains the box of the number it surrounds, and it
+      // contains the box of a number it runs straight through — the two
+      // overlap identically, so this said "low" about both and the agent
+      // called it intended. The question is whether an edge of the circle
+      // crosses the text: a number wholly inside a solid disc, or wholly
+      // inside a ring's hole, is a roundel or a halo doing its job.
+      const aRing = A.region.treatment === 'ring', bRing = B.region.treatment === 'ring';
+      if ((aRing && bText) || (bRing && aText)) {
+        const [ring, text] = aRing ? [A, B] : [B, A];
+        if (ringThroughText(ring, text, size)) {
+          say({
+            kind: 'overlap', severity: 'high', surface: t.from, panel: A.region.panel,
+            ids: [ring.id, text.id], share: round(share),
+            why: `${name(t, ring.id)}'s circle runs through ${name(t, text.id)}: an edge of the ring ` +
+              'crosses the text. Put the text wholly inside the ring, or move the ring outside it.',
+          });
+        }
+        continue;
+      }
 
       // Unless one of them ASKED not to be covered. A design knows things the
       // treatment name cannot express — a cyan stripe running the length of the
@@ -401,6 +514,153 @@ function overlaps(placed, t, say) {
             (bothText ? ', and both are text' : ''),
       });
     }
+  }
+}
+
+/**
+ * How much of a placement's surroundings must be on the car, and seen, to
+ * count as clean. Not 1, for the same reason as find_space's cells: samples on
+ * the rim of the grown box sit on boundaries, and a strict 100% fails a
+ * placement for a rounding error rather than for an edge.
+ */
+const MARGIN_CLEAN = 0.98;
+
+/**
+ * Clean bodywork all round a placement, when it asked for some.
+ *
+ * The rule a person applies without thinking and an agent cannot apply at all,
+ * because a panel's box is not the panel: on the NSX the top quarter of the
+ * door's box is not door and its middle is under the window line. `minMargin`
+ * gives the rule a number, and this measures it the same way `unseen` does —
+ * the box grown by the margin on every side must be on the car and visible.
+ */
+/**
+ * Samples every few millimetres across a placement, for a region that has said
+ * it must be whole.
+ *
+ * Samples sit at cell centres, so a grid of N leaves a band half a cell wide
+ * round the edge that nothing tests — and the edge is where things intrude.
+ * At the default fourteen across, a 680 mm team name on the NSX door had its
+ * outer 24 mm unmeasured, and the door handle ran through its last letter in
+ * the last 14 mm. A region asking to be 100% seen is owed a measurement that
+ * could find the 1% that is not.
+ *
+ * `null` without a scale, or for a region that asked nothing: the default grid
+ * answers "is this mostly seen", which is the question those regions put.
+ */
+/** A percentage that does not round a shortfall away: 99.9% seen is not 100%. */
+const pct = (x) => (x < 1 && Math.round(x * 100) === 100
+  ? (Math.floor(x * 1000) / 10).toFixed(1)
+  : (x * 100).toFixed(0));
+
+/** What stands on top of the paint, by name — the thing to move away from. */
+const underWhat = (answer) => {
+  const u = Object.entries(answer?.under ?? {}).sort((a, b) => b[1] - a[1]);
+  return u.length ? `; ${u.map(([m, n]) => `${n} of its points are directly under ${m}`).join(', ')}` : '';
+};
+
+const FINE_MM = 5;
+function fineGrid(p, w = p.frac.w, h = p.frac.h) {
+  const c = p.constraints;
+  if (typeof c.minVisible !== 'number' && typeof c.minOnCar !== 'number' && typeof c.minMargin !== 'number') return null;
+  const mpu = p.frac.panel?.metresPerUv;
+  if (!(mpu?.[0] > 0 && mpu?.[1] > 0)) return null;
+  const n = (uv, s) => Math.max(14, Math.min(160, Math.ceil((uv * s * 1000) / FINE_MM)));
+  return [n(w, mpu[0]), n(h, mpu[1])];
+}
+
+function margins(placed, profile, t, seen, say) {
+  let meshes = null;
+  for (const p of placed) {
+    const m = p.constraints.minMargin;
+    if (typeof m !== 'number') continue;
+    const mpu = p.frac.panel?.metresPerUv;
+    if (!(mpu?.[0] > 0 && mpu?.[1] > 0)) {
+      say({ kind: 'margin', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
+        why: `${name(t, p.id)} asks for ${m} mm of margin, and its panel has no measured scale ` +
+          '(metresPerUv) to turn millimetres into texture: regenerate the profile with --from-kn5.' });
+      continue;
+    }
+    try {
+      meshes ??= meshesUsingTexture(seen.model, texture(profile, t.role).file);
+    } catch {
+      return;                                  // reported as unresolvable by `unseen`
+    }
+    const gx = m / 1000 / mpu[0], gy = m / 1000 / mpu[1];
+    const f = p.frac;
+    const answer = rectVisibility(seen.model, seen.prepared, meshes,
+      [f.x - gx, f.y - gy, f.w + 2 * gx, f.h + 2 * gy], { grid: fineGrid(p, f.w + 2 * gx, f.h + 2 * gy) });
+    const onCar = answer ? answer.samples / answer.of : 0;
+    const visible = answer ? answer.fraction : 0;
+    if (onCar >= MARGIN_CLEAN && visible >= MARGIN_CLEAN) continue;
+    say({
+      kind: 'margin', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
+      margin: m, onCar: round(onCar), visible: round(visible),
+      why: `${name(t, p.id)} does not have ${m} mm of clean bodywork all round: with that margin added ` +
+        `on every side, ${pct(onCar)}% is on the car and ${pct(visible)}% is ` +
+        `seen from trackside${underWhat(answer)}. Move it away from the edge or make it smaller; find_space lists spots that fit.`,
+    });
+  }
+}
+
+/** The texture's size in pixels, for the checks that need a circle to be round. */
+function texSize(profile, role) {
+  try {
+    const tx = texture(profile, role);
+    return { w: tx.width || 1, h: tx.height || 1 };
+  } catch {
+    return { w: 1, h: 1 };
+  }
+}
+
+/** A ring's centre, and the inner and outer edges of its stroke, in pixels. */
+function ringGeometry(p, size) {
+  const R = p.frac;
+  const s = Math.min(R.w * size.w, R.h * size.h);
+  const r = (p.region.radius ?? 0.4) * s, w = (p.region.width ?? 0.03) * s;
+  return {
+    cx: (R.x + R.w / 2) * size.w, cy: (R.y + R.h / 2) * size.h,
+    inner: Math.max(0, r - w / 2), outer: r + w / 2, half: s / 2,
+  };
+}
+
+/** Whether either edge of a ring's stroke passes through a text placement's box. */
+function ringThroughText(ring, text, size) {
+  const g = ringGeometry(ring, size);
+  const T = text.frac;
+  const x0 = T.x * size.w, y0 = T.y * size.h, x1 = x0 + T.w * size.w, y1 = y0 + T.h * size.h;
+  const nearest = Math.hypot(Math.max(x0, Math.min(g.cx, x1)) - g.cx, Math.max(y0, Math.min(g.cy, y1)) - g.cy);
+  const farthest = Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - g.cx, y - g.cy)));
+  const crosses = (edge) => edge > 0 && nearest < edge && edge < farthest;
+  return crosses(g.inner) || crosses(g.outer);
+}
+
+/**
+ * A ring drawn past its own box.
+ *
+ * Every check here measures the region's box — how much of it is on the car,
+ * how much is visible, what it overlaps — and the ring treatment's stroke is
+ * centred on its radius, so it reaches radius + width/2 of the box's shorter
+ * side while the box ends at half. A roundel of radius 0.5 and width 0.5
+ * painted a white band out to 0.75: a quarter of the box's size beyond the
+ * rectangle its minOnCar 1 and minVisible 1 were measured on, so those passed
+ * about a box while the paint went somewhere else. With constraints declared
+ * the guarantee is void and that is high; without, it is bleed, and low.
+ */
+function ringOverflow(placed, t, say) {
+  for (const p of placed) {
+    if (p.region.treatment !== 'ring') continue;
+    const reach = (p.region.radius ?? 0.4) + (p.region.width ?? 0.03) / 2;
+    if (reach <= 0.5 + 1e-9) continue;
+    const declared = Object.keys(p.constraints ?? {}).length > 0;
+    say({
+      kind: 'overflows', severity: declared ? 'high' : 'low', surface: t.from, panel: p.region.panel,
+      ids: [p.id], reach: round(reach),
+      why: `${name(t, p.id)} draws its ring out to ${round(reach)} of its box's shorter side, past the ` +
+        'box\'s edge at 0.5, and every check here measures the box, so the part outside it is unchecked' +
+        (declared ? ' — including the constraints it declares' : '') +
+        '. Keep radius + width/2 at or under 0.5 (a filled disc is radius 0.25, width 0.5), or enlarge the box.',
+    });
   }
 }
 
@@ -644,7 +904,8 @@ function unseen(placed, profile, t, seen, say) {
     // instead, a piece that arrived through a seam spends half its samples on
     // texture it does not paint, and both answers below — how much is on the
     // car, how much can be seen — come back describing that empty half.
-    const answer = rectVisibility(seen.model, seen.prepared, meshes, at, { poly: p.frac.poly ?? null });
+    const answer = rectVisibility(seen.model, seen.prepared, meshes, at,
+      { poly: p.frac.poly ?? null, grid: fineGrid(p) });
 
     // Nothing there at all: the rectangle is off the model entirely, which is
     // not a visibility verdict and must not be reported as one.
@@ -675,7 +936,10 @@ function unseen(placed, profile, t, seen, say) {
       });
       continue;
     }
-    if (answer.fraction >= BARELY_SEEN) continue;
+    // A declared floor replaces the default one, and makes the finding high:
+    // the design said how much of this has to be seen, and it is not.
+    const askedSeen = typeof p.constraints.minVisible === 'number' ? p.constraints.minVisible : null;
+    if (answer.fraction >= (askedSeen ?? BARELY_SEEN)) continue;
     // A band that runs off a fender continues into the wheel arch liner,
     // because that is where the bodywork goes. The piece a spanning region
     // leaves on a panel it merely spilled onto is not a placement anybody
@@ -683,19 +947,21 @@ function unseen(placed, profile, t, seen, say) {
     // be; it is only worth a word when it is words. The home piece is held
     // to the usual standard.
     const spilled = p.region.span === true && p.spilled;
-    if (spilled && !carries) continue;
+    if (spilled && !carries && askedSeen === null) continue;
     say({
       kind: 'unseen',
-      severity: answer.fraction < 0.1 && !spilled ? 'high' : 'low',
+      severity: askedSeen !== null || (answer.fraction < 0.1 && !spilled) ? 'high' : 'low',
       surface: t.from,
       panel: p.region.panel,
       ids: [p.id],
       visible: round(answer.fraction),
       samples: answer.samples,
-      why: `${p.id} is ${(answer.fraction * 100).toFixed(0)}% visible from trackside ` +
+      why: `${p.id} is ${pct(answer.fraction)}% visible from trackside ` +
         `(${answer.samples} points cast), on a panel measured at ` +
         `${((p.frac.panel?.visible ?? 1) * 100).toFixed(0)}% — so it is in the part ` +
-        'of the panel something else stands in front of',
+        'of the panel something else stands in front of' +
+        underWhat(answer) +
+        (askedSeen !== null ? `; it asked for at least ${Math.round(askedSeen * 100)}%` : ''),
     });
   }
 }
