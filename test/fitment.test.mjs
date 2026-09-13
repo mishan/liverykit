@@ -946,6 +946,13 @@ test('a region can ask for clean bodywork all round it, and find_space finds whe
     assert.ok(c.at[0] * 1600 >= 850 - 1, `every spot is in the clean half, clear of the plate: ${JSON.stringify(c)}`);
     assert.ok(c.marginMm >= 50);
     assert.ok(c.onCar >= 0.98 && c.visible >= 0.98, JSON.stringify(c));
+    // And the check that consumes the answer agrees with it. Clearance was a
+    // diagonal distance while minMargin grows the box on every side, so a spot
+    // offered with 50 mm could fail a 50 mm margin.
+    const held = fitment(design([{ id: 'roundel', treatment: 'fill', panel: 'L', at: c.at, color: 'ink',
+      constraints: { minMargin: 50, minVisible: 1 } }]), profile, null, { model: half });
+    assert.deepEqual(held.findings.filter((f) => ['margin', 'unseen'].includes(f.kind)), [],
+      `a spot find_space offers passes the margin it was asked for: ${JSON.stringify(c)}`);
   }
   assert.ok(found.map.every((row) => row.startsWith('.')), 'the hidden half is marked on the map');
 
@@ -953,6 +960,23 @@ test('a region can ask for clean bodywork all round it, and find_space finds whe
     widthMm: 900, marginMm: 50, cellMm: 100 });
   assert.deepEqual(none.candidates, []);
   assert.match(none.note, /No spot on L fits 900 x 900 mm/);
+});
+
+test('a surface bound to two textures is asked about on the one that has the panel', async () => {
+  // A formula car's body binds body AND bodyRear. Asked for a panel only the
+  // second has, taking the first bound texture reported the panel absent.
+  const { spaceRole } = await import('../src/space.mjs');
+  const panel = { rect: [0, 0, 0.4, 0.4], metresPerUv: [4, 4], tags: [] };
+  const two = {
+    panels: { body: { L: panel, shared: panel }, bodyRear: { tail: panel, shared: panel } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+  };
+  assert.deepEqual(spaceRole(two, {}, 'surfaces.body', 'tail'), { role: 'bodyRear' });
+  assert.deepEqual(spaceRole(two, {}, 'body', 'L'), { role: 'body' });
+  assert.match(spaceRole(two, {}, 'surfaces.body', 'shared').error, /on body and bodyRear.*pass paint\.body or paint\.bodyRear/);
+  assert.deepEqual(spaceRole(two, {}, 'paint.body', 'shared'), { role: 'body' }, 'a texture named outright is that texture');
+  assert.deepEqual(spaceRole(two, {}, 'bodyRear', 'shared'), { role: 'bodyRear' });
+  assert.match(spaceRole(two, {}, 'surfaces.body', 'nowhere').error, /none of them has a panel called "nowhere"/);
 });
 
 test('find_space asks the sweep once per panel, and a panel name is taken on the texture the design paints', async () => {

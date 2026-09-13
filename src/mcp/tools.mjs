@@ -71,11 +71,14 @@ async function toolFindPanels(client, args) {
   // none. An empty answer to a question about a name that does not exist is
   // not an answer; it is refused, with the names that do.
   const named = (s) => [s.role, s.from, s.from?.replace(/^(surfaces|paint)\./, '')].includes(args.role);
-  const surfaces = args.role ? state.surfaces.filter(named) : state.surfaces;
+  // Every texture the design paints, not only each term's primary: a term can
+  // bind several, and a panel on the second is as placeable as one on the first.
+  const all = [...state.surfaces, ...(state.secondarySurfaces ?? [])];
+  const surfaces = args.role ? all.filter(named) : all;
   if (args.role && !surfaces.length) {
     return {
       content: [{ type: 'text', text: `No surface called ${JSON.stringify(args.role)} on this car. ` +
-        `Ask by texture role or by the design's surface: ${state.surfaces.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
+        `Ask by texture role or by the design's surface: ${all.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
       isError: true,
     };
   }
