@@ -17,8 +17,13 @@
 import { wholePieces } from './fitment.mjs';
 import { piecesInView, pieceTriangles, onMeshShare, SHEET_VIEWS } from './engine/shot.mjs';
 
-/** Below this many pixels a view shows too little of a piece to count. */
+/**
+ * Below this many pixels of a 900x540 frame a view shows too little of a piece
+ * to count, and in proportion to its area in any other: a fixed count asked a
+ * piece in a 200x150 picture for what is a patch fifteen times larger there.
+ */
 const TOO_FEW_PX = 30;
+const TOO_FEW_OF = 900 * 540;
 
 /** A view showing a piece at least this share of its home view's pixels is judged too. */
 const COMPARABLE = 0.5;
@@ -46,6 +51,7 @@ const round = (n) => Math.round(n * 1000) / 1000;
  */
 export function inView(design, profile, fit, geometry, sheets, { views = SHEET_VIEWS, width = 900, height = 540 } = {}) {
   const pieces = wholePieces(design, profile, fit);
+  const fewest = (TOO_FEW_PX * width * height) / TOO_FEW_OF;
   const findings = [];
   const measured = pieces.map((p) => ({
     id: p.id, role: p.role, surface: p.surface, panel: p.panel, what: p.what,
@@ -63,7 +69,7 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
   const seen = pieces.map(() => []);
   for (const view of views) {
     piecesInView(geometry, geometry.groups, sheets, pieces, { view, width, height, triangles })
-      .forEach((c, i) => { if (c.whole >= TOO_FEW_PX) seen[i].push({ view, ...c }); });
+      .forEach((c, i) => { if (c.whole >= fewest) seen[i].push({ view, ...c }); });
   }
 
   pieces.forEach((p, i) => {
@@ -83,7 +89,8 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
       if (p.minVisible !== null) {
         findings.push({
           kind: 'hidden-in-view', severity: 'low', surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
-          why: `${p.id} shows fewer than ${TOO_FEW_PX} pixels in every view (${views.join(', ')}), so how much ` +
+          why: `${p.id} shows fewer than ${Math.ceil(fewest)} pixels in every ${width}x${height} view ` +
+            `(${views.join(', ')}), so how much ` +
             'of it a picture of the car shows could not be counted',
         });
       }
