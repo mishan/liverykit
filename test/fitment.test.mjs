@@ -1247,6 +1247,12 @@ test('a fitting standing a few millimetres proud of the paint covers what is und
   assert.deepEqual(hidden.findings.filter((f) => f.kind === 'unseen'), [], 'a hidden mesh is not in front of anything');
 });
 
+test('a groupWith with space around the id is refused, not stored as a name nothing answers to', async () => {
+  const { opSetConstraint } = await import('../src/ui/ops.js');
+  assert.throws(() => opSetConstraint(design([{ id: 'team' }, { id: 'number' }]), { id: 'team', key: 'groupWith', value: 'number ' }),
+    /"groupWith" names another region's id, exactly/);
+});
+
 test('a number in a roundel is judged by where its letters are, not by its box', () => {
   // A person laid out a door by hand: a 405 mm roundel, the number's box 309 x
   // 291 mm inside it. The box's corners reach past the disc; the "85" does not.
