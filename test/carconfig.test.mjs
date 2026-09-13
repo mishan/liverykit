@@ -119,15 +119,16 @@ test('a profile records what the car hides, and a texture worn only by hidden me
  * A sheet parallel to the left flank at `x`, over most of it, in small
  * triangles: occupancy samples a triangle at most twelve times along a side,
  * so one 2.4 m triangle is a sieve. A real plate or shell is small and dense.
- * `facing` is its normal's x: out from the car, or in.
+ * `facing` is its normal's x: out from the car, or in. `uv` is where it lies on
+ * the sheet; the default corner is too small to become a panel of its own.
  */
-function flankSheet(name, x, facing = 1) {
+function flankSheet(name, x, facing = 1, uv = [0.99, 0.99, 0.005, 0.005]) {
   const N = 40;
   const sheet = { name, verts: [], indices: [] };
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       sheet.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N),
-        0.99 + 0.005 * (i / N), 0.99 + 0.005 * (j / N), [facing, 0, 0]));
+        uv[0] + uv[2] * (i / N), uv[1] + uv[3] * (j / N), [facing, 0, 0]));
     }
   }
   for (let j = 0; j < N; j++) {
@@ -164,6 +165,22 @@ test('a mesh the car hides stands in front of nothing when the profile measures 
   const hidden = await leftVisible(carKn5({ extraMeshes: [plate] }), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
   assert.ok(plated < bare - 0.2, `a drawn plate covers the flank: ${plated} against ${bare}`);
   assert.ok(Math.abs(hidden - bare) < 0.02, `a hidden one covers nothing: ${hidden} against ${bare}`);
+});
+
+test('a mesh the car hides is seen by nobody, whatever its own rays say', async () => {
+  // Taken out of the occluders, a hidden mesh's own island measured clear:
+  // a plate the car's config hides came out visible and safe, a place to paint
+  // that the game never draws.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-hidden-'));
+  // In the gap between the flanks on the sheet, big enough to be a panel.
+  await writeFile(join(dir, 'fixture.kn5'), carKn5({ extraMeshes: [flankSheet('PLATE_L', 0.95 + 0.03, 1, [0.315, 0.05, 0.03, 0.4])] }));
+  await mkdir(join(dir, 'extension'));
+  await writeFile(join(dir, 'extension', 'ext_config.ini'), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const plate = Object.values(p.panels).flatMap((ps) => Object.values(ps)).find((q) => q.source?.mesh === 'PLATE_L');
+  assert.ok(plate, 'the plate is a panel of the texture it wears');
+  assert.equal(plate.visible, 0);
+  assert.equal(plate.hidden, true);
 });
 
 test('a mesh behind the paint stands in front of nothing either, and one flush in front still does', async () => {
