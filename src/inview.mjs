@@ -57,11 +57,12 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
   // view counts only the texels a triangle draws. A ring hanging off its
   // island was counted whole in every view, and the critic that called it cut
   // off at the panel edge was overruled for being right.
-  const onMesh = pieces.map((p) => onMeshShare(geometry, p, pieceTriangles(geometry, geometry.groups, p)));
+  const triangles = pieces.map((p) => pieceTriangles(geometry, geometry.groups, p));
+  const onMesh = pieces.map((p, i) => onMeshShare(geometry, p, triangles[i]));
 
   const seen = pieces.map(() => []);
   for (const view of views) {
-    piecesInView(geometry, geometry.groups, sheets, pieces, { view, width, height })
+    piecesInView(geometry, geometry.groups, sheets, pieces, { view, width, height, triangles })
       .forEach((c, i) => { if (c.whole >= TOO_FEW_PX) seen[i].push({ view, ...c }); });
   }
 

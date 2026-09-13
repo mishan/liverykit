@@ -890,6 +890,14 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
    * surfaces, and the car's own parts around them. Shared by the picture and by
    * the count of what a picture shows, so the two are of the same car.
    */
+  //
+  // The last one built is kept, by the two things of a design it depends on:
+  // the roles it paints and the parts it hides. It was built afresh for every
+  // evaluate, 350 ms of the NSX with the editor's event loop waiting, while a
+  // run's drafts nearly always paint the same roles. One entry, because the
+  // count keeps its per-view passes on the geometry (see piecesInView), and
+  // several geometries would hold several sets of those.
+  let lastCar = null;
   const carFor = (m, design) => {
     // EVERY role, not just the primary one per term. `editorState` returns
     // one entry per vocabulary term — right for a surface picker, wrong
@@ -901,7 +909,11 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       if (roles.some((r) => r.role === t.role)) continue;
       roles.push({ role: t.role, file: texture(profile, t.role).file });
     }
-    return { g: wholeModelGeometry(m, roles, { livery: design, profile }), roles };
+    const key = JSON.stringify([roles, Array.isArray(design.hide) ? design.hide : null]);
+    if (lastCar?.m !== m || lastCar.key !== key) {
+      lastCar = { m, key, g: wholeModelGeometry(m, roles, { livery: design, profile }) };
+    }
+    return { g: lastCar.g, roles };
   };
 
   // A missing fit is the normal case — most cars have never been tuned. A fit

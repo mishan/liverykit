@@ -1608,6 +1608,13 @@ test('glass covers where its own texture is opaque, as the picture draws its fri
   assert.ok(clear.whole > 100 && clear.shown === clear.whole, JSON.stringify(clear));
   assert.ok(frit.whole > 100 && frit.shown === 0, JSON.stringify(frit));
   assert.equal(frit.blockers[0].mesh, 'WINDSCREEN');
+
+  // The whole-car pass is kept per geometry, and must follow the sheets it is
+  // handed: the same glass cleared of its frit hides nothing.
+  const clearGlass = new Map([['glass.dds', { w: 4, h: 4, data: Buffer.alloc(4 * 4 * 4, 16) }]]);
+  const [, after] = piecesInView(model, groups, clearGlass, [piece('clear', 0.2), piece('frit', 0.6)],
+    { view: 'left', width: 300, height: 200 });
+  assert.equal(after.shown, after.whole, JSON.stringify(after));
 });
 
 // A ring whose stroke is drawn past its own box (radius + width/2 = 0.75), at
