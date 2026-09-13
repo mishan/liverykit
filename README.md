@@ -715,7 +715,7 @@ design written for one car will always look better on it.
   proposed and nothing in the editor changes.
 - **`render_view`**: Texture SVG and placement data for one surface, or all of them.
 - **`render_car`**: A picture of the working design on the car, returned as an
-  image. Eight named views — or `sheet`, four of them in one picture — with the car's own textures on whatever the design
+  image. Eight named views — or `sheet`, six of them in one picture — with the car's own textures on whatever the design
   leaves unpainted. Its limits are in the tool description rather than left to be
   discovered: no environment reflections, and one fixed light rig. Takes
   `proposal` the same way `check_fitment` does.

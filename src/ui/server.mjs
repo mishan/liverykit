@@ -1319,22 +1319,24 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           : { widthMm, heightMm: num(q.heightMm, widthMm), marginMm: num(q.marginMm, 0), count: num(q.count, 5) };
         const key = JSON.stringify([where.role, q.panel, cellMm, ask]);
         try {
-          if (!spaces.has(key)) {
+          // A hit is re-inserted like a miss, so the stalest entry is the one
+          // evicted. Only misses were, which made "least recently used" first
+          // in, first out, and let the door an agent asks about most go first.
+          if (spaces.has(key)) {
+            remember(spaces, key, spaces.get(key), 256);
+          } else {
             spacePrepared ??= occupancyFor(m, { occluders: carOccluders(m, profile) });
             const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
-            if (!grids.has(gridKey)) {
-              remember(grids, gridKey, cleanGrid({ profile, model: m, prepared: spacePrepared, role: where.role,
-                panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
-            }
-            const grid = grids.get(gridKey);
-            remember(spaces, key, {
-              ...(largest
-                ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
-                : findSpace({ grid, model: m, prepared: spacePrepared, ...ask })),
-              ...(where.chosen ? { roleChosen: where.chosen } : {}),
-            }, 256);
+            const grid = remember(grids, gridKey, grids.get(gridKey) ?? cleanGrid({ profile, model: m,
+              prepared: spacePrepared, role: where.role, panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
+            remember(spaces, key, largest
+              ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
+              : findSpace({ grid, model: m, prepared: spacePrepared, ...ask }), 256);
           }
-          return json(200, spaces.get(key));
+          // Said about THIS request, not cached with the answer: the same
+          // question asked with the role spelled out and with it inferred gets
+          // the same spots, and only the second was chosen for anybody.
+          return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
         } catch (e) {
           return json(400, { error: e.message });
         }

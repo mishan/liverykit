@@ -378,6 +378,7 @@ test('the local critic is held to the schema, and a verdict that is not one is r
       words('It looks great!'),
       words(JSON.stringify({ ...good, number_legible: 'false' })),
       words(JSON.stringify({ ...good, requirements: [{ asked: 'number 85', present: true }] })),
+      words(JSON.stringify({ ...good, cut_off: [{ what: 'the roundel', where: 'left door' }] })),
     ] });
     const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
     const critic = local.createCritic({ endpoint, model: 'local-model', trace: await createTrace({ dir }) });
@@ -394,6 +395,9 @@ test('the local critic is held to the schema, and a verdict that is not one is r
     // A server need not honour response_format: a requirement ticked with no
     // "where" is a critic that did not say where it saw it.
     await assert.rejects(ask(), /requirements/);
+    // Nor a cut-off piece with no id: the gate holds those against the count
+    // by id, and one without is a claim nothing can check.
+    await assert.rejects(ask(), /cut_off/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
