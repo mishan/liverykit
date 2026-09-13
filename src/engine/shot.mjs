@@ -915,22 +915,25 @@ export async function shootSheet(model, groups, surfaces, { sheets: stock = null
   for (const s of surfaces) {
     if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
   }
-  const cw = Math.floor(width / 2);
-  const ch = Math.floor(height / 2);
+  // The size asked for, exactly: an odd width gives its extra pixel to the
+  // right-hand column, an odd height to the bottom row.
+  const cols = [Math.floor(width / 2), width - Math.floor(width / 2)];
+  const rows = [Math.floor(height / 2), height - Math.floor(height / 2)];
   const cells = [];
   let skipped = 0;
   for (const [i, view] of views.entries()) {
-    const img = rasterise(model, groups, sheets, { view, width: cw, height: ch });
+    const c = i % 2, r = Math.floor(i / 2);
+    const img = rasterise(model, groups, sheets, { view, width: cols[c], height: rows[r] });
     skipped = Math.max(skipped, img.skipped);
     cells.push({ input: img.data, raw: { width: img.width, height: img.height, channels: 4 },
-      left: (i % 2) * cw, top: Math.floor(i / 2) * ch });
+      left: c * cols[0], top: r * rows[0] });
   }
   // Named on the picture itself: a reader told "the rear three-quarter shows a
   // cut roundel" has to be able to find which quarter that is.
-  const labels = views.map((v, i) => `<text x="${(i % 2) * cw + 10}" y="${Math.floor(i / 2) * ch + 22}" ` +
+  const labels = views.map((v, i) => `<text x="${(i % 2) * cols[0] + 10}" y="${Math.floor(i / 2) * rows[0] + 22}" ` +
     `font-family="DejaVu Sans, sans-serif" font-size="16" fill="#d8dde3">${v}</text>`).join('');
-  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${cw * 2}" height="${ch * 2}">${labels}</svg>`);
-  const png = await sharp({ create: { width: cw * 2, height: ch * 2, channels: 4, background: { r: 12, g: 13, b: 16, alpha: 1 } } })
+  const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${labels}</svg>`);
+  const png = await sharp({ create: { width, height, channels: 4, background: { r: 12, g: 13, b: 16, alpha: 1 } } })
     .composite([...cells, { input: overlay, left: 0, top: 0 }])
     .png()
     .toBuffer();

@@ -53,11 +53,29 @@ const CLEAN = 0.98;
 export function spaceRole(profile, design, asked, panel) {
   const roles = Object.keys(profile.panels ?? {});
   if (asked) {
-    if (roles.includes(asked)) return { role: asked };
     const term = String(asked).replace(/^(surfaces|paint)\./, '');
+    // A surface can bind several textures (a formula car's body binds body
+    // AND bodyRear), and the panel asked about can be on any of them. The
+    // term is often also the name of one of its textures, so "body" matched
+    // the texture before the binding was ever read, and a panel on bodyRear
+    // was reported absent from the surface that paints it.
+    const bound = (profile.bind?.[term]?.roles ?? []).filter((r) => roles.includes(r));
+    const texture = String(asked).startsWith('paint.')
+      || (!String(asked).startsWith('surfaces.') && roles.includes(term) && bound.length <= 1);
+    if (texture && roles.includes(term)) return { role: term };
+    if (bound.length === 1 || (bound.length && !panel)) return { role: bound[0] };
+    if (bound.length) {
+      const holding = bound.filter((r) => Boolean(profile.panels[r]?.[resolvedName(profile, r, panel)]));
+      if (holding.length === 1) return { role: holding[0] };
+      return {
+        error: holding.length
+          ? `${JSON.stringify(panel)} is a panel on ${holding.join(' and ')}, which ${JSON.stringify(asked)} ` +
+            `both paints; pass ${holding.map((r) => `paint.${r}`).join(' or ')} to say which.`
+          : `${JSON.stringify(asked)} paints ${bound.join(', ')}, and none of them has a panel called ` +
+            `${JSON.stringify(panel)}. find_panels lists them.`,
+      };
+    }
     if (roles.includes(term)) return { role: term };
-    const bound = profile.bind?.[term]?.roles?.[0];
-    if (bound) return { role: bound };
     return { error: `No texture role or surface called ${JSON.stringify(asked)}.` };
   }
   const has = roles.filter((r) => Boolean(profile.panels[r]?.[resolvedName(profile, r, panel)]));
@@ -160,26 +178,27 @@ export function findSpace({
     }
   }
 
-  // The roomiest first, and not five spellings of the same spot.
+  // The roomiest first, and not five spellings of the same spot. Each is
+  // measured again at full resolution and dropped if it fails there: the
+  // cells are coarse, and a caller is told to hold what comes back to 100%.
+  // A dropped spot still keeps its neighbours out, or the next one tried
+  // would be the same spot again; the attempts are capped because each
+  // measurement walks the whole mesh.
   found.sort((a, b) => b.clearance - a.clearance);
-  const chosen = [];
-  for (const f of found) {
-    if (chosen.length >= count) break;
-    if (chosen.some((c) => overlapShare(c.shape, f.shape) > 0.5)) continue;
-    chosen.push(f);
-  }
-
-  const candidates = chosen.map(({ shape, clearance }) => {
+  const tried = [];
+  const candidates = [];
+  for (const { shape, clearance } of found) {
+    if (candidates.length >= count || tried.length >= count * 3) break;
+    if (tried.some((s) => overlapShare(s, shape) > 0.5)) continue;
+    tried.push(shape);
     const at = [shape[0] / boxMm[0], shape[1] / boxMm[1], widthMm / boxMm[0], heightMm / boxMm[1]];
     const v = rectVisibility(model, prepared, g.meshes,
       [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph], { across: 16 });
-    return {
-      at: at.map(r3),
-      marginMm: Math.round(clearance),
-      onCar: v ? r2(v.samples / v.of) : 0,
-      visible: v ? r2(v.fraction) : 0,
-    };
-  });
+    const onCar = v ? v.samples / v.of : 0;
+    const visible = v ? v.fraction : 0;
+    if (onCar < CLEAN || visible < CLEAN) continue;
+    candidates.push({ at: at.map(r3), marginMm: Math.round(clearance), onCar: r2(onCar), visible: r2(visible) });
+  }
 
   return {
     role: g.role,
@@ -196,8 +215,14 @@ export function findSpace({
   };
 }
 
-/** The distance between two rectangles, zero when they touch or overlap. */
-const gap = (a, b) => Math.hypot(Math.max(0, b[0] - a[2], a[0] - b[2]), Math.max(0, b[1] - a[3], a[1] - b[3]));
+/**
+ * How far rectangle `a` can grow on every side before it touches `b`: zero
+ * when they touch or overlap. The larger of the two gaps, not the diagonal,
+ * because minMargin grows the box by the same amount on every side, and a
+ * cell 40 mm off both a side and the top is inside a box grown by 50 mm even
+ * though it is 57 mm away diagonally.
+ */
+const gap = (a, b) => Math.max(0, b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3]);
 
 /** How much of rectangle `a` rectangle `b` covers. */
 const overlapShare = (a, b) => {
