@@ -215,6 +215,7 @@ export async function run({
   let feedback = null;
   let summary = '';
   let passedIn = null;
+  let stopped = null;
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
@@ -304,7 +305,9 @@ export async function run({
           }
           const view = args?.view ?? 'left';
           const r = await mcp.callTool('render_car', { view, ...sizeFor(view), proposal: draft });
-          await saveImages(r, `round-${n}-look-${++renders}-${view}`);
+          // Only a picture is a look. Counted before the answer came back, a
+          // mistyped view was refused and still spent one of the round's two.
+          if (!r.isError) await saveImages(r, `round-${n}-look-${++renders}-${view}`);
           return r;
         }
         case 'check_fitment':
@@ -358,6 +361,11 @@ export async function run({
     });
     await trace.flush();
     if (gate.passed) { passedIn = n; break; }
+    if (gate.stop) {
+      stopped = gate.stop;
+      log(`  stopped: ${stopped}`);
+      break;
+    }
     feedback = gate.feedback;
   }
 
@@ -375,11 +383,15 @@ export async function run({
     }
 
     const images = [];
+    // Kept apart from the fitment reasons. A view that did not render says
+    // nothing about how the draft fits, and it was recorded as fitment
+    // failing on a draft that had measured clean.
+    const unrendered = [];
     for (const view of views) {
       const { r } = await traced(span, 'render_car', { view }, () =>
         mcp.callTool('render_car', { view, ...sizeFor(view), proposal: draft }));
       if (r.isError) {
-        reasons.push(`the ${view} render failed: ${textOf(r)}`);
+        unrendered.push(`the ${view} render failed: ${textOf(r)}`);
         continue;
       }
       for (const s of await saveImages(r, `round-${n}-${view}`)) images.push({ view, ...s });
@@ -486,14 +498,24 @@ export async function run({
         }
       }
     }
-    const passed = fitmentPass && (criticPass || !criticGates);
+    // A critic that could not judge is the gate broken, not the round
+    // failed. Fed back as a failed round, it named nothing to fix, since an
+    // error lists nothing, and the planner was paid for another round told to
+    // fix what the gate named. Where the critic gates, the run ends here and
+    // says why; where it only advises, the round goes on without it, said.
+    const unjudged = !images.length
+      ? (views.length ? 'no render came back for it to judge' : 'it was given no views to render')
+      : verdict?.error ?? null;
+    const stop = criticGates && unjudged ? `the critic could not judge round ${n}: ${unjudged}` : null;
+    const passed = fitmentPass && !unrendered.length && (criticPass || !criticGates);
 
     const record = {
       round: n,
       passed,
       gates: {
+        render: unrendered.length ? 'fail' : 'pass',
         fitment: fitmentPass ? 'pass' : 'fail',
-        critic: criticPass ? 'pass' : (criticGates ? 'fail' : 'fail (advisory)'),
+        critic: criticPass ? 'pass' : `${unjudged ? 'could not judge' : 'fail'}${criticGates ? '' : ' (advisory)'}`,
       },
       fitment: fitment && {
         verdict: fitment.verdict,
@@ -502,7 +524,7 @@ export async function run({
         notChecked: fitment.notChecked,
         notPlaced: fitment.notPlaced,
       },
-      failures: reasons,
+      failures: [...unrendered, ...reasons],
       critic: verdict,
       ...(second ? { secondLook: second } : {}),
       renders: images.map((i) => i.path),
@@ -514,18 +536,21 @@ export async function run({
     const broke = fr.isError ? `check_fitment refused the draft: ${textOf(fr)}`
       : views.length && !images.length ? 'no render came back'
         : verdict?.error ? `the critic: ${verdict.error}`
-          : second?.error ? `the second look: ${second.error}` : null;
+          : second?.error ? `the second look: ${second.error}` : stop;
     await span.end({
       ok: !broke,
       error: broke ? clip(broke, 300) : null,
       attrs: { 'gate.passed': passed, 'gate.fitment': record.gates.fitment, 'gate.critic': record.gates.critic },
     });
 
-    log(`  gate: fitment ${fitmentPass ? 'PASS' : 'FAIL'}` +
+    log('  gate: ' +
+      (unrendered.length ? `render FAIL (${clip(unrendered[0], 140)}` +
+        `${unrendered.length > 1 ? ` +${unrendered.length - 1} more` : ''}) · ` : '') +
+      `fitment ${fitmentPass ? 'PASS' : 'FAIL'}` +
       (fitmentPass ? '' : ` (${clip(reasons[0], 140)}${reasons.length > 1 ? ` +${reasons.length - 1} more` : ''})`) +
-      ` · critic ${passes(verdict) ? 'PASS' : 'FAIL'}${criticGates ? '' : ' (advisory)'}` +
+      ` · critic ${unjudged ? 'COULD NOT JUDGE' : passes(verdict) ? 'PASS' : 'FAIL'}${criticGates ? '' : ' (advisory)'}` +
       (!passes(verdict) ? criticWhy(verdict) : '') +
-      (verdict?.error ? ` (${clip(verdict.error, 140)})` : '') +
+      (unjudged ? ` (${clip(unjudged, 140)})` : '') +
       (second
         ? ` → closer look ${criticPass ? 'PASS' : 'FAIL'}` +
           (second.error ? ` (${clip(second.error, 140)})` : (!criticPass ? criticWhy(second) : ''))
@@ -544,12 +569,13 @@ export async function run({
     // nothing, and the planner shortened the stripe twice and then deleted
     // it, taking the livery's best-known element with it.
     const deciding = second && !second.error ? second : verdict;
-    const mustFix = [...reasons, ...(criticPass || !criticGates ? [] : blockingOf(deciding))];
+    const mustFix = [...unrendered, ...reasons, ...(criticPass || !criticGates ? [] : blockingOf(deciding))];
     const advice = deciding?.error ? [] : (deciding?.notes ?? []);
     const { renders, ...forPlanner } = record;
     return {
       passed,
       broke,
+      stop,
       record,
       feedback: {
         text: JSON.stringify({ mustFix, advice, roundsLeft: rounds - n, ...forPlanner }, null, 2),
@@ -560,7 +586,8 @@ export async function run({
   }
 
   const passed = passedIn !== null;
-  const result = { brief: theBrief, passed, passedIn, rounds: history.length, summary, draft, history };
+  const result = { brief: theBrief, passed, passedIn, rounds: history.length, summary, draft, history,
+    ...(stopped ? { stopped } : {}) };
 
   if (passed && propose) {
     const last = history.at(-1);
@@ -570,7 +597,9 @@ export async function run({
         ? (last.secondLook
           ? ', and a closer second look passed the renders against the brief after the critic had not.'
           : ', and the critic passed the renders against the brief.')
-        : `. The critic did not pass it, and was advisory: ${(last.critic?.notes ?? []).join('; ')}`);
+        : last.critic && !last.critic.error
+          ? `. The critic did not pass it, and was advisory: ${(last.critic.notes ?? []).join('; ')}`
+          : `. The critic, which was advisory, could not judge it: ${last.critic?.error ?? 'it was given no views to render'}`);
     const { r } = await traced(trace.root, 'propose_design', { design: draft.design.length, fit: draft.fit.length }, () =>
       mcp.callTool('propose_design', { why, design: draft.design, fit: draft.fit }));
     if (r.isError) {
