@@ -372,6 +372,21 @@ const round = (n) => Math.round(n * 10000) / 10000;
  * The grid is the expensive part and it is per CAR, not per question, so
  * handing it out is what makes asking thirty times cheap.
  */
+/**
+ * The meshes that can stand in front of paint on this car: every one but
+ * those the car itself hides.
+ *
+ * The Honda NSX ships four sets of door number plates, IGT, IMSA and two
+ * 2018 classes, each with an emissive twin, and hides all sixteen; the
+ * renderer draws none of them. Counted as occluders they covered a team name
+ * that nothing covers on the car, and failed a layout a person had arranged
+ * by hand and could see was clear.
+ */
+export function carOccluders(model, profile) {
+  const hidden = new Set(Object.keys(profile?.hiddenByCar?.meshes ?? {}));
+  return hidden.size ? model.meshes.filter((m) => !hidden.has(m.name)) : model.meshes;
+}
+
 export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {
   const occ = buildOccupancy(model, occluders, cellSize);
   return {
