@@ -529,7 +529,7 @@ export function createToolHandler(client) {
       description:
         'Propose design changes (palette, regions, options, identity, constraints, ' +
         "adopt-surface) to the running editor's inbox for human review. Use " +
-        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible — ' +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible, minMargin — ' +
         'which is often the right proposal when check_fitment reports the same problem ' +
         'twice: the constraint states the requirement once, on the design, for every car, ' +
         'rather than being re-fixed per car. Call list_constraints first; a name that is ' +
