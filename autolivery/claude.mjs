@@ -116,15 +116,21 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
         content.push({ type: 'text', text: `Brief: ${brief}\n\nYou have ${rounds} round(s). Round ${n} starts now.` +
           (facts ? `\n\nThe car, as the harness asked before you started. These answers are current; do not ask for them again.\n\n${facts}` : '') });
       } else {
-        content.push({ type: 'text', text: `The gate's verdict on round ${n - 1}:\n${feedback.text}` });
+        // A round that was never submitted has no verdict, only that notice.
+        const unsubmitted = feedback.submitted === false;
+        content.push({ type: 'text', text: unsubmitted ? feedback.text : `The gate's verdict on round ${n - 1}:\n${feedback.text}` });
         for (const im of feedback.images) {
           content.push({ type: 'text', text: `The ${im.view} render the critic judged:` });
           content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: im.data } });
         }
-        content.push({ type: 'text', text: `Round ${n} of ${rounds}. Fix what the gate named, then finish_round.` });
+        content.push({ type: 'text', text: `Round ${n} of ${rounds}. ` +
+          `${unsubmitted ? 'Finish the draft' : 'Fix what the gate named'}, then finish_round.` });
       }
       messages.push({ role: 'user', content });
 
+      // Out of turns or nudges without finish_round, what it last said goes
+      // back as that and never as a summary. Taken as one, it once described a
+      // draft in the inbox as "Let me check fitment once more".
       let said = '';
       let nudges = 0;
       for (let turn = 0; turn < maxTurns; turn++) {
@@ -148,7 +154,7 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
         if (res.stop_reason === 'max_tokens' && !res.content.some((b) => b.type === 'tool_use')) {
           // Against the same budget as a turn of prose, so a model repeating
           // itself into the limit ends the round rather than the run.
-          if (++nudges > maxNudges) return { summary: said };
+          if (++nudges > maxNudges) return { summary: null, said };
           messages.push({ role: 'user', content: [{ type: 'text', text: cutOff(16000, false) }] });
           continue;
         }
@@ -157,7 +163,7 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
         const uses = res.content.filter((b) => b.type === 'tool_use');
         // Silence is not finish_round; see NO_CALL.
         if (!uses.length) {
-          if (++nudges > maxNudges) return { summary: said };
+          if (++nudges > maxNudges) return { summary: null, said };
           messages.push({ role: 'user', content: [{ type: 'text', text: NO_CALL }] });
           continue;
         }
@@ -175,7 +181,7 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
         }
         messages.push({ role: 'user', content: results });
       }
-      return { summary: said };
+      return { summary: null, said };
     },
   };
 }

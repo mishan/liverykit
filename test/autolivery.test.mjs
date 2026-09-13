@@ -906,6 +906,119 @@ test('an empty list of views is refused before anything starts', async () => {
   }
 });
 
+test('a round that ends without finish_round is not gated, and its prose is never a summary', async () => {
+  // A planner that ran out of turns handed back its last prose, and the loop
+  // took it as the summary and gated the round: a draft could reach the inbox
+  // under "Let me check fitment once more", and the critic judged against it.
+  const ed = await fixtureEditor();
+  try {
+    const feedbacks = [];
+    const planner = {
+      async round({ n, feedback, call }) {
+        feedbacks.push(feedback);
+        if (n === 1) {
+          const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'ink', value: '#101014' },
+            { op: 'add-region', surface: 'surfaces.body', region: {
+              id: 'number-left', treatment: 'text', text: '85', panel: panels[0].panel,
+              at: [0.3, 0.45, 0.4, 0.02], color: 'ink', constraints: { minMm: 100 } } },
+          ] });
+          await call('finish_round', { summary: 'round 1' });
+          return { summary: 'round 1' };
+        }
+        if (n === 2) {
+          await call('check_fitment');
+          return { said: 'Let me check fitment once more…' };
+        }
+        await call('draft_design', { design: [{ op: 'set-constraint', id: 'number-left', key: 'minMm', value: 10 }] });
+        await call('finish_round', { summary: 'round 3' });
+        return { summary: 'round 3' };
+      },
+    };
+    const judged = [];
+    const critic = { judge: async ({ summary }) => {
+      judged.push(summary);
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+        requirements: [{ asked: 'number 85', present: true, where: 'left door' }], cut_off: [], unreadable: [], notes: [] };
+    } };
+    const out = join(ed.dir, 'run');
+    const lines = [];
+    const result = await run({
+      brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 3, views: ['left'], shot: { width: 200, height: 150 }, log: (l) => lines.push(l),
+    });
+
+    assert.deepEqual(judged, ['round 1', 'round 3'], 'the critic judged only what was submitted, by its own summary');
+    const [, skipped, third] = result.history;
+    assert.equal(skipped.submitted, false);
+    assert.equal(skipped.passed, false);
+    assert.equal(skipped.said, 'Let me check fitment once more…', 'what it said is kept, as what it said');
+    assert.equal(skipped.critic, undefined);
+    assert.ok(lines.some((l) => /round 2 ended without finish_round/.test(l)), lines.join('\n'));
+    assert.equal(feedbacks[2].submitted, false);
+    assert.match(feedbacks[2].text, /Round 2 ended without finish_round/);
+    assert.match(feedbacks[2].design, /number-left/, 'and the draft as it stands comes with it');
+    // The constraint that failed round 1 is still held to it after a round the gate never saw.
+    assert.ok(third.failures.some((f) => /minMm lowered from 100 to 10 after it failed round 1/.test(f)),
+      JSON.stringify(third.failures));
+    assert.equal(result.summary, 'round 3');
+
+    const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(spans.filter((s) => s.kind === 'task' && s.name === 'gate').length, 2);
+    const two = spans.find((s) => s.name === 'round-2');
+    assert.equal(two.attrs['round.submitted'], false);
+    assert.match(two.attrs['round.said'], /Let me check fitment once more/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a planner that never calls finish_round hands back what it said, not a summary, and hears so next round', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-unsubmitted-'));
+  const notice = { submitted: false, text: 'Round 1 ended without finish_round, so nothing was gated.', images: [],
+    design: '{"surfaces":{"body":{"regions":[{"id":"base-fill","treatment":"fill"}]}}}' };
+  try {
+    const trace = await createTrace({ dir });
+    const call = async () => ({ content: [{ type: 'text', text: 'ok' }] });
+
+    const usage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const reply = (content, stop_reason) => ({ id: 'msg', model: 'claude-opus-5', content, stop_reason, usage });
+    const script = [
+      reply([{ type: 'text', text: 'Let me check fitment once more…' }], 'end_turn'),
+      reply([{ type: 'text', text: 'Let me check fitment once more…' }], 'end_turn'),
+      reply([{ type: 'tool_use', id: 'u1', name: 'finish_round', input: { summary: 'done' } }], 'tool_use'),
+    ];
+    const sent = [];
+    const client = { beta: { messages: { create: async (p) => { sent.push(structuredClone(p)); return script.shift(); } } } };
+    const claude = createPlanner({ client, model: 'claude-opus-5', effort: 'high', trace, fallback: false, maxNudges: 1 });
+    const one = await claude.round({ n: 1, rounds: 2, brief: 'b', feedback: null, tools: [], call });
+    assert.equal(one.summary, null);
+    assert.equal(one.said, 'Let me check fitment once more…');
+    await claude.round({ n: 2, rounds: 2, brief: 'b', feedback: notice, tools: [], call });
+    const opening = sent[2].messages.at(-1).content.map((b) => b.text ?? '').join('\n');
+    assert.match(opening, /Round 1 ended without finish_round/);
+    assert.doesNotMatch(opening, /verdict on round 1|Fix what the gate named/);
+
+    const { fetchImpl, sent: asked } = fakeServer({ vision: true, replies: [
+      words('thinking about it'), words('thinking about it'), calls(['q1', 'finish_round', { summary: 'done' }]),
+    ] });
+    const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
+    const openai = local.createPlanner({ endpoint, model: 'local-model', trace, maxNudges: 1 });
+    const first = await openai.round({ n: 1, rounds: 2, brief: 'b', feedback: null, tools: [], call });
+    assert.equal(first.summary, null);
+    assert.equal(first.said, 'thinking about it');
+    await openai.round({ n: 2, rounds: 2, brief: 'b', feedback: notice, tools: [], call });
+    const fresh = asked[2].messages.at(-1).content.map((p) => p.text ?? '').join('\n');
+    assert.doesNotMatch(fresh, /you said: thinking about it/, 'prose is never passed off as a summary');
+    assert.match(fresh, /Round 1 ended without finish_round/);
+    assert.match(fresh, /"id":"base-fill"/);
+    assert.doesNotMatch(fresh, /verdict on round 1|Fix what the gate named/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('find_space returns measured spots on a panel, and refuses a panel that is not there', async () => {
   const ed = await fixtureEditor();
   try {
