@@ -34,6 +34,57 @@ const design = (regions) => ({
   surfaces: { body: { regions } },
 });
 
+test('a number or a name is measured by its letters, not its box', () => {
+  // The panels here are 1.6 m square on the car. Runs 17, 18 and 20 each lost a
+  // round to a team name the critic called too small, a round after drafting it.
+  const small = (regions, identity = { team: 'Neon Doll Racing', number: '85' }) =>
+    fitment({ ...design(regions), identity }, profile).findings.filter((f) => f.kind === 'too-small');
+
+  // 480 mm box, capitals 242 mm: fine. 160 mm box, capitals 81: not.
+  assert.deepEqual(small([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.3], text: '{number}' }]), []);
+  const tiny = small([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.1], text: '{number}' }]);
+  assert.deepEqual(tiny.map((f) => [f.ids[0], f.severity, f.mm, f.floor]), [['n', 'high', 81, 140]]);
+  assert.match(tiny[0].why, /Make its box taller \(it is 160 mm\)/);
+
+  // A 320 mm box looks generous, and sixteen letters shrunk to fit 480 mm of
+  // width are 31 mm tall. The box's height is not the answer; its width is.
+  const narrow = small([{ id: 't', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: '{team}' }]);
+  assert.deepEqual(narrow.map((f) => f.mm), [31]);
+  assert.match(narrow[0].why, /shrunk to fit the box's 480 mm width: widen the box, or split the name over two lines/);
+  assert.deepEqual(small([{ id: 't', treatment: 'text', panel: 'L', at: [0, 0.1, 1, 0.2], text: '{team}' }]), []);
+
+  // A name split into literal lines is still the name; a sponsor is not.
+  assert.equal(small([{ id: 'a', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.2, 0.05], text: 'NEON DOLL' }]).length, 1);
+  assert.deepEqual(small([{ id: 's', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.2, 0.05], text: 'ACME' }]), []);
+
+  // And a declared minMm is a floor on the box, not a way round this one.
+  assert.equal(small([{ id: 't', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: '{team}',
+    constraints: { minMm: 100 } }]).length, 1);
+});
+
+test('letters on a panel laid a quarter turn stand along u', () => {
+  // A road car turns its doors sideways to pack the sheet, and the text is
+  // turned back upright. Its letters then run along the texture's u, which on
+  // this panel is eight times as many metres per unit as v.
+  const turned = {
+    ...profile,
+    panels: { body: { S: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [8, 1], textRotation: 90, visible: 1, tags: ['left'] } } },
+  };
+  const got = (rotate) => fitment(design([{ id: 'n', treatment: 'text', panel: 'S', at: [0.4, 0.1, 0.2, 0.8], text: '{number}', rotate }]), turned)
+    .findings.filter((f) => f.kind === 'too-small').map((f) => f.mm);
+  // Turned, the 0.08-wide box is the letters' height: 0.7 x 0.08 x 8 m x 0.72 = 323 mm.
+  assert.deepEqual(got('auto'), []);
+  // Upright, the letters stand along v and the 0.32-tall box shrinks one glyph
+  // to its 0.08 width: 82 mm, and said.
+  assert.deepEqual(got(0), [82]);
+
+  // And a long name on it is fitted to the turned box's long side. Fitted to
+  // the short one instead, sixteen letters come out 41 mm tall and fail.
+  const name = fitment({ ...design([{ id: 't', treatment: 'text', panel: 'S', at: [0.4, 0.1, 0.2, 0.8],
+    text: '{team}', rotate: 'auto' }]), identity: { team: 'Neon Doll Racing' } }, turned);
+  assert.deepEqual(name.findings.filter((f) => f.kind === 'too-small'), []);
+});
+
 test('text landing on text is reported, and layered artwork is not', () => {
   // Layering is how a livery is built: a fill under a halftone under scanlines,
   // every one covering the whole sheet and every pair overlapping completely.
