@@ -504,6 +504,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew": {
@@ -512,6 +513,7 @@
       "height": 1024,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "suit_2": {
@@ -520,6 +522,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet": {
@@ -528,6 +531,7 @@
       "height": 512,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "metal_detail": {
@@ -536,6 +540,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "gloves": {
@@ -544,6 +549,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "helmet_2": {
@@ -552,6 +558,7 @@
       "height": 128,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "rimFace": {

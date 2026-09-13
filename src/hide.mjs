@@ -91,7 +91,10 @@ export function hidePlan(profile, livery, { paintedRoles = null } = {}) {
       // measure: the driver's suit, the crew, a part an extension model
       // draws. "Regenerate it" sent people to a regeneration that cannot
       // answer, and every shipped profile has a few.
-      if (tex.alphaHides === undefined && tex.sizeFrom === 'skin') {
+      // By `inModel`, which says so, and not by `sizeFrom: 'skin'`, which an
+      // encrypted model's own textures carry too: those are worn, and an old
+      // profile of one does need regenerating.
+      if (tex.alphaHides === undefined && tex.inModel === false) {
         return cannot(`no mesh in this car's model wears ${tex.file}: it is known only from the skins folder and ` +
           'drawn by another model, so whether a transparent texture hides it cannot be measured here, and it is ' +
           'treated as opaque');
