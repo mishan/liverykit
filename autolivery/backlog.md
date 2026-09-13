@@ -5,7 +5,7 @@ the judgments the critic keeps getting wrong into measurement. In order:
 
 - what each view shows of a region, from an ID render (done: `hidden-in-view`,
   and the count the critic is told)
-- minimum sizes for numbers and names
+- minimum sizes for numbers and names (done: `too-small`)
 - a table of well-known liveries
 - a rule that keeps the team name with the number
 
