@@ -73,7 +73,11 @@ test('the number group the planner is told to lay out clears the disc with room 
   const aspect = Number(PLANNER_SYSTEM.match(/largest: true, aspect ([\d.]+)/)?.[1]);
   const roundel = Number(PLANNER_SYSTEM.match(/the roundel is (\d+)% of the group's width/)?.[1]) / 100;
   const band = Number(PLANNER_SYSTEM.match(/in the bottom (\d+)% of its height/)?.[1]) / 100;
-  assert.ok(aspect > 0 && roundel > 0 && band > 0, 'the prompt states the group\'s proportions');
+  // And the number's own box, which the prompt left to the planner: given the
+  // roundel's box, the letters of a two-digit number reach its corners, which
+  // are outside the disc, and the ring is measured as running through them.
+  const inside = Number(PLANNER_SYSTEM.match(/[Tt]he number's box is a square centred on the roundel, (\d+)% of its diameter/)?.[1]) / 100;
+  assert.ok(aspect > 0 && roundel > 0 && band > 0 && inside > 0, 'the prompt states the group\'s proportions');
 
   // Laid out as told on a square panel, so a fraction of it is the same length either way.
   const profile = {
@@ -83,20 +87,27 @@ test('the number group the planner is told to lay out clears the disc with room 
     panels: { body: { D: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 1, tags: [] } } },
   };
   const [gx, gy, gw] = [0.1, 0.1, 0.8], gh = gw * aspect, d = gw * roundel;
-  const group = (scale) => ({
-    name: 'G', packs: ['core'], palette: { ink: '#101014', white: '#FFFFFF' }, identity: { team: 'GULF', number: '9' },
+  const disc = [gx + (gw - d) / 2, gy, d, d];
+  const s = d * inside, told = [disc[0] + (d - s) / 2, disc[1] + (d - s) / 2, s, s];
+  const group = (scale, number, box = told) => ({
+    name: 'G', packs: ['core'], palette: { ink: '#101014', white: '#FFFFFF' }, identity: { team: 'GULF', number },
     surfaces: { body: { regions: [
-      { id: 'roundel', treatment: 'ring', panel: 'D', at: [gx + (gw - d) / 2, gy, d, d], color: 'white',
-        radius: 0.25, width: 0.5 },
+      { id: 'roundel', treatment: 'ring', panel: 'D', at: disc, color: 'white', radius: 0.25, width: 0.5 },
+      { id: 'number', treatment: 'text', panel: 'D', at: box, text: '{number}', color: 'ink' },
       { id: 'team', treatment: 'text', panel: 'D', at: [gx, gy + gh * (1 - band), gw, gh * band], text: '{team}',
         color: 'ink', scale },
     ] } },
   });
-  // At the default scale, and at a name filling its whole band.
+  const overlaps = (design) => fitment(design, profile).findings.filter((f) => f.kind === 'overlap');
+  // At the default scale, and at a name filling its whole band; with a number
+  // of one, two and three digits.
   for (const scale of [0.7, 1]) {
-    const overlap = fitment(group(scale), profile).findings.filter((f) => f.kind === 'overlap');
-    assert.deepEqual(overlap, [], `with the name at scale ${scale}`);
+    for (const number of ['9', '85', '123']) {
+      assert.deepEqual(overlaps(group(scale, number)), [], `with the name at scale ${scale} and the number ${number}`);
+    }
   }
+  // Which is why the prompt has to say: the roundel's own box puts an 85 through its rim.
+  assert.equal(overlaps(group(0.7, '85', disc)).length, 1, 'a number given the roundel\'s box crosses the disc');
 
   const tools = await createToolHandler({}).listTools();
   const said = tools.find((t) => t.name === 'find_space').inputSchema.properties.aspect.description;
