@@ -158,7 +158,10 @@ Two groups, and the boundary between them is the point.
 | `list_constraints` | the constraints a region may declare, and what each one enforces |
 
 `read_design` and `read_fit` come from the editor rather than from disk, so the
-agent sees what the person is looking at, including their unsaved work.
+agent sees what the person is looking at, including their unsaved work. Both take
+a `proposal`, like `check_fitment`, and answer for the design or fit those
+operations would make, with `read_fit` still reporting stale ids, now against
+the draft. Nothing is proposed.
 
 **Measuring, and seeing.** Also read-only, and the second of these was an open
 question when this was written — see below.
@@ -347,7 +350,8 @@ the thing, not out of designing it. What the plan got wrong was assuming the
 profile made them unnecessary.
 
 **6. Drafts. (Done, and forced by a loop.)** `check_fitment` and `render_car`
-take a `proposal`, measure the working design with it applied, and adopt nothing.
+take a `proposal`, measure the working design with it applied, and adopt nothing;
+`read_design` and `read_fit` take one too, and show what it amounts to.
 The before/after these tools' descriptions ask for never quite worked. A proposal
 reaches the working state only once accepted, so checking after proposing
 measured the design *without* the change. With nobody at the editor, the change

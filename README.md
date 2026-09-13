@@ -556,6 +556,7 @@ and several other things:
 | `clipped` | a spanning region stops at a panel edge the profile has no seam for |
 | `unpainted-twin` | a sheet you paint has an unpainted duplicate on top of it |
 | `bad-constraint` | a constraint nothing enforces — refused, not ignored |
+| `unknown-field` | a field on a region that its treatment does not take and nothing else reads, such as `drop`, which belongs in a fit |
 
 The panel leads with what it could **not** check. "No findings" from a run that
 skipped the geometry and "no findings" from a run that did all of it are the same
