@@ -411,6 +411,9 @@ export function carOccluders(model, profile) {
     && !damageOnly(model.materials?.[m.materialId]?.shader) && !motionBlurOnly(m.name));
 }
 
+/** The bare grid, for a caller keeping one across many casts at a cell size of its own: the cockpit's. */
+export const occupancyGrid = (model, occluders, cellSize) => buildOccupancy(model, occluders, cellSize);
+
 export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {
   const occ = buildOccupancy(model, occluders, cellSize);
   let near = null;
@@ -662,14 +665,14 @@ export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
  * happens to be in between.
  */
 export function computeCockpitVisibility(model, islands, {
-  eye = null, occluders = model.meshes, cellSize = 0.02, near = null, log = () => {},
+  eye = null, occluders = model.meshes, cellSize = 0.02, near = null, grid = null, log = () => {},
 } = {}) {
   const point = eye ?? cockpitEye(model);
   if (!point) {
     log('  - no steering wheel found; skipping cockpit visibility');
     return islands;
   }
-  const occ = buildOccupancy(model, occluders, cellSize);
+  const occ = grid ?? buildOccupancy(model, occluders, cellSize);
   // What stands flush in front is `covered`'s to find; see `escapes`.
   const nearby = near ?? buildNear(model, occluders);
   const maxSteps = Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5);

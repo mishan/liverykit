@@ -712,6 +712,7 @@
       "height": 4096,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "tyres_2": {
@@ -720,6 +721,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "tyres_3": {
@@ -728,6 +730,7 @@
       "height": 1024,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew": {
@@ -736,6 +739,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "ld_em": {
@@ -744,6 +748,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "number_l": {
@@ -752,6 +757,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "number_r": {
@@ -760,6 +766,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "p1": {
@@ -768,6 +775,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "rd_em": {
@@ -776,6 +784,7 @@
       "height": 1024,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "tyres_4": {
@@ -784,6 +793,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "tyres_5": {
@@ -792,6 +802,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "tyres_6": {
@@ -800,6 +811,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "ext_disc_blur_colour": {
@@ -808,6 +820,7 @@
       "height": 512,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "lodd": {
@@ -816,6 +829,7 @@
       "height": 512,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "suit": {
@@ -824,6 +838,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "metal_detail": {
@@ -832,6 +847,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "pled": {
@@ -840,6 +856,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew_2": {
@@ -848,6 +865,7 @@
       "height": 256,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "crew_3": {
@@ -856,6 +874,7 @@
       "height": 256,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "carbon_darkgrey": {
@@ -864,6 +883,7 @@
       "height": 256,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "mat_white": {
@@ -872,6 +892,7 @@
       "height": 32,
       "alpha": false,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     }
   },
