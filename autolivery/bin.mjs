@@ -34,7 +34,8 @@ The loop:
                          default to the local server, and nothing is proposed:
                          free, by default
   --propose <run dir>    no loop: send that run's passing draft to the editor's inbox
-                         again, with why it passed. For a pass the inbox refused
+                         again, with why it passed. For a pass the inbox refused;
+                         only onto the working design that run started from
   --out <dir>            renders, trace and result.json (default autolivery/runs/<time>)
   --no-propose           keep the passing design out of the editor's inbox
 
@@ -110,6 +111,16 @@ const fail = (m) => {
 };
 const log = (m) => console.log(m);
 
+// A result.json written between rounds, which since a run saves every round is
+// what a run that died leaves. Taken as it stands rather than refused — a pass
+// whose proposal never went out is what --propose is for — but said, because
+// it read exactly like a finished run's.
+const noteUnfinished = (rec) => {
+  if (rec.result.finished === false) {
+    log(`  (${rec.dir} is from a run that did not finish: it holds the ${rec.result.rounds} round(s) it completed)`);
+  }
+};
+
 // A passed run's draft sent again, and nothing else: no planner, no critic,
 // nothing paid for. An editor holds one proposal at a time, so a pass refused
 // because another was pending existed only in its result.json.
@@ -121,11 +132,42 @@ if (values.propose) {
   } catch (e) {
     fail(`--propose: ${e.message}`);
   }
+  noteUnfinished(recorded);
   if (!recorded.result.passed) fail(`--propose: ${recorded.dir} did not pass its gate, so it has no measured design to offer`);
+  // Refused, where a replay only says so and goes on: a replay proposes
+  // nothing, but this proposal's why tells a person the design was measured,
+  // and with no record of what it was measured on, nothing can say whether
+  // that is the design in front of them.
+  const { base, proposalId } = recorded.result;
+  if (!base) {
+    fail(`--propose: ${recorded.dir} did not record the design it started from, so nothing can check the ` +
+      'editor holds it, and its proposal would claim a measurement of a design it may never have seen');
+  }
+  // Not refused: a discarded proposal is the ordinary reason to send one
+  // again. Said, so a second copy of the same design is never a surprise.
+  if (proposalId) log(`  (${recorded.dir} was delivered before as proposal ${proposalId})`);
   let sent;
   let mcp = null;
   try {
     mcp = await connect({ args: [LIVERYKIT, '--mcp', '--editor', values.editor] });
+    // The check a replay makes, for more reason. Unchecked, the operations
+    // went onto whatever the editor held — a design accepted since, another
+    // livery — under a why saying they had been measured, which they had not
+    // been, there. Both fingerprints are given, so the right run can be found.
+    // Held by checkBase, as a replay is; and where the record cannot say the
+    // fit is the one it had, refused, where a replay only notes it, because
+    // this why vouches for the design and the fit the draft was measured on.
+    const here = await designDigest(mcp);
+    if (!here) {
+      throw new Error("--propose: could not read the editor's working design and fit, so nothing could check " +
+        'they are the ones the run started from');
+    }
+    const { error, note } = checkBase(recorded, here);
+    if (error || note) {
+      const shown = (b) => (typeof b === 'string' ? `design ${b}` : `design ${b.design}, fit ${b.fit}`);
+      throw new Error(`--propose: ${(error ?? note).replace(/\.$/, '')}. The editor holds ${shown(here)}; ` +
+        `${recorded.dir} recorded ${shown(base)}.`);
+    }
     sent = await proposeDesign(recorded.result, (args) => mcp.callTool('propose_design', args));
   } catch (e) {
     mcp?.close();
@@ -152,6 +194,7 @@ if (values.replay) {
   } catch (e) {
     fail(`--replay: ${e.message}`);
   }
+  noteUnfinished(recording);
 }
 const replaying = Boolean(recording);
 // Refused rather than ignored: a replay runs the rounds the run recorded, and
