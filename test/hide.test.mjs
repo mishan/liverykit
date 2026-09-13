@@ -6,8 +6,11 @@
 // it, which on the one car this was built against it did, so nobody noticed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 import { hidePlan } from '../src/build.mjs';
+import { loadProfile } from '../src/profile.mjs';
 
 const profile = {
   id: 'car',
@@ -109,6 +112,33 @@ test('a PNG is judged by its material like everything else', () => {
   assert.equal(by.blended.action, 'ship-transparent');
   assert.equal(by.unrecorded.action, 'cannot', 'an unrecorded answer is treated as opaque');
   assert.match(by.unrecorded.why, /regenerate/);
+});
+
+test('a texture only the skins folder knows is not sent to a regeneration that cannot answer', () => {
+  // The driver's suit, the crew, a part an extension model draws: no mesh in
+  // the car's own model wears them, so no regeneration records alphaHides for
+  // them, and every shipped profile has some. They were told "regenerate it".
+  const [plan] = hidePlan({ id: 'car', textures: { suit: { file: 'Suit.dds', width: 1024, height: 1024, sizeFrom: 'skin' } } },
+    { hide: ['suit'] });
+  assert.equal(plan.action, 'cannot', 'treated as opaque, the cheaper way to be wrong');
+  assert.match(plan.why, /no mesh in this car's model wears Suit\.dds/);
+  assert.doesNotMatch(plan.why, /regenerate/);
+});
+
+test('every shipped profile records whether a transparent sheet hides each texture', async () => {
+  // `alphaHides` was added after the three profiles in cars/ were last
+  // generated, so every hide on every shipped car answered "regenerate it" —
+  // and the NSX's `car-hides` counted as hidden, so fitment stopped reporting
+  // a twin the showroom still drew. A profile that ships stale fails here.
+  const dir = join(process.cwd(), 'cars');
+  const files = (await readdir(dir)).filter((f) => f.endsWith('.json'));
+  assert.ok(files.length >= 3, `expected the shipped profiles in ${dir}`);
+  for (const f of files) {
+    const car = await loadProfile(join(dir, f));
+    const stale = hidePlan(car, { hide: Object.keys(car.textures ?? {}), paint: {} })
+      .filter((p) => /regenerate it/.test(p.why)).map((p) => p.role);
+    assert.deepEqual(stale, [], `${f} does not record alphaHides for these; regenerate it with --from-kn5`);
+  }
 });
 
 test('no hide list, no plan', () => {
