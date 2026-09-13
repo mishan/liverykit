@@ -19,9 +19,9 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -190,6 +190,13 @@ export async function profileFromKn5(path, {
   // The cockpit's too, at its own finer cells. Only the triangle index was
   // shared with it, and its grid was still rebuilt for every texture.
   const cockpitGrid = visibility && eye ? occupancyGrid(model, occluders, 0.02) : null;
+  // A motion-blur mesh is measured as the drawn one it is swapped with, found
+  // by the node above it (see `blurTwins`). One whose twin could not be found
+  // is measured against whatever is drawn in its place, and reads low for it,
+  // so that is said wherever such a mesh carries a panel.
+  const twinned = visibility ? blurTwins(model) : new Map();
+  const unpaired = new Set(model.meshes
+    .filter((m, i) => motionBlurOnly(m.name) && !twinned.has(i)).map((m) => m.name));
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -448,6 +455,11 @@ export async function profileFromKn5(path, {
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
       if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, grid: cockpitGrid, log });
+      const alone = [...new Set(keep.filter((i) => unpaired.has(i.mesh)).map((i) => i.mesh))];
+      if (alone.length) {
+        log(`  ! ${alone.join(', ')}: motion-blur mesh(es) with no drawn twin under a sibling node, ` +
+            'so their panels are measured behind whatever is drawn in their place and may read low');
+      }
       // An island on a mesh the car's own config hides is on nothing anybody
       // sees, whatever its rays say: the mesh is not drawn, and taken out of
       // the occluders, it measured clear, a place to paint the game never shows.

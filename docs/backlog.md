@@ -117,21 +117,6 @@ on the bound textures that have it, in the build, the renderer, fitment and the
 editor alike, or they disagree about the car; and that a panel no bound texture
 has is still `unmatched`.
 
-## A panel measured on a mesh the car does not draw at rest
-
-**Symptom.** The NSX's front rim panels measure 0% visible (0.87 in a profile
-from before 097ded3), so no portable design's `visible` tag selects them.
-
-**Cause.** The rims texture is worn by the drawn rim, `EXT_RIM_RF`, and by its
-motion-blur copy, `EXT_RIM_BLUR_STATIC_RF`, and the panel's island came from the
-copy. The drawn rim stands 1.2 mm in front of it, so what is measured is a mesh
-the game shows only when the wheel is spinning, from behind the one it shows
-at rest.
-
-**What the fix has to establish.** That an island a drawn mesh shares with a
-motion-blur or damage-only one is measured on the drawn one. `carOccluders`
-already knows which meshes those are.
-
 ## The CLI renderer has one light rig, not the car's materials
 
 The editor reads `ksAmbient`, `ksDiffuse`, `ksSpecular` and `ksSpecularEXP` off
