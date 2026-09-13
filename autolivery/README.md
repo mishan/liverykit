@@ -144,6 +144,27 @@ flagged element rather than delete it. For a brief that names a style, the criti
 lists that style's signature elements as requirements of their own, so deleting
 one fails the round instead of passing it.
 
+## Testing without paying
+
+Most changes here are to the harness, not the model, and a paid run is a slow and
+dear way to test one. Two tools test against real work for nothing.
+
+`--replay <run dir>` puts back what a real run drafted, round by round, and judges
+it with today's gate: fitment, renders, and the local critic and second look. It
+needs no brief and no planner model, and it proposes nothing. A run records each
+round's draft and summary in `result.json`. One from before that replays its final
+draft as one round.
+
+    node autolivery/bin.mjs --replay autolivery/runs/<run> --critic-base-url http://127.0.0.1:8081/v1
+
+`node autolivery/eval.mjs` scores a critic against `critic-cases.json`: renders from
+real runs, each with a verdict a person gave or checked by eye. It runs the local
+critic by default, so a prompt change is tried against every past mistake before a
+paid run finds a new one. The renders stay in `runs/`, which is not committed, so a
+case whose pictures are missing is skipped. On its first run the local critic
+agreed with the person on 2 of 8. It called a whole roundel "cut off" in 4 of the 6
+cases that had one, and those false alarms account for most of the wasted rounds.
+
 ## The trust boundary
 
 **The agent never commits anything.** It works on a draft: the same list of

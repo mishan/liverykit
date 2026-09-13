@@ -1,0 +1,199 @@
+{
+  "about": "Renders from real runs, each with a verdict a person gave or checked by eye. The pictures live in autolivery/runs/, which is not committed; node autolivery/eval.mjs skips a case whose pictures are not on this machine.",
+  "brief": "Gulf-style, number 85, Neon Doll Racing, number readable from trackside. Use a white roundel with the number inside it, whole and fully visible, clear of every edge.",
+  "cases": [
+    {
+      "id": "run15-r2-roundel-whole",
+      "why": "Whole on both doors in every render; the local critic failed the round saying it was cut off at the door shut line.",
+      "source": "reviewed by eye",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T02-01-06/round-2-sheet.png"
+        }
+      ],
+      "summary": "Same Gulf-style livery for #85 Neon Doll Racing; the only change is the door roundel. The critic read the previous 430 mm roundel as touching the door shut line, so both roundels are now 360 mm and re-placed at the measured roomiest spot on each door — 117 mm of clean, visible bodywork all round (constraint raised from minMargin 55 to 100, with minOnCar 1 and minVisible 1 kept). The pink halo ring, the navy \"85\" and the right-side 180° rotation were re-centred to match; nothing else moved. Fitment: 0 fatal, 0 high, two low \"outside-safe\" notes on the side-skirt fills, which are intended to run to the skirt edge.",
+      "expect": {
+        "notCutOff": [
+          "roundel|\\b85\\b|number"
+        ]
+      }
+    },
+    {
+      "id": "run15-r3-name-under-handle",
+      "why": "A person failed it: the door handle strip runs through the last letter of the team name.",
+      "source": "the user",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T02-01-06/round-3-sheet.png"
+        }
+      ],
+      "summary": "Gulf-style #85 Neon Doll Racing. Changes this round, both from the critic's notes: (1) the door roundel is smaller (300 mm) and re-placed at the measured clean centre of each door, 122 mm of clean visible bodywork all round (minOnCar 1, minVisible 1, minMargin 120), and the neon-pink accent ring is now drawn wholly inside the white disc rather than at its rim, so nothing of the roundel can read as clipped by a shut line; the navy \"85\" was re-centred and kept at a 140 mm floor. (2) \"NEON DOLL RACING\" is now set large in white across each door above the roundel, where it reads in the side and three-quarter views — the small rear-quarter version is kept as a secondary mark. Body remains Gulf powder blue with Gulf orange front bumper, full-length skirts, door sill stripe and roof/screen-header stripe. Fitment: 0 fatal, 0 high; two low \"outside-safe\" notes on the side-skirt fills, which are meant to run to the skirt edge.",
+      "expect": {
+        "flagged": [
+          "neon|doll|racing|team|name"
+        ]
+      }
+    },
+    {
+      "id": "run16-r1-name-faint",
+      "why": "The team name is small, pale grey on light blue, and does not read from trackside; the roundel is whole.",
+      "source": "reviewed by eye; the user agreed the text was poorly placed",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T03-09-03/round-1-sheet.png"
+        },
+        {
+          "view": "left",
+          "path": "autolivery/runs/2026-09-13T03-09-03/round-1-closer-left.png"
+        },
+        {
+          "view": "right",
+          "path": "autolivery/runs/2026-09-13T03-09-03/round-1-closer-right.png"
+        }
+      ],
+      "summary": "Gulf-style livery for the NSX GT3 Evo, car 85, Neon Doll Racing.\n\nBase is Gulf light blue (#7BB3D9) over the whole body, with Gulf orange (#F26522) on the nose, a centre stripe running up the bonnet and over the roof, and orange sill stripes along both flanks. Two thin neon-pink glow pinstripes flank the bonnet stripe as the \"Neon Doll\" accent.\n\nNumber: a 400 mm white roundel on each door (right_mid / left_mid), with a thin orange rim inside its edge and \"85\" in deep navy filling the centre — about 200 mm of digit height, readable from trackside. Both roundels sit on the spot find_space measured as the roomiest on the panel (72 mm of clean bodywork all round) and carry minOnCar 1, minVisible 1, minMargin 60, so each circle is whole, fully visible and clear of shut lines and arches. The team name runs in white above each roundel, mirrored left/right.\n\ncheck_fitment: 0 fatal, 0 high; the only two findings are low — the sill fills bleed past the readable part of the thin sill islands, which is intended for a background stripe. Earlier drafts had tail stripes and a rear team name that measurement showed were hidden behind bodywork or off the readable area; those were removed and the team name moved onto the doors.",
+      "expect": {
+        "flagged": [
+          "neon|doll|racing|name"
+        ],
+        "notCutOff": [
+          "roundel|\\b85\\b"
+        ]
+      }
+    },
+    {
+      "id": "run18-r3-pink-not-gulf",
+      "why": "A Gulf livery is powder blue and orange; the pink pinstripe is not Gulf, and the team name on the rear quarters is not somewhere prominent.",
+      "source": "the user",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T03-51-03/round-3-sheet.png"
+        },
+        {
+          "view": "left",
+          "path": "autolivery/runs/2026-09-13T03-51-03/round-3-closer-left.png"
+        },
+        {
+          "view": "right",
+          "path": "autolivery/runs/2026-09-13T03-51-03/round-3-closer-right.png"
+        }
+      ],
+      "summary": "Round 3. Gulf-style NSX GT3: powder blue base, orange centreline stripe over nose, bonnet, roof and rear deck, orange sill bands with a neon-pink accent line, white door roundels (460 mm, 66 mm clean bodywork all round, minOnCar/minVisible 1) with a navy \"85\" ~290 mm tall on both sides. Changed since round 2: the team name no longer straddles the roof-rail curve. The two-line lockup is replaced by a single line, \"NEON DOLL RACING\" in navy on a solid orange nameplate band, moved forward and down onto the flat of the rear quarter so the whole word set sits inside the band on both sides, with minOnCar 1, minVisible 1, minMargin 20 mm and a 129 mm box. Fitment: 0 fatal, 0 high; remaining low notes are the background stripes bleeding past readable panel edges and the name sitting on its own orange plate, both intentional.",
+      "expect": {
+        "palette_ok": false,
+        "missing": [
+          "neon|doll|racing|name"
+        ],
+        "notCutOff": [
+          "roundel|\\b85\\b"
+        ]
+      }
+    },
+    {
+      "id": "run19-r2-stripe-across",
+      "why": "The lengthwise Gulf stripe is missing: the centre-panel stripes were drawn across the car.",
+      "source": "the user",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T04-21-06/round-2-sheet.png"
+        },
+        {
+          "view": "left",
+          "path": "autolivery/runs/2026-09-13T04-21-06/round-2-closer-left.png"
+        },
+        {
+          "view": "right",
+          "path": "autolivery/runs/2026-09-13T04-21-06/round-2-closer-right.png"
+        }
+      ],
+      "summary": "Gulf-style NSX GT3 Evo: powder blue with Gulf orange nose, centre bonnet/roof stripe and now a continuation over the rear deck. Doors carry a white roundel with an orange halo and the number 85, fully on car and fully visible with 40 mm clear margin. Change since round 1: the NEON DOLL RACING wordmark, which the critic said greyed out as orange on blue, is now set in heavy white letters on a solid orange band directly under the roundel on both doors — high contrast at distance, identical layout on left and right. Fitment: every check ran; only the expected low note that the name sits on its own band.",
+      "expect": {
+        "missing": [
+          "stripe"
+        ]
+      }
+    },
+    {
+      "id": "run20-r1-stripe-gaps-are-the-car",
+      "why": "The stripe is interrupted only by the engine-cover louvres and the windscreen; paint cannot go on either, so it is not cut off.",
+      "source": "reviewed by eye",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-1-sheet.png"
+        },
+        {
+          "view": "left",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-1-closer-left.png"
+        },
+        {
+          "view": "right",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-1-closer-right.png"
+        }
+      ],
+      "summary": "Gulf-style livery for the NSX GT3: powder-blue body with the classic orange centre stripe over nose, bonnet, roof and tail, and orange sill bands. Both doors carry a white roundel with the number 85 in Gulf dark blue (~280 mm disc with a thin orange halo), and \"NEON DOLL RACING\" in white on a dark-blue band directly beneath it, laid out identically and correctly mirrored left to right. Roundels and numbers declare minOnCar 1, minVisible 1 and a 50 mm clean margin; door text is 130 mm tall, the number ~190 mm. Fitment: no fatal or high findings.",
+      "expect": {
+        "notCutOff": [
+          "stripe"
+        ]
+      }
+    },
+    {
+      "id": "run20-r4-stripe-present",
+      "why": "The orange centre stripe runs from the nose over the bonnet and roof to the rear deck.",
+      "source": "reviewed by eye",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-4-sheet.png"
+        },
+        {
+          "view": "left",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-4-closer-left.png"
+        },
+        {
+          "view": "right",
+          "path": "autolivery/runs/2026-09-13T04-39-35/round-4-closer-right.png"
+        }
+      ],
+      "summary": "Gulf-style NSX GT3, round 4. Fix for the must-fix readability finding: the NEON DOLL RACING wordmark is rebuilt as two stacked lines on a much larger dark-blue band (700 x 259 mm) under the roundel, each line in a 125 mm box, so cap height roughly matches the numerals instead of collapsing to a smudge. The roundel was trimmed to 240 mm (orange halo 260 mm) to make room, with the 85 still ~175 mm tall in Gulf dark blue on white, mirrored identically left and right, minOnCar 1 / minVisible 1 / 50 mm margin. Orange sill stripes restored per advice so the car reads Gulf in profile as well as from above; the full-length centre stripe (nose, bonnet, roof, engine cover, rear deck, tail edge) is unchanged. Fitment: no fatal or high findings.",
+      "expect": {
+        "present": [
+          "stripe"
+        ],
+        "notCutOff": [
+          "stripe"
+        ]
+      }
+    },
+    {
+      "id": "user-door-layout",
+      "why": "The door layout a person arranged by hand: roundel with a navy 85, the team name in navy directly beneath it, all whole and readable.",
+      "source": "the user",
+      "images": [
+        {
+          "view": "sheet",
+          "path": "autolivery/runs/critic-cases/user-door-layout-sheet.png"
+        }
+      ],
+      "summary": "Gulf powder blue with the orange centre stripe over the nose, bonnet, roof and rear deck, and an orange nose. On each door a white roundel with 85 in navy, and NEON DOLL RACING in navy directly beneath it. Orange sills with a thin pink pinstripe.",
+      "expect": {
+        "notCutOff": [
+          "roundel|\\b85\\b|number|neon|doll|racing"
+        ],
+        "notFlagged": [
+          "neon|doll|racing|name|\\b85\\b"
+        ],
+        "present": [
+          "neon|doll|racing",
+          "\\b85\\b"
+        ]
+      }
+    }
+  ]
+}

@@ -766,6 +766,70 @@ test('a verdict that lists something unreadable does not pass the round, however
   }
 });
 
+test('a run can be replayed round by round against today\'s gate, with no planner model at all', async () => {
+  // Most changes are to the harness, and each was being tested by paying a
+  // model to design a livery again. The designs already exist.
+  const { loadRecording, createReplayPlanner } = await import('../autolivery/replay.mjs');
+  const ed = await fixtureEditor();
+  try {
+    const drafting = {
+      async round({ n, call }) {
+        const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+        const region = (at) => ({ id: 'number-left', treatment: 'text', text: '85', panel: panels[0].panel, at, color: 'ink' });
+        await call('draft_design', { design: n === 1
+          ? [{ op: 'set-palette', name: 'ink', value: '#101014' }, { op: 'add-region', surface: 'surfaces.body', region: region([0.3, 0.45, 0.4, 0.005]) }]
+          : [{ op: 'set-region', id: 'number-left', region: region([0.1, 0.3, 0.8, 0.4]) }] });
+        await call('finish_round', { summary: `round ${n}` });
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'number 85', present: true, where: 'left door' }],
+      cut_off: [], unreadable: [], notes: [] }) };
+    const go = async (planner, tag, rounds) => run({
+      brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, tag) }),
+      out: join(ed.dir, tag), rounds, views: ['left'], shot: { width: 200, height: 150 }, propose: false,
+    });
+
+    const original = await go(drafting, 'original', 3);
+    assert.equal(original.passedIn, 2, JSON.stringify(original.history.map((h) => h.failures)));
+
+    const recording = await loadRecording(join(ed.dir, 'original'));
+    assert.equal(recording.perRound, true);
+    assert.deepEqual(recording.rounds.map((r) => r.summary), ['round 1', 'round 2']);
+    const replayed = await go(createReplayPlanner(recording), 'replayed', recording.rounds.length);
+    assert.deepEqual(replayed.history.map((h) => h.gates), original.history.map((h) => h.gates),
+      'the same rounds pass and fail');
+    assert.deepEqual(replayed.draft, original.draft, 'with the same design');
+
+    // A run from before rounds were recorded replays its final draft, once.
+    const old = JSON.parse(await readFile(join(ed.dir, 'original', 'result.json'), 'utf8'));
+    for (const h of old.history) delete h.draft;
+    await writeFile(join(ed.dir, 'original', 'result.json'), JSON.stringify(old));
+    const legacy = await loadRecording(join(ed.dir, 'original'));
+    assert.equal(legacy.perRound, false);
+    assert.equal(legacy.rounds.length, 1);
+    assert.deepEqual(legacy.rounds[0].draft, original.draft);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a critic\'s verdict is scored against what a person said about the same picture', async () => {
+  const { score } = await import('../autolivery/cases.mjs');
+  const verdict = (over = {}) => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+    requirements: [{ asked: 'Gulf orange centre stripe', present: true, where: 'top' }, { asked: 'Neon Doll Racing', present: true, where: 'doors' }],
+    cut_off: [], unreadable: [], notes: [], ...over });
+  assert.deepEqual(score(verdict(), { notCutOff: ['roundel'], present: ['stripe', 'neon'], passes: true }), []);
+  assert.match(score(verdict({ cut_off: [{ what: 'number 85 roundel', where: 'left' }] }), { notCutOff: ['roundel'] })[0],
+    /called \/roundel\/ cut off/);
+  assert.match(score(verdict(), { flagged: ['neon'] })[0], /did not flag/);
+  assert.deepEqual(score(verdict({ unreadable: [{ what: 'NEON DOLL RACING', where: 'door', why: 'faint' }] }), { flagged: ['neon'] }), []);
+  assert.match(score(verdict(), { missing: ['stripe'] })[0], /did not say \/stripe\/ is missing/);
+  assert.match(score(verdict(), { palette_ok: false })[0], /palette_ok true; a person says false/);
+  assert.match(score(verdict({ cut_off: [{ what: 'x', where: 'y' }] }), { passes: true })[0], /the gate would fail this/);
+  assert.match(score({ error: 'timeout' }, {})[0], /no verdict/);
+});
+
 test('find_space returns measured spots on a panel, and refuses a panel that is not there', async () => {
   const ed = await fixtureEditor();
   try {
