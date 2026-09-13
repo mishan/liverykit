@@ -13,7 +13,10 @@ import { createInterface } from 'node:readline';
  * Only what the loop needs: initialize, tools/list, tools/call. Requests are
  * answered by id, so nothing depends on the server replying in order.
  */
-export async function connect({ command = process.execPath, args = [], cwd, env } = {}) {
+export async function connect({
+  command = process.execPath, args = [], cwd, env,
+  timeoutMs = 5 * 60_000, warn = (m) => process.stderr.write(`${m}\n`),
+} = {}) {
   const child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
   // Kept, because the server explains itself on stderr — "no fitting editor is
@@ -39,11 +42,26 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
     failAll(gone);
   });
 
+  // Said, not dropped. A line that did not parse, and a reply to no request
+  // anybody was waiting on, both vanished here without a word; a garbled
+  // answer left its request waiting for ever, and the run hung saying nothing.
+  const late = new Map();
   createInterface({ input: child.stdout }).on('line', (line) => {
-    let msg;
-    try { msg = JSON.parse(line); } catch { return; }
+    let msg = null;
+    try { msg = JSON.parse(line); } catch { /* said below */ }
+    if (!msg || typeof msg !== 'object') {
+      warn(`autolivery: the MCP server wrote a line that is not JSON-RPC, and it was ignored: ${line.slice(0, 200)}`);
+      return;
+    }
     const p = pending.get(msg.id);
-    if (!p) return;
+    if (!p) {
+      warn(msg.method
+        ? `autolivery: the MCP server sent ${msg.method}, which this client does not handle; ignored`
+        : `autolivery: the MCP server answered request ${msg.id}, ` +
+          (late.has(msg.id) ? `${late.get(msg.id)}, after it had timed out` : 'which nothing is waiting for') +
+          '; the reply was ignored');
+      return;
+    }
     pending.delete(msg.id);
     if (msg.error) p.reject(new Error(`MCP ${p.method}: ${msg.error.message}`));
     else p.resolve(msg.result);
@@ -53,7 +71,21 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
   const request = (method, params) => new Promise((resolve, reject) => {
     if (gone) return reject(new Error(gone));
     const id = nextId++;
-    pending.set(id, { resolve, reject, method });
+    const what = method === 'tools/call' ? `${method} ${params?.name}` : method;
+    // A limit on every request, generous because a render or a fitment check
+    // on a big car is slow, so that a reply that never comes ends in an error
+    // naming the call instead of a run that waits for ever.
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      late.set(id, what);
+      reject(new Error(`MCP ${what}: no reply after ${timeoutMs / 1000} s. The server is stuck, or its ` +
+        'reply was lost; one that arrives now is reported and ignored.'));
+    }, timeoutMs);
+    pending.set(id, {
+      resolve: (v) => { clearTimeout(timer); resolve(v); },
+      reject: (e) => { clearTimeout(timer); reject(e); },
+      method: what,
+    });
     send({ jsonrpc: '2.0', id, method, params });
   });
 

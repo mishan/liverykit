@@ -41,6 +41,8 @@ The models:
   --effort <level>       Claude's effort: low, medium, high, xhigh, max (default medium,
                          which planned a round in half the time high did)
   --critic-effort <l>    the critic's (default medium)
+  --critic-max-tokens <n>  an OpenAI-compatible critic's output limit (default 8192:
+                         a model that thinks first needs room before its verdict)
   --referee <who>        a closer second look when fitment passes and the critic
                          does not: anthropic (the default when a key is set),
                          critic (the critic again, shown closer views), or none
@@ -71,6 +73,7 @@ const { values, positionals } = parseArgs({
     'critic-model': { type: 'string' },
     effort: { type: 'string', default: 'medium' },
     'critic-effort': { type: 'string', default: 'medium' },
+    'critic-max-tokens': { type: 'string', default: '8192' },
     referee: { type: 'string' },
     'advisory-critic': { type: 'boolean', default: false },
     views: { type: 'string', default: 'sheet' },
@@ -107,6 +110,10 @@ if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number,
 // needs its verdict.
 const views = values.views.split(',').map((v) => v.trim()).filter(Boolean);
 if (!views.length) fail(`--views names no view (${JSON.stringify(values.views)}): give one or more, e.g. sheet or left,right`);
+const criticMaxTokens = Number(values['critic-max-tokens']);
+if (!Number.isInteger(criticMaxTokens) || criticMaxTokens < 1) {
+  fail(`--critic-max-tokens must be a whole number above zero, not ${values['critic-max-tokens']}`);
+}
 const maxCost = Number(values['max-cost']);
 if (!(maxCost > 0)) fail(`--max-cost must be a positive number of dollars, not ${values['max-cost']}`);
 // One budget for the whole run, planner and critic together.
@@ -197,7 +204,7 @@ const build = async (role, s) => {
     log(`  (${model} takes no images: the planner works from the critic's notes, not the renders)`);
   }
   const opts = { endpoint, model, trace, sampling, fresh: !values['full-history'] };
-  return { model, made: role === 'planner' ? local.createPlanner(opts) : local.createCritic(opts) };
+  return { model, made: role === 'planner' ? local.createPlanner(opts) : local.createCritic({ ...opts, maxTokens: criticMaxTokens }) };
 };
 const planner = await build('planner', sides.planner);
 const critic = await build('critic', sides.critic);

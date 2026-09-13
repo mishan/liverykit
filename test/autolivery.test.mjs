@@ -1019,6 +1019,68 @@ test('a planner that never calls finish_round hands back what it said, not a sum
   }
 });
 
+test('a local critic cut off by its token limit says so, and names the limit', async () => {
+  // A thinking model spent the critic's 2048 tokens reasoning, and all the
+  // run said was that the verdict was not JSON, which sent somebody looking
+  // at the prompt rather than at the limit.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-critic-limit-'));
+  try {
+    const cut = () => {
+      const r = words('{"reads_at_distance": true, "number_');
+      r.choices[0].finish_reason = 'length';
+      return r;
+    };
+    const { fetchImpl, sent } = fakeServer({ vision: true, replies: [cut(), cut()] });
+    const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
+    const trace = await createTrace({ dir });
+    const ask = (opts) => local.createCritic({ endpoint, model: 'local-model', trace, ...opts })
+      .judge({ brief: 'b', summary: 's', images: [{ view: 'left', data: 'CCCC' }] });
+    await assert.rejects(ask({}), /cut off at its 8192-token limit/);
+    assert.equal(sent[0].max_tokens, 8192, 'more than the 2048 a thinking model ran out of');
+    await assert.rejects(ask({ maxTokens: 20000 }), /cut off at its 20000-token limit.*--critic-max-tokens/);
+    assert.equal(sent[1].max_tokens, 20000);
+
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [join(ROOT, 'autolivery/bin.mjs'), 'number 85', '--critic-max-tokens', 'lots',
+      '--backend', 'openai', '--base-url', 'http://127.0.0.1:1/v1', '--out', dir], { encoding: 'utf8', timeout: 30000 });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /--critic-max-tokens must be a whole number above zero, not lots/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the MCP client says what it could not read, and gives up on a reply that never comes', async () => {
+  // A line that did not parse was dropped without a word, and so was a reply
+  // to a request nobody made, and a request has no time limit: a garbled
+  // answer left its request waiting for ever, and the run hung saying nothing.
+  const server = `
+    const rl = require('node:readline').createInterface({ input: process.stdin });
+    rl.on('line', (line) => {
+      const m = JSON.parse(line);
+      const say = (o) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...o }) + '\\n');
+      if (m.method === 'initialize') say({ id: m.id, result: {} });
+      if (m.method === 'tools/list') {
+        process.stdout.write('this is not JSON\\n');
+        process.stdout.write('null\\n');
+        say({ id: 999, result: {} });
+        say({ id: m.id, result: { tools: [] } });
+      }
+      // tools/call is never answered.
+    });`;
+  const warned = [];
+  const mcp = await connect({ args: ['-e', server], warn: (m) => warned.push(m), timeoutMs: 300 });
+  try {
+    assert.deepEqual(await mcp.listTools(), []);
+    assert.ok(warned.some((w) => /not JSON-RPC.*this is not JSON/.test(w)), warned.join('\n'));
+    assert.ok(warned.some((w) => /not JSON-RPC.*null/.test(w)), warned.join('\n'));
+    assert.ok(warned.some((w) => /request 999, which nothing is waiting for/.test(w)), warned.join('\n'));
+    await assert.rejects(mcp.callTool('render_car', { view: 'left' }), /MCP tools\/call render_car: no reply after 0\.3 s/);
+  } finally {
+    mcp.close();
+  }
+});
+
 test('find_space returns measured spots on a panel, and refuses a panel that is not there', async () => {
   const ed = await fixtureEditor();
   try {
