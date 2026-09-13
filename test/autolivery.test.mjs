@@ -1058,6 +1058,28 @@ test('each view is counted for how much of a piece it shows, and what stands in 
   }
 });
 
+test('a blended surface the design paints stands in front of what is behind it', async () => {
+  // The whole-car pass skipped every blended part without a car-owned sheet,
+  // and a part the design paints has none, since it wears the design. So a
+  // painted plate in front of a name hid nothing, and the name was counted
+  // whole while the picture showed it covered.
+  const ed = await fixtureEditor({ kn5: { extraMeshes: [{ ...SHIELD, materialId: 1 }],
+    materials: [{ name: 'BodyMat' }, { name: 'ShieldMat', shader: 'ksPerPixelAlpha', alphaBlendMode: 1 }] } });
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const proposal = { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('plate-hidden', panels[0].panel, [0.5, 0.3, 0.3, 0.4]),
+    ] };
+    const out = JSON.parse((await ed.mcp.callTool('check_fitment', { proposal })).content[0].text);
+    const hidden = out.inView.find((m) => m.id === 'plate-hidden');
+    assert.equal(hidden.whole, false, JSON.stringify(hidden));
+    assert.equal(hidden.hiddenBy, 'MIRROR_L');
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a piece with a floor that no view shows enough of to count fails, not passes', async () => {
   // Said as low, which passes a gate: a `minVisible` piece nobody can see in
   // any picture went through as though it had met its floor.
