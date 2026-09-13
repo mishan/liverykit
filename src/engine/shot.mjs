@@ -895,11 +895,18 @@ export function rasterise(model, groups, sheets, {
  * alone — see carSheets — and the design's own surfaces are laid over it. The
  * two cannot collide: those are keyed by file and these by role.
  */
-/** The four views on a contact sheet, in reading order. */
-export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'rear-left'];
+/**
+ * The views on a contact sheet, in reading order: three across, two down.
+ *
+ * `top` and `front` joined the first four because the bonnet, the roof and the
+ * nose were where no view looked squarely. A Gulf centre stripe drawn ACROSS
+ * the car instead of along it was ticked "present" by a critic that had only
+ * glimpsed the bonnet from a three-quarter view, and nothing showed the nose.
+ */
+export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'top', 'front', 'rear-left'];
 
 /**
- * Four views of the car in one picture, each labelled.
+ * Several views of the car in one picture, each labelled.
  *
  * For a caller that pays per look. A model reading a picture is charged
  * roughly by its area, so four half-size views cost about what four separate
@@ -915,22 +922,26 @@ export async function shootSheet(model, groups, surfaces, { sheets: stock = null
   for (const s of surfaces) {
     if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
   }
-  // The size asked for, exactly: an odd width gives its extra pixel to the
-  // right-hand column, an odd height to the bottom row.
-  const cols = [Math.floor(width / 2), width - Math.floor(width / 2)];
-  const rows = [Math.floor(height / 2), height - Math.floor(height / 2)];
+  // Two across for up to four views, three for more. The size asked for,
+  // exactly: what does not divide goes to the last column and the last row.
+  const nc = views.length > 4 ? 3 : 2;
+  const nr = Math.ceil(views.length / nc);
+  const split = (total, n) => Array.from({ length: n }, (_, i) =>
+    (i < n - 1 ? Math.floor(total / n) : total - Math.floor(total / n) * (n - 1)));
+  const cols = split(width, nc);
+  const rows = split(height, nr);
   const cells = [];
   let skipped = 0;
   for (const [i, view] of views.entries()) {
-    const c = i % 2, r = Math.floor(i / 2);
+    const c = i % nc, r = Math.floor(i / nc);
     const img = rasterise(model, groups, sheets, { view, width: cols[c], height: rows[r] });
     skipped = Math.max(skipped, img.skipped);
     cells.push({ input: img.data, raw: { width: img.width, height: img.height, channels: 4 },
       left: c * cols[0], top: r * rows[0] });
   }
   // Named on the picture itself: a reader told "the rear three-quarter shows a
-  // cut roundel" has to be able to find which quarter that is.
-  const labels = views.map((v, i) => `<text x="${(i % 2) * cols[0] + 10}" y="${Math.floor(i / 2) * rows[0] + 22}" ` +
+  // cut roundel" has to be able to find which view that is.
+  const labels = views.map((v, i) => `<text x="${(i % nc) * cols[0] + 10}" y="${Math.floor(i / nc) * rows[0] + 22}" ` +
     `font-family="DejaVu Sans, sans-serif" font-size="16" fill="#d8dde3">${v}</text>`).join('');
   const overlay = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${labels}</svg>`);
   const png = await sharp({ create: { width, height, channels: 4, background: { r: 12, g: 13, b: 16, alpha: 1 } } })
