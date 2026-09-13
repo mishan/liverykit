@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, blends } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -187,6 +187,9 @@ export async function profileFromKn5(path, {
   // Built once for the car, not once per texture: the grid and the index of
   // triangles depend on the car alone.
   const prepared = visibility ? occupancyFor(model, { occluders }) : null;
+  // The cockpit's too, at its own finer cells. Only the triangle index was
+  // shared with it, and its grid was still rebuilt for every texture.
+  const cockpitGrid = visibility && eye ? occupancyGrid(model, occluders, 0.02) : null;
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -383,6 +386,9 @@ export async function profileFromKn5(path, {
     textures[r] = {
       file: s.file, width: s.width, height: s.height, alpha: s.alpha,
       sizeFrom: 'skin',
+      // Said outright. `sizeFrom: 'skin'` is also where an encrypted model's
+      // own textures get their size, so it cannot say that no mesh wears one.
+      inModel: false,
       notes: 'Not referenced by this model — most likely belongs to the driver or ' +
              'crew model, which is a separate kn5. Panels cannot be measured from ' +
              'here; point --from-kn5 at that model to map them.',
@@ -438,7 +444,7 @@ export async function profileFromKn5(path, {
       // Visibility isn't a property of a surface, it's a property of a surface
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
-      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, log });
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, grid: cockpitGrid, log });
       // An island on a mesh the car's own config hides is on nothing anybody
       // sees, whatever its rays say: the mesh is not drawn, and taken out of
       // the occluders, it measured clear, a place to paint the game never shows.

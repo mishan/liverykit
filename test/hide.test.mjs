@@ -118,11 +118,16 @@ test('a texture only the skins folder knows is not sent to a regeneration that c
   // The driver's suit, the crew, a part an extension model draws: no mesh in
   // the car's own model wears them, so no regeneration records alphaHides for
   // them, and every shipped profile has some. They were told "regenerate it".
-  const [plan] = hidePlan({ id: 'car', textures: { suit: { file: 'Suit.dds', width: 1024, height: 1024, sizeFrom: 'skin' } } },
-    { hide: ['suit'] });
+  const [plan] = hidePlan({ id: 'car', textures: {
+    suit: { file: 'Suit.dds', width: 1024, height: 1024, sizeFrom: 'skin', inModel: false } } }, { hide: ['suit'] });
   assert.equal(plan.action, 'cannot', 'treated as opaque, the cheaper way to be wrong');
   assert.match(plan.why, /no mesh in this car's model wears Suit\.dds/);
   assert.doesNotMatch(plan.why, /regenerate/);
+  // An encrypted model's own textures take their size from a skin too, and
+  // are worn: an old profile of one does need regenerating.
+  const [worn] = hidePlan({ id: 'car', textures: {
+    body: { file: 'Body.dds', width: 2048, height: 2048, sizeFrom: 'skin', shaders: ['ksPerPixel'] } } }, { hide: ['body'] });
+  assert.match(worn.why, /regenerate it/);
 });
 
 test('every shipped profile records whether a transparent sheet hides each texture', async () => {
