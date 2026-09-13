@@ -1527,3 +1527,51 @@ test('a "cut off" the count contradicts is overruled, and one it cannot place is
   }
 });
 
+// A ring whose stroke is drawn past its own box (radius + width/2 = 0.75), at
+// the rear edge of the fixture's left panel, whose rect is its island: the
+// stroke runs off the island into texture space no triangle uses.
+const offEdge = (id, panel) => ({ op: 'add-region', surface: 'surfaces.body', region: {
+  id, treatment: 'ring', panel, at: [0.7, 0.3, 0.3, 0.4], radius: 0.5, width: 0.5, color: 'ink' } });
+
+test('a piece that runs off its island is not whole, and a critic calling it cut off stands', async () => {
+  // Only the pixels a triangle draws were counted, so the part of a piece
+  // painted where no triangle reaches was never in the count. On the NSX,
+  // roundels at panel corners with a third of their area off the mesh came
+  // back whole, and a correct "cut off at the panel edge" was overruled.
+  const ed = await fixtureEditor();
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const left = panels[0].panel;
+    const out = JSON.parse((await ed.mcp.callTool('check_fitment', { proposal: { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' }, offEdge('ring-off', left)] } })).content[0].text);
+    const ring = out.inView.find((m) => m.id === 'ring-off');
+    assert.equal(ring.visible, 1, 'every pixel of it a triangle draws is in view');
+    assert.ok(ring.onMesh > 0.5 && ring.onMesh < 0.99, JSON.stringify(ring));
+    assert.equal(ring.whole, false, JSON.stringify(ring));
+    assert.match(ring.why, /texture space no triangle uses/);
+
+    const planner = { async round({ call }) {
+      await call('draft_design', { design: [{ op: 'set-palette', name: 'ink', value: '#101014' }, offEdge('ring-off', left)] });
+      await call('finish_round', { summary: 'a ring' });
+    } };
+    const asked = [];
+    const critic = { judge: async (a) => { asked.push(a); return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [{ asked: 'a ring', present: true, where: 'left door' }],
+      cut_off: [{ what: 'the ring', where: 'left view, rear edge', id: 'ring-off' }], unreadable: [], notes: [] }; } };
+    const dir = join(ed.dir, 'run');
+    const result = await run({ brief: 'a ring', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir }), out: dir,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, closer: [], propose: false });
+    const h = result.history[0];
+    assert.equal(h.critic.overruled, undefined, JSON.stringify(h.critic));
+    assert.deepEqual(h.critic.cut_off.map((c) => c.id), ['ring-off']);
+    assert.equal(result.passed, false);
+    const told = h.fitment.inView.find((m) => m.id === 'ring-off');
+    assert.equal(told.onMesh, ring.onMesh, 'the round record says why it is not whole');
+    assert.match(told.why, /texture space no triangle uses/);
+    const { measuredNote } = await import('../autolivery/prompts.mjs');
+    assert.match(measuredNote(asked[0].measured), /ring-off: .*Not whole: only \d+% of it is on the car/);
+  } finally {
+    await ed.stop();
+  }
+});
+
