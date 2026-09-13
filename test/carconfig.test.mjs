@@ -156,6 +156,36 @@ test('a mesh the car hides stands in front of nothing when the profile measures 
   assert.ok(Math.abs(hidden - bare) < 0.02, `a hidden one covers nothing: ${hidden} against ${bare}`);
 });
 
+test('a mesh the car hides is seen by nobody, whatever its own rays say', async () => {
+  // Taken out of the occluders, a hidden mesh's own island measured clear:
+  // a plate the car's config hides came out visible and safe, a place to paint
+  // that the game never draws.
+  const x = 0.95 + 0.03, N = 40;
+  const plate = { name: 'PLATE_L', verts: [], indices: [] };
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      // In the gap between the flanks on the sheet, big enough to be a panel.
+      plate.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N),
+        0.315 + 0.03 * (i / N), 0.05 + 0.4 * (j / N), [1, 0, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      plate.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-hidden-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5({ extraMeshes: [plate] }));
+  await mkdir(join(dir, 'extension'));
+  await writeFile(join(dir, 'extension', 'ext_config.ini'), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const found = Object.values(p.panels).flatMap((ps) => Object.values(ps)).find((q) => q.source?.mesh === 'PLATE_L');
+  assert.ok(found, 'the plate is a panel of the texture it wears');
+  assert.equal(found.visible, 0);
+  assert.equal(found.hidden, true);
+});
+
 test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {
   // Absent is the common case and is not an error. Unreadable is a different
   // fact wearing the same clothes: the car has hide rules, they were not
