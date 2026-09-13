@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import '../src/index.mjs';
-import { fitment } from '../src/fitment.mjs';
+import { fitment, wholePieces } from '../src/fitment.mjs';
 import { occupancyFor, rectVisibility } from '../src/engine/visibility.mjs';
 
 const probe = (model, rect) =>
@@ -1172,6 +1172,33 @@ test('a number in a roundel is judged by where its letters are, not by its box',
   assert.equal(edge.length, 1, 'letters across the disc\'s edge are still found');
   assert.equal(edge[0].severity, 'high');
   assert.match(edge[0].why, /circle runs through/);
+});
+
+test('a number on a panel laid a quarter turn is judged by its letters too', () => {
+  // The Abarth's doors measure 90 and 270. `inkBox` gave up on a quarter turn
+  // and answered with the whole box, so a number in a roundel there got the
+  // high overlap the letters-not-box rule was written to remove, and the
+  // in-view count took the box's empty corners for the number.
+  const roundel = { id: 'roundel', treatment: 'ring', panel: 'L', at: [0.3, 0.3, 0.4, 0.4], color: 'ink',
+    radius: 0.25, width: 0.5 };
+  const number = (at) => ({ id: 'number', treatment: 'text', panel: 'L', at, text: '{number}', rotate: 'auto' });
+  const at = [0.31, 0.32, 0.38, 0.36];
+  const box = [0.4 * at[0], 0.4 * at[1], 0.4 * (at[0] + at[2]), 0.4 * (at[1] + at[3])];
+  for (const textRotation of [90, 270]) {
+    const turned = structuredClone(profile);
+    turned.panels.body.L.textRotation = textRotation;
+    const overlaps = (d) => fitment(d, turned).findings.filter((f) => f.kind === 'overlap');
+    assert.deepEqual(overlaps(design([roundel, number(at)])), [], `letters inside the disc, turned ${textRotation}`);
+
+    const [x0, y0, x1, y1] = wholePieces(design([roundel, number(at)]), turned).find((p) => p.id === 'number').box;
+    assert.ok(x1 - x0 < 0.7 * (box[2] - box[0]) && y1 - y0 < 0.7 * (box[3] - box[1]),
+      `the letters, not the box, turned ${textRotation}: ${[x0, y0, x1, y1]} in ${box}`);
+    assert.ok(x0 >= box[0] && x1 <= box[2] && y0 >= box[1] && y1 <= box[3], 'and inside it');
+
+    const edge = overlaps(design([roundel, number([0.55, 0.4, 0.3, 0.2])]));
+    assert.equal(edge.length, 1, `letters across the disc's edge are still found, turned ${textRotation}`);
+    assert.equal(edge[0].severity, 'high');
+  }
 });
 
 test('lettering too close in colour to what is under it is measured, not left to the critic', () => {
