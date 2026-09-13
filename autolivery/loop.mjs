@@ -320,6 +320,7 @@ export async function run({
             return refuse('finish_round needs a summary: what the draft is, in a sentence or two. ' +
               'It is what a person reads when the design reaches the inbox.');
           }
+          summary = args.summary;
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
@@ -350,7 +351,41 @@ export async function run({
     };
 
     const said = await planner.round({ n, rounds, brief: theBrief, feedback, tools, call, parent: round, facts });
-    if (said?.summary) summary = said.summary;
+
+    // A round that did not call finish_round was not submitted, whatever the
+    // planner last wrote. Its last prose used to become the summary and the
+    // round was gated anyway, so a draft could reach the inbox described as
+    // "Let me check fitment once more", and the critic judged the renders
+    // against that sentence. It is not gated; what it said is kept as what it
+    // said, and the next round begins by hearing that it was not submitted.
+    if (!sealed) {
+      const words = said?.said ?? '';
+      const { r: rd } = await traced(round, 'read_design', { proposal: '(the draft)' }, () =>
+        mcp.callTool('read_design', { proposal: draft }));
+      let design = null;
+      try {
+        const e = JSON.parse(textOf(rd));
+        design = JSON.stringify({ palette: e.palette, identity: e.identity, surfaces: e.surfaces, paint: e.paint });
+      } catch { /* said in the notice below */ }
+      history.push({ round: n, passed: false, submitted: false, said: words,
+        gates: { render: 'not run', fitment: 'not run', critic: 'not run' },
+        failures: [`round ${n} ended without finish_round, so it was not gated`] });
+      log(`  round ${n} ended without finish_round, so it was not gated` +
+        (words ? ` (it last said: ${clip(words, 140)})` : ''));
+      await round.end({ ok: false, error: `round ${n} ended without finish_round`,
+        attrs: { 'round.passed': false, 'round.submitted': false, 'round.said': clip(words) } });
+      await trace.flush();
+      feedback = {
+        submitted: false,
+        text: `Round ${n} ended without finish_round, so it was not submitted: the gate did not judge it, ` +
+          'nothing was offered to anyone, and nothing you wrote in it was taken as a summary. The draft ' +
+          `stands as you left it${design ? '' : ` (it could not be read back to show you: ${clip(textOf(rd), 200)})`}. ` +
+          `${rounds - n} round(s) left.`,
+        images: [],
+        design,
+      };
+      continue;
+    }
 
     const gate = await judge({ n, round });
     history.push(gate.record);
@@ -437,7 +472,7 @@ export async function run({
       for (const [id, was] of lastGate.constraints) {
         if (!lastGate.failed.has(id) || !constraints.has(id)) continue;
         for (const change of loosened(was, constraints.get(id))) {
-          reasons.push(`${id}: ${change} after it failed round ${n - 1}. A constraint is a requirement, ` +
+          reasons.push(`${id}: ${change} after it failed round ${lastGate.round}. A constraint is a requirement, ` +
             `not a setting to tune until the gate passes: move or resize ${id} instead.`);
         }
       }
@@ -556,7 +591,9 @@ export async function run({
           (second.error ? ` (${clip(second.error, 140)})` : (!criticPass ? criticWhy(second) : ''))
         : ''));
 
+    // Which round, since a round that was never submitted has no gate.
     lastGate = {
+      round: n,
       constraints,
       failed: new Set((fitment?.findings ?? [])
         .filter((f) => f.severity === 'fatal' || f.severity === 'high')

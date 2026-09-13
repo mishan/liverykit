@@ -122,6 +122,14 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
     lastSummary = summary;
     return { summary };
   };
+  // Out of turns or nudges without finish_round: not submitted, so its last
+  // prose goes back as what it said and never as a summary. Kept as one, a
+  // fresh round began "At the end of round 2 you said: Let me check fitment
+  // once more", and the loop put the same sentence in front of the critic.
+  const unfinished = (said) => {
+    lastSummary = '';
+    return { summary: null, said };
+  };
   const functions = (tools) => tools.map((t) => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.input_schema },
@@ -157,7 +165,9 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
             (feedback.design ? '\n\nThe design your draft makes now, with every draft operation applied. ' +
               `Change it by the ids it already has:\n${feedback.design}` : '') });
         }
-        parts.push({ type: 'text', text: `The gate's verdict on round ${n - 1}:\n${feedback.text}` });
+        // A round that was never submitted has no verdict, only that notice.
+        const unsubmitted = feedback.submitted === false;
+        parts.push({ type: 'text', text: unsubmitted ? feedback.text : `The gate's verdict on round ${n - 1}:\n${feedback.text}` });
         if (sees) {
           for (const im of feedback.images) {
             parts.push({ type: 'text', text: `The ${im.view} render the critic judged:` }, picture(im.data));
@@ -166,7 +176,8 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
           parts.push({ type: 'text', text: 'The critic judged renders you cannot see, because this model ' +
             'takes no images. Its notes above say what it saw.' });
         }
-        parts.push({ type: 'text', text: `Round ${n} of ${rounds}. Fix what the gate named, then finish_round.` });
+        parts.push({ type: 'text', text: `Round ${n} of ${rounds}. ` +
+          `${unsubmitted ? 'Finish the draft' : 'Fix what the gate named'}, then finish_round.` });
       }
       messages.push({ role: 'user', content: parts });
 
@@ -193,7 +204,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
           // the model's best guess at what to write next.
           const text = msg.content ?? '';
           messages.push({ role: 'assistant', content: text.length > 300 ? `${text.slice(0, 300)} […cut off]` : text });
-          if (++nudges > maxNudges) return done(last);
+          if (++nudges > maxNudges) return unfinished(last);
           messages.push({ role: 'user', content: cutOff(maxTokens, calls.length > 0) });
           continue;
         }
@@ -202,7 +213,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
         // Silence is not finish_round. Sent back to act, a bounded number of
         // times, so a model that never acts still ends the round.
         if (!calls.length) {
-          if (++nudges > maxNudges) return done(last);
+          if (++nudges > maxNudges) return unfinished(last);
           messages.push({ role: 'user', content: NO_CALL });
           continue;
         }
@@ -236,7 +247,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
           messages.push({ role: 'user', content: [{ type: 'text', text: 'Pictures the tools returned:' }, ...pictures] });
         }
       }
-      return done(last);
+      return unfinished(last);
     },
   };
 }
