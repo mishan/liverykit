@@ -799,6 +799,20 @@ test('a field no treatment takes and nothing else reads is a finding, not a no-o
   assert.ok(r.checked.includes('unknown-field'));
 });
 
+test('drop on a design region is reported, because only a fit reads it', () => {
+  // `drop` was let through as a placement field, and a fit is the only thing
+  // that reads it. Written on the design it removed nothing and said nothing,
+  // which is the do-nothing field this check exists to catch.
+  const r = fitment(design([
+    { id: 'number', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.8, 0.5], text: '{number}', drop: true },
+  ]), profile);
+
+  const unk = r.findings.filter((f) => f.kind === 'unknown-field');
+  assert.deepEqual(unk.map((f) => f.field), ['drop'], JSON.stringify(r.findings));
+  assert.equal(unk[0].severity, 'high');
+  assert.match(unk[0].why, /drop belongs in a fit/);
+});
+
 test('a region can say how much of it must be seen, and a slice behind something is reported', () => {
   // A roundel measured 99% on the door, and the strip along its top 44%
   // visible — tucked under the window frame. It is on the car and it is cut
