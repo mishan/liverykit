@@ -487,6 +487,23 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     regionIds: Object.fromEntries(ids),
     fit: fit ?? { livery: id, car: profile.id, regions: {} },
     surfaces,
+    // The other textures a term binds, with their panels. `surfaces` holds one
+    // entry per term, the primary, because that is the one the editor edits;
+    // but a region can be placed on a panel of any of them, and asking where
+    // (find_panels, find_space) needs them all. A formula car's `body` binds
+    // body AND bodyRear, and the rear's panels were unanswerable.
+    secondarySurfaces: targets.filter((t) => !t.primary).map((t) => ({
+      from: t.from,
+      role: t.role,
+      panels: Object.entries(profile.panels?.[t.role] ?? {}).map(([name, p]) => ({
+        name,
+        rect: p.rect,
+        tags: p.tags ?? [],
+        anisotropy: p.anisotropy ?? 1,
+        visible: p.visible,
+        mirrorOf: p.mirrorOf,
+      })),
+    })),
     // EVERY role this design paints, not just the one entry per term that
     // `surfaces` carries. A vocabulary term may bind to several textures — the
     // RSS4 spreads its bodywork across two — and `surfaces` deliberately holds

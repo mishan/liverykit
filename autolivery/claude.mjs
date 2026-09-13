@@ -74,13 +74,14 @@ async function ask(client, params, { trace, parent, name, fallback, budget = nul
   const u = res.usage ?? {};
   const refused = res.stop_reason === 'refusal';
   const cost = costOf(res.model, u);
-  if (budget) {
-    if (!cost) throw new Error(`${res.model} has no known price, so a --max-cost budget cannot be enforced`);
-    budget.spent += cost.total;
-  }
+  // The span ends before any verdict on the budget: the call was made and
+  // paid for, and a paid call missing from the trace is the one thing the
+  // trace exists not to lose.
+  const unpriced = budget && !cost ? `${res.model} has no known price, so a --max-cost budget cannot be enforced` : null;
+  if (budget && cost) budget.spent += cost.total;
   await span.end({
-    ok: !refused,
-    error: refused ? `declined: ${res.stop_details?.explanation ?? 'no reason given'}` : null,
+    ok: !refused && !unpriced,
+    error: unpriced ?? (refused ? `declined: ${res.stop_details?.explanation ?? 'no reason given'}` : null),
     attrs: llmAttributes({
       model: res.model,
       id: res.id,
@@ -93,6 +94,7 @@ async function ask(client, params, { trace, parent, name, fallback, budget = nul
       cost,
     }),
   });
+  if (unpriced) throw new Error(unpriced);
   return res;
 }
 

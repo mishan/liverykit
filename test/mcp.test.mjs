@@ -154,11 +154,17 @@ test('mcp tools: find_panels with filters', async () => {
     assert.ok(dataTag.count > 0);
     assert.ok(dataTag.panels.every((p) => p.tags.includes('left')));
 
-    // Search by role
+    // Search by role. On this car `body` binds two textures, body and bodyRear,
+    // and a region can go on a panel of either: both are listed.
     const resRole = await handler.callTool('find_panels', { role: 'body' });
     const dataRole = JSON.parse(resRole.content[0].text);
     assert.ok(dataRole.count > 0);
-    assert.ok(dataRole.panels.every((p) => p.role === 'body'));
+    assert.ok(dataRole.panels.every((p) => p.role === 'body' || p.role === 'bodyRear'));
+    assert.ok(dataRole.panels.some((p) => p.role === 'bodyRear'), 'including the second texture the surface binds');
+    const resRear = await handler.callTool('find_panels', { role: 'bodyRear' });
+    assert.ok(!resRear.isError, resRear.content[0].text);
+    const dataRear = JSON.parse(resRear.content[0].text);
+    assert.ok(dataRear.count > 0 && dataRear.panels.every((p) => p.role === 'bodyRear'), 'and it can be asked for by name');
 
     // Search by mirror
     const resMirror = await handler.callTool('find_panels', { hasMirror: true });
