@@ -253,6 +253,10 @@ export async function run({
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {},
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
+  // How a save puts its bytes on disk. A test hands in one that fails
+  // partway, which the dead-server test could not: its check that no
+  // .partial was left passed just as well with no rename at all.
+  write = (path, text) => writeFile(path, text),
 }) {
   await mkdir(out, { recursive: true });
   const tools = plannerTools(await mcp.listTools());
@@ -273,7 +277,7 @@ export async function run({
   // where the last round's had been, and nothing could replay or propose it.
   const save = async (result) => {
     const partial = join(out, 'result.json.partial');
-    await writeFile(partial, JSON.stringify(result, null, 2) + '\n');
+    await write(partial, JSON.stringify(result, null, 2) + '\n');
     await rename(partial, join(out, 'result.json'));
   };
 
