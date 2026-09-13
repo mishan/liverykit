@@ -273,6 +273,37 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
   }
 });
 
+test('a save that fails partway leaves the last round\'s result.json whole', async () => {
+  // Written in place, a write cut short by a crash or a full disk left half a
+  // file where the last round's had been, and nothing could replay or propose
+  // it. The writer is the injected part, so a save that wrote result.json
+  // directly would be cut short here too.
+  const ed = await fixtureEditor();
+  try {
+    let saves = 0;
+    const write = async (path, text) => {
+      if (++saves === 1) return writeFile(path, text);
+      await writeFile(path, text.slice(0, text.length >> 1));
+      throw new Error('no space left on device');
+    };
+    const planner = { async round({ n, call }) {
+      await call('draft_design', { design: [{ op: 'set-palette', name: `c${n}`, value: '#101014' }] });
+      await call('finish_round', { summary: `round ${n}` });
+    } };
+    const critic = { async judge() {
+      return { reads_at_distance: false, number_legible: false, palette_ok: true, matches_brief: false, notes: ['not yet'] };
+    } };
+    const out = join(ed.dir, 'run');
+    await assert.rejects(run({ brief: 'b', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 3, views: ['left'], shot: { width: 200, height: 150 }, write }), /no space left on device/);
+    assert.equal(saves, 2);
+    const saved = JSON.parse(await readFile(join(out, 'result.json'), 'utf8'));
+    assert.equal(saved.rounds, 1, 'round 1\'s result.json, whole');
+  } finally {
+    await ed.stop();
+  }
+});
+
 
 test('a call after close() is the server gone, not a write to a closed pipe', async () => {
   const ed = await fixtureEditor();
