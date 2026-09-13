@@ -585,7 +585,7 @@ test('a sheet is four different views in one picture, the size it was asked for'
     const oddMeta = await sharp(Buffer.from(odd.content[0].data, 'base64')).metadata();
     assert.deepEqual([oddMeta.width, oddMeta.height], [401, 301]);
     const listed = (await ed.mcp.listTools()).find((t) => t.name === 'render_car');
-    assert.match(listed.description, /"sheet" is four labelled views/);
+    assert.match(listed.description, /"sheet" is six labelled views/);
   } finally {
     await ed.stop();
   }

@@ -61,6 +61,27 @@ async function toolDescribeCar(client) {
   };
 }
 
+/**
+ * Which way a panel's `at` runs on the car: its x (the texture's u) and its
+ * y (v), each as along the car, across it, or up and down.
+ *
+ * Panels are unwrapped every which way. On the NSX the bonnet, roof and rear
+ * deck run lengthwise in x and the upper nose runs lengthwise in y, and an
+ * agent asked for a Gulf centre stripe wrote [0.4, 0, 0.2, 1] on all of them
+ * — a band ACROSS the car where the livery's best-known element runs along it,
+ * because nothing it could ask said which way was which. Read off the unit
+ * vectors the profile measured: AC models are y-up, and a car's length is z.
+ */
+function axesOf(p) {
+  const name = (a) => {
+    if (!Array.isArray(a) || a.length < 3) return null;
+    const [x, y, z] = a.map(Math.abs);
+    return z >= x && z >= y ? 'along the car' : x >= y ? 'across the car' : 'up and down';
+  };
+  const x = name(p.uAxis), y = name(p.vAxis);
+  return x || y ? { x, y } : null;
+}
+
 async function toolFindPanels(client, args) {
   const state = await client.getState();
   // A surface goes by three names — the texture role (`ext_skin_sponsors`),
@@ -117,6 +138,8 @@ async function toolFindPanels(client, args) {
         visible: p.visible,
         anisotropy: p.anisotropy,
         mirrorOf: p.mirrorOf ?? null,
+        // Which way at's x and y run on the car.
+        axes: axesOf(p),
       });
     }
   }
@@ -504,8 +527,9 @@ export function createToolHandler(client) {
         'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
         'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
-        'Views: ' + [...Object.keys(VIEWS), 'sheet'].join(', ') + '. "sheet" is four labelled views in ' +
-        'one picture (three-quarter, left, right, rear-left), the cheapest way to look all round. ' +
+        'Views: ' + [...Object.keys(VIEWS), 'sheet'].join(', ') + '. "sheet" is six labelled views in ' +
+        'one picture (three-quarter, left, right, top, front, rear-left), the cheapest way to look all ' +
+        'round, and the only one that sees the bonnet, roof and rear deck squarely. ' +
         'Unpainted parts wear the car\'s own ' +
         'textures, where the model carries them. Note the limits — no normal maps, no ' +
         'environment reflections and one fixed light rig, so it answers "does the artwork land ' +

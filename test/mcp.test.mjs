@@ -153,6 +153,12 @@ test('mcp tools: find_panels with filters', async () => {
     const dataTag = JSON.parse(resTag.content[0].text);
     assert.ok(dataTag.count > 0);
     assert.ok(dataTag.panels.every((p) => p.tags.includes('left')));
+    // Which way each panel's `at` runs on the car, so a stripe meant to run
+    // along it is not drawn across it.
+    const ways = ['along the car', 'across the car', 'up and down'];
+    assert.ok(dataTag.panels.some((p) => p.axes), 'panels say which way they run');
+    assert.ok(dataTag.panels.every((p) => !p.axes || (ways.includes(p.axes.x) && ways.includes(p.axes.y))),
+      JSON.stringify(dataTag.panels.map((p) => p.axes)));
 
     // Search by role. On this car `body` binds two textures, body and bodyRear,
     // and a region can go on a panel of either: both are listed.

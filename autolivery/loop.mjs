@@ -201,7 +201,7 @@ const brief = (f) => Object.fromEntries(
 
 export async function run({
   brief: theBrief, mcp, planner, critic, trace, out,
-  rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 1600, height: 960 },
+  rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {},
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true,
 }) {
