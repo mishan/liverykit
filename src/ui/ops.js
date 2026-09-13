@@ -19,6 +19,9 @@ export const CONSTRAINTS = {
   minMargin: 'number, mm — clean bodywork the box must have all round: with this much added ' +
     'on every side it must still be on the car and visible. Keeps a roundel off shut lines, ' +
     'window frames and arches.',
+  groupWith: 'string, the id of another region — this one must be on the same panel as that ' +
+    'one, as a team name belongs beside the race number. Checked only where a design declares ' +
+    'it: a brief may want the name somewhere else.',
 };
 
 
@@ -43,9 +46,12 @@ export function opSetConstraint(design, { id, key, value }) {
       `Known constraints: ${Object.keys(CONSTRAINTS).join(', ')}.`);
   }
   if (value !== null) {
-    const want = key === 'keepClear' ? 'boolean' : 'number';
+    const want = key === 'keepClear' ? 'boolean' : key === 'groupWith' ? 'string' : 'number';
     if (typeof value !== want) {
       throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
+    }
+    if (key === 'groupWith' && (!value.trim() || value === id)) {
+      throw new Error(`Constraint "groupWith" names another region's id; got ${JSON.stringify(value)}.`);
     }
     if ((key === 'minOnCar' || key === 'minVisible') && (value < 0 || value > 1)) {
       throw new Error(`Constraint "${key}" is a fraction between 0 and 1; got ${value}.`);

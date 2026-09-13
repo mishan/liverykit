@@ -553,6 +553,7 @@ and several other things:
 | `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
 | `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimetres at the car's real scale |
+| `ungrouped` | a region that declared `groupWith` is not on the same panel as the region it names |
 | `too-small` | a race number's capitals under 140 mm tall on the car, or a team or driver name's under 45 mm, measured on the letters after the text is shrunk to fit its box |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
@@ -612,7 +613,11 @@ the ray straight out from the surface is tested exactly against the triangles wi
 with any of these constraints is sampled every 5 mm or so, so its edges are tested
 too. `minMargin`, in
 millimetres, asks for that much clean bodywork all round: with it added on every
-side, the box must still be on the car and visible. A misspelled constraint is refused rather than ignored: it would otherwise
+side, the box must still be on the car and visible. `groupWith` names another region
+this one must share a panel with, as a team name belongs beside the race number,
+and they are reported as `ungrouped` when they part. Unlike the floors it is never
+assumed: a brief may want the name on the roof, so it applies only where the design
+declares it. A misspelled constraint is refused rather than ignored: it would otherwise
 read as a rule in force and enforce nothing.
 
 ### Surfaces the car should not draw
