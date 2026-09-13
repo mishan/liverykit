@@ -21,14 +21,17 @@ import { resolveTargets } from './profile.mjs';
  * fact about one car, not a property of the feature.
  *
  * The honest tool is a transparent texture, and it only works when the
- * material composites alpha. So this is a decision per role, and every branch
- * is reported, because the one that would be silent — a transparent file for
- * an opaque shader, encoded without complaint — is a part that still shows.
+ * material honours alpha — blends it, tests it, or turns it into coverage. So
+ * this is a decision per role, and every branch is reported, because the one
+ * that would be silent — a transparent file for an opaque material, encoded
+ * without complaint — is a part that still shows.
  *
- *   ship-transparent  alpha-blended material: ship a clear sheet
+ *   ship-transparent  every material wearing it honours alpha: ship a clear sheet
  *   car-hides         a clear sheet would not work, but the car's config hides
  *                     every mesh wearing it, so under CSP nothing shows anyway
- *   cannot            an opaque shader; the game will show it
+ *   cannot            an opaque material, a texture no mesh in this model
+ *                     wears, or a profile that does not say; the game will
+ *                     show it
  *   painted           the design also paints it, and painting wins
  *   absent            this car has no such role — designs travel, so not an error
  *

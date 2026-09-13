@@ -637,13 +637,23 @@ the design paints is never hidden.
 
 In the editor a hidden surface is simply not drawn. In the game there is no such
 switch, so the build ships a **fully transparent texture** for it — which works
-when the part's material composites alpha, and not otherwise. The profile records
-`alphaHides` for each texture, measured from the blend mode of every material that
-wears it, so the build can tell, and it says which of four things
-happened to every hidden role: shipped transparent (a 4x4 sheet — a texture
-with nothing on it needs no resolution); an opaque shader, so no sheet would
-work, but the car's own config hides the mesh in the game; an opaque shader and
-nothing else will hide it, so the game will show it; or not on this car at all.
+when the part's material honours alpha, and not otherwise. The profile records
+`alphaHides` for each texture: true when every material that wears it blends,
+alpha-tests or uses alpha to coverage, each of which draws nothing of a fully
+transparent texel. The build reads it and says what happened to every hidden
+role:
+
+- shipped transparent (a 4x4 sheet — a texture with nothing on it needs no
+  resolution);
+- no sheet would work, but the car's own config hides every mesh wearing it in
+  the game;
+- no sheet would work and nothing else hides it, so the game will show it —
+  because a material wearing it draws every texel, because no mesh in the car's
+  model wears it at all (the driver's suit, the crew: known only from the skins
+  folder, drawn by another model, and treated as opaque), or because the profile
+  predates `alphaHides` and needs regenerating;
+- the design paints it too, and painting wins;
+- or the car has no such role.
 
 That "car's own config" is `extension/ext_config.ini` beside the model, where a
 Custom Shaders Patch `MODEL_REPLACEMENT` can hide meshes — the usual arrangement

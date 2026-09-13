@@ -607,7 +607,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
-      "alphaHides": false,
+      "alphaHides": true,
       "sizeFrom": "model"
     }
   },

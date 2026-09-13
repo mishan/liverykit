@@ -19,7 +19,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, blends } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
@@ -307,13 +307,16 @@ export async function profileFromKn5(path, {
     // WHETHER SHIPPING THIS SHEET TRANSPARENT ACTUALLY HIDES IT, which the
     // build has to know when there is no model left to ask.
     //
-    // Every material that wears it has to composite, and the model states that
-    // per material (see `blends`). It used to be inferred from the shader
-    // names recorded beside this, and `ksPerPixelReflection` reads as glass
-    // while this Abarth wears it on its bumpers — so the inference promised a
-    // hide the game would ignore, which is the worst answer available here.
+    // Every material that wears it has to honour the alpha, and the model
+    // states that per material (see `discardsClear`). It used to be inferred
+    // from the shader names recorded beside this, and `ksPerPixelReflection`
+    // reads as glass while this Abarth wears it on its bumpers — so the
+    // inference promised a hide the game would ignore, which is the worst
+    // answer available here. Then it asked only whether they BLEND, and an
+    // alpha-tested grille, which discards a clear sheet entirely, was reported
+    // as a part no transparent texture could hide.
     entry.alphaHides = wearers.length > 0
-      && wearers.every((m) => blends(model.materials?.[m.materialId]));
+      && wearers.every((m) => discardsClear(model.materials?.[m.materialId]));
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.
