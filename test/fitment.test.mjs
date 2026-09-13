@@ -778,6 +778,25 @@ test('a region that lands on no panel is a finding, not a pass', () => {
   assert.equal(r.findings.some((f) => f.ids.includes('wash@L') && f.kind === 'unmatched'), false);
 });
 
+test('an at that cannot be placed is not reported as a panel the car lacks', () => {
+  // `at` is checked before the panel is looked up, and every error from either
+  // was labelled "names a panel this car does not have" — so a region with an
+  // `at` past its panel's edge, on a panel the car has, was sent looking for
+  // a panel that was never missing.
+  const r = fitment(design([
+    { id: 'wide', treatment: 'text', panel: 'L', at: [0, 0, 2, 1], text: '{team}' },
+    { id: 'lost', treatment: 'text', panel: 'Q', at: [0.2, 0.2, 0.6, 0.3], text: '{team}' },
+  ]), profile);
+
+  const un = r.findings.filter((f) => f.kind === 'unmatched');
+  const wide = un.find((f) => f.ids[0] === 'wide');
+  assert.ok(wide, JSON.stringify(r.findings));
+  assert.equal(wide.severity, 'high');
+  assert.doesNotMatch(wide.why, /panel this car does not have/);
+  assert.match(wide.why, /"at"/);
+  assert.match(un.find((f) => f.ids[0] === 'lost')?.why ?? '', /names a panel this car does not have/);
+});
+
 test('a field no treatment takes and nothing else reads is a finding, not a no-op', () => {
   // An agent spent four rounds making a number bigger with
   // `options: { scale: 1.5 }`. The renderer hands a treatment the whole region
