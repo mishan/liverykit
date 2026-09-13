@@ -324,8 +324,9 @@ export async function run({
     const gate = await judge({ n, round });
     history.push(gate.record);
     await round.end({
-      ok: gate.passed,
-      attrs: { 'round.fitment': gate.record.gates.fitment, 'round.critic': gate.record.gates.critic },
+      ok: !gate.broke,
+      error: gate.broke ? clip(gate.broke, 300) : null,
+      attrs: { 'round.passed': gate.passed, 'round.fitment': gate.record.gates.fitment, 'round.critic': gate.record.gates.critic },
     });
     await trace.flush();
     if (gate.passed) { passedIn = n; break; }
@@ -468,7 +469,19 @@ export async function run({
       ...(second ? { secondLook: second } : {}),
       renders: images.map((i) => i.path),
     };
-    await span.end({ ok: passed, attrs: { 'gate.fitment': record.gates.fitment, 'gate.critic': record.gates.critic } });
+    // A rejected round is the gate working, not an error. AgentOps drew the
+    // two rounds a run needed before it passed as failures, in red, beside
+    // the one that passed. ERROR is kept for the gate itself breaking: a
+    // render, the fitment check, or a verdict that did not come back.
+    const broke = fr.isError ? `check_fitment refused the draft: ${textOf(fr)}`
+      : views.length && !images.length ? 'no render came back'
+        : verdict?.error ? `the critic: ${verdict.error}`
+          : second?.error ? `the second look: ${second.error}` : null;
+    await span.end({
+      ok: !broke,
+      error: broke ? clip(broke, 300) : null,
+      attrs: { 'gate.passed': passed, 'gate.fitment': record.gates.fitment, 'gate.critic': record.gates.critic },
+    });
 
     log(`  gate: fitment ${fitmentPass ? 'PASS' : 'FAIL'}` +
       (fitmentPass ? '' : ` (${clip(reasons[0], 140)}${reasons.length > 1 ? ` +${reasons.length - 1} more` : ''})`) +
@@ -490,6 +503,7 @@ export async function run({
     const { renders, ...forPlanner } = record;
     return {
       passed,
+      broke,
       record,
       feedback: {
         text: JSON.stringify({ ...forPlanner, roundsLeft: rounds - n }, null, 2),
