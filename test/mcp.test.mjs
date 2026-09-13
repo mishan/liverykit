@@ -698,6 +698,28 @@ test('minVisibility holds every panel to it, the primary surface included', asyn
   }
 });
 
+test('find_panels says which panels minVisibility left out for having no measurement', async () => {
+  // A panel nobody measured cannot meet a floor, so it is left out, and it
+  // was left out without a word unless nothing at all passed. The RSS 4 has
+  // nine such panels, and the harness asks minVisibility 0.45 of every run.
+  const panel = (name, visible) => ({ name, rect: [0, 0, 0.5, 0.5], tags: ['left'], ...(visible === undefined ? {} : { visible }) });
+  const client = {
+    checkEditor: async () => {},
+    getState: async () => ({ surfaces: [
+      { role: 'body_skin', from: 'surfaces.body', panels: [panel('door', 0.9), panel('sill', 0.2), panel('belts'), panel('straps')] },
+    ] }),
+  };
+  const tools = createToolHandler(client);
+  const ask = async (args) => JSON.parse((await tools.callTool('find_panels', args)).content[0].text);
+
+  const floored = await ask({ minVisibility: 0.45 });
+  assert.deepEqual(floored.panels.map((p) => p.panel), ['door']);
+  assert.match(floored.unmeasured, /2 panel\(s\) have no visibility measurement.*body_skin\.belts, body_skin\.straps/);
+  // Only what the floor alone left out: a panel another filter refused is not counted.
+  assert.equal((await ask({ minVisibility: 0.45, minArea: 0.5 })).unmeasured, undefined);
+  assert.equal((await ask({})).unmeasured, undefined, 'and with no floor, nothing is left out');
+});
+
 test('propose_design names every constraint there is', async () => {
   // It named four of the five, and an agent reads a list as the list: the
   // minMargin this change adds went unproposed.

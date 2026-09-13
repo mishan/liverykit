@@ -85,20 +85,27 @@ async function toolFindPanels(client, args) {
   const results = [];
   let before = 0;
   const tagsSeen = new Set();
+  const unmeasured = [];
   for (const s of surfaces) {
     for (const p of s.panels ?? []) {
       before++;
       for (const t of p.tags ?? []) tagsSeen.add(t);
       if (args.tag && !(p.tags ?? []).includes(args.tag)) continue;
-      // A panel nobody measured cannot meet a floor on what was measured. It
-      // used to pass, and every primary panel went unmeasured here because the
-      // editor's state left `visible` out of them.
-      if (typeof args.minVisibility === 'number' && !(p.visible >= args.minVisibility)) continue;
       const area = p.rect ? (p.rect[2] * p.rect[3]) : 0;
       if (typeof args.minArea === 'number' && area < args.minArea) continue;
       if (typeof args.maxAnisotropy === 'number' && p.anisotropy > args.maxAnisotropy) continue;
       if (args.hasMirror === true && !p.mirrorOf) continue;
       if (args.hasMirror === false && p.mirrorOf) continue;
+      // A panel nobody measured cannot meet a floor on what was measured. It
+      // used to pass, and every primary panel went unmeasured here because the
+      // editor's state left `visible` out of them. Left out, it is named: it
+      // was dropped without a word unless nothing at all passed, and the RSS 4
+      // has nine such panels while the harness asks 0.45 of every run. Tested
+      // last, so the count is only what the floor alone left out.
+      if (typeof args.minVisibility === 'number' && !(p.visible >= args.minVisibility)) {
+        if (typeof p.visible !== 'number') unmeasured.push(`${s.role}.${p.name}`);
+        continue;
+      }
 
       results.push({
         role: s.role,
@@ -114,6 +121,11 @@ async function toolFindPanels(client, args) {
     }
   }
   const answer = { count: results.length, panels: results };
+  if (unmeasured.length) {
+    answer.unmeasured = `${unmeasured.length} panel(s) have no visibility measurement, so minVisibility could ` +
+      `not be held to them and left them out: ${unmeasured.slice(0, 12).join(', ')}` +
+      `${unmeasured.length > 12 ? `, and ${unmeasured.length - 12} more` : ''}. Ask without minVisibility to see them.`;
+  }
   // Nothing passed: say what there was, so the next question can be a better
   // one rather than the same one with the numbers loosened.
   if (!results.length) {
