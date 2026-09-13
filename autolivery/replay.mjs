@@ -72,6 +72,7 @@ export async function loadRecording(dir) {
   if (history.length && history.every((h) => h.draft)) {
     return {
       dir,
+      result,
       brief: result.brief,
       base: result.base,
       perRound: true,
@@ -81,6 +82,7 @@ export async function loadRecording(dir) {
   if (!result.draft) throw new Error(`${dir}/result.json holds no draft to replay`);
   return {
     dir,
+    result,
     brief: result.brief,
     base: result.base,
     perRound: false,
@@ -94,8 +96,17 @@ export function createReplayPlanner(recording) {
       const r = recording.rounds[Math.min(n, recording.rounds.length) - 1];
       // Each round's draft is the whole of it, not what changed: start clean.
       await call('reset_draft', {});
-      if (r.draft.design?.length) await call('draft_design', { design: r.draft.design });
-      if (r.draft.fit?.length) await call('draft_fit', { fit: r.draft.fit });
+      for (const [tool, key] of [['draft_design', 'design'], ['draft_fit', 'fit']]) {
+        if (!r.draft[key]?.length) continue;
+        const put = await call(tool, { [key]: r.draft[key] });
+        // The end of the replay, said. A refusal used to be one ✗ in the log,
+        // and the round went on to be judged on an empty draft and fail as
+        // "the draft is empty", which is not what happened to it.
+        if (put.isError) {
+          throw new Error(`round ${n}: today's editor refuses the recorded ${tool}, so the run cannot be ` +
+            `replayed from here: ${put.content?.[0]?.text ?? 'no reason given'}`);
+        }
+      }
       await call('finish_round', { summary: r.summary });
       return { summary: r.summary };
     },

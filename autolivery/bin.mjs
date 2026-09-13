@@ -4,7 +4,7 @@ import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
-import { run } from './loop.mjs';
+import { run, proposeDesign } from './loop.mjs';
 import { loadRecording, createReplayPlanner, designDigest, checkBase } from './replay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +33,8 @@ The loop:
                          own brief, so give none. The critic and second look
                          default to the local server, and nothing is proposed:
                          free, by default
+  --propose <run dir>    no loop: send that run's passing draft to the editor's inbox
+                         again, with why it passed. For a pass the inbox refused
   --out <dir>            renders, trace and result.json (default autolivery/runs/<time>)
   --no-propose           keep the passing design out of the editor's inbox
 
@@ -70,7 +72,7 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     editor: { type: 'string', default: 'http://127.0.0.1:7391/' },
-    rounds: { type: 'string', default: '6' },
+    rounds: { type: 'string' },
     backend: { type: 'string', default: 'anthropic' },
     'base-url': { type: 'string', default: 'http://127.0.0.1:8080/v1' },
     model: { type: 'string' },
@@ -82,6 +84,7 @@ const { values, positionals } = parseArgs({
     'critic-max-tokens': { type: 'string', default: '8192' },
     referee: { type: 'string' },
     replay: { type: 'string' },
+    propose: { type: 'string' },
     'advisory-critic': { type: 'boolean', default: false },
     views: { type: 'string', default: 'sheet' },
     looks: { type: 'string', default: '2' },
@@ -96,7 +99,7 @@ const { values, positionals } = parseArgs({
   },
 });
 
-if (values.help || (!positionals.length && !values.replay)) {
+if (values.help || (!positionals.length && !values.replay && !values.propose)) {
   process.stdout.write(USAGE);
   process.exit(values.help ? 0 : 1);
 }
@@ -106,6 +109,33 @@ const fail = (m) => {
   process.exit(1);
 };
 const log = (m) => console.log(m);
+
+// A passed run's draft sent again, and nothing else: no planner, no critic,
+// nothing paid for. An editor holds one proposal at a time, so a pass refused
+// because another was pending existed only in its result.json.
+if (values.propose) {
+  if (values.replay || positionals.length) fail('--propose sends a finished run, and takes no brief and no --replay');
+  let recorded;
+  try {
+    recorded = await loadRecording(resolve(values.propose));
+  } catch (e) {
+    fail(`--propose: ${e.message}`);
+  }
+  if (!recorded.result.passed) fail(`--propose: ${recorded.dir} did not pass its gate, so it has no measured design to offer`);
+  let sent;
+  let mcp = null;
+  try {
+    mcp = await connect({ args: [LIVERYKIT, '--mcp', '--editor', values.editor] });
+    sent = await proposeDesign(recorded.result, (args) => mcp.callTool('propose_design', args));
+  } catch (e) {
+    mcp?.close();
+    fail(e.message);
+  }
+  mcp.close();
+  if (sent.proposalError) fail(`the editor refused the proposal: ${sent.proposalError}`);
+  console.log(`proposal ${sent.proposalId} is in the editor's inbox at ${values.editor} — accept or discard it there.`);
+  process.exit(0);
+}
 
 // A replay brings its own brief and its own number of rounds: it is the same
 // designs, asked of today's gate. A brief typed beside --replay used to replace
@@ -124,8 +154,13 @@ if (values.replay) {
   }
 }
 const replaying = Boolean(recording);
+// Refused rather than ignored: a replay runs the rounds the run recorded, and
+// `--rounds 2` under it used to be dropped without a word.
+if (replaying && values.rounds !== undefined) {
+  fail(`--rounds does not apply to --replay, which runs the ${recording.rounds.length} round(s) the run recorded`);
+}
 const brief = replaying ? (recording.brief ?? '') : positionals.join(' ');
-const rounds = replaying ? recording.rounds.length : Number(values.rounds);
+const rounds = replaying ? recording.rounds.length : Number(values.rounds ?? '6');
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
 if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number, not ${values.looks}`);
