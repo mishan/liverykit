@@ -509,7 +509,11 @@ export async function run({
     const measured = fitment?.inView ?? null;
     const against = new Set((fitment?.findings ?? [])
       .filter((f) => f.severity === 'fatal' || f.severity === 'high').flatMap((f) => f.ids ?? []).map(String));
-    const whole = new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id)).map((m) => m.id));
+    // And only where the critic was shown the view that counted it. The count
+    // covers the sheet's six views; a critic given `left` alone was otherwise
+    // overruled on the strength of a view it never saw.
+    const shown = (m) => views.includes('sheet') || views.includes(m.home);
+    const whole = new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id) && shown(m)).map((m) => m.id));
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.

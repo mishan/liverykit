@@ -1003,7 +1003,11 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
     for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
     if (g.lod === 'LR' || g.glass || g.add) continue;
     const art = sheets.get(sheetKey(g)) ?? null;
-    if (g.blend && !art) continue;                  // not drawn in the picture either
+    // An unpainted blended part with no sheet of its own is not drawn in the
+    // picture either. A painted one is, and has no car-owned sheet because it
+    // wears the design: skipped too, a painted number plate stood in front of
+    // a door name and hid nothing, while the picture showed it covering.
+    if (g.blend && !art && !g.role) continue;
     const cut = art ? (g.alphaTest ?? (g.blend ? 0.5 : null)) : null;
     for (let t = g.start; t < g.start + g.count; t += 3) {
       walk(t, 0, 0, width, height, (x, y, z, w0, w1, w2, ia, ib, ic) => {

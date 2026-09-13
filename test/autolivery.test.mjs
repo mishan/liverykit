@@ -1431,6 +1431,57 @@ test('each view is counted for how much of a piece it shows, and what stands in 
   }
 });
 
+test('a blended surface the design paints stands in front of what is behind it', async () => {
+  // The whole-car pass skipped every blended part without a car-owned sheet,
+  // and a part the design paints has none, since it wears the design. So a
+  // painted plate in front of a name hid nothing, and the name was counted
+  // whole while the picture showed it covered.
+  const ed = await fixtureEditor({ kn5: { extraMeshes: [{ ...SHIELD, materialId: 1 }],
+    materials: [{ name: 'BodyMat' }, { name: 'ShieldMat', shader: 'ksPerPixelAlpha', alphaBlendMode: 1 }] } });
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const proposal = { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('plate-hidden', panels[0].panel, [0.5, 0.3, 0.3, 0.4]),
+    ] };
+    const out = JSON.parse((await ed.mcp.callTool('check_fitment', { proposal })).content[0].text);
+    const hidden = out.inView.find((m) => m.id === 'plate-hidden');
+    assert.equal(hidden.whole, false, JSON.stringify(hidden));
+    assert.equal(hidden.hiddenBy, 'MIRROR_L');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a "cut off" is overruled only by the count of a view the critic was shown', async () => {
+  // The count covers the sheet's six views. A critic given the left view
+  // alone said a roof plate was cut off, and was overruled on the strength
+  // of the top view, which it never saw.
+  const ed = await fixtureEditor();
+  try {
+    const planner = { async round({ call }) {
+      await call('draft_design', { design: [
+        { op: 'set-palette', name: 'ink', value: '#101014' },
+        plate('roof-plate', 'centre_mid', [0.3, 0.3, 0.4, 0.4]),
+      ] });
+      await call('finish_round', { summary: 'a plate on the roof' });
+    } };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [{ asked: 'a plate', present: true, where: 'roof' }],
+      cut_off: [{ what: 'the roof plate', where: 'left view', id: 'roof-plate' }], unreadable: [], notes: [] }) };
+    const out = join(ed.dir, 'run');
+    const result = await run({ brief: 'a plate', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, closer: [], propose: false });
+    const counted = result.history[0].fitment.inView.find((m) => m.id === 'roof-plate');
+    assert.equal(counted?.home, 'top', JSON.stringify(result.history[0].fitment.inView));
+    assert.equal(counted.whole, true);
+    assert.equal(result.history[0].critic.overruled, undefined, 'the critic saw only the left view');
+    assert.equal(result.passed, false);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a "cut off" the count contradicts is overruled, and one it cannot place is not', async () => {
   const ed = await fixtureEditor({ kn5: { extraMeshes: [SHIELD] } });
   try {
