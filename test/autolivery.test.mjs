@@ -11,6 +11,7 @@ import { carKn5, vert, CAR } from './fixtures/kn5.mjs';
 import { connect } from '../autolivery/mcp.mjs';
 import { createTrace } from '../autolivery/trace.mjs';
 import { run } from '../autolivery/loop.mjs';
+import { piecesInView } from '../src/engine/shot.mjs';
 import { createPlanner } from '../autolivery/claude.mjs';
 import * as local from '../autolivery/openai.mjs';
 import { PLANNER_SYSTEM } from '../autolivery/prompts.mjs';
@@ -1525,6 +1526,37 @@ test('a "cut off" the count contradicts is overruled, and one it cannot place is
   } finally {
     await ed.stop();
   }
+});
+
+test('glass covers where its own texture is opaque, as the picture draws its frit', () => {
+  // The count skipped every glass surface, while the picture draws a
+  // windscreen's frit band at full alpha. A number under the frit counted
+  // as whole and was hidden in the picture.
+  const quad = (x, n) => [[x, 0, -1.85, 0, 0], [x, 0, 1.85, 1, 0], [x, 1.5, 1.85, 1, 1], [x, 1.5, -1.85, 0, 1]]
+    .map(([px, py, pz, u, v]) => ({ p: [px, py, pz], uv: [u, v], n }));
+  const verts = [...quad(0.95, [1, 0, 0]), ...quad(1.05, [1, 0, 0])];
+  const model = {
+    positions: Float32Array.from(verts.flatMap((v) => v.p)),
+    uvs: Float32Array.from(verts.flatMap((v) => v.uv)),
+    normals: Float32Array.from(verts.flatMap((v) => v.n)),
+    indices: Uint32Array.from([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
+    parts: [{ name: 'BODY', start: 0, count: 6 }, { name: 'WINDSCREEN', start: 6, count: 6 }],
+  };
+  const groups = [
+    { role: 'body', file: 'body.dds', lod: null, start: 0, count: 6, blend: false, glass: false, add: false, alphaTest: null },
+    { role: null, file: 'glass.dds', lod: null, start: 6, count: 6, blend: true, glass: true, add: false, alphaTest: null },
+  ];
+  // Clear (alpha 16) in the first two rows of texels, the frit (255) in the last two.
+  const data = Buffer.alloc(4 * 4 * 4);
+  for (let i = 0; i < 16; i++) data[i * 4 + 3] = i < 8 ? 16 : 255;
+  const sheets = new Map([['glass.dds', { w: 4, h: 4, data }]]);
+  const piece = (id, v0) => ({ id, role: 'body', box: [0.3, v0, 0.5, v0 + 0.2],
+    contains: (u, v) => u >= 0.3 && u <= 0.5 && v >= v0 && v <= v0 + 0.2 });
+  const [clear, frit] = piecesInView(model, groups, sheets, [piece('clear', 0.2), piece('frit', 0.6)],
+    { view: 'left', width: 300, height: 200 });
+  assert.ok(clear.whole > 100 && clear.shown === clear.whole, JSON.stringify(clear));
+  assert.ok(frit.whole > 100 && frit.shown === 0, JSON.stringify(frit));
+  assert.equal(frit.blockers[0].mesh, 'WINDSCREEN');
 });
 
 // A ring whose stroke is drawn past its own box (radius + width/2 = 0.75), at
