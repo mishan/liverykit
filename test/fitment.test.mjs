@@ -62,6 +62,45 @@ test('a number or a name is measured by its letters, not its box', () => {
     constraints: { minMm: 100 } }]).length, 1);
 });
 
+test('a name is held to the number only where the design says so', async () => {
+  // A person marked run 18's team name, on the rear quarter, as nowhere a
+  // spectator looks. But a brief may want a name on the roof, so this is a
+  // rule the design states, never one the checker assumes.
+  const text = (id, panel, extra = {}) => ({ id, treatment: 'text', panel, at: [0.1, 0.1, 0.8, 0.3],
+    text: id === 'number' ? '{number}' : '{team}', ...extra });
+  const found = (regions, fit = null, prof = profile) => fitment(design(regions), prof, fit).findings
+    .filter((f) => f.kind === 'ungrouped' || f.kind === 'bad-constraint');
+  const withNumber = { constraints: { groupWith: 'number' } };
+
+  assert.deepEqual(found([text('number', 'L'), text('team', 'R')]), [], 'apart, and nobody asked');
+
+  const apart = found([text('number', 'L'), text('team', 'R', withNumber)]);
+  assert.deepEqual(apart.map((f) => [f.kind, f.severity, f.ids]), [['ungrouped', 'high', ['team', 'number']]]);
+  assert.match(apart[0].why, /team asked to sit with number \(groupWith\), and is on R while number is on L/);
+
+  // Together by an alias on one side and the panel's own name on the other.
+  const aliased = { ...profile, aliases: { body: { doorLeft: 'L' } } };
+  assert.deepEqual(found([text('number', 'L'), text('team', 'doorLeft', withNumber)], null, aliased), []);
+
+  // A fit that moves the number onto the name's panel groups them on this car.
+  assert.deepEqual(found([text('number', 'L'), text('team', 'R', withNumber)],
+    { livery: 'F', car: 'fixture', regions: { number: { panel: 'R' } } }), []);
+
+  // A misspelled id is refused, not read as a rule in force; so is naming itself.
+  const typo = found([text('number', 'L'), text('team', 'L', { constraints: { groupWith: 'numbr' } })]);
+  assert.deepEqual(typo.map((f) => [f.kind, f.severity]), [['bad-constraint', 'fatal']]);
+  assert.match(typo[0].why, /no region in this design is called that/);
+  assert.equal(found([text('team', 'L', { constraints: { groupWith: 'team' } })])[0]?.kind, 'bad-constraint');
+
+  // And the editor will not write one that is not another region's id.
+  const { opSetConstraint } = await import('../src/ui/ops.js');
+  const d = design([text('team', 'L')]);
+  assert.throws(() => opSetConstraint(d, { id: 'team', key: 'groupWith', value: 3 }), /takes a string/);
+  assert.throws(() => opSetConstraint(d, { id: 'team', key: 'groupWith', value: 'team' }), /another region's id/);
+  opSetConstraint(d, { id: 'team', key: 'groupWith', value: 'number' });
+  assert.equal(d.surfaces.body.regions[0].constraints.groupWith, 'number');
+});
+
 test('letters on a panel laid a quarter turn stand along u', () => {
   // A road car turns its doors sideways to pack the sheet, and the text is
   // turned back upright. Its letters then run along the texture's u, which on

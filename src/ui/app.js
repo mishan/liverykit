@@ -1861,6 +1861,10 @@ function constraintControls(id) {
     <div class="row">
       <label>at least <input data-con="minMargin" size="4"
         value="${has('minMargin') ? esc(c.minMargin) : ''}" placeholder="mm"> mm from any edge</label>
+    </div>
+    <div class="row">
+      <label>on the same panel as <input data-con="groupWith" size="12"
+        value="${has('groupWith') ? esc(c.groupWith) : ''}" placeholder="region id"></label>
     </div>`;
 }
 
@@ -1883,6 +1887,10 @@ function wireConstraintControls(id) {
     };
     if (key === 'keepClear') {
       el.onchange = () => write(el.checked ? true : null);
+      continue;
+    }
+    if (key === 'groupWith') {
+      el.onchange = () => write(String(el.value ?? '').trim() || null);
       continue;
     }
     el.onchange = () => {

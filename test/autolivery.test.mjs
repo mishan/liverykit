@@ -681,6 +681,46 @@ test('a constraint that failed cannot be lowered to pass, and looks run out', as
   }
 });
 
+test('a group that failed cannot be undeclared to pass', async () => {
+  // Letting go of groupWith after the name was found on the wrong panel gets
+  // out of the group exactly as lowering a floor gets under it.
+  const ed = await fixtureEditor();
+  try {
+    const planner = {
+      async round({ n, call }) {
+        if (n === 1) {
+          const side = async (tag) => JSON.parse((await call('find_panels', { tag })).content[0].text).panels[0].panel;
+          const [left, right] = [await side('left'), await side('right')];
+          const text = (id, panel, extra = {}) => ({ op: 'add-region', surface: 'surfaces.body', region: {
+            id, treatment: 'text', text: id === 'number-left' ? '85' : 'NDR', panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink', ...extra } });
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'ink', value: '#101014' },
+            text('number-left', left),
+            text('team-left', right, { constraints: { groupWith: 'number-left' } }),
+          ] });
+        } else {
+          await call('draft_design', { design: [{ op: 'set-constraint', id: 'team-left', key: 'groupWith', value: null }] });
+        }
+        await call('finish_round', { summary: `round ${n}` });
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'number 85', present: true, where: 'left door' }],
+      cut_off: [], unreadable: [], notes: [] }) };
+    const result = await run({
+      brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, 'run') }),
+      out: join(ed.dir, 'run'), rounds: 2, views: ['left'], shot: { width: 200, height: 150 }, propose: false,
+    });
+    assert.ok(result.history[0].failures.some((f) => /high ungrouped: team-left asked to sit with number-left/.test(f)),
+      JSON.stringify(result.history[0].failures));
+    assert.equal(result.history[1].passed, false);
+    assert.ok(result.history[1].failures.some((f) => /team-left: groupWith removed after it failed round 1/.test(f)),
+      JSON.stringify(result.history[1].failures));
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a critic that passes everything but lists a cut-off piece does not pass the round', async () => {
   // Seen live: every field true, and in the notes "the roundel is cut off on
   // the left side where it meets the door gap". The gate read the fields.
