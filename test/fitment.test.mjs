@@ -1071,6 +1071,11 @@ test('a region can ask for clean bodywork all round it, and find_space finds whe
       constraints: { minMargin: 50, minVisible: 1 } }]), profile, null, { model: half });
     assert.deepEqual(held.findings.filter((f) => ['margin', 'unseen'].includes(f.kind)), [],
       `a spot find_space offers passes the margin it was asked for: ${JSON.stringify(c)}`);
+    // And so does the margin it REPORTS, which the planner is told to write
+    // as minMargin. It came from the cells alone, and was held to nothing.
+    const reported = fitment(design([{ id: 'roundel', treatment: 'fill', panel: 'L', at: c.at, color: 'ink',
+      constraints: { minMargin: c.marginMm } }]), profile, null, { model: half });
+    assert.deepEqual(margin(reported), [], `a spot's reported ${c.marginMm} mm holds as minMargin: ${JSON.stringify(c)}`);
   }
   assert.ok(found.map.every((row) => row.startsWith('.')), 'the hidden half is marked on the map');
 
