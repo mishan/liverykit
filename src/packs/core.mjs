@@ -342,7 +342,7 @@ export default definePack('core', treatments, {
 
   ring: {
     label: 'Ring',
-    summary: 'A circle centred in the region. Radius and width are fractions of its shorter side.',
+    summary: 'A circle centred in the region. Radius and width are fractions of its shorter side, and the stroke is centred on the radius, so it reaches radius + width/2: keep that at most 0.5 to stay inside the region.',
     options: {
       color: { type: 'color', hint: 'cyan' },
       radius: { type: 'number', min: 0, max: 0.5, step: 0.01, hint: '0.4' },

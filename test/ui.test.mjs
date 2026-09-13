@@ -4560,3 +4560,20 @@ test('the viewer builds glass alpha from the sheet and the fresnel together', as
   assert.match(main, /hasArt/,
     'and whether there is a texture at all decides whether its alpha means anything');
 });
+
+test('minVisible is a fraction, refused out of range like minOnCar', async () => {
+  const { opSetConstraint } = await import('../src/ui/ops.js');
+  const design = { surfaces: { body: { regions: [{ id: 'roundel', treatment: 'ring' }] } } };
+  assert.throws(() => opSetConstraint(design, { id: 'roundel', key: 'minVisible', value: 100 }),
+    /fraction between 0 and 1/);
+  opSetConstraint(design, { id: 'roundel', key: 'minVisible', value: 1 });
+  assert.equal(design.surfaces.body.regions[0].constraints.minVisible, 1);
+});
+
+test('minMargin is millimetres, refused at zero or below', async () => {
+  const { opSetConstraint } = await import('../src/ui/ops.js');
+  const design = { surfaces: { body: { regions: [{ id: 'roundel', treatment: 'ring' }] } } };
+  assert.throws(() => opSetConstraint(design, { id: 'roundel', key: 'minMargin', value: 0 }), /above zero/);
+  opSetConstraint(design, { id: 'roundel', key: 'minMargin', value: 60 });
+  assert.equal(design.surfaces.body.regions[0].constraints.minMargin, 60);
+});

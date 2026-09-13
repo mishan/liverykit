@@ -491,10 +491,18 @@ export function expandRegions(profile, role, regions = []) {
     }
     const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
+      // With the tags this texture DOES have. "no panel tagged [left, body]"
+      // says what went wrong and nothing about what to write instead, and the
+      // one reading it — a person or an agent — was guessing at the vocabulary
+      // in the first place, or it would not have written `body`.
+      const known = [...new Set(Object.values(profile.panels?.[role] ?? {})
+        .flatMap((p) => p.tags ?? []))].sort();
       notes.push({
         status: 'no-match',
+        id: region.id ?? region.__key,
         text: `${role}: no panel tagged [${region.tags.join(', ')}] — ` +
-              `"${region.treatment ?? 'region'}" was skipped`,
+              `"${region.treatment ?? 'region'}" was skipped. ` +
+              (known.length ? `Tags on this texture: ${known.join(', ')}` : 'No panel on this texture has tags.'),
       });
       continue;
     }

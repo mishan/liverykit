@@ -1,5 +1,6 @@
 import { CONSTRAINTS } from '../fitment.mjs';
 import { VIEWS } from '../engine/shot.mjs';
+import { EditorUnreachable } from './client.mjs';
 
 // Updated when render_car arrived. The old wording — "you cannot visually see
 // the 3D car" — became false and, worse, discouraging: an agent that believes
@@ -61,22 +62,109 @@ async function toolDescribeCar(client) {
   };
 }
 
+/**
+ * Which way a panel's `at` runs on the car: its x (the texture's u) and its
+ * y (v), each as along the car, across it, or up and down.
+ *
+ * Panels are unwrapped every which way. On the NSX the bonnet, roof and rear
+ * deck run lengthwise in x and the upper nose runs lengthwise in y, and an
+ * agent asked for a Gulf centre stripe wrote [0.4, 0, 0.2, 1] on all of them
+ * — a band ACROSS the car where the livery's best-known element runs along it,
+ * because nothing it could ask said which way was which. Read off the unit
+ * vectors the profile measured: AC models are y-up, and a car's length is z.
+ *
+ * Named only where the measurement says so clearly. Labelled by the largest
+ * component alone, 80 of the NSX's 860 panels ran the same way in x and in y
+ * — right_front_lower of its interior measured u [1, 0, 0] and v [-1, 0, 0]
+ * — and a label sticker at 45 degrees ran "across" by 0.004. The planner is
+ * told to trust this for which way a stripe runs, so an axis within about 8
+ * degrees of a diagonal, or the same as the other, is null, and `unclear`
+ * says why.
+ */
+const CLEAR_BY = 0.2;
+const WAYS = ['across the car', 'up and down', 'along the car'];
+
+export function axesOf(p) {
+  const read = (a) => {
+    if (!Array.isArray(a) || a.length < 3) return { way: null, why: 'was not measured' };
+    const n = Math.hypot(a[0], a[1], a[2]);
+    if (!(n > 0)) return { way: null, why: 'was measured as no direction at all' };
+    const [first, second] = a.slice(0, 3).map((c, i) => ({ way: WAYS[i], share: Math.abs(c) / n }))
+      .sort((m, o) => o.share - m.share);
+    if (first.share - second.share < CLEAR_BY) {
+      return { way: null, why: `runs diagonally: ${first.share.toFixed(2)} ${first.way} and ` +
+        `${second.share.toFixed(2)} ${second.way}` };
+    }
+    return { way: first.way };
+  };
+  if (!Array.isArray(p.uAxis) && !Array.isArray(p.vAxis)) return null;
+  const u = read(p.uAxis), v = read(p.vAxis);
+  const axes = { x: u.way, y: v.way };
+  const unclear = [u.why && `x ${u.why}`, v.why && `y ${v.why}`].filter(Boolean);
+  if (axes.x && axes.x === axes.y) {
+    unclear.push(`x and y were both measured running ${axes.x}, which cannot both be true of one flat panel`);
+    axes.x = axes.y = null;
+  }
+  if (unclear.length) {
+    axes.unclear = `${unclear.join('; ')}. Look at this panel with render_car before running a stripe on it.`;
+  }
+  return axes;
+}
+
 async function toolFindPanels(client, args) {
   const state = await client.getState();
+  // A surface goes by three names — the texture role (`ext_skin_sponsors`),
+  // the design's key for it (`surfaces.body`) and the vocabulary term alone
+  // (`body`) — and this matched only the first two. The third is the one a
+  // design is written in, so an agent asked for `role: "body"` four times,
+  // was told four times that there were no panels, and concluded the car had
+  // none. An empty answer to a question about a name that does not exist is
+  // not an answer; it is refused, with the names that do.
+  // `paint.<role>` too, the form find_space and a design's own `paint` block
+  // use to name one texture outright.
+  const asked = typeof args.role === 'string' ? args.role.replace(/^paint\./, '') : args.role;
+  const named = (s) => [s.role, s.from, s.from?.replace(/^(surfaces|paint)\./, '')].includes(asked)
+    || s.from === args.role;
+  // Every texture the design paints, not only each term's primary: a term can
+  // bind several, and a panel on the second is as placeable as one on the first.
+  const all = [...state.surfaces, ...(state.secondarySurfaces ?? [])];
+  const surfaces = args.role ? all.filter(named) : all;
+  if (args.role && !surfaces.length) {
+    return {
+      content: [{ type: 'text', text: `No surface called ${JSON.stringify(args.role)} on this car. ` +
+        `Ask by texture role (or paint.<role>) or by the design's surface: ` +
+        `${all.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
+      isError: true,
+    };
+  }
   const results = [];
-  for (const s of state.surfaces) {
-    if (args.role && s.role !== args.role && s.from !== args.role) continue;
+  let before = 0;
+  const tagsSeen = new Set();
+  const unmeasured = [];
+  for (const s of surfaces) {
     for (const p of s.panels ?? []) {
+      before++;
+      for (const t of p.tags ?? []) tagsSeen.add(t);
       if (args.tag && !(p.tags ?? []).includes(args.tag)) continue;
-      if (typeof args.minVisibility === 'number' && typeof p.visible === 'number' && p.visible < args.minVisibility) continue;
       const area = p.rect ? (p.rect[2] * p.rect[3]) : 0;
       if (typeof args.minArea === 'number' && area < args.minArea) continue;
       if (typeof args.maxAnisotropy === 'number' && p.anisotropy > args.maxAnisotropy) continue;
       if (args.hasMirror === true && !p.mirrorOf) continue;
       if (args.hasMirror === false && p.mirrorOf) continue;
+      // A panel nobody measured cannot meet a floor on what was measured. It
+      // used to pass, and every primary panel went unmeasured here because the
+      // editor's state left `visible` out of them. Left out, it is named: it
+      // was dropped without a word unless nothing at all passed, and the RSS 4
+      // has nine such panels while the harness asks 0.45 of every run. Tested
+      // last, so the count is only what the floor alone left out.
+      if (typeof args.minVisibility === 'number' && !(p.visible >= args.minVisibility)) {
+        if (typeof p.visible !== 'number') unmeasured.push(`${s.role}.${p.name}`);
+        continue;
+      }
 
       results.push({
         role: s.role,
+        surface: s.from,
         panel: p.name,
         rect: p.rect,
         area: Number(area.toFixed(4)),
@@ -84,11 +172,25 @@ async function toolFindPanels(client, args) {
         visible: p.visible,
         anisotropy: p.anisotropy,
         mirrorOf: p.mirrorOf ?? null,
+        // Which way at's x and y run on the car.
+        axes: axesOf(p),
       });
     }
   }
+  const answer = { count: results.length, panels: results };
+  if (unmeasured.length) {
+    answer.unmeasured = `${unmeasured.length} panel(s) have no visibility measurement, so minVisibility could ` +
+      `not be held to them and left them out: ${unmeasured.slice(0, 12).join(', ')}` +
+      `${unmeasured.length > 12 ? `, and ${unmeasured.length - 12} more` : ''}. Ask without minVisibility to see them.`;
+  }
+  // Nothing passed: say what there was, so the next question can be a better
+  // one rather than the same one with the numbers loosened.
+  if (!results.length) {
+    answer.note = `No panel passed every filter. Before filtering there were ${before} panel(s) on ` +
+      `${surfaces.map((s) => s.role).join(', ')}; the tags among them are: ${[...tagsSeen].sort().join(', ') || 'none'}.`;
+  }
   return {
-    content: [{ type: 'text', text: JSON.stringify({ count: results.length, panels: results }, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(answer, null, 2) }],
   };
 }
 
@@ -99,14 +201,51 @@ async function toolListTreatments(client) {
   };
 }
 
-async function toolReadDesign(client) {
+/**
+ * A tool's failure as its answer, except an editor that could not be reached:
+ * that goes on to the protocol, which marks it so. Answered here, it came back
+ * as this tool refusing, and a client could not tell it from one.
+ */
+const failed = (e, prefix = '') => {
+  if (e instanceof EditorUnreachable) throw e;
+  return { content: [{ type: 'text', text: `${prefix}${e.message}` }], isError: true };
+};
+
+/**
+ * The design or fit a draft makes, without proposing it.
+ *
+ * A caller building a change as a list of operations otherwise sees only the
+ * list — which, from an agent that re-sends whole regions each time it moves
+ * one, was sixty operations deep and repeated itself, while the design it
+ * amounted to was a handful of regions. Staged by the same code as a
+ * proposal, so a draft the inbox would refuse is refused here too.
+ */
+async function draftApplied(client, args, shape) {
+  try {
+    const r = await client.checkFitment(draftOf(args));
+    return { content: [{ type: 'text', text: JSON.stringify(shape(r), null, 2) }] };
+  } catch (e) {
+    return failed(e);
+  }
+}
+
+async function toolReadDesign(client, args = {}) {
+  if (draftOf(args)) return draftApplied(client, args, (r) => r.design);
   const state = await client.getState();
   return {
     content: [{ type: 'text', text: JSON.stringify(state.design, null, 2) }],
   };
 }
 
-async function toolReadFit(client) {
+async function toolReadFit(client, args = {}) {
+  // The same shape with a draft as without. Returning the bare fit here left
+  // out the stale ids the description promises, and changed the shape a caller
+  // parses depending on whether it passed a proposal.
+  if (draftOf(args)) {
+    return draftApplied(client, args, (r) => ({
+      fit: r.fit, staleIds: r.staleIds, ...(r.staleIdsError ? { staleIdsError: r.staleIdsError } : {}),
+    }));
+  }
   const state = await client.getState();
   const fit = state.fit;
 
@@ -182,8 +321,15 @@ async function toolReport(client) {
  * rendered perfectly and was on no part of the car — and every number available
  * to me at the time said the move was fine.
  */
-async function toolCheckFitment(client) {
-  const r = await client.checkFitment();
+async function toolCheckFitment(client, args = {}) {
+  let r;
+  try {
+    r = await client.checkFitment(draftOf(args), args.count ?? null);
+  } catch (e) {
+    // A draft the inbox would refuse is refused here too, in the same words,
+    // and that is an answer about the draft rather than a broken tool.
+    return failed(e);
+  }
   const findings = r.findings ?? [];
   const count = (sev) => findings.filter((f) => f.severity === sev).length;
 
@@ -203,12 +349,27 @@ async function toolCheckFitment(client) {
       car: r.car,
       checked: r.checked ?? [],
       notChecked: r.notChecked ?? [],
+      // Which of those the car's profile cannot support. Left out, a caller
+      // gating on notChecked could only fail every draft on such a car.
+      unsupported: r.unsupported ?? [],
       notPlaced: r.notPlaced ?? [],
       // Worst first, so truncation loses the least important end.
       findings: [...findings].sort((a, b) =>
         ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
+      // Passed through when the editor counted it, which it does for a
+      // proposal: how much of each whole piece each view shows.
+      ...(r.inView ? { inView: r.inView, inViewAt: r.inViewAt } : {}),
     }, null, 2) }],
   };
+}
+
+async function toolFindSpace(client, args = {}) {
+  try {
+    const r = await client.findSpace(args);
+    return { content: [{ type: 'text', text: JSON.stringify(r, null, 2) }] };
+  } catch (e) {
+    return failed(e);
+  }
 }
 
 async function toolRenderView(client, args = {}) {
@@ -243,6 +404,43 @@ async function toolRenderView(client, args = {}) {
   };
 }
 
+/**
+ * The draft a measuring tool was asked about, or null for the working state.
+ *
+ * Same shape as a proposal and staged by the same code, so a draft that
+ * measures clean is one propose_design will take. `why` is not asked for: a
+ * draft is not being offered to anyone, and the reason belongs on the
+ * proposal that eventually is.
+ */
+function draftOf(args) {
+  const d = args?.proposal;
+  if (d === undefined || d === null) return null;
+  // A string is the likeliest mistake — the JSON of a draft rather than the
+  // draft — and read as an object it had no `design`, so it measured as the
+  // working design and passed.
+  if (typeof d !== 'object' || Array.isArray(d)) {
+    throw new Error('A draft must be an object { design: [...ops], fit: [...ops] }; ' +
+      `got ${Array.isArray(d) ? 'a list' : `a ${typeof d}`}: ${String(JSON.stringify(d)).slice(0, 200)}.`);
+  }
+  // Whatever was sent goes on as sent, `null` included, and the staging
+  // refuses anything but a list. Only a key left out means "no operations".
+  return { design: d.design === undefined ? [] : d.design, fit: d.fit === undefined ? [] : d.fit };
+}
+
+const DRAFT_SCHEMA = {
+  type: 'object',
+  description:
+    'Optional. Operations to apply ON TOP of the working design before answering, in the ' +
+    'shape propose_design takes: { design: [...ops], fit: [...ops] }. Nothing is proposed ' +
+    'and nothing in the editor changes — this is how to measure a change before offering it. ' +
+    'Design operations are refused when the editor was opened on a .mjs livery, which it cannot ' +
+    'write back; fit operations still work there.',
+  properties: {
+    design: { type: 'array', items: { type: 'object' } },
+    fit: { type: 'array', items: { type: 'object' } },
+  },
+};
+
 async function toolProposeDesign(client, args) {
   if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
     return {
@@ -254,16 +452,13 @@ async function toolProposeDesign(client, args) {
     const res = await client.postProposal({
       why: args.why.trim(),
       design: args.design ?? [],
-      fit: [],
+      fit: args.fit ?? [],
     });
     return {
       content: [{ type: 'text', text: JSON.stringify({ status: 'proposed', proposalId: res.id, why: args.why }) }],
     };
   } catch (e) {
-    return {
-      content: [{ type: 'text', text: `Proposal refused: ${e.message}` }],
-      isError: true,
-    };
+    return failed(e, 'Proposal refused: ');
   }
 }
 
@@ -284,10 +479,7 @@ async function toolProposeFit(client, args) {
       content: [{ type: 'text', text: JSON.stringify({ status: 'proposed', proposalId: res.id, why: args.why }) }],
     };
   } catch (e) {
-    return {
-      content: [{ type: 'text', text: `Proposal refused: ${e.message}` }],
-      isError: true,
-    };
+    return failed(e, 'Proposal refused: ');
   }
 }
 
@@ -307,7 +499,10 @@ export function createToolHandler(client) {
     },
     {
       name: 'find_panels',
-      description: `Find panels in the car profile filtered by tag, role, visibility, size/area, anisotropy, or mirror. ${PROMPT_NOTE}`,
+      description: 'Find panels in the car profile filtered by tag, role, visibility, size/area, anisotropy, or mirror. ' +
+        'Each panel\'s "axes" says which way the x and y of `at` run on the car. An axis that was not measured ' +
+        'clearly is null, and "unclear" says why; do not guess it. ' +
+        `${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
         properties: {
@@ -339,18 +534,18 @@ export function createToolHandler(client) {
     },
     {
       name: 'read_design',
-      description: `Read the working design as currently held in the fitting editor. ${PROMPT_NOTE}`,
+      description: `Read the working design as currently held in the fitting editor. Pass \`proposal\` to read the design those operations would make instead, without proposing it. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: { proposal: DRAFT_SCHEMA },
       },
     },
     {
       name: 'read_fit',
-      description: `Read the working fit as currently held in the fitting editor, including stale region ids. ${PROMPT_NOTE}`,
+      description: `Read the working fit as currently held in the fitting editor, including stale region ids. Pass \`proposal\` to read the fit those operations would make instead. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: { proposal: DRAFT_SCHEMA },
       },
     },
     {
@@ -362,12 +557,41 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'find_space',
+      description:
+        'Where on a panel a shape of a given size fits whole: all of it on the car, all of it ' +
+        'visible from trackside, and as far as possible from any edge, shut line or hidden area. ' +
+        'Measured by sweeping the panel with the ray casting check_fitment uses. A panel\'s box is ' +
+        'not the panel — its middle is often against a window frame, an arch or a shut line — so ' +
+        'ask this before placing a roundel, logo or number box. Returns the roomiest spots as ' +
+        'panel-relative `at` rectangles, each with its clearance in mm, and a coarse map of the ' +
+        `panel, texture top first ('#' clean, '.' not). ${PROMPT_NOTE}`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          panel: { type: 'string', description: 'Panel name, as find_panels lists it' },
+          role: { type: 'string', description: 'Texture role or surface, when the panel name is on more than one' },
+          widthMm: { type: 'number', description: 'Width of the shape on the car, in mm (not with largest)' },
+          heightMm: { type: 'number', description: 'Height on the car, in mm; defaults to widthMm, as a roundel is' },
+          marginMm: { type: 'number', description: 'Only spots with at least this much clean bodywork all round (default 0)' },
+          count: { type: 'number', description: 'How many spots (default 5)' },
+          largest: { type: 'boolean', description: 'Instead of a size, sweep sizes and return the LARGEST shape of the given aspect that fits whole, with its spot' },
+          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, 0.85)' },
+          cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
+        },
+        required: ['panel'],
+      },
+    },
+    {
       name: 'render_car',
       description:
         'Render the working design on the car and RETURN THE IMAGE, so you can look at it. ' +
         'You cannot otherwise see the car: the editor draws in a browser you have no access ' +
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
-        'Views: ' + Object.keys(VIEWS).join(', ') + '. Unpainted parts wear the car\'s own ' +
+        'Views: ' + [...Object.keys(VIEWS), 'sheet'].join(', ') + '. "sheet" is six labelled views in ' +
+        'one picture (three-quarter, left, right, top, front, rear-left), the cheapest way to look all ' +
+        'round; it and "top" are the views that see the bonnet, roof and rear deck squarely. ' +
+        'Unpainted parts wear the car\'s own ' +
         'textures, where the model carries them. Note the limits — no normal maps, no ' +
         'environment reflections and one fixed light rig, so it answers "does the artwork land ' +
         'where I said" and not ' +
@@ -375,9 +599,10 @@ export function createToolHandler(client) {
       inputSchema: {
         type: 'object',
         properties: {
-          view: { type: 'string', description: `One of: ${Object.keys(VIEWS).join(', ')}` },
-          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760)' },
-          height: { type: 'number', description: 'Pixels down, 150-900 (default 460)' },
+          view: { type: 'string', description: `One of: ${[...Object.keys(VIEWS), 'sheet'].join(', ')}` },
+          width: { type: 'number', description: 'Pixels across, 200-1400 (default 760); a sheet 400-2400 (default 1400)' },
+          height: { type: 'number', description: 'Pixels down, 150-900 (default 460); a sheet 300-1440 (default 840)' },
+          proposal: DRAFT_SCHEMA,
         },
       },
     },
@@ -387,13 +612,29 @@ export function createToolHandler(client) {
         'Measure what is WRONG with the working design on this car: text landing on text, ' +
         'artwork outside a panel\'s readable area, text too small to read at the car\'s real ' +
         'scale, broken left/right mirroring, placements painted into texture space no triangle ' +
-        'uses, and placements the bodywork hides. Call this BEFORE proposing a fit change and ' +
+        'uses, and placements the bodywork hides. With a proposal it also counts, in pixels, how ' +
+        'much of each number, word, ring and anything declaring minVisible each of the six views ' +
+        'in render_car\'s sheet shows (inView), and reports hidden-in-view where the view in which ' +
+        'a piece is largest, or one that shows it nearly as large, has part of it behind something. ' +
+        'Call this BEFORE proposing a fit change and ' +
         'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
         'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
-        `findings list from a partial run does not mean the design is good. ${PROMPT_NOTE}`,
+        'findings list from a partial run does not mean the design is good. An entry also in ' +
+        '`unsupported` is one this car\'s profile cannot measure, which no draft can change. Pass `proposal` ' +
+        'to measure a change BEFORE offering it: a proposal only reaches the working design ' +
+        `once a person accepts it. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: {},
+        properties: {
+          proposal: DRAFT_SCHEMA,
+          count: {
+            type: 'object',
+            description: 'Optional, with a proposal: the pictures being judged, as render_car was given them ' +
+              '({ view, width, height }; a sheet counts each view at the size of one of its cells). inView is ' +
+              'counted at that frame so it describes those pictures. Default 900x540 per view.',
+            properties: { view: { type: 'string' }, width: { type: 'number' }, height: { type: 'number' } },
+          },
+        },
       },
     },
     {
@@ -412,7 +653,8 @@ export function createToolHandler(client) {
       description:
         'Propose design changes (palette, regions, options, identity, constraints, ' +
         "adopt-surface) to the running editor's inbox for human review. Use " +
-        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar — ' +
+        'set-constraint to record what a region NEEDS — keepClear, minMm, minOnCar, minVisible, minMargin, ' +
+        'groupWith — ' +
         'which is often the right proposal when check_fitment reports the same problem ' +
         'twice: the constraint states the requirement once, on the design, for every car, ' +
         'rather than being re-fixed per car. Call list_constraints first; a name that is ' +
@@ -424,6 +666,12 @@ export function createToolHandler(client) {
           design: {
             type: 'array',
             description: 'List of design diff operations (set-palette, add-region, remove-region, reorder-region, set-option, set-constraint, set-identity, set-region, adopt-surface). set-constraint takes { op, id, key, value }, where key is one of the names list_constraints returns and value null removes it.',
+            items: { type: 'object' },
+          },
+          fit: {
+            type: 'array',
+            description: 'Optional fit operations, as propose_fit takes them, for placing the regions ' +
+              'this same proposal adds — so the person reviews one change and not two halves of it.',
             items: { type: 'object' },
           },
         },
@@ -464,15 +712,16 @@ export function createToolHandler(client) {
       case 'describe_car': return toolDescribeCar(client);
       case 'find_panels': return toolFindPanels(client, args);
       case 'list_treatments': return toolListTreatments(client);
-      case 'read_design': return toolReadDesign(client);
-      case 'read_fit': return toolReadFit(client);
+      case 'read_design': return toolReadDesign(client, args);
+      case 'read_fit': return toolReadFit(client, args);
       case 'report': return toolReport(client);
       case 'render_car': {
         // Reported, not thrown. Without a car model there is no picture, and the
         // useful answer is "no model" — a blank image would look like a car
         // wearing nothing, which is a lie about the design rather than a gap.
         try {
-          const { png, skipped, absent } = await client.shoot(args.view ?? 'left', args.width, args.height);
+          const { png, skipped, absent } = await client.shoot(
+            args.view ?? 'left', args.width, args.height, draftOf(args));
           const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
           // Named, not silently absent. Transparent surfaces with no artwork —
           // glass, emissive masks — are left out rather than drawn as grey
@@ -496,10 +745,11 @@ export function createToolHandler(client) {
           }
           return { content };
         } catch (e) {
-          return { content: [{ type: 'text', text: e.message }], isError: true };
+          return failed(e);
         }
       }
-      case 'check_fitment': return toolCheckFitment(client);
+      case 'check_fitment': return toolCheckFitment(client, args);
+      case 'find_space': return toolFindSpace(client, args);
       case 'list_constraints':
         return { content: [{ type: 'text', text: JSON.stringify(CONSTRAINTS, null, 2) }] };
       case 'render_view': return toolRenderView(client, args);

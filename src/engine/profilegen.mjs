@@ -19,9 +19,9 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, blends } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -178,6 +178,25 @@ export async function profileFromKn5(path, {
         (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : '') +
         (skinOnly.length ? `; ${skinOnly.length} apply only to some skins and were not applied` : ''));
   }
+  // What can stand in front of paint: the same meshes `fitment` casts against,
+  // so a panel's `visible` and the check that reads it agree. Every mesh used
+  // to count here, and once the visibility cast learned to find a fitting
+  // standing flush on the paint, the NSX's sixteen door plates — hidden by
+  // its config, drawn by nothing — took its doors from 88% visible to 56%.
+  const occluders = carOccluders(model, { hiddenByCar: { meshes: Object.fromEntries(hides?.hidden ?? []) } });
+  // Built once for the car, not once per texture: the grid and the index of
+  // triangles depend on the car alone.
+  const prepared = visibility ? occupancyFor(model, { occluders }) : null;
+  // The cockpit's too, at its own finer cells. Only the triangle index was
+  // shared with it, and its grid was still rebuilt for every texture.
+  const cockpitGrid = visibility && eye ? occupancyGrid(model, occluders, 0.02) : null;
+  // A motion-blur mesh is measured as the drawn one it is swapped with, found
+  // by the node above it (see `blurTwins`). One whose twin could not be found
+  // is measured against whatever is drawn in its place, and reads low for it,
+  // so that is said wherever such a mesh carries a panel.
+  const twinned = visibility ? blurTwins(model) : new Map();
+  const unpaired = new Set(model.meshes
+    .filter((m, i) => motionBlurOnly(m.name) && !twinned.has(i)).map((m) => m.name));
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -295,13 +314,16 @@ export async function profileFromKn5(path, {
     // WHETHER SHIPPING THIS SHEET TRANSPARENT ACTUALLY HIDES IT, which the
     // build has to know when there is no model left to ask.
     //
-    // Every material that wears it has to composite, and the model states that
-    // per material (see `blends`). It used to be inferred from the shader
-    // names recorded beside this, and `ksPerPixelReflection` reads as glass
-    // while this Abarth wears it on its bumpers — so the inference promised a
-    // hide the game would ignore, which is the worst answer available here.
+    // Every material that wears it has to honour the alpha, and the model
+    // states that per material (see `discardsClear`). It used to be inferred
+    // from the shader names recorded beside this, and `ksPerPixelReflection`
+    // reads as glass while this Abarth wears it on its bumpers — so the
+    // inference promised a hide the game would ignore, which is the worst
+    // answer available here. Then it asked only whether they BLEND, and an
+    // alpha-tested grille, which discards a clear sheet entirely, was reported
+    // as a part no transparent texture could hide.
     entry.alphaHides = wearers.length > 0
-      && wearers.every((m) => blends(model.materials?.[m.materialId]));
+      && wearers.every((m) => discardsClear(model.materials?.[m.materialId]));
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.
@@ -374,6 +396,9 @@ export async function profileFromKn5(path, {
     textures[r] = {
       file: s.file, width: s.width, height: s.height, alpha: s.alpha,
       sizeFrom: 'skin',
+      // Said outright. `sizeFrom: 'skin'` is also where an encrypted model's
+      // own textures get their size, so it cannot say that no mesh wears one.
+      inModel: false,
       notes: 'Not referenced by this model — most likely belongs to the driver or ' +
              'crew model, which is a separate kn5. Panels cannot be measured from ' +
              'here; point --from-kn5 at that model to map them.',
@@ -422,14 +447,29 @@ export async function profileFromKn5(path, {
     // rolled out as a strip and one laid out as a disc want different
     // artwork, and the texture cannot say which it is. See wheels.mjs.
     const wheels = measureWheels(model, keep);
-    // Every mesh occludes, not just the painted ones — a wheel hides bodywork
-    // as effectively as bodywork does.
+    // Every drawn mesh occludes, not just the painted ones — a wheel hides
+    // bodywork as effectively as bodywork does.
     if (visibility) {
-      computeSafeAreas(model, keep, { occluders: model.meshes, log });
+      computeSafeAreas(model, keep, { prepared, log });
       // Visibility isn't a property of a surface, it's a property of a surface
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
-      if (eye) computeCockpitVisibility(model, keep, { eye, occluders: model.meshes, log });
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, grid: cockpitGrid, log });
+      const alone = [...new Set(keep.filter((i) => unpaired.has(i.mesh)).map((i) => i.mesh))];
+      if (alone.length) {
+        log(`  ! ${alone.join(', ')}: motion-blur mesh(es) with no drawn twin under a sibling node, ` +
+            'so their panels are measured behind whatever is drawn in their place and may read low');
+      }
+      // An island on a mesh the car's own config hides is on nothing anybody
+      // sees, whatever its rays say: the mesh is not drawn, and taken out of
+      // the occluders, it measured clear, a place to paint the game never shows.
+      for (const i of keep) {
+        if (!hides?.hidden.has(i.mesh)) continue;
+        i.visibleFraction = 0;
+        i.hidden = true;
+        delete i.safe;
+        if (i.cockpitFraction !== undefined) i.cockpitFraction = 0;
+      }
     }
 
     log(`  ${role.padEnd(8)} ${texName.padEnd(26)} ${islands.length} islands, ${keep.length} above threshold`);

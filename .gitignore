@@ -9,6 +9,9 @@ liveries/*.local.mjs
 # Personal working notes.
 HANDOFF.md
 
+# What an autolivery run leaves behind: renders, the trace, the result.
+autolivery/runs/
+
 # Optional inputs, not redistributable: ambient-occlusion and UV-wireframe
 # layers exported from a car maker's livery template.
 assets/

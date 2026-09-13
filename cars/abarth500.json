@@ -105,7 +105,8 @@
         "ksPerPixel",
         "ksPerPixelMultiMap_damage_dirt",
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaHides": false
     },
     "display_simboli": {
       "file": "Display_Simboli.DDS",
@@ -115,6 +116,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "skin": {
@@ -125,6 +127,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rims": {
@@ -135,6 +138,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "tessuto": {
@@ -145,6 +149,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rims_2": {
@@ -155,6 +160,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mat_plastica_grigia": {
@@ -167,6 +173,7 @@
         "ksPerPixelNM",
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "interior": {
@@ -177,6 +184,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "gomma_unica_base": {
@@ -187,6 +195,7 @@
       "shaders": [
         "ksTyres"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "cuciture": {
@@ -198,6 +207,7 @@
         "ksPerPixelAT",
         "ksSkinnedMesh"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "mat_gomma": {
@@ -209,6 +219,7 @@
         "ksPerPixel",
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "frontlight_off": {
@@ -220,6 +231,7 @@
         "ksPerPixelMultiMap",
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "glass": {
@@ -230,6 +242,7 @@
       "shaders": [
         "ksBrokenGlass"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "mat_plancia": {
@@ -239,7 +252,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "glass_2": {
       "file": "Glass.dds",
@@ -249,6 +263,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "loghi": {
@@ -259,6 +274,7 @@
       "shaders": [
         "ksPerPixelMultiMap"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rearlight_lr": {
@@ -269,6 +285,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mat_ross": {
@@ -280,6 +297,7 @@
         "ksPerPixel",
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "controlli": {
@@ -290,6 +308,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "belts": {
@@ -300,6 +319,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "skin_volante": {
@@ -310,6 +330,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mat_nero": {
@@ -320,6 +341,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "rims_3": {
@@ -330,6 +352,7 @@
       "shaders": [
         "ksBrakeDisc"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mat_metallo_bianco": {
@@ -340,6 +363,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "glass_3": {
@@ -350,6 +374,7 @@
       "shaders": [
         "ksWindscreen"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "grid": {
@@ -360,6 +385,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "rims_4": {
@@ -370,6 +396,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "meccanica_sotto": {
@@ -380,6 +407,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "shift_ambocc": {
@@ -390,6 +418,7 @@
       "shaders": [
         "ksSkinnedMesh"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "pedali": {
@@ -400,6 +429,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "carpet": {
@@ -410,6 +440,7 @@
       "shaders": [
         "ksPerPixel"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "logo": {
@@ -420,6 +451,7 @@
       "shaders": [
         "ksPerPixelMultiMap"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "audio_tilel": {
@@ -430,6 +462,7 @@
       "shaders": [
         "ksPerPixelNM_UVMult"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mirror": {
@@ -440,6 +473,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "tappetino_ambocc": {
@@ -450,6 +484,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "plate_d": {
@@ -460,6 +495,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "modelSize": [
         512,
         128
@@ -473,6 +509,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "lcd": {
@@ -483,6 +520,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": false,
       "sizeFrom": "model"
     },
     "mat_vetro_interno": {
@@ -493,6 +531,7 @@
       "shaders": [
         "ksPerPixelReflection"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "logo_3": {
@@ -503,6 +542,7 @@
       "shaders": [
         "ksPerPixelAT_NM"
       ],
+      "alphaHides": true,
       "sizeFrom": "model"
     },
     "crew": {
@@ -511,6 +551,7 @@
       "height": 512,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "mat_detail1": {
@@ -519,6 +560,7 @@
       "height": 256,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     },
     "metal_detail": {
@@ -527,6 +569,7 @@
       "height": 32,
       "alpha": true,
       "sizeFrom": "skin",
+      "inModel": false,
       "notes": "Not referenced by this model — most likely belongs to the driver or crew model, which is a separate kn5. Panels cannot be measured from here; point --from-kn5 at that model to map them."
     }
   },
