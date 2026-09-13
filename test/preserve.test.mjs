@@ -234,6 +234,34 @@ test("a texture's hand-written note survives the regeneration it was written to 
   assert.equal(written.textures.banner.notes, 'fresh', 'never over a note the new profile has');
 });
 
+test("a texture's note follows its file when the generated role name is reused", () => {
+  // Numbered roles are handed out afresh on every run, so `tyres_2` can be a
+  // different texture next time. Carried by role name, the tyre's note stayed
+  // on `tyres_2` and so landed on the brake duct that now wears the name.
+  const prior = { textures: {
+    tyres_2: { file: 'Tyre_Old.dds', width: 512, height: 512, notes: 'sidewall is mirrored; paint the left one' },
+    tyres_4: { file: 'Rim_Gone.dds', width: 512, height: 512, notes: 'the rim is shared with the spare' },
+  } };
+  const fresh = { textures: {
+    tyres_2: { file: 'Brake_Duct.dds', width: 256, height: 256 },
+    tyres_3: { file: 'Tyre_Old.dds', width: 512, height: 512 },
+  } };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.textures.tyres_2.notes, undefined, 'the brake duct is not told about a sidewall');
+  assert.equal(fresh.textures.tyres_3.notes, 'sidewall is mirrored; paint the left one', 'the tyre keeps its note');
+  assert.deepEqual(report.textureNotes, ['tyres_3']);
+  assert.deepEqual(report.notesMoved, [{ from: 'tyres_2', to: 'tyres_3', file: 'Tyre_Old.dds' }]);
+
+  // A note whose file no role wears any more is said to be lost, with its text,
+  // rather than dropped quietly or pinned on whatever took the name.
+  assert.deepEqual(report.notesLost, [{ role: 'tyres_4', file: 'Rim_Gone.dds', notes: 'the rim is shared with the spare' }]);
+  const lines = describeHandwork(report, 'prior.json');
+  assert.ok(lines.some((l) => /tyres_2 -> tyres_3/.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /note\(s\) were not kept/.test(l)), lines.join('\n'));
+  assert.ok(lines.some((l) => /tyres_4 +\(Rim_Gone\.dds\): the rim is shared with the spare/.test(l)),
+    'the lost note is printed, so it can be put back by hand');
+});
+
 test('a hand-set size is abandoned once the model itself changes size', () => {
   // The override was a judgement about a 28x28 texture. If the model now ships
   // 512x512, that judgement was about something else.
