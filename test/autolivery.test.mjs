@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1174,7 +1175,7 @@ test('a run can be replayed round by round against today\'s gate, with no planne
       cut_off: [], unreadable: [], notes: [] }) };
     const go = async (planner, tag, rounds) => run({
       brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, tag) }),
-      out: join(ed.dir, tag), rounds, views: ['left'], shot: { width: 200, height: 150 }, propose: false,
+      out: join(ed.dir, tag), rounds, views: ['left'], shot: { width: 200, height: 150 }, propose: false, base: 'b1',
     });
 
     const original = await go(drafting, 'original', 3);
@@ -1196,6 +1197,26 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     assert.equal(legacy.perRound, false);
     assert.equal(legacy.rounds.length, 1);
     assert.deepEqual(legacy.rounds[0].draft, original.draft);
+
+    // A run records the working design it started from, and a replay in front
+    // of another one replays different operations, so it is refused.
+    assert.equal(original.base, 'b1');
+    const cli = (script, ...args) => new Promise((ok) => execFile(process.execPath,
+      [join(ROOT, 'autolivery', script), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
+    const moved = join(ed.dir, 'moved');
+    await mkdir(moved);
+    await writeFile(join(moved, 'result.json'), JSON.stringify({ brief: 'b', base: 'not-this-design', passed: false,
+      history: [{ draft: { design: [], fit: [] }, summary: 's' }] }));
+    const wrong = await cli('bin.mjs', '--replay', moved, '--editor', ed.url);
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.stderr, /--replay: the editor's working design is not the one/);
+
+    // And the critic's evaluator refuses a case it does not have, and a cost
+    // cap that is not a number, before judging or paying for anything.
+    const typo = await cli('eval.mjs', '--only', 'no-such-case');
+    assert.equal(typo.code, 1);
+    assert.match(typo.stderr, /--only names no case called no-such-case/);
+    assert.match((await cli('eval.mjs', '--max-cost', 'nope')).stderr, /--max-cost must be a positive number of dollars, not nope/);
   } finally {
     await ed.stop();
   }

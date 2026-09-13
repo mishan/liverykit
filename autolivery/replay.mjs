@@ -23,6 +23,7 @@ export async function loadRecording(dir) {
     return {
       dir,
       brief: result.brief,
+      base: result.base,
       perRound: true,
       rounds: history.map((h) => ({ draft: h.draft, summary: h.summary ?? '' })),
     };
@@ -31,6 +32,7 @@ export async function loadRecording(dir) {
   return {
     dir,
     brief: result.brief,
+    base: result.base,
     perRound: false,
     rounds: [{ draft: result.draft, summary: result.summary ?? '' }],
   };

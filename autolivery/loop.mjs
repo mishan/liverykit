@@ -203,7 +203,7 @@ export async function run({
   brief: theBrief, mcp, planner, critic, trace, out,
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {},
-  referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true,
+  referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
 }) {
   await mkdir(out, { recursive: true });
   const tools = plannerTools(await mcp.listTools());
@@ -633,7 +633,9 @@ export async function run({
   }
 
   const passed = passedIn !== null;
-  const result = { brief: theBrief, passed, passedIn, rounds: history.length, summary, draft, history,
+  // `base` identifies the working design the run started from, which its
+  // operations were written against: a replay onto another design is not one.
+  const result = { brief: theBrief, ...(base ? { base } : {}), passed, passedIn, rounds: history.length, summary, draft, history,
     ...(stopped ? { stopped } : {}) };
 
   if (passed && propose) {
