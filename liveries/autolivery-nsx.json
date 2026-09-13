@@ -1,0 +1,9 @@
+{
+  "name": "Autolivery",
+  "folder": "autolivery",
+  "car": "ac_friends_honda_nsx_gt3_evo",
+  "packs": ["core"],
+  "identity": {},
+  "palette": { "primer": "#8a8d91" },
+  "surfaces": { "body": { "background": "primer", "regions": [] } }
+}
