@@ -249,7 +249,11 @@ try {
   fail(e.message);
 }
 
-const s = await trace.finish({ ok: result.passed, attrs: { rounds: result.rounds } });
+// Success is a design in front of a person, and the trace says what the exit
+// code says. It said passed for a pass the editor refused to take, which
+// delivered nothing.
+const delivered = result.passed && Boolean(result.proposalId || values['no-propose']);
+const s = await trace.finish({ ok: delivered, attrs: { rounds: result.rounds, passed: result.passed } });
 mcp.close();
 
 const secs = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`);
@@ -270,7 +274,4 @@ if (result.proposalId) {
 } else if (result.proposalError) {
   console.log(`\nthe editor refused the proposal: ${result.proposalError}`);
 }
-// Success is a design in front of a person. A pass the editor refused to take
-// delivered nothing, and a script reading the exit code must not be told
-// otherwise.
-process.exit(result.passed && (result.proposalId || values['no-propose']) ? 0 : 1);
+process.exit(delivered ? 0 : 1);

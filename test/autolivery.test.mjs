@@ -147,6 +147,33 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
   }
 });
 
+test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
+  // Past the limit, every call was refused with "call finish_round now",
+  // finish_round included, so the round could never end. And a finish_round
+  // with no summary was accepted, and the inbox got the last round's words.
+  const ed = await fixtureEditor();
+  try {
+    const said = [];
+    const planner = { async round({ call }) {
+      for (let i = 0; i < 3; i++) said.push(await call('describe_car'));
+      said.push(await call('finish_round', {}));
+      said.push(await call('finish_round', { summary: 'a bare car' }));
+      return { summary: 'a bare car' };
+    } };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [], cut_off: [], notes: [] }) };
+    const out = join(ed.dir, 'run');
+    await run({ brief: 'b', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 1, roundCalls: 2, views: ['left'], shot: { width: 200, height: 150 }, propose: false });
+    assert.match(said[2].content[0].text, /used its 2 tool calls/);
+    assert.ok(said[3].isError);
+    assert.match(said[3].content[0].text, /finish_round needs a summary/);
+    assert.ok(!said[4].isError, said[4].content[0].text);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('the planner answers every tool call before saying anything else, across rounds too', async () => {
   // The API refuses a conversation in which a tool call goes unanswered, or is
   // answered anywhere but first in the very next message. finish_round ends a
