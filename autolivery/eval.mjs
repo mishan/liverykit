@@ -15,8 +15,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTrace } from './trace.mjs';
-import { score, checkPatterns } from './cases.mjs';
-import { overrule } from './loop.mjs';
+import { score, checkPatterns, overruleCase } from './cases.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -131,7 +130,7 @@ for (const { c, images } of ready) {
       ...(c.recheck ? { recheck: c.recheck, name: 'referee' } : {}),
       measured: c.measured ?? null,
     });
-    if (c.measured) v = overrule(v, new Set(c.measured.filter((m) => m.whole).map((m) => m.id)));
+    v = overruleCase(v, c);
   } catch (e) {
     v = { error: e.message };
   }

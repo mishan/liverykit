@@ -19,7 +19,7 @@
  *   passes      the gate would pass the verdict, or not
  */
 
-import { passes } from './loop.mjs';
+import { passes, overrule, wholeFor } from './loop.mjs';
 
 const matches = (text, pattern) => new RegExp(pattern, 'i').test(String(text ?? ''));
 
@@ -47,6 +47,17 @@ export function checkPatterns(cases) {
       }
     }
   }
+}
+
+/**
+ * A case's verdict with each "cut off" the count contradicts overruled, by the
+ * gate's own filter: the views are the case's pictures, and `findings`, where
+ * a case keeps its round's, are what fitment said. A case with no count is
+ * left as the critic gave it.
+ */
+export function overruleCase(v, c) {
+  if (!c.measured) return v;
+  return overrule(v, wholeFor(c.measured, c.findings ?? [], (c.images ?? []).map((im) => im.view)));
 }
 
 export function score(v, expect = {}) {

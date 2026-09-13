@@ -208,6 +208,20 @@ export function overrule(v, whole) {
   return { ...v, cut_off: v.cut_off.filter((c) => !whole.has(c.id)), overruled: gone };
 }
 
+/**
+ * The ids `overrule` may hold a critic to: measured whole, named by no high or
+ * fatal finding, and counted in a view the critic was shown. The count covers
+ * the sheet's six views, and a critic given `left` alone was otherwise
+ * overruled on the strength of a view it never saw. Shared with eval, which
+ * overruled on `whole` alone and so scored verdicts the gate never gives.
+ */
+export function wholeFor(measured, findings, views) {
+  const against = new Set((findings ?? [])
+    .filter((f) => f.severity === 'fatal' || f.severity === 'high').flatMap((f) => f.ids ?? []).map(String));
+  const shown = (m) => views.includes('sheet') || views.includes(m.home);
+  return new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id) && shown(m)).map((m) => m.id));
+}
+
 /** What in a failing verdict failed it, one line each. */
 const blockingOf = (v) => (!v || v.error ? [] : [
   ...(v.requirements ?? []).filter((r) => !r.present).map((r) => `missing: ${r.asked} (${r.where})`),
@@ -507,13 +521,7 @@ export async function run({
     // What the renderer counted of each piece meant to be seen whole, told to
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
-    const against = new Set((fitment?.findings ?? [])
-      .filter((f) => f.severity === 'fatal' || f.severity === 'high').flatMap((f) => f.ids ?? []).map(String));
-    // And only where the critic was shown the view that counted it. The count
-    // covers the sheet's six views; a critic given `left` alone was otherwise
-    // overruled on the strength of a view it never saw.
-    const shown = (m) => views.includes('sheet') || views.includes(m.home);
-    const whole = new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id) && shown(m)).map((m) => m.id));
+    const whole = wholeFor(measured, fitment?.findings ?? [], views);
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
