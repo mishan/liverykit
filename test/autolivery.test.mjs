@@ -920,6 +920,25 @@ test('each view is counted for how much of a piece it shows, and what stands in 
   }
 });
 
+test('a piece with a floor that no view shows enough of to count fails, not passes', async () => {
+  // Said as low, which passes a gate: a `minVisible` piece nobody can see in
+  // any picture went through as though it had met its floor.
+  const ed = await fixtureEditor();
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const proposal = { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('speck', panels[0].panel, [0.2, 0.5, 0.004, 0.004]),
+    ] };
+    const out = JSON.parse((await ed.mcp.callTool('check_fitment', { proposal })).content[0].text);
+    const found = out.findings.filter((f) => f.kind === 'hidden-in-view');
+    assert.deepEqual(found.map((f) => [f.ids[0], f.severity]), [['speck', 'high']], JSON.stringify(out.inView));
+    assert.match(found[0].why, /fewer than 30 pixels in every view .*minVisible 0\.5 could not be counted/);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a "cut off" the count contradicts is overruled, and one it cannot place is not', async () => {
   const ed = await fixtureEditor({ kn5: { extraMeshes: [SHIELD] } });
   try {
