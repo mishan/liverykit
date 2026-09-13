@@ -290,6 +290,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
     unreadable(placed, profile, t, sayHere);
+    tooSmall(placed, t, sayHere, size, design.identity ?? {});
     unmirrored(placed, profile, t, sayHere);
     if (seen) unseen(placed, profile, t, seen, sayHere);
     if (seen) margins(placed, profile, t, seen, sayHere);
@@ -328,7 +329,7 @@ function preparedFor(model, profile) {
   return byHides.get(hides);
 }
 
-const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
+const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'unmirrored',
   'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
 
 /**
@@ -1031,6 +1032,114 @@ function unreadable(placed, profile, t, say) {
           `${declared} mm`
         : `${p.id} is ${Math.round(mm)} mm across on the car, which is under the ` +
         `${TOO_SMALL_MM} mm a line of text needs to read at any distance`,
+    });
+  }
+}
+
+/**
+ * How tall a race number's and a name's letters must be on the car, in mm of
+ * capital height.
+ *
+ * Set from the door a person laid out by hand and passed: an 85 with capitals
+ * about 147 mm tall and NEON DOLL RACING at about 47. The handoff guessed 200
+ * and 100, measured as 0.7 of the box, and both would have failed that door —
+ * a long name is shrunk to fit its box's WIDTH, so a 150 mm box held 47 mm
+ * letters. Run 16's name, which a person called too small to read, is 40.
+ */
+const NUMBER_MM = 140;
+const NAME_MM = 45;
+
+/** Capital height over font size, for the bold sans the text treatment sets. */
+const CAP = 0.72;
+
+const wordsOf = (s) => String(s ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+
+/**
+ * Whether a text region is the race number, a team or driver name, or neither.
+ *
+ * By its placeholders, and by its words when it has none: a planner split the
+ * team name into "NEON DOLL" and "RACING" on two lines, which is a name on the
+ * car whatever the region says.
+ */
+function textIs(region, identity) {
+  const raw = String(region.text ?? '');
+  const shown = raw.replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
+  if (/\{number\}/.test(raw) || (identity?.number != null && shown.trim() === String(identity.number))) return 'number';
+  if (/\{(team|driver)\}/.test(raw)) return 'name';
+  const names = [identity?.team, identity?.driver].flatMap(wordsOf);
+  const words = wordsOf(shown);
+  return words.length && names.length && words.every((w) => names.includes(w)) ? 'name' : null;
+}
+
+/**
+ * How tall a text placement's capitals are on the car, in millimetres, worked
+ * out the way the text treatment sets them: 0.7 of the box's height, shrunk
+ * until an estimated advance fits the width. On a panel laid a quarter turn,
+ * the treatment draws in the box turned about its centre, so the letters stand
+ * along the texture's u rather than its v.
+ *
+ * Null where it cannot be said: no `metresPerUv`, an angle that is not a
+ * multiple of a quarter turn, or a spanning region, whose pieces are the band
+ * cut up by seams rather than the frame it was drawn in.
+ */
+function letterSize(p, size, identity) {
+  const T = p.frac;
+  const per = T.panel?.metresPerUv;
+  if (!Array.isArray(per) || per.length !== 2 || p.region.span === true) return null;
+  const o = p.region;
+  const asked = o.rotate === 'auto' ? (T.panel?.textRotation ?? 0) : (o.rotate ?? 0);
+  const turn = ((Number(asked) % 360) + 360) % 360;
+  const quarter = turn === 90 || turn === 270;
+  if (!quarter && turn !== 0 && turn !== 180) return null;
+  const s = String(o.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
+  if (!s.trim()) return null;
+  const w = quarter ? T.h * size.h : T.w * size.w;
+  const h = quarter ? T.w * size.w : T.h * size.h;
+  const ax = o.aspect ?? ((T.anisotropy ?? T.panel?.anisotropy) ? 1 / (T.anisotropy ?? T.panel.anisotropy) : 1);
+  let em = h * (o.scale ?? 0.7);
+  let shrunk = false;
+  if (o.fit !== false) {
+    const est = s.length * em * (0.62 + (o.tracking ?? 0.08)) * ax;
+    if (est > w) { em *= w / est; shrunk = true; }
+  }
+  // Pixels along the axis the letters stand on, to metres along that axis.
+  const mm = (px, alongU) => (alongU ? (px / size.w) * per[0] : (px / size.h) * per[1]) * 1000;
+  return { mm: mm(CAP * em, quarter), shrunk, boxMm: [mm(w, !quarter), mm(h, quarter)] };
+}
+
+/**
+ * A race number or a name whose letters are too small to read from trackside.
+ *
+ * Runs 17, 18 and 20 each lost a round to a team name the critic called too
+ * small, a round after it was drafted. Size is arithmetic, and the planner
+ * hears it while it is still drafting.
+ *
+ * The LETTERS, not the box — which is what `unreadable` measures, and why it
+ * passed these: a 150 mm box with sixteen letters in it holds 47 mm capitals,
+ * because text is shrunk to fit the width. A declared minMm does not replace
+ * this floor. It is a floor on the box, planners are told to declare one on
+ * every name, and run 18's 125 would have waved through letters a third that
+ * size.
+ */
+function tooSmall(placed, t, say, size, identity) {
+  for (const p of placed) {
+    if (p.region.treatment !== 'text') continue;
+    const is = textIs(p.region, identity);
+    if (!is) continue;
+    const got = letterSize(p, size, identity);
+    if (!got) continue;
+    const floor = is === 'number' ? NUMBER_MM : NAME_MM;
+    if (got.mm >= floor) continue;
+    const [bw, bh] = got.boxMm.map(Math.round);
+    say({
+      kind: 'too-small', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
+      mm: Math.round(got.mm), floor,
+      why: `${name(t, p.id)}'s letters are ${Math.round(got.mm)} mm tall on the car, and ` +
+        `${is === 'number' ? 'a race number\'s' : 'a team or driver name\'s'} need at least ${floor} mm to read ` +
+        'from trackside' + (got.shrunk
+        ? `. Its box is ${bh} mm tall, but the text is shrunk to fit the box's ${bw} mm width: widen the box` +
+          (is === 'name' ? ', or split the name over two lines.' : '.')
+        : `. Make its box taller (it is ${bh} mm).`),
     });
   }
 }

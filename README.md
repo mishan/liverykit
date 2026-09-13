@@ -553,6 +553,7 @@ and several other things:
 | `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
 | `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimetres at the car's real scale |
+| `too-small` | a race number's capitals under 140 mm tall on the car, or a team or driver name's under 45 mm, measured on the letters after the text is shrunk to fit its box |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
 | `clipped` | a spanning region stops at a panel edge the profile has no seam for |
