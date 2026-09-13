@@ -166,7 +166,7 @@ question when this was written — see below.
 | tool | answers |
 |---|---|
 | `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimetres, mirroring, coverage, occlusion |
-| `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, clear of edges — as ranked spots with their clearance in mm |
+| `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, clear of edges — as ranked spots with their clearance in mm; with `largest` and an `aspect`, the largest shape of that proportion that fits, found by sweeping sizes |
 | `render_view` | the rendered texture and placements for one surface, or all of them |
 | `render_car` | a picture of the working design on the car |
 

@@ -52,7 +52,20 @@ import { shoot, carSheets, VIEWS, shootSheet } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
-import { findSpace, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, cleanGrid, spaceRole } from '../space.mjs';
+
+/**
+ * A cache with a ceiling. The editor runs for hours, and every panel an agent
+ * sweeps and every size it asks about was kept for good; past `max`, the entry
+ * asked about longest ago goes. A Map iterates in insertion order, and a hit
+ * is re-inserted, so the first key is always the stalest.
+ */
+function remember(map, key, value, max) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > max) map.delete(map.keys().next().value);
+  return value;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Where the profiles this checkout ships live. A profile is the entirety of what
@@ -1284,26 +1297,31 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
         if (where.error) return json(400, { error: where.error });
-        const cellMm = q.cellMm ? Number(q.cellMm) : undefined;
-        const key = JSON.stringify([where.role, q.panel, q.widthMm, q.heightMm, q.marginMm, q.count, cellMm]);
+        // Normalised before anything is keyed on it: "300" and 300, or a
+        // default left out and the same default sent, are one question.
+        const num = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : Number(v));
+        const cellMm = num(q.cellMm, undefined) || undefined;
+        const largest = q.largest === true || q.largest === 'true';
+        const widthMm = num(q.widthMm, undefined);
+        const ask = largest
+          ? { largest: true, aspect: num(q.aspect, 1), marginMm: num(q.marginMm, 0) }
+          : { widthMm, heightMm: num(q.heightMm, widthMm), marginMm: num(q.marginMm, 0), count: num(q.count, 5) };
+        const key = JSON.stringify([where.role, q.panel, cellMm, ask]);
         try {
           if (!spaces.has(key)) {
             spacePrepared ??= occupancyFor(m, { occluders: carOccluders(m, profile) });
             const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
             if (!grids.has(gridKey)) {
-              grids.set(gridKey, cleanGrid({ profile, model: m, prepared: spacePrepared, role: where.role,
-                panel: q.panel, ...(cellMm ? { cellMm } : {}) }));
+              remember(grids, gridKey, cleanGrid({ profile, model: m, prepared: spacePrepared, role: where.role,
+                panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
             }
-            spaces.set(key, {
-              ...findSpace({
-                grid: grids.get(gridKey), model: m, prepared: spacePrepared,
-                widthMm: Number(q.widthMm),
-                heightMm: q.heightMm === undefined ? undefined : Number(q.heightMm),
-                marginMm: Number(q.marginMm ?? 0),
-                count: Number(q.count ?? 5),
-              }),
+            const grid = grids.get(gridKey);
+            remember(spaces, key, {
+              ...(largest
+                ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
+                : findSpace({ grid, model: m, prepared: spacePrepared, ...ask })),
               ...(where.chosen ? { roleChosen: where.chosen } : {}),
-            });
+            }, 256);
           }
           return json(200, spaces.get(key));
         } catch (e) {
