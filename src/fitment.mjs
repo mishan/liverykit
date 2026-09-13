@@ -286,6 +286,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     const size = texSize(profile, t.role);
     overlaps(placed, t, sayHere, size, design.identity ?? {});
     ringOverflow(placed, t, sayHere);
+    contrast(placed, t, design, sayHere, size);
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
     unreadable(placed, profile, t, sayHere);
@@ -310,7 +311,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   };
 }
 
-const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
+const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'unmirrored',
   'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
 
 /**
@@ -676,6 +677,86 @@ function ringThroughText(ring, text, size, identity = {}) {
   const farthest = Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - g.cx, y - g.cy)));
   const crosses = (edge) => edge > 0 && nearest < edge && edge < farthest;
   return crosses(g.inner) || crosses(g.outer);
+}
+
+/**
+ * Lettering in a colour too close to what is painted under it.
+ *
+ * Measured, not judged. Round one of three runs in a row failed on the team
+ * name for this and nothing else: white script on Gulf blue, then thin orange
+ * on Gulf blue, each reported by the critic a whole round after it was
+ * drafted. The design says what colour the letters are and what is painted
+ * beneath them, so the contrast is arithmetic, and a planner told while it is
+ * still drafting fixes it before it submits. 3:1 is WCAG's floor for large
+ * text: Gulf orange on Gulf blue is 1.4, white on it 2.3; white on the orange,
+ * or navy on the blue, clears it.
+ *
+ * What is under the letters is the last region painted before them that
+ * covers their centre. If that is a treatment whose colour at that point is
+ * not one known colour (a halftone, a gradient, a logo), nothing is said:
+ * a guess would be a finding somebody learns to ignore.
+ */
+const CONTRAST_FLOOR = 3;
+
+function luminance(hex) {
+  const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+const contrastRatio = (a, b) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+function contrast(placed, t, design, say, size) {
+  const palette = design.palette ?? {};
+  const hex = (c) => {
+    const v = palette[c] ?? c;
+    return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+  };
+  // What `q` paints at (x, y), in texture fractions: a colour name, undefined
+  // where it paints nothing there, or null where it paints something whose
+  // colour is not one known colour.
+  const paintAt = (q, x, y) => {
+    const f = q.frac;
+    if (x < f.x || x > f.x + f.w || y < f.y || y > f.y + f.h) return undefined;
+    const tr = q.region.treatment;
+    if (tr === 'fill' || tr === 'stripe') return q.region.color ?? null;
+    if (tr === 'ring') {
+      const g = ringGeometry(q, size);
+      const d = Math.hypot(x * size.w - g.cx, y * size.h - g.cy);
+      return d >= g.inner && d <= g.outer ? (q.region.color ?? null) : undefined;
+    }
+    if (tr === 'text') return undefined;          // letters over letters: overlap's business
+    return null;
+  };
+  for (const [i, p] of placed.entries()) {
+    if (p.region.treatment !== 'text' || p.region.glow) continue;
+    const inkName = p.region.color ?? 'white';     // the text treatment's default
+    const ink = hex(inkName);
+    if (!ink) continue;
+    const cx = p.frac.x + p.frac.w / 2, cy = p.frac.y + p.frac.h / 2;
+    let underName = t.spec?.background ?? null, what = 'the surface\'s background';
+    for (let j = i - 1; j >= 0; j--) {
+      const c = paintAt(placed[j], cx, cy);
+      if (c === undefined) continue;
+      underName = c;
+      what = placed[j].id;
+      break;
+    }
+    const under = underName ? hex(underName) : null;
+    if (!under) continue;
+    const ratio = contrastRatio(ink, under);
+    if (ratio >= CONTRAST_FLOOR) continue;
+    say({
+      kind: 'low-contrast', severity: 'high', surface: t.from, panel: p.region.panel,
+      ids: [p.id], contrast: round(ratio),
+      why: `${name(t, p.id)} is ${inkName} on ${underName} (${what}): a contrast of ${ratio.toFixed(1)}:1, and ` +
+        `lettering needs at least ${CONTRAST_FLOOR}:1 to read from trackside. Use a dark colour on a light base, ` +
+        'white on a dark one, or put a band of a contrasting colour behind it.',
+    });
+  }
 }
 
 /**

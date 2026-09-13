@@ -23,7 +23,7 @@ The loop:
   --editor <url>         the editor (default http://127.0.0.1:7391/)
   --rounds <n>           most rounds before giving up (default 6)
   --advisory-critic      log the critic's verdict, gate on fitment alone
-  --views <a,b>          what the critic looks at (default sheet: four views in one picture)
+  --views <a,b>          what the critic looks at (default sheet: six views in one picture)
   --looks <n>            planner renders per round before render_car says no (default 2)
   --no-seed              let the planner fetch the car's description itself, rather
                          than starting with it in its first message

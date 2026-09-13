@@ -501,6 +501,8 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         tags: p.tags ?? [],
         anisotropy: p.anisotropy ?? 1,
         visible: p.visible,
+        uAxis: p.uAxis,
+        vAxis: p.vAxis,
         mirrorOf: p.mirrorOf,
       })),
     })),
@@ -1080,9 +1082,9 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
         }
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
-        // A sheet is four views at half size each, so it may have twice the
-        // pixels of one view across and down: its quarters are then as sharp
-        // as a single picture.
+        // A sheet is several views at a fraction of the size each, so it may
+        // have more pixels than one view across and down: its cells are then
+        // nearly as sharp as a single picture.
         const shot = view === 'sheet'
           ? await shootSheet(g, g.groups, surfaces, {
               sheets: stock,

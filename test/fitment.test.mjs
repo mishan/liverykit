@@ -1027,3 +1027,29 @@ test('a number in a roundel is judged by where its letters are, not by its box',
   assert.equal(edge[0].severity, 'high');
   assert.match(edge[0].why, /circle runs through/);
 });
+
+test('lettering too close in colour to what is under it is measured, not left to the critic', () => {
+  // Round one of three runs in a row failed on the team name for this alone:
+  // white on Gulf blue, then thin orange on Gulf blue, each found a whole round
+  // later by looking at a picture. The design knows both colours.
+  const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5' };
+  const low = (regions) => fitment({ ...design(regions), palette: gulf }, profile)
+    .findings.filter((f) => f.kind === 'low-contrast');
+  const base = { id: 'base', treatment: 'fill', color: 'blue' };
+  const name = (color) => ({ id: 'team', treatment: 'text', panel: 'L', at: [0.2, 0.6, 0.6, 0.1], text: '{team}', color });
+
+  const white = low([base, name('white')]);
+  assert.equal(white.length, 1, 'white on Gulf blue');
+  assert.equal(white[0].severity, 'high');
+  assert.match(white[0].why, /white on blue \(base\): a contrast of 2\.\d:1/);
+  assert.equal(low([base, name('orange')]).length, 1, 'orange on Gulf blue');
+  assert.deepEqual(low([base, name('navy')]), [], 'navy on the blue reads');
+  assert.deepEqual(low([base, { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' },
+    name('white')]), [], 'white on an orange band behind it reads');
+
+  // Inside a solid disc, the disc is what is under the number.
+  const disc = { id: 'roundel', treatment: 'ring', panel: 'L', at: [0.3, 0.3, 0.4, 0.4], color: 'white', radius: 0.25, width: 0.5 };
+  const number = (color) => ({ id: 'number', treatment: 'text', panel: 'L', at: [0.4, 0.42, 0.2, 0.16], text: '{number}', color });
+  assert.deepEqual(low([base, disc, number('navy')]), [], 'navy in a white disc');
+  assert.equal(low([base, disc, number('pale')]).length, 1, 'pale blue in a white disc');
+});
