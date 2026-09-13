@@ -23,6 +23,32 @@ import { passes } from './loop.mjs';
 
 const matches = (text, pattern) => new RegExp(pattern, 'i').test(String(text ?? ''));
 
+const PATTERNED = ['notCutOff', 'cutOff', 'flagged', 'notFlagged', 'missing', 'present'];
+
+/**
+ * Throws, naming the case and the pattern, if any expectation's patterns are
+ * not a list of regular expressions. Checked before anything is judged: a
+ * malformed pattern threw from inside score(), mid-run, and ended the whole
+ * eval naming neither. A bare string would be read a letter at a time, each
+ * letter a pattern, and matched nearly anything.
+ */
+export function checkPatterns(cases) {
+  for (const c of cases) {
+    for (const key of PATTERNED) {
+      const list = c.expect?.[key];
+      if (list === undefined) continue;
+      if (!Array.isArray(list)) throw new Error(`case ${c.id}: ${key} must be a list of patterns, not ${JSON.stringify(list)}`);
+      for (const w of list) {
+        try {
+          new RegExp(w, 'i');
+        } catch (e) {
+          throw new Error(`case ${c.id}: ${key} pattern ${JSON.stringify(w)} is not a regular expression: ${e.message}`);
+        }
+      }
+    }
+  }
+}
+
 export function score(v, expect = {}) {
   if (!v || v.error) return [`no verdict: ${v?.error ?? 'nothing came back'}`];
   const cut = v.cut_off ?? [];

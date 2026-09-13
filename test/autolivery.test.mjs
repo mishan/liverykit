@@ -1272,6 +1272,43 @@ test('a replay is held to the fit its run began from, and an older record says i
   }
 });
 
+test('the critic\'s evaluator fails when it judged nothing, and says why a picture could not be read', async () => {
+  // Every case's pictures are under runs/, which is not committed, so on any
+  // other machine every case was skipped and eval reported 0 of 0 and exited 0.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-eval-'));
+  try {
+    const cases = join(dir, 'cases.json');
+    const write = (list) => writeFile(cases, JSON.stringify({ brief: 'b', cases: list }));
+    // Port 1: were it to get as far as a critic, it would fail to connect, not
+    // judge anything or reach a server someone is running.
+    const go = () => cli('eval.mjs', '--cases', cases, '--critic-base-url', 'http://127.0.0.1:1/v1');
+    await write([
+      { id: 'gone', images: [{ view: 'sheet', path: join(dir, 'missing.png') }], expect: {} },
+      { id: 'folder', images: [{ view: 'sheet', path: dir }], expect: {} },
+    ]);
+    const none = await go();
+    assert.equal(none.code, 1);
+    assert.match(none.stdout, /gone: skipped, .*missing\.png is not on this machine/);
+    // A directory where a render should be is not a render missing from this
+    // machine, and a bare catch said it was.
+    assert.match(none.stdout, /folder: skipped, .* could not be read: .*EISDIR/);
+    assert.doesNotMatch(none.stdout, /folder: .*not on this machine/);
+    assert.match(none.stderr, /judged nothing/);
+
+    // A malformed pattern ended the whole run from inside score(), mid-way,
+    // naming neither the case nor the pattern.
+    await write([{ id: 'bad-pattern', images: [], expect: { notCutOff: ['roundel('] } }]);
+    const bad = await go();
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /case bad-pattern: notCutOff pattern "roundel\(" is not a regular expression/);
+    const { checkPatterns } = await import('../autolivery/cases.mjs');
+    assert.throws(() => checkPatterns([{ id: 'loose', expect: { present: 'stripe' } }]), /case loose: present must be a list of patterns/);
+    assert.doesNotThrow(() => checkPatterns([{ id: 'fine', expect: { present: ['stripe|band'], passes: true } }]));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a critic\'s verdict is scored against what a person said about the same picture', async () => {
   const { score } = await import('../autolivery/cases.mjs');
   const verdict = (over = {}) => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
