@@ -856,6 +856,35 @@ test('a ring is measured by the circle it draws, not only by its box', () => {
   assert.deepEqual(found([ring('halo', 0.47, 0.04), number], 'overlap'), [], 'the same halo big enough to go round it');
 });
 
+test('a ring painted over text is reported by what it covers, whatever the boxes share', () => {
+  // The circle check asked only whether an edge of the ring crossed the text,
+  // and ignored which of the two was on top. A solid disc painted AFTER a
+  // number has no edge inside it and hides every glyph, and it came back with
+  // no finding at all — where the plain box check had at least said something.
+  const disc = { id: 'disc', treatment: 'ring', panel: 'L', at: [0.2, 0.2, 0.6, 0.6], color: 'ink', radius: 0.25, width: 0.5 };
+  const number = { id: 'number', treatment: 'text', panel: 'L', at: [0.35, 0.35, 0.3, 0.3], text: '{number}' };
+  const found = (regions) => fitment(design(regions), profile).findings.filter((f) => f.kind === 'overlap');
+
+  const buried = found([number, disc]);
+  assert.equal(buried.length, 1, JSON.stringify(buried));
+  assert.equal(buried[0].severity, 'high');
+  assert.deepEqual(buried[0].ids, ['disc', 'number']);
+  assert.match(buried[0].why, /disc.*paints over .*number/);
+  assert.deepEqual(found([disc, number]), [], 'the number on top of its roundel is the design working');
+
+  // And measured by the circle BEFORE the boxes are asked how much they share.
+  // A ring's box can meet a name's box at one corner, 12.5% of the smaller,
+  // while its stroke runs straight through the name — and the share threshold
+  // that keeps layered boxes quiet turned that away before the circle was
+  // looked at.
+  const halo = { id: 'halo', treatment: 'ring', panel: 'L', at: [0.4, 0.4, 0.2, 0.2], color: 'ink', radius: 0.45, width: 0.1 };
+  const team = { id: 'team', treatment: 'text', panel: 'L', at: [0, 0.45, 0.45, 0.1], text: '{team}' };
+  const grazed = found([halo, team]);
+  assert.equal(grazed.length, 1, JSON.stringify(grazed));
+  assert.equal(grazed[0].share, 0.125, 'the boxes barely meet');
+  assert.match(grazed[0].why, /circle runs through .*team/);
+});
+
 test('a region can ask for clean bodywork all round it, and find_space finds where there is some', async () => {
   // On the NSX the top quarter of the door's box is not door and the middle
   // of the box is under the window frame, so "the middle of the panel" put a

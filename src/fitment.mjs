@@ -449,7 +449,6 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
       if (!over) continue;
       const smaller = Math.min(area(A.frac), area(B.frac));
       const share = over / (smaller || 1);
-      if (share < 0.25) continue;
 
       // AT LEAST ONE MUST BE TEXT, or this reports the design working.
       //
@@ -473,10 +472,22 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
       // called it intended. The question is whether an edge of the circle
       // crosses the text: a number wholly inside a solid disc, or wholly
       // inside a ring's hole, is a roundel or a halo doing its job.
+      //
+      // Unless the ring is painted AFTER the text. Later paints over earlier,
+      // and asking only about edges let a solid disc painted over a number
+      // pass as a roundel: it has no edge inside the number and hides all of
+      // it. On top, any of the stroke landing on the text is the finding.
       const aRing = A.region.treatment === 'ring', bRing = B.region.treatment === 'ring';
       if ((aRing && bText) || (bRing && aText)) {
         const [ring, text] = aRing ? [A, B] : [B, A];
-        if (ringThroughText(ring, text, size)) {
+        if (bRing && ringOnText(ring, text, size)) {
+          say({
+            kind: 'overlap', severity: 'high', surface: t.from, panel: A.region.panel,
+            ids: [ring.id, text.id], share: round(share),
+            why: `${name(t, ring.id)} paints over ${name(t, text.id)}: the ring comes later in the design, ` +
+              'so its stroke is drawn on top of the text. Move the text after the ring, or the ring off it.',
+          });
+        } else if (ringThroughText(ring, text, size)) {
           say({
             kind: 'overlap', severity: 'high', surface: t.from, panel: A.region.panel,
             ids: [ring.id, text.id], share: round(share),
@@ -486,6 +497,12 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }) {
         }
         continue;
       }
+
+      // After the circle, not before. A threshold on the boxes is what keeps
+      // layering quiet, and it ran first: a ring whose box met a name's at one
+      // corner, 12.5% of the smaller, was turned away while its stroke ran
+      // straight through the name.
+      if (share < 0.25) continue;
 
       // Unless one of them ASKED not to be covered. A design knows things the
       // treatment name cannot express — a cyan stripe running the length of the
@@ -624,15 +641,27 @@ function ringGeometry(p, size) {
   };
 }
 
-/** Whether either edge of a ring's stroke passes through a text placement's box. */
-function ringThroughText(ring, text, size) {
+/** A ring's stroke, and how near and how far from its centre a text box reaches. */
+function ringAndText(ring, text, size) {
   const g = ringGeometry(ring, size);
   const T = text.frac;
   const x0 = T.x * size.w, y0 = T.y * size.h, x1 = x0 + T.w * size.w, y1 = y0 + T.h * size.h;
   const nearest = Math.hypot(Math.max(x0, Math.min(g.cx, x1)) - g.cx, Math.max(y0, Math.min(g.cy, y1)) - g.cy);
   const farthest = Math.max(...[[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y]) => Math.hypot(x - g.cx, y - g.cy)));
+  return { g, nearest, farthest };
+}
+
+/** Whether either edge of a ring's stroke passes through a text placement's box. */
+function ringThroughText(ring, text, size) {
+  const { g, nearest, farthest } = ringAndText(ring, text, size);
   const crosses = (edge) => edge > 0 && nearest < edge && edge < farthest;
   return crosses(g.inner) || crosses(g.outer);
+}
+
+/** Whether any of a ring's stroke lands on a text placement's box. */
+function ringOnText(ring, text, size) {
+  const { g, nearest, farthest } = ringAndText(ring, text, size);
+  return nearest < g.outer && farthest > g.inner;
 }
 
 /**
