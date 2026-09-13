@@ -310,6 +310,13 @@ export async function run({
         case 'check_fitment':
           return mcp.callTool('check_fitment', { proposal: draft });
         case 'finish_round':
+          // A summary, or no submission: it is what a person reads in the
+          // inbox, and a round submitted without one went out under the last
+          // round's words. Not every server enforces a tool's schema.
+          if (typeof args?.summary !== 'string' || !args.summary.trim()) {
+            return refuse('finish_round needs a summary: what the draft is, in a sentence or two. ' +
+              'It is what a person reads when the design reaches the inbox.');
+          }
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
@@ -327,7 +334,9 @@ export async function run({
         return refuse('This round was already submitted with finish_round, so this call was not run. ' +
           'Make the change next round if the gate asks for one.');
       }
-      if (++calls > roundCalls) {
+      // finish_round is never counted: the refusal below tells the planner to
+      // call it, and counted, it was refused too and the round could not end.
+      if (name !== 'finish_round' && ++calls > roundCalls) {
         return refuse(`This round has used its ${roundCalls} tool calls. Call finish_round now.`);
       }
       const { r, ms } = await traced(round, name, args, () => dispatch(name, args));

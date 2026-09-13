@@ -684,6 +684,20 @@ test('find_panels knows a surface by the name a design uses, and refuses one it 
   }
 });
 
+test('minVisibility holds every panel to it, the primary surface included', async () => {
+  // The editor's state sent primary panels without `visible`, so the floor
+  // filtered only the secondary ones, and a panel nobody measured passed it.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const { panels } = JSON.parse((await tools.callTool('find_panels', { minVisibility: 0.99 })).content[0].text);
+    assert.ok(panels.length > 0);
+    for (const p of panels) assert.ok(p.visible >= 0.99, `${p.role}.${p.panel} is ${p.visible}`);
+  } finally {
+    await stop();
+  }
+});
+
 test('propose_design names every constraint there is', async () => {
   // It named four of the five, and an agent reads a list as the list: the
   // minMargin this change adds went unproposed.

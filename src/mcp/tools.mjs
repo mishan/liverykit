@@ -90,7 +90,10 @@ async function toolFindPanels(client, args) {
       before++;
       for (const t of p.tags ?? []) tagsSeen.add(t);
       if (args.tag && !(p.tags ?? []).includes(args.tag)) continue;
-      if (typeof args.minVisibility === 'number' && typeof p.visible === 'number' && p.visible < args.minVisibility) continue;
+      // A panel nobody measured cannot meet a floor on what was measured. It
+      // used to pass, and every primary panel went unmeasured here because the
+      // editor's state left `visible` out of them.
+      if (typeof args.minVisibility === 'number' && !(p.visible >= args.minVisibility)) continue;
       const area = p.rect ? (p.rect[2] * p.rect[3]) : 0;
       if (typeof args.minArea === 'number' && area < args.minArea) continue;
       if (typeof args.maxAnisotropy === 'number' && p.anisotropy > args.maxAnisotropy) continue;
