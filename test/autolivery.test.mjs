@@ -1374,7 +1374,14 @@ test('the MCP client says what it could not read, and gives up on a reply that n
     assert.ok(warned.some((w) => /not JSON-RPC.*this is not JSON/.test(w)), warned.join('\n'));
     assert.ok(warned.some((w) => /not JSON-RPC.*null/.test(w)), warned.join('\n'));
     assert.ok(warned.some((w) => /request 999, which nothing is waiting for/.test(w)), warned.join('\n'));
-    await assert.rejects(mcp.callTool('render_car', { view: 'left' }), /MCP tools\/call render_car: no reply after 0\.3 s/);
+    // Stuck is gone, as an exited server is: handed to the planner as a refusal
+    // it kept the run paying, and each call after it waited as long again.
+    const stuck = await mcp.callTool('render_car', { view: 'left' }).catch((e) => e);
+    assert.ok(stuck instanceof ServerGone, `a server that stops answering ends the run: ${stuck}`);
+    assert.match(stuck.message, /MCP tools\/call render_car: no reply after 0\.3 s/);
+    const t0 = Date.now();
+    await assert.rejects(mcp.callTool('find_panels', {}), (e) => e instanceof ServerGone);
+    assert.ok(Date.now() - t0 < 200, 'and the next call fails at once, not after another wait');
   } finally {
     mcp.close();
   }

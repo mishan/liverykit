@@ -103,8 +103,13 @@ export async function connect({
     const timer = setTimeout(() => {
       pending.delete(id);
       late.set(id, what);
-      reject(new Error(`MCP ${what}: no reply after ${timeoutMs / 1000} s. The server is stuck, or its ` +
-        'reply was lost; one that arrives now is reported and ignored.'));
+      // Gone, as a server that exited is. A plain error here reached the planner
+      // as a refusal, so a stuck server kept the run paying for turns, and every
+      // call after it waited the whole limit again before failing the same way.
+      gone = `MCP ${what}: no reply after ${timeoutMs / 1000} s. The server is stuck, or its ` +
+        'reply was lost; one that arrives now is reported and ignored.';
+      failAll(gone);
+      reject(new ServerGone(gone));
     }, timeoutMs);
     pending.set(id, {
       resolve: (v) => { clearTimeout(timer); resolve(v); },
