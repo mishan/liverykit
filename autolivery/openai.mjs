@@ -1,5 +1,5 @@
 import { clip, llmAttributes } from './trace.mjs';
-import { PLANNER_SYSTEM, CRITIC_SYSTEM, VERDICT, verdictOf, cutOff, NO_CALL, recheckOf } from './prompts.mjs';
+import { PLANNER_SYSTEM, CRITIC_SYSTEM, VERDICT, verdictOf, cutOff, NO_CALL, recheckOf, measuredNote } from './prompts.mjs';
 
 /**
  * The planner and critic again, over any OpenAI-compatible chat endpoint:
@@ -254,10 +254,12 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
 
 export function createCritic({ endpoint, model, trace, sampling = {}, maxTokens = 8192 }) {
   return {
-    async judge({ brief, summary, images, parent, recheck = null, name = 'critic' }) {
+    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null }) {
       const parts = [];
       for (const im of images) parts.push({ type: 'text', text: `${im.view} view:` }, picture(im.data));
       parts.push({ type: 'text', text: `The brief:\n${brief}\n\nWhat the designer says it is:\n${summary || '(nothing)'}` });
+      const note = measuredNote(measured);
+      if (note) parts.push({ type: 'text', text: note });
       if (recheck) parts.push({ type: 'text', text: recheckOf(recheck) });
       // The caller's sampling, but a judge's temperature: a verdict that
       // changes when asked twice is not one.

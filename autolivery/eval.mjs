@@ -16,6 +16,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTrace } from './trace.mjs';
 import { score, checkPatterns } from './cases.mjs';
+import { overrule } from './loop.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -122,20 +123,26 @@ let disagreed = 0;
 for (const { c, images } of ready) {
   let v;
   try {
+    // A case that carries what the renderer counted is judged as the gate
+    // judges it: the critic is told the count, and a "cut off" the count
+    // contradicts is overruled before the verdict is scored.
     v = await critic.judge({
       brief: c.brief ?? set.brief, summary: c.summary ?? '', images, parent: null,
       ...(c.recheck ? { recheck: c.recheck, name: 'referee' } : {}),
+      measured: c.measured ?? null,
     });
+    if (c.measured) v = overrule(v, new Set(c.measured.filter((m) => m.whole).map((m) => m.id)));
   } catch (e) {
     v = { error: e.message };
   }
   const fails = score(v, c.expect);
+  const overruled = v?.overruled?.length ? ` (${v.overruled.length} "cut off" overruled by the count)` : '';
   if (fails.length) {
     disagreed++;
-    console.log(`✗ ${c.id}: ${fails.join('; ')}`);
+    console.log(`✗ ${c.id}: ${fails.join('; ')}${overruled}`);
   } else {
     agreed++;
-    console.log(`✓ ${c.id}`);
+    console.log(`✓ ${c.id}${overruled}`);
   }
 }
 

@@ -185,6 +185,25 @@ export const passes = (v) => Boolean(v && !v.error && v.reads_at_distance && v.n
   && v.matches_brief && !(v.requirements ?? []).some((r) => !r.present) && !(v.cut_off ?? []).length
   && !(v.unreadable ?? []).length);
 
+/**
+ * A verdict with every "cut off" the renderer's count contradicts taken out,
+ * and kept beside it as `overruled` so the record shows both.
+ *
+ * `whole` is the ids of pieces measured whole in the view that shows them best
+ * and with no high or fatal fitment finding against them. The critic's worst
+ * mistake was calling exactly those cut off — a whole roundel, in four of the
+ * six eval cases that had one — and the planner, believing it, shrank the
+ * roundel round after round. Matched by the id the critic was shown, and by
+ * nothing looser: "the roundel behind 85" could mean a piece the count never
+ * saw, and a guess that clears a real fault is worse than a false alarm.
+ */
+export function overrule(v, whole) {
+  if (!v || v.error || !whole?.size) return v;
+  const gone = (v.cut_off ?? []).filter((c) => whole.has(c.id));
+  if (!gone.length) return v;
+  return { ...v, cut_off: v.cut_off.filter((c) => !whole.has(c.id)), overruled: gone };
+}
+
 /** What in a failing verdict failed it, one line each. */
 const blockingOf = (v) => (!v || v.error ? [] : [
   ...(v.requirements ?? []).filter((r) => !r.present).map((r) => `missing: ${r.asked} (${r.where})`),
@@ -481,13 +500,20 @@ export async function run({
     }
     const fitmentPass = !reasons.length;
 
+    // What the renderer counted of each piece meant to be seen whole, told to
+    // the critic and held against what it says: see `overrule`.
+    const measured = fitment?.inView ?? null;
+    const against = new Set((fitment?.findings ?? [])
+      .filter((f) => f.severity === 'fatal' || f.severity === 'high').flatMap((f) => f.ids ?? []).map(String));
+    const whole = new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id)).map((m) => m.id));
+
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
     let verdict = null;
     let criticPass = false;
     if (images.length) {
       try {
-        verdict = await critic.judge({ brief: theBrief, summary, images, parent: span });
+        verdict = overrule(await critic.judge({ brief: theBrief, summary, images, parent: span, measured }), whole);
         // Every requirement, not only the summary: a critic answered
         // matches_brief: true while its own notes said the team name was
         // nowhere on the car. And every cut-off piece, listed as data for the
@@ -526,9 +552,10 @@ export async function run({
         second = { error: `the closer views did not render (${clip(missed.join('; '), 200)}), so the critic's verdict stands` };
       } else {
         try {
-          second = await (referee ?? critic).judge({
+          second = overrule(await (referee ?? critic).judge({
             brief: theBrief, summary, images: [...images, ...closeImages], parent: span, recheck: verdict, name: 'referee',
-          });
+            measured,
+          }), whole);
           criticPass = passes(second);
         } catch (e) {
           second = { error: e.message };
@@ -560,6 +587,10 @@ export async function run({
         minor: fitment.findings.filter((f) => f.severity === 'low').map(brief),
         notChecked: fitment.notChecked,
         notPlaced: fitment.notPlaced,
+        // One line a piece rather than every view: whether it is whole where
+        // it shows best, and if not, what is in front of it.
+        ...(measured ? { inView: measured.map(({ id, home, visible, whole: w, hiddenBy }) =>
+          ({ id, home, visible, whole: w, ...(hiddenBy && !w ? { hiddenBy } : {}) })) } : {}),
       },
       failures: [...unrendered, ...reasons],
       critic: verdict,
@@ -594,6 +625,8 @@ export async function run({
       ` · critic ${unjudged ? 'COULD NOT JUDGE' : passes(verdict) ? 'PASS' : 'FAIL'}${criticGates ? '' : ' (advisory)'}` +
       (!passes(verdict) ? criticWhy(verdict) : '') +
       (unjudged ? ` (${clip(unjudged, 140)})` : '') +
+      (verdict?.overruled?.length
+        ? ` · measured whole, so not cut off: ${verdict.overruled.map((c) => c.id).join(', ')}` : '') +
       (second
         ? ` → closer look ${criticPass ? 'PASS' : 'FAIL'}` +
           (second.error ? ` (${clip(second.error, 140)})` : (!criticPass ? criticWhy(second) : ''))

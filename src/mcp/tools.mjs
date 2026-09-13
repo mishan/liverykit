@@ -342,6 +342,9 @@ async function toolCheckFitment(client, args = {}) {
       // Worst first, so truncation loses the least important end.
       findings: [...findings].sort((a, b) =>
         ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
+      // Passed through when the editor counted it, which it does for a
+      // proposal: how much of each whole piece each view shows.
+      ...(r.inView ? { inView: r.inView } : {}),
     }, null, 2) }],
   };
 }
@@ -589,7 +592,10 @@ export function createToolHandler(client) {
         'Measure what is WRONG with the working design on this car: text landing on text, ' +
         'artwork outside a panel\'s readable area, text too small to read at the car\'s real ' +
         'scale, broken left/right mirroring, placements painted into texture space no triangle ' +
-        'uses, and placements the bodywork hides. Call this BEFORE proposing a fit change and ' +
+        'uses, and placements the bodywork hides. With a proposal it also counts, in pixels, how ' +
+        'much of each number, word and ring every view of the car shows (inView), and reports ' +
+        'hidden-in-view where the view that shows a piece best has part of it behind something. ' +
+        'Call this BEFORE proposing a fit change and ' +
         'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
         'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
         'findings list from a partial run does not mean the design is good. Pass `proposal` ' +
