@@ -132,8 +132,8 @@ function buildOccupancy(model, meshes, cellSize) {
   // the cell just the same: the NSX's inner door shell, cockpit tub and carbon
   // bonnet liner took its doors from 88% visible to 64% and its bonnet from
   // 95% to 61%. So `shared` keeps who marked each shared cell, a ray steps over
-  // one its own surface is part of, and what stands close in FRONT is found by
-  // `covered`, exactly, along the normal.
+  // one its own surface is part of where it starts (see `escapes`), and what
+  // stands close in FRONT is found by `covered`, exactly, along the normal.
   const grid = new Int32Array(nx * ny * nz);
   const idx = (i, j, k) => (k * ny + j) * nx + i;
   const shared = new Map();                     // cell -> Set of owner marks, for cells at -1
@@ -195,9 +195,10 @@ function buildOccupancy(model, meshes, cellSize) {
  * March a ray through the grid; true if it escapes without hitting geometry.
  *
  * `own` is the mesh index the ray starts on, and cells that mesh marked are
- * stepped over, alone or shared: a surface does not occlude itself, a curved
- * one marks the cells just outside itself, and what shares a cell with it may
- * be behind it as easily as in front. Every other occupied cell stops the ray.
+ * stepped over, alone or, near the start, shared: a surface does not occlude
+ * itself, a curved one marks the cells just outside itself, and what shares a
+ * cell with it may be behind it as easily as in front. Every other occupied
+ * cell stops the ray.
  * A voxel cannot tell a plate 5 mm proud of the paint from a shell 5 mm behind
  * it, so the plate is `covered`'s to find, not this.
  *
@@ -206,7 +207,16 @@ function buildOccupancy(model, meshes, cellSize) {
  *
  * A motion-blur mesh stands on the drawn mesh it is swapped with as much as
  * on itself: see `blurTwins`.
+ *
+ * A SHARED cell is stepped over only in the first `SHARED_STEPS` steps, the
+ * cell or two the ray starts in. It used to be stepped over anywhere, so any
+ * place on the car where another mesh comes within a voxel of the caster's
+ * own surface — a mirror foot, a wing mount, a wheel-arch lip against the
+ * body — let the caster's rays through it, and reported hidden as visible.
+ * The shell behind the paint that the step-over is for is only ever where
+ * the ray begins.
  */
+const SHARED_STEPS = 3;               // 0.7, 1.4 and 2.1 cells out
 function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
   const step = occ.cellSize * 0.7;
   const twins = own >= 0 ? occ.twins?.get(own) : undefined;
@@ -226,7 +236,7 @@ function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
     const c = occ.grid[at];
     if (c === 0 || c === own + 1) continue;
     if (c > 0 && twins !== undefined && twins.has(c - 1)) continue;
-    if (c === -1 && own >= 0 && mine(occ.shared.get(at))) continue;
+    if (c === -1 && own >= 0 && s < SHARED_STEPS && mine(occ.shared.get(at))) continue;
     return false;
   }
   return true;

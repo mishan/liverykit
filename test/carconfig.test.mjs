@@ -253,6 +253,58 @@ test('a motion-blur rim is measured as the rim it stands in for, not as somethin
   assert.ok(inner.visible < 0.1, `a drawn mesh behind the rim is covered by it: ${inner.visible}`);
 });
 
+test('a mesh touching the caster far along the ray still blocks it', async () => {
+  // A ray steps over a voxel it shares with another mesh, so that a shell a
+  // few millimetres behind the paint does not stop it where it starts. It did
+  // so along the whole ray: anywhere on the car where another mesh came within
+  // a voxel of the caster's own surface — a mirror foot, a wing mount, a
+  // wheel-arch lip against the body — let that mesh's rays through.
+  //
+  // A floor panel inside a box of its own mesh, which it sees straight
+  // through (a surface does not occlude itself), and a separate wrap 2 mm
+  // outside the box, in the box's own voxels 30 cm from the floor. A speck
+  // far off pins the grid's origin so every face is well inside its cell.
+  const { occupancyFor, rectVisibility } = await import('../src/engine/visibility.mjs');
+  const h = 0.3133, N = 12;
+  // One face as a dense grid: `at(s, t)` is the point, the rect its place on the sheet.
+  const face = (mesh, at, [u0, v0, du, dv], n) => {
+    const base = mesh.verts.length;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) mesh.verts.push(vert(...at(i / N, j / N), u0 + du * (i / N), v0 + dv * (j / N), n));
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = base + j * (N + 1) + i;
+        mesh.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+      }
+    }
+  };
+  const lerp = (s) => -1 + 2 * s;
+  const sheet = [0.6, 0.6, 0.3, 0.3];
+  const box = (mesh, r) => {
+    face(mesh, (s, t) => [lerp(s) * r, r, lerp(t) * r], sheet, [0, 1, 0]);
+    face(mesh, (s, t) => [r, t * r, lerp(s) * r], sheet, [1, 0, 0]);
+    face(mesh, (s, t) => [-r, t * r, lerp(s) * r], sheet, [-1, 0, 0]);
+    face(mesh, (s, t) => [lerp(s) * r, t * r, r], sheet, [0, 0, 1]);
+    face(mesh, (s, t) => [lerp(s) * r, t * r, -r], sheet, [0, 0, -1]);
+  };
+  const tub = { name: 'TUB', verts: [], indices: [] };
+  face(tub, (s, t) => [lerp(s) * 0.2, 0.0037, lerp(t) * 0.2], [0.1, 0.1, 0.3, 0.3], [0, 1, 0]);
+  box(tub, h);
+  const wrap = { name: 'WRAP', verts: [], indices: [] };
+  box(wrap, h + 0.002);
+  const speck = { name: 'SPECK', indices: [0, 1, 2],
+    verts: [vert(-0.5, -0.5, -0.5, 0.99, 0.99), vert(-0.49, -0.5, -0.5, 0.99, 0.99), vert(-0.5, -0.49, -0.5, 0.99, 0.99)] };
+
+  const seen = (...others) => {
+    const model = parseKn5Buffer(buildKn5({ bodyMesh: tub, extraMeshes: [speck, ...others] }));
+    return rectVisibility(model, occupancyFor(model), [model.meshes[0]], [0.15, 0.15, 0.2, 0.2]).fraction;
+  };
+  const bare = seen();
+  assert.ok(bare > 0.9, `the floor sees out through its own box: ${bare}`);
+  assert.equal(seen(wrap), 0, 'and not through another mesh wrapped round it');
+});
+
 test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {
   // Absent is the common case and is not an error. Unreadable is a different
   // fact wearing the same clothes: the car has hide rules, they were not
