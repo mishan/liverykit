@@ -358,9 +358,19 @@ function placements(profile, t, spec, fit, say = () => {}) {
     try {
       frac = resolveRect(profile, t.role, r);
     } catch (e) {
+      // Which of the two it was, asked of the panel directly. `resolveRect`
+      // checks `at` before it looks the panel up, and labelling every throw as
+      // a missing panel sent a region with an `at` past its edge, on a panel
+      // the car has, looking for a panel that was never missing.
+      let missing = null;
+      if (r.panel) {
+        try { panelOf(profile, t.role, r.panel); } catch (p) { missing = p; }
+      }
       say({ kind: 'unmatched', severity: 'high', surface: t.from, panel: r.panel,
         ids: [r.id ?? r.__key ?? `${t.from}#${i}`],
-        why: `${r.id ?? 'a region'} names a panel this car does not have, so it paints nothing: ${e.message}` });
+        why: missing
+          ? `${r.id ?? 'a region'} names a panel this car does not have, so it paints nothing: ${missing.message}`
+          : `${r.id ?? 'a region'} cannot be placed as written, so it paints nothing: ${e.message}` });
       return [];
     }
     if (!frac) return [];
