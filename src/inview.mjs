@@ -41,10 +41,10 @@ const round = (n) => Math.round(n * 1000) / 1000;
 
 /**
  * Each whole piece, measured in each view, judged by its HOME view, the one
- * that shows the most of it, and by any other that shows it nearly as large
- * (see COMPARABLE). A door roundel's home is the side view, a bonnet roundel's
- * the top. Not by every view: half of it hidden from the front, by the car's
- * own nose, is how cars are.
+ * in which it is largest, hidden parts and all, and by any other that shows it
+ * nearly as large (see COMPARABLE). A door roundel's home is the side view, a
+ * bonnet roundel's the top. Not by every view: half of it hidden from the front,
+ * by the car's own nose, is how cars are.
  *
  * `geometry` is `wholeModelGeometry` for this design, and `sheets` the car's
  * own textures, for the parts whose alpha decides whether they stand in front.
@@ -85,13 +85,15 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
     const home = seen[i].reduce((a, b) => (!a || b.whole > a.whole ? b : a), null);
     if (!home) {
       // Said, because a piece with a floor that nothing measured would
-      // otherwise read as one that met it.
+      // otherwise read as one that met it — and high, as a shortfall is,
+      // because low passed a gate: a `minVisible: 1` roundel no view shows at
+      // all went through as met.
       if (p.minVisible !== null) {
         findings.push({
-          kind: 'hidden-in-view', severity: 'low', surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
+          kind: 'hidden-in-view', severity: 'high', surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
           why: `${p.id} shows fewer than ${Math.ceil(fewest)} pixels in every ${width}x${height} view ` +
-            `(${views.join(', ')}), so how much ` +
-            'of it a picture of the car shows could not be counted',
+            `(${views.join(', ')}), so whether it meets its minVisible ${p.minVisible} could not be counted. ` +
+            'Make it bigger, or move it where a view of the car shows it.',
         });
       }
       return;
@@ -129,7 +131,7 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
       surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
       view: worst.view, visible: m.visible,
       why: `${p.id} (${p.what}) is ${Math.round(fraction * 100)}% visible in the ${worst.view} view, ` +
-        (worst === home ? 'the view that shows the most of it'
+        (worst === home ? 'the view in which it is largest'
           : `which shows it nearly as large as the ${home.view} view does`) +
         `; the rest is behind ${behind}` +
         (p.minVisible !== null ? `, and it asked for minVisible ${p.minVisible}` : '') +
