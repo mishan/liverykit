@@ -245,7 +245,12 @@ export function largestSpace({
     const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1 });
     if (r.candidates.length) {
       lo = w;
-      largest = { widthMm: Math.round(w), heightMm: Math.round(w * aspect), ...r.candidates[0] };
+      // Reported at a size that was itself measured. Rounded to the nearest
+      // millimetre, the size could be larger than the shape that passed, and
+      // the spot, clearance and fractions beside it were for another shape.
+      const fw = Math.floor(w), fh = Math.floor(w * aspect);
+      const at = fw > 0 && fh > 0 ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1 }) : null;
+      if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
     } else {
       hi = w;
     }

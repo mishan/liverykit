@@ -909,12 +909,12 @@ export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'top', 'front', 'r
  * Several views of the car in one picture, each labelled.
  *
  * For a caller that pays per look. A model reading a picture is charged
- * roughly by its area, so four half-size views cost about what four separate
+ * roughly by its area, so six small views cost about what six separate
  * pictures would — but every look is also a turn, and a turn re-reads the
  * whole conversation and thinks again. Measured on a real run, that was most
  * of the bill and the pictures were a tenth of it. One sheet is one turn.
  *
- * The design's textures are rasterised once and shared by the four cameras,
+ * The design's textures are rasterised once and shared by every camera on it,
  * so here too it costs little more than one view.
  */
 export async function shootSheet(model, groups, surfaces, { sheets: stock = null, width = 1400, height = 840, views = SHEET_VIEWS } = {}) {

@@ -989,6 +989,9 @@ test('find_space can sweep sizes and say how big a shape of a given proportion c
   // a tall shape gets the height a square cannot use.
   const tall = largestSpace({ grid, model: half, prepared, aspect: 2, marginMm: 50 });
   assert.ok(tall.largest.heightMm > r.largest.heightMm, `a taller shape can be taller: ${JSON.stringify(tall.largest)}`);
+  const again = findSpace({ grid, model: half, prepared, widthMm: r.largest.widthMm, heightMm: r.largest.heightMm,
+    marginMm: 50, count: 1 }).candidates[0];
+  assert.deepEqual(again?.at, r.largest.at, 'the spot it reports is the one measured for the size it reports');
   assert.throws(() => largestSpace({ grid, model: half, prepared, aspect: 0 }), /aspect above zero/);
 });
 
@@ -1138,6 +1141,10 @@ test('lettering too close in colour to what is under it is measured, not left to
   assert.deepEqual(low([base, name('navy')]), [], 'navy on the blue reads');
   assert.deepEqual(low([base, { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' },
     name('white')]), [], 'white on an orange band behind it reads');
+  // A fill that names no colour wears the core treatment's own pink.
+  const onDefault = low([{ id: 'plain', treatment: 'fill' }, name('white')]);
+  assert.equal(onDefault.length, 1, 'white on the pink a fill wears by default');
+  assert.match(onDefault[0].why, /white on pink/);
 
   // Inside a solid disc, the disc is what is under the number.
   const disc = { id: 'roundel', treatment: 'ring', panel: 'L', at: [0.3, 0.3, 0.4, 0.4], color: 'white', radius: 0.25, width: 0.5 };

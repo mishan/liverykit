@@ -772,8 +772,10 @@ const contrastRatio = (a, b) => {
 
 function contrast(placed, t, design, say, size) {
   const palette = design.palette ?? {};
+  // The core treatments' own defaults, which no palette entry names.
+  const CORE = { pink: '#FFC0CB', cyan: '#00FFFF' };
   const hex = (c) => {
-    const v = palette[c] ?? c;
+    const v = palette[c] ?? CORE[c] ?? c;
     return typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
   };
   // What `q` paints at (x, y), in texture fractions: a colour name, undefined
@@ -783,11 +785,15 @@ function contrast(placed, t, design, say, size) {
     const f = q.frac;
     if (x < f.x || x > f.x + f.w || y < f.y || y > f.y + f.h) return undefined;
     const tr = q.region.treatment;
-    if (tr === 'fill' || tr === 'stripe') return q.region.color ?? null;
+    // The core treatments' own defaults where a region names no colour, as
+    // they paint it (packs/core.mjs). A fill with none used to be "not one
+    // known colour", and the lettering on it went unmeasured.
+    if (tr === 'fill') return q.region.color ?? 'pink';
+    if (tr === 'stripe') return q.region.color ?? 'cyan';
     if (tr === 'ring') {
       const g = ringGeometry(q, size);
       const d = Math.hypot(x * size.w - g.cx, y * size.h - g.cy);
-      return d >= g.inner && d <= g.outer ? (q.region.color ?? null) : undefined;
+      return d >= g.inner && d <= g.outer ? (q.region.color ?? 'cyan') : undefined;
     }
     if (tr === 'text') return undefined;          // letters over letters: overlap's business
     return null;
