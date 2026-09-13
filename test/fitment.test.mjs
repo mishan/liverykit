@@ -753,3 +753,224 @@ test('a constraint with a bad value is refused, like a bad name', () => {
   assert.deepEqual(r.findings.filter((f) => f.kind === 'crossed'), [],
     'nothing pretends the bad value worked');
 });
+
+test('a region that lands on no panel is a finding, not a pass', () => {
+  // Found by an agent. Every region it wrote selected `tags: ['left', 'body']`,
+  // and no panel on the car is tagged `body`, so nothing was painted — and
+  // this module returned no findings at all, three rounds running, over a car
+  // still in bare primer. The tag selection's own note said what had happened
+  // and was dropped before anything read it; a panel the car lacks was caught
+  // and turned into silence the same way.
+  const r = fitment(design([
+    { id: 'number-left', treatment: 'text', tags: ['left', 'body'], at: [0.2, 0.2, 0.6, 0.3], text: '{number}' },
+    { id: 'sponsor', treatment: 'text', panel: 'Q', at: [0.2, 0.2, 0.6, 0.3], text: '{team}' },
+    { id: 'wash', treatment: 'fill', tags: ['left'], color: 'ink' },
+  ]), profile);
+
+  const un = r.findings.filter((f) => f.kind === 'unmatched');
+  assert.deepEqual(un.map((f) => f.ids[0]).sort(), ['number-left', 'sponsor'],
+    `both regions that paint nothing are named: ${JSON.stringify(r.findings)}`);
+  assert.ok(un.every((f) => f.severity === 'high'), 'and they fail a gate, not just inform it');
+  // Saying what to write instead: the reader was guessing at the vocabulary.
+  assert.match(un.find((f) => f.ids[0] === 'number-left').why, /Tags on this texture: left, right, visible/);
+  assert.ok(r.checked.includes('unmatched'));
+  // The region that did land is untouched by any of this.
+  assert.equal(r.findings.some((f) => f.ids.includes('wash@L') && f.kind === 'unmatched'), false);
+});
+
+test('a field no treatment takes and nothing else reads is a finding, not a no-op', () => {
+  // An agent spent four rounds making a number bigger with
+  // `options: { scale: 1.5 }`. The renderer hands a treatment the whole region
+  // and the treatment ignores what it does not know, so the number never
+  // changed size and nothing said so.
+  const r = fitment(design([
+    { id: 'number', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.8, 0.5], text: '{number}',
+      options: { scale: 1.5 }, minMm: 30 },
+    // Every field here is read by somebody, so none of them is reported.
+    { id: 'wash', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink',
+      safe: false, rotate: 'auto', scale: 1, constraints: { minOnCar: 0.1 } },
+  ]), profile);
+
+  const unk = r.findings.filter((f) => f.kind === 'unknown-field');
+  assert.deepEqual(unk.map((f) => f.field).sort(), ['minMm', 'options'], JSON.stringify(unk));
+  assert.ok(unk.every((f) => f.severity === 'high' && f.ids[0] === 'number'));
+  assert.match(unk.find((f) => f.field === 'options').why, /on the region itself/);
+  assert.match(unk.find((f) => f.field === 'minMm').why, /"constraints": \{ "minMm": 30 \}/);
+  assert.ok(r.checked.includes('unknown-field'));
+});
+
+test('a region can say how much of it must be seen, and a slice behind something is reported', () => {
+  // A roundel measured 99% on the door, and the strip along its top 44%
+  // visible — tucked under the window frame. It is on the car and it is cut
+  // off, and the only visibility rule there was speaks up below 35%.
+  const model = plane({ rows: 8, cols: 8 });
+  const half = withPlate(model, 0.005);
+  half.meshes[1].world[0] = 0.5;              // the plate now covers the left half of the sheet
+  const seen = probe(half, [0, 0, 0.4, 0.4]).fraction;
+  assert.ok(seen > 0.35 && seen < 0.8, `the region is about half hidden: ${seen}`);
+
+  const roundel = (constraints) => design([
+    { id: 'roundel', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink', ...(constraints ? { constraints } : {}) },
+  ]);
+  const unseen = (r) => r.findings.filter((f) => f.kind === 'unseen');
+
+  assert.deepEqual(unseen(fitment(roundel(), profile, null, { model: half })), [],
+    'with no floor declared, half seen passes, as it always did');
+
+  const asked = unseen(fitment(roundel({ minVisible: 1 }), profile, null, { model: half }));
+  assert.equal(asked.length, 1, 'a floor of 100% is not met by half');
+  assert.equal(asked[0].severity, 'high');
+  assert.match(asked[0].why, /asked for at least 100%/);
+
+  assert.deepEqual(unseen(fitment(roundel({ minVisible: 1 }), profile, null, { model })), [],
+    'bare bodywork meets a floor of 100%');
+
+  const bad = fitment(roundel({ minVisible: 90 }), profile).findings.filter((f) => f.kind === 'bad-constraint');
+  assert.match(bad[0]?.why ?? '', /fraction between 0 and 1/, 'and the value is checked like minOnCar');
+});
+
+test('a ring is measured by the circle it draws, not only by its box', () => {
+  // Two agent mistakes that passed as boxes. A roundel of radius 0.5 and width
+  // 0.5 painted a white band out to 0.75 of its box, past the rectangle its
+  // 100%-on-car and 100%-visible constraints were measured on. And a thin
+  // halo inside it ran straight through the race number, which the box check
+  // reported as the same low overlap as a halo going round it.
+  const ring = (id, radius, width, extra = {}) => ({
+    id, treatment: 'ring', panel: 'L', at: [0.2, 0.2, 0.6, 0.6], color: 'ink', radius, width, ...extra });
+  const number = { id: 'number', treatment: 'text', panel: 'L', at: [0.35, 0.35, 0.3, 0.3], text: '{number}' };
+  const found = (regions, kind) => fitment(design(regions), profile).findings.filter((f) => f.kind === kind);
+
+  assert.deepEqual(found([ring('disc', 0.25, 0.5), number], 'overflows'), [], 'a disc exactly fills its box');
+  assert.deepEqual(found([ring('disc', 0.25, 0.5), number], 'overlap'), [], 'and a number on its roundel is the design working');
+
+  const over = found([ring('roundel', 0.5, 0.5, { constraints: { minOnCar: 1 } })], 'overflows');
+  assert.equal(over.length, 1);
+  assert.equal(over[0].severity, 'high', 'its declared guarantees are about a box the paint left');
+  assert.match(over[0].why, /out to 0\.75/);
+  assert.equal(found([ring('roundel', 0.5, 0.5)], 'overflows')[0].severity, 'low', 'undeclared, it is bleed');
+
+  const through = found([ring('halo', 0.2, 0.04), number], 'overlap');
+  assert.equal(through.length, 1, JSON.stringify(through));
+  assert.equal(through[0].severity, 'high');
+  assert.match(through[0].why, /circle runs through .*number/);
+  assert.deepEqual(found([ring('halo', 0.47, 0.04), number], 'overlap'), [], 'the same halo big enough to go round it');
+});
+
+test('a region can ask for clean bodywork all round it, and find_space finds where there is some', async () => {
+  // On the NSX the top quarter of the door's box is not door and the middle
+  // of the box is under the window frame, so "the middle of the panel" put a
+  // roundel's top edge where it could not be seen. Here, a plate hides the
+  // left half of the sheet: 0.8 m of a 1.6 m panel.
+  const { findSpace } = await import('../src/space.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const half = withPlate(model, 0.005);
+  half.meshes[1].world[0] = 0.5;
+
+  // This box starts 0.896 m across, 96 mm clear of the plate.
+  const box = (m) => design([{ id: 'roundel', treatment: 'fill', panel: 'L', at: [0.56, 0.3, 0.2, 0.2],
+    color: 'ink', constraints: { minMargin: m } }]);
+  const margin = (r) => r.findings.filter((f) => f.kind === 'margin');
+  assert.deepEqual(margin(fitment(box(50), profile, null, { model: half })), [], '96 mm clear meets 50');
+  const tight = margin(fitment(box(200), profile, null, { model: half }));
+  assert.equal(tight.length, 1, 'and does not meet 200');
+  assert.equal(tight[0].severity, 'high');
+  assert.match(tight[0].why, /200 mm of clean bodywork/);
+  assert.ok(fitment(box(50), profile).notChecked.includes('margin'), 'without the model it is said not to have run');
+
+  const found = findSpace({ profile, model: half, prepared: occupancyFor(half), role: 'body', panel: 'L',
+    widthMm: 300, marginMm: 50, cellMm: 100 });
+  assert.ok(found.candidates.length > 0, JSON.stringify(found));
+  for (const c of found.candidates) {
+    assert.ok(c.at[0] * 1600 >= 850 - 1, `every spot is in the clean half, clear of the plate: ${JSON.stringify(c)}`);
+    assert.ok(c.marginMm >= 50);
+    assert.ok(c.onCar >= 0.98 && c.visible >= 0.98, JSON.stringify(c));
+  }
+  assert.ok(found.map.every((row) => row.startsWith('.')), 'the hidden half is marked on the map');
+
+  const none = findSpace({ profile, model: half, prepared: occupancyFor(half), role: 'body', panel: 'L',
+    widthMm: 900, marginMm: 50, cellMm: 100 });
+  assert.deepEqual(none.candidates, []);
+  assert.match(none.note, /No spot on L fits 900 x 900 mm/);
+});
+
+test('find_space asks the sweep once per panel, and a panel name is taken on the texture the design paints', async () => {
+  const { findSpace, cleanGrid, spaceRole } = await import('../src/space.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  // The sweep is the slow half and depends only on the panel: an agent asked
+  // six sizes of one door and paid for six sweeps, half a minute each.
+  const model = plane({ rows: 8, cols: 8 });
+  const half = withPlate(model, 0.005);
+  half.meshes[1].world[0] = 0.5;
+  const prepared = occupancyFor(half);
+  const grid = cleanGrid({ profile, model: half, prepared, role: 'body', panel: 'L', cellMm: 100 });
+  for (const widthMm of [300, 450]) {
+    assert.deepEqual(
+      findSpace({ grid, model: half, prepared, widthMm, marginMm: 50 }),
+      findSpace({ profile, model: half, prepared, role: 'body', panel: 'L', widthMm, marginMm: 50, cellMm: 100 }),
+      `a kept sweep answers ${widthMm} mm exactly as a fresh one does`);
+  }
+
+  // On the NSX, left_mid is a panel on nine textures. The design paints one.
+  const nsx = await loadProfile(new URL('../cars/ac_friends_honda_nsx_gt3_evo.json', import.meta.url).pathname);
+  const paintsBody = { name: 'd', packs: ['core'], surfaces: { body: { regions: [] } } };
+  const taken = spaceRole(nsx, paintsBody, undefined, 'left_mid');
+  assert.equal(taken.role, 'ext_skin_sponsors', JSON.stringify(taken));
+  assert.match(taken.chosen, /only one this design paints/);
+  assert.match(spaceRole(nsx, { name: 'd', packs: ['core'] }, undefined, 'left_mid').error ?? '',
+    /pass role to say which/, 'a design that paints none of them is still asked which');
+  assert.equal(spaceRole(nsx, paintsBody, 'glass', 'left_mid').role, 'glass', 'a role named outright wins');
+  assert.equal(spaceRole(nsx, paintsBody, 'surfaces.body', 'left_mid').role, 'ext_skin_sponsors');
+  assert.match(spaceRole(nsx, paintsBody, undefined, 'no_such_panel').error, /No panel called/);
+});
+
+test('a panel swept in one pass measures every cell exactly as asking cell by cell does', async () => {
+  // The sweep behind find_space asked rectVisibility once per cell, and each
+  // ask walks every triangle of the texture whatever the cell's size: 609
+  // cells of the NSX door took half a minute. One walk gives the same samples.
+  const { gridVisibility } = await import('../src/engine/visibility.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const half = withPlate(model, 0.005);
+  half.meshes[1].world[0] = 0.5;
+  const prepared = occupancyFor(half);
+  const meshes = [half.meshes[0]];
+  const [px, py, pw, ph] = profile.panels.body.L.rect;
+  const cols = 7, rows = 5;
+  const grid = gridVisibility(half, prepared, meshes, [px, py, pw, ph], cols, rows, { per: 4 });
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const one = rectVisibility(half, prepared, meshes,
+        [px + c * pw / cols, py + r * ph / rows, pw / cols, ph / rows], { across: 4 });
+      assert.deepEqual(grid[r][c], one ? { samples: one.samples, of: one.of, fraction: one.fraction }
+        : { samples: 0, of: 16, fraction: 0 }, `cell ${r},${c}`);
+    }
+  }
+});
+
+test('a fitting standing a few millimetres proud of the paint covers what is under it', () => {
+  // The NSX door handle is a chrome strip 2-10 mm off the door. A team name
+  // whose last letter ran under it measured 100% seen twice over: the voxel
+  // grid is 2.5 cm and cannot tell a strip that close from the door, and
+  // fourteen samples across a 680 mm name never tested its last 24 mm. The
+  // draft passed the gate and went to a person, who failed it on sight.
+  const model = plane({ rows: 8, cols: 8 });
+  const strip = withPlate(model, 0.005);
+  const handle = strip.meshes[1];
+  handle.name = 'DOOR_HANDLE';
+  // 300 x 120 mm from x 1.10 m: over the last 20 mm of a name ending at 1.12.
+  handle.world[0] = 0.3 / 1.6; handle.world[12] = 1.10;
+  handle.world[5] = 0.12 / 1.6; handle.world[13] = 0.78;
+
+  const name = (at) => design([{ id: 'team', treatment: 'text', panel: 'L', at, text: '{team}',
+    constraints: { minVisible: 1 } }]);
+  // Panel L is 1.6 m square, so this name runs x 0.16-1.12 m, y 0.80-0.88 m.
+  const under = fitment(name([0.1, 0.5, 0.6, 0.05]), profile, null, { model: strip })
+    .findings.filter((f) => f.kind === 'unseen');
+  assert.equal(under.length, 1, JSON.stringify(under));
+  assert.equal(under[0].severity, 'high');
+  assert.match(under[0].why, /directly under DOOR_HANDLE/, 'and it says what is in the way');
+  assert.doesNotMatch(under[0].why, /is 100% visible/, 'a shortfall is not rounded away');
+
+  // Ending 60 mm short of the handle, it is clear.
+  const clear = fitment(name([0.1, 0.5, 0.55, 0.05]), profile, null, { model: strip });
+  assert.deepEqual(clear.findings.filter((f) => f.kind === 'unseen'), []);
+});
