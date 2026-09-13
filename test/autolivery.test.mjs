@@ -951,6 +951,19 @@ test('a critic that fails a clean draft gets a closer second look, and the secon
     assert.equal(empty.result.passed, false);
     assert.equal(unasked.asked.length, 0);
     assert.equal(empty.result.history[0].secondLook, undefined);
+
+    // Nor when the critic is advisory: its verdict gates nothing, and the
+    // second look is a paid call that would decide nothing either.
+    const idleReferee = judging({ ...flagged, cut_off: [] });
+    const advisoryOut = join(ed.dir, 'advisory');
+    const advisory = await run({
+      brief: 'number 85', mcp: ed.mcp, planner: drafting, critic: judging(flagged), referee: idleReferee,
+      trace: await createTrace({ dir: advisoryOut }), out: advisoryOut, rounds: 1, views: ['left'],
+      shot: { width: 200, height: 150 }, closeShot: { width: 200, height: 150 }, propose: false, criticGates: false,
+    });
+    assert.equal(advisory.passed, true, 'fitment alone decides');
+    assert.equal(idleReferee.asked.length, 0);
+    assert.equal(advisory.history[0].secondLook, undefined);
   } finally {
     await ed.stop();
   }
@@ -1380,6 +1393,81 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     assert.equal(typo.code, 1);
     assert.match(typo.stderr, /--only names no case called no-such-case/);
     assert.match((await cli('eval.mjs', '--max-cost', 'nope')).stderr, /--max-cost must be a positive number of dollars, not nope/);
+
+    // A recorded draft today's editor refuses ends the replay, saying so. It
+    // used to be one ✗ in the log, then a round judged on an empty draft.
+    const refusedDir = join(ed.dir, 'refused');
+    await mkdir(refusedDir);
+    await writeFile(join(refusedDir, 'result.json'), JSON.stringify({ brief: 'b', passed: false, history: [
+      { draft: { design: [{ op: 'no-such-op' }], fit: [] }, summary: 'from an older editor' }] }));
+    await assert.rejects(go(createReplayPlanner(await loadRecording(refusedDir)), 'refused-run', 1),
+      /round 1: today's editor refuses the recorded draft_design.*no-such-op/);
+
+    // --rounds under --replay was dropped without a word.
+    const bin = (...args) => new Promise((ok) => execFile(process.execPath,
+      [join(ROOT, 'autolivery/bin.mjs'), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
+    const rounds = await bin('--replay', join(ed.dir, 'original'), '--rounds', '2');
+    assert.equal(rounds.code, 1);
+    assert.match(rounds.stderr, /--rounds does not apply to --replay, which runs the 1 round\(s\) the run recorded/);
+
+    // A pass whose proposal the inbox refused can be sent again from its
+    // result.json, costing nothing. Refused again while one is pending.
+    const passedDir = join(ed.dir, 'passed');
+    await go(drafting, 'passed', 3);
+    const sent = await bin('--propose', passedDir, '--editor', ed.url);
+    assert.equal(sent.code, 0, sent.stderr);
+    const { proposal } = await get(ed.url, 'api/proposal');
+    assert.match(sent.stdout, new RegExp(`proposal ${proposal.id} is in the editor's inbox`));
+    assert.deepEqual(proposal.design, JSON.parse(await readFile(join(passedDir, 'result.json'), 'utf8')).draft.design);
+    assert.match(proposal.why, /every fitment check ran/);
+    const again = await bin('--propose', passedDir, '--editor', ed.url);
+    assert.equal(again.code, 1);
+    assert.match(again.stderr, /the editor refused the proposal: .*already pending/);
+    const failed = await bin('--propose', refusedDir, '--editor', ed.url);
+    assert.match(failed.stderr, /did not pass its gate/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a region is whole when every piece of it is, and a high finding on a piece protects the region', async () => {
+  // `against` kept a finding's piece id, `band@left_mid`, while the gate's
+  // other half goes by the region's, so a high finding on a span piece did not
+  // stop `band` from being overruled as whole.
+  const { wholeFor } = await import('../autolivery/loop.mjs');
+  const measured = [
+    { id: 'band@left_mid', whole: true }, { id: 'band@left_rear', whole: true },
+    { id: 'name@left_mid', whole: true }, { id: 'name@left_rear', whole: false },
+    { id: 'number', whole: true },
+  ];
+  const clean = wholeFor(measured, []);
+  assert.deepEqual([...clean].sort(), ['band', 'band@left_mid', 'band@left_rear', 'name@left_mid', 'number']);
+  const flagged = wholeFor(measured, [{ severity: 'high', ids: ['band@left_rear'] }, { severity: 'low', ids: ['number'] }]);
+  assert.deepEqual([...flagged].sort(), ['name@left_mid', 'number'], 'a high finding on one piece protects them all');
+});
+
+test('a draft the gate cannot read back fails the round, and says the gate broke', async () => {
+  // Without read_design's answer no constraint can be held to last round's,
+  // and a round could loosen the one that failed with nothing to notice.
+  const ed = await fixtureEditor();
+  try {
+    const mcp = { ...ed.mcp, callTool: (name, args) => (name === 'read_design' && args?.proposal
+      ? Promise.resolve({ isError: true, content: [{ type: 'text', text: 'the editor went away' }] })
+      : ed.mcp.callTool(name, args)) };
+    const planner = { async round({ call }) {
+      await call('draft_design', { design: [{ op: 'set-palette', name: 'ink', value: '#101014' }] });
+      await call('finish_round', { summary: 'a palette' });
+    } };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [], cut_off: [], unreadable: [], notes: [] }) };
+    const out = join(ed.dir, 'run');
+    const result = await run({ brief: 'b', mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, propose: false });
+    assert.equal(result.passed, false);
+    assert.ok(result.history[0].failures.some((f) => /read_design could not say .*the editor went away/.test(f)),
+      JSON.stringify(result.history[0].failures));
+    const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.match(spans.find((s) => s.name === 'gate').error, /read_design: the editor went away/);
   } finally {
     await ed.stop();
   }
