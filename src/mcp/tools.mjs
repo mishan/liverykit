@@ -554,7 +554,7 @@ export function createToolHandler(client) {
           marginMm: { type: 'number', description: 'Only spots with at least this much clean bodywork all round (default 0)' },
           count: { type: 'number', description: 'How many spots (default 5)' },
           largest: { type: 'boolean', description: 'Instead of a size, sweep sizes and return the LARGEST shape of the given aspect that fits whole, with its spot' },
-          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, about 0.8)' },
+          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, 0.85)' },
         },
         required: ['panel'],
       },
