@@ -151,7 +151,7 @@ dear way to test one. Two tools test against real work for nothing.
 
 `--replay <run dir>` puts back what a real run drafted, round by round, and judges
 it with today's gate: fitment, renders, and the local critic and second look. It
-needs no brief and no planner model, and it proposes nothing. A run records each
+takes no brief and no planner model, and it proposes nothing. A run records each
 round's draft and summary in `result.json`. One from before that replays its final
 draft as one round.
 
