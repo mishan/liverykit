@@ -152,8 +152,10 @@ export function measuredNote(measured) {
     return `- ${m.id}: ${m.what}${m.panel ? `, on ${m.panel}` : ''}. ` +
       (m.whole
         ? `Whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it.`
-        : `Not whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it; ` +
-          `the rest is behind ${m.hiddenBy ?? 'another part of the car'}.`) +
+        : m.why
+          ? `Not whole: ${m.why}.`
+          : `Not whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it; ` +
+            `the rest is behind ${m.hiddenBy ?? 'another part of the car'}.`) +
       (others.length ? ` Other views: ${others.join(', ')}.` : '');
   });
   if (!lines.length) return null;

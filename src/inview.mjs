@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { wholePieces } from './fitment.mjs';
-import { piecesInView, SHEET_VIEWS } from './engine/shot.mjs';
+import { piecesInView, pieceTriangles, onMeshShare, SHEET_VIEWS } from './engine/shot.mjs';
 
 /** Below this many pixels a view shows too little of a piece to count. */
 const TOO_FEW_PX = 30;
@@ -46,9 +46,15 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
   const findings = [];
   const measured = pieces.map((p) => ({
     id: p.id, role: p.role, surface: p.surface, panel: p.panel, what: p.what,
-    home: null, visible: null, whole: null, views: {},
+    home: null, visible: null, whole: null, onMesh: null, views: {},
   }));
   if (!pieces.length) return { views, measured, findings };
+
+  // How much of each piece the car carries at all, which no view can say: a
+  // view counts only the texels a triangle draws. A ring hanging off its
+  // island was counted whole in every view, and the critic that called it cut
+  // off at the panel edge was overruled for being right.
+  const onMesh = pieces.map((p) => onMeshShare(geometry, p, pieceTriangles(geometry, geometry.groups, p)));
 
   const seen = pieces.map(() => []);
   for (const view of views) {
@@ -59,6 +65,13 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
   pieces.forEach((p, i) => {
     const m = measured[i];
     for (const s of seen[i]) m.views[s.view] = round(s.shown / s.whole);
+    const carried = onMesh[i];
+    if (carried !== null) m.onMesh = round(carried);
+    const off = carried !== null && carried < WHOLE;
+    if (off) {
+      m.why = `only ${Math.round(carried * 100)}% of it is on the car: the rest is painted into texture space ` +
+        'no triangle uses, so no view can show it';
+    }
     const home = seen[i].reduce((a, b) => (!a || b.whole > a.whole ? b : a), null);
     if (!home) {
       // Said, because a piece with a floor that nothing measured would
@@ -75,7 +88,7 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
     const fraction = home.shown / home.whole;
     m.home = home.view;
     m.visible = round(fraction);
-    m.whole = fraction >= WHOLE;
+    m.whole = fraction >= WHOLE && !off;
     // How big it is in the picture, as a share of the frame's width and height.
     m.size = [round(home.box[2]), round(home.box[3])];
     const by = home.blockers[0] ?? null;

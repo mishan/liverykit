@@ -911,6 +911,81 @@ function alphaAt(tex, u, v) {
 }
 
 /**
+ * The triangles of a piece's own texture whose UVs reach its box, by index
+ * into `indices`. The cockpit the renderers leave out is left out here too.
+ */
+export function pieceTriangles(model, groups, piece) {
+  const { uvs, indices } = model;
+  const [u0, v0, u1, v1] = piece.box;
+  const out = [];
+  for (const g of groups) {
+    if (g.role !== piece.role || g.lod === 'LR') continue;
+    for (let t = g.start; t < g.start + g.count; t += 3) {
+      const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+      if (Math.max(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]) < u0 || Math.min(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]) > u1
+        || Math.max(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]) < v0
+        || Math.min(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]) > v1) continue;
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/**
+ * How much of a piece's own shape lies on triangles of the car, 0 to 1: the
+ * cells of a grid over its box that it covers, and of those, the ones whose
+ * centre some triangle's UVs contain.
+ *
+ * A picture cannot answer this. The views only ever draw texels a triangle
+ * reaches, so the part of a piece painted into texture space no triangle uses
+ * is in neither of their counts, and a roundel two thirds on the car counted
+ * as whole in every one. Fitment's own on-car figure is cast at the placement's
+ * box, which for a ring drawn past its box is not where the paint is, and
+ * samples at fourteen cells a side, too coarse to hold a line at 0.99.
+ *
+ * `null` when the grid is too coarse to find the piece's shape at all.
+ */
+export function onMeshShare(model, piece, tris, n = 96) {
+  const { uvs, indices } = model;
+  const [u0, v0, u1, v1] = piece.box;
+  const du = (u1 - u0) / n, dv = (v1 - v0) / n;
+  const asked = new Uint8Array(n * n);
+  let wanted = 0;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      if (piece.contains(u0 + (i + 0.5) * du, v0 + (j + 0.5) * dv)) { asked[j * n + i] = 1; wanted++; }
+    }
+  }
+  if (!wanted) return null;
+  let on = 0;
+  for (const t of tris) {
+    const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+    const ax = uvs[ia * 2], ay = uvs[ia * 2 + 1], bx = uvs[ib * 2], by = uvs[ib * 2 + 1], cx = uvs[ic * 2], cy = uvs[ic * 2 + 1];
+    const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+    if (Math.abs(area) < 1e-14) continue;
+    // Cells whose centre falls inside the triangle's UV bounds, and only those.
+    const i0 = du > 0 ? Math.max(0, Math.ceil((Math.min(ax, bx, cx) - u0) / du - 0.5)) : 0;
+    const i1 = du > 0 ? Math.min(n - 1, Math.floor((Math.max(ax, bx, cx) - u0) / du - 0.5)) : n - 1;
+    const j0 = dv > 0 ? Math.max(0, Math.ceil((Math.min(ay, by, cy) - v0) / dv - 0.5)) : 0;
+    const j1 = dv > 0 ? Math.min(n - 1, Math.floor((Math.max(ay, by, cy) - v0) / dv - 0.5)) : n - 1;
+    for (let j = j0; j <= j1; j++) {
+      const py = v0 + (j + 0.5) * dv;
+      for (let i = i0; i <= i1; i++) {
+        const k = j * n + i;
+        if (asked[k] !== 1) continue;
+        const px = u0 + (i + 0.5) * du;
+        const w0 = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area;
+        const w1 = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area;
+        if (w0 < 0 || w1 < 0 || 1 - w0 - w1 < 0) continue;
+        asked[k] = 2;
+        on++;
+      }
+    }
+  }
+  return on / wanted;
+}
+
+/**
  * How much of each piece of artwork a view shows, counted rather than judged.
  *
  * The critic's worst mistake was calling a whole roundel "cut off": four of the
