@@ -582,7 +582,7 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }, identity = {}) {
  * the rim of the grown box sit on boundaries, and a strict 100% fails a
  * placement for a rounding error rather than for an edge.
  */
-const MARGIN_CLEAN = 0.98;
+export const MARGIN_CLEAN = 0.98;
 
 /**
  * Clean bodywork all round a placement, when it asked for some.
@@ -618,7 +618,7 @@ const underWhat = (answer) => {
   return u.length ? `; ${u.map(([m, n]) => `${n} of its points are directly under ${m}`).join(', ')}` : '';
 };
 
-const FINE_MM = 5;
+export const FINE_MM = 5;
 function fineGrid(p, w = p.frac.w, h = p.frac.h) {
   const c = p.constraints;
   if (typeof c.minVisible !== 'number' && typeof c.minOnCar !== 'number' && typeof c.minMargin !== 'number') return null;
@@ -1230,7 +1230,7 @@ function grouped(all, design, fit, profile, say) {
       for (const r of spec?.regions ?? []) if (r?.id) known.add(r.id);
     }
   }
-  const where = ({ t, p }) => (p.region.panel ? `${t.role} ${panelName(profile, t.role, p.region.panel)}` : null);
+  const where = ({ t, p }) => (p.region.panel ? `${t.role}\u0000${panelName(profile, t.role, p.region.panel)}` : null);
 
   for (const { t, placed } of all) {
     for (const p of placed) {

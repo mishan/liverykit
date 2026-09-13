@@ -381,10 +381,15 @@ const round = (n) => Math.round(n * 10000) / 10000;
  * renderer draws none of them. Counted as occluders they covered a team name
  * that nothing covers on the car, and failed a layout a person had arranged
  * by hand and could see was clear.
+ *
+ * Nor the damage-only glass or the motion-blur rims, which the renderer and the
+ * near-field test already leave out: the game swaps them in for a crash or a
+ * wheel at speed, and neither stands in front of a livery on a car at rest.
  */
 export function carOccluders(model, profile) {
   const hidden = new Set(Object.keys(profile?.hiddenByCar?.meshes ?? {}));
-  return hidden.size ? model.meshes.filter((m) => !hidden.has(m.name)) : model.meshes;
+  return model.meshes.filter((m) => !hidden.has(m.name)
+    && !damageOnly(model.materials?.[m.materialId]?.shader) && !motionBlurOnly(m.name));
 }
 
 export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {

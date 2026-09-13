@@ -325,8 +325,9 @@ try {
 
 // Success is a design in front of a person, and the trace says what the exit
 // code says. It said passed for a pass the editor refused to take, which
-// delivered nothing.
-const delivered = result.passed && Boolean(result.proposalId || values['no-propose']);
+// delivered nothing. A replay proposes nothing by design, so its pass is the
+// gate's.
+const delivered = result.passed && Boolean(result.proposalId || values['no-propose'] || replaying);
 const s = await trace.finish({ ok: delivered, attrs: { rounds: result.rounds, passed: result.passed } });
 mcp.close();
 

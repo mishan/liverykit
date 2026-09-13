@@ -1107,7 +1107,7 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
           shown++;
           continue;
         }
-        const key = t1 >= 0 ? `${meshOf(t1) ?? ''} ${partName(groups[groupOf[t1 / 3]])}` : ' nothing';
+        const key = t1 >= 0 ? `${meshOf(t1) ?? ''}\u0000${partName(groups[groupOf[t1 / 3]])}` : '\u0000nothing';
         blockers.set(key, (blockers.get(key) ?? 0) + 1);
       }
     }
@@ -1118,7 +1118,7 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
       // What stands in front: the mesh where it has a name, and the texture
       // it wears, which says whether it is part of the same painted surface.
       blockers: [...blockers].sort((a, b) => b[1] - a[1]).map(([k, px]) => {
-        const [mesh, sheet] = k.split(' ');
+        const [mesh, sheet] = k.split('\u0000');
         return { mesh: mesh || null, sheet, px };
       }),
       // Where the piece sits in the frame and how much of it it takes, as
