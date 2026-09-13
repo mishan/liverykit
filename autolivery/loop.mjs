@@ -597,8 +597,8 @@ export async function run({
         notPlaced: fitment.notPlaced,
         // One line a piece rather than every view: whether it is whole where
         // it shows best, and if not, what is in front of it.
-        ...(measured ? { inView: measured.map(({ id, home, visible, whole: w, hiddenBy, onMesh, why }) =>
-          ({ id, home, visible, whole: w, ...(hiddenBy && !w ? { hiddenBy } : {}),
+        ...(measured ? { inView: measured.map(({ id, home, view, visible, whole: w, hiddenBy, onMesh, why }) =>
+          ({ id, home, ...(view && view !== home ? { view } : {}), visible, whole: w, ...(hiddenBy && !w ? { hiddenBy } : {}),
             ...(why ? { onMesh, why } : {}) })) } : {}),
       },
       failures: [...unrendered, ...reasons],

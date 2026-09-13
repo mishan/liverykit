@@ -20,6 +20,9 @@ import { piecesInView, pieceTriangles, onMeshShare, SHEET_VIEWS } from './engine
 /** Below this many pixels a view shows too little of a piece to count. */
 const TOO_FEW_PX = 30;
 
+/** A view showing a piece at least this share of its home view's pixels is judged too. */
+const COMPARABLE = 0.5;
+
 /** Seen whole, allowing a pixel or two along an edge. */
 export const WHOLE = 0.99;
 
@@ -32,11 +35,11 @@ const TEXT_FLOOR = 0.8;
 const round = (n) => Math.round(n * 1000) / 1000;
 
 /**
- * Each whole piece, measured in each view, judged by its HOME view: the one
- * that shows the most of it. A door roundel's home is the side view, a bonnet
- * roundel's the top. Held to the home view because that is the picture in which
- * a person would call it whole or not; half of it hidden from the front, by the
- * car's own nose, is how cars are.
+ * Each whole piece, measured in each view, judged by its HOME view, the one
+ * that shows the most of it, and by any other that shows it nearly as large
+ * (see COMPARABLE). A door roundel's home is the side view, a bonnet roundel's
+ * the top. Not by every view: half of it hidden from the front, by the car's
+ * own nose, is how cars are.
  *
  * `geometry` is `wholeModelGeometry` for this design, and `sheets` the car's
  * own textures, for the parts whose alpha decides whether they stand in front.
@@ -85,13 +88,25 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
       }
       return;
     }
-    const fraction = home.shown / home.whole;
+    // Judged in every view that shows it at least half as large as home does,
+    // and held to the worst of them. Home alone missed mirrored bodywork: both
+    // flanks show the same texels, and a mirror hiding the right-hand copy was
+    // never judged while the left view was a few pixels larger. Half, from the
+    // NSX: the views that merely glance at a piece, where the car's own shape
+    // hides part of it, gave 27 to 43% of home's pixels (a door from the
+    // three-quarter, top and rear-left views, the roof from the three-quarter),
+    // and the ones that really show it 58 to 96% (the bonnet from the front,
+    // the rear quarter from the rear-left), with a mirrored copy near 100%.
+    const judged = seen[i].filter((s) => s.whole >= home.whole * COMPARABLE);
+    const worst = judged.reduce((a, b) => (b.shown / b.whole < a.shown / a.whole ? b : a), home);
+    const fraction = worst.shown / worst.whole;
     m.home = home.view;
+    m.view = worst.view;
     m.visible = round(fraction);
     m.whole = fraction >= WHOLE && !off;
     // How big it is in the picture, as a share of the frame's width and height.
     m.size = [round(home.box[2]), round(home.box[3])];
-    const by = home.blockers[0] ?? null;
+    const by = worst.blockers[0] ?? null;
     if (by) m.hiddenBy = by.mesh ?? by.sheet;
 
     const floor = p.minVisible !== null ? Math.min(p.minVisible, WHOLE) : (p.text !== null ? TEXT_FLOOR : null);
@@ -104,9 +119,11 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
       kind: 'hidden-in-view',
       severity: p.minVisible !== null ? 'high' : 'low',
       surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
-      view: home.view, visible: m.visible,
-      why: `${p.id} (${p.what}) is ${Math.round(fraction * 100)}% visible in the ${home.view} view, the view ` +
-        `that shows the most of it; the rest is behind ${behind}` +
+      view: worst.view, visible: m.visible,
+      why: `${p.id} (${p.what}) is ${Math.round(fraction * 100)}% visible in the ${worst.view} view, ` +
+        (worst === home ? 'the view that shows the most of it'
+          : `which shows it nearly as large as the ${home.view} view does`) +
+        `; the rest is behind ${behind}` +
         (p.minVisible !== null ? `, and it asked for minVisible ${p.minVisible}` : '') +
         '. Move it clear of what stands in front, or make it smaller.',
     });

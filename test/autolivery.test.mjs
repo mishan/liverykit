@@ -1432,6 +1432,57 @@ test('each view is counted for how much of a piece it shows, and what stands in 
   }
 });
 
+// The right flank again, as mirrored bodywork: a skin just outside the right
+// face that wears the LEFT island's texels, as a car whose doors share one
+// patch of texture does, a little smaller so the left view stays home. And a
+// panel standing off it over its front half, as SHIELD does on the left.
+const MIRRORED = (() => {
+  const x = -CAR.width / 2 - 0.02, k = 0.95, n = [-1, 0, 0];
+  const [rx, ry, rw, rh] = CAR.faces.left;
+  const at = (y, z) => vert(x, y * k + 0.75 * (1 - k), z * k,
+    rx + (rw * (z + CAR.length / 2)) / CAR.length, ry + (rh * y) / CAR.height, n);
+  return {
+    name: 'DOOR_R_MIRRORED',
+    verts: [at(0, -1.85), at(0, 1.85), at(CAR.height, 1.85), at(CAR.height, -1.85)],
+    indices: [0, 1, 2, 0, 2, 3],
+  };
+})();
+const SHIELD_R = (() => {
+  const x = -CAR.width / 2 - 0.1, n = [-1, 0, 0];
+  return {
+    name: 'MIRROR_R',
+    verts: [vert(x, 0.2, 0.3, 0.990, 0.990, n), vert(x, 0.2, 1.85, 0.995, 0.990, n),
+      vert(x, 1.3, 1.85, 0.995, 0.995, n), vert(x, 1.3, 0.3, 0.990, 0.995, n)],
+    indices: [0, 1, 2, 0, 2, 3],
+  };
+})();
+
+test('a piece is judged in every view that shows it nearly as large as its home view', async () => {
+  // Judged in the largest view alone. Mirrored bodywork shows the same texels
+  // on both flanks, so a mirror hiding the right-hand copy was never judged
+  // while the left view was a few pixels larger, and a critic that rightly
+  // called it cut off on the right door would have been overruled.
+  const ed = await fixtureEditor({ kn5: { extraMeshes: [MIRRORED, SHIELD_R] } });
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const out = JSON.parse((await ed.mcp.callTool('check_fitment', { proposal: { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('plate-mirrored', panels[0].panel, [0.5, 0.3, 0.3, 0.4]),
+    ] } })).content[0].text);
+    const m = out.inView.find((x) => x.id === 'plate-mirrored');
+    assert.equal(m.home, 'left', JSON.stringify(m));
+    assert.equal(m.views.left, 1, JSON.stringify(m));
+    assert.equal(m.whole, false, JSON.stringify(m));
+    assert.equal(m.view, 'right', 'the view that decided is named');
+    assert.equal(m.hiddenBy, 'MIRROR_R');
+    const found = out.findings.filter((f) => f.kind === 'hidden-in-view');
+    assert.deepEqual(found.map((f) => [f.ids[0], f.view, f.severity]), [['plate-mirrored', 'right', 'high']]);
+    assert.match(found[0].why, /in the right view/);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a blended surface the design paints stands in front of what is behind it', async () => {
   // The whole-car pass skipped every blended part without a car-owned sheet,
   // and a part the design paints has none, since it wears the design. So a
