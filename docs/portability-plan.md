@@ -1,0 +1,344 @@
+# Plan: closing the portability gap
+
+## The problem
+
+`docs/backlog.md` opens with a measurement: `neon-grid-any` resolved against 25
+cars it had never seen, profiled from scratch with no hand-work. The format
+held, the fit machinery held, and the fitment checker reported nothing fatal.
+What did not hold was the part that decides *where* a portable design lands:
+
+| what went wrong | on how many of 25 |
+|---|---|
+| body bound to a texture with no UV islands at all | 2 (confidence 0.11 and 0.19) |
+| an `auto` binding painted with the same conviction at 0.19 as at 0.95 | every car with an auto body |
+| `[left, visible]` or `[right, visible]` matched no panel | 10 each |
+| `[shared, visible]` matched no panel | 18 |
+| a car whose paint is a tiled material, not an unwrapped sheet | 3 |
+| vocabulary terms proposed automatically | 3 of 14 |
+
+Every one of these is a case of the tool doing something confidently that it
+had the information to doubt. The classifier had the island counts beside it.
+The resolver had the confidence in its hand. The tagger had the island's 3D
+extent and threw it away for a centroid. This plan is about making each of
+those pieces use what it already knows, and about making the number at the top
+of this table re-measurable, so that each fix is checked against the same 25
+cars rather than against an impression.
+
+The order below is deliberate. The harness comes first because nothing else can
+be shown to work without it. The tiled-material case comes second because it is
+cheap and the classifier fix depends on it. The two classifier items come before
+the tag items because a wrong body binding produces tag misses as a side
+effect, and the tag numbers cannot be read until that noise is out of them.
+
+## 0. A harness that re-runs the sweep
+
+The 25-car sweep was done by hand and lives only in the backlog's prose. It has
+to become a script, for the same reason `tools/evaluate.mjs` exists: a number
+nobody can re-run is a number that will be quoted after it has stopped being
+true.
+
+`tools/sweep.mjs <carsDir> <livery> [--sample N] [--out sweep.json]`:
+
+- Profiles each car with `profileFromKn5`, no prior, exactly as the sweep did.
+- Runs `resolveTargets`, `expandRegions` and `portability` for the design.
+- Records, per car: every binding with its confidence and source, every region's
+  status from `portability()`, and, for a `no-match`, which single tag removed
+  the most panels (see step 4).
+- Resumable and keyed by car id, like `survey.mjs`. Committing the output is
+  fine: it is statuses and counts, not assets.
+
+Two things it must establish. First, that it reproduces the backlog's figures
+on the same 26-car sample, or the difference is understood. Second, that it
+runs without a model on the machine for cars whose profile already exists,
+so that the checked-in profiles are part of the sweep too.
+
+The fleet fixture in `test/fixtures/fleet-features.json.gz` is the other half
+of the harness, and it is missing the field step 2 needs. It records per
+texture `cover`, `straddles`, `skins`, `box`, `shaders` and `visible`, and on
+none of its 6,526 roles does it record how many islands the texture has.
+`tools/survey.mjs` already counts panels per role, at the line that builds
+`panels[role]`; it has to write that count, and the tiled flag from step 1,
+into the per-texture record, and the fixture has to be regenerated. That is
+the only step in this plan that needs the fleet on disk, so it should be done
+once, early, and the regenerated fixture committed.
+
+## 1. Say when a car cannot be painted this way
+
+**Symptom.** `tando_buddies_180sx` profiles to 2 panels from 66 textures. The
+profile loads, validates, and offers a design a sheet with nothing on it.
+
+**Cause.** The paint is a tiling material: UVs run to v = -59 and u = ±32000.
+`findIslands` already marks an island `tiled` when its bounds leave [0, 1] by
+more than a thousandth, and clamps its rect. It does not say anything at the
+texture level, and a texture whose every island is tiled reads in the profile
+exactly like one that was never decomposed.
+
+**Fix.**
+
+- In `profileFromKn5`, after the island pass, classify each decomposed texture's
+  layout: `unwrapped` if the UV area inside [0, 1] carries most of its
+  triangles, `tiled` if most of its UV extent lies outside, `mixed` otherwise.
+  Write it as `textures[role].uvLayout`. The measurement is one pass over
+  vertices that the island pass already makes.
+- Log it as one line per car: `N of M paintable textures are tiled materials;
+  nothing on them can be placed.` A car whose largest visible straddling
+  texture is tiled gets a second line saying so in plain words, because that is
+  the car that cannot wear a skin made this way, and finding that out should
+  cost a line of output rather than an afternoon.
+- In `resolveTargets`, a term bound to a texture whose `uvLayout` is `tiled`
+  is a new note status, `tiled`, in the `MISSING` set in `build.mjs`, with text
+  that names the file and says why placement is meaningless there. Painting it
+  is still allowed: a flat colour or an even pattern on a tiled material is a
+  perfectly good livery. Only placement is refused, so `expandRegions` skips
+  any region with `at`, `panel` or `tags` on such a texture and says which.
+
+**What it must establish.** The synthetic fixture gains a mesh whose UVs run
+0 to 40. The profile that comes out says `tiled` on that texture, the log line
+appears with the right count, a flat fill on it builds, and a tagged region on
+it is reported and skipped. The three sweep cars then come out of the sweep
+with a `tiled` note instead of a design that painted nothing and said it did.
+
+## 2. A texture with no islands cannot be the body
+
+**Symptom.** `mclaren_mp412c_gt3` bound `body` to a role called `black` that
+has zero panels, on a car whose interior has 90 and whose rims have 84.
+`ks_mclaren_650_gt3` came out at confidence 0.11 for the same class of reason.
+
+**Cause.** `scoreBody` in `src/engine/classify.mjs` weighs area, symmetry,
+skin overrides, shader and visibility. It never asks whether the candidate has
+a paintable island on it. That is the one piece of evidence that would have
+settled both cars, and it is computed in the same function that calls
+`propose`: `profileFromKn5` builds `panels` before it proposes bindings, and
+`--explain` builds a full profile before it explains.
+
+**Fix.**
+
+- `textureFeatures` gains two fields, supplied by the caller from the profile it
+  already has: `islands`, the number of panels above threshold on that
+  texture, and `uvLayout` from step 1. Both callers, the generator and
+  `--explain`, pass them from the same place so the two rankings cannot
+  disagree.
+- `scoreBody` returns 0 for `islands === 0` and for `uvLayout === 'tiled'`.
+  Zero, not a penalty: the comment on `VOCABULARY` says "0 excludes", and a
+  sheet nothing is mapped onto is not a weaker body candidate, it is not a
+  candidate. The `minCoverage` gate in the generator also leaves a texture with
+  no panels, but a texture under 0.8% of the car's coverage was never going to
+  outscore a real body on area, so the exclusion changes nothing there.
+- `explain` prints the island count as a column, and says `no islands` in
+  words next to a candidate it excluded for that reason, so a person reading
+  the ranking sees why a large, visible, symmetric texture is not on it.
+
+**What it must establish.** Re-run `tools/evaluate.mjs` on the regenerated
+fixture. The held-out figure must not fall below the 172/175 it defends today,
+and the two McLarens must move. Then `test/classifier.test.mjs` gets a third
+test: a feature set copied from one of the two, in which the correct answer is
+now ranked first. The synthetic fixture covers the mechanism with a car whose
+largest, most visible texture has no islands.
+
+## 3. A guess below a floor is not painted
+
+**Symptom.** `resolveTargets` files an `unconfirmed` note for an `auto`
+binding and then paints it. On the two cars above that put artwork on the
+wrong sheet, reported in a note nobody reads before looking at the car.
+
+**Cause.** `binding()` returns `confidence` and the resolver reads it only to
+format the note. There is no status between `bound` and `unbound`.
+
+**Fix.**
+
+- Add a status, `uncertain`, returned by `binding()` when `source` is `auto`
+  and `confidence` is below a floor. `resolveTargets` treats it exactly like
+  `unbound`: nothing painted, a note that names the term, the role it would
+  have picked, the confidence, and the `--explain` command that confirms or
+  corrects it. `build.mjs` adds it to `MISSING`; `portability()` reports it as
+  a surface status so the editor's **On another car** panel shows it before
+  anyone builds.
+- A human binding is never subject to the floor. `source: "human"` at any
+  confidence paints. That is what the field is for.
+- **Where the floor sits is measured, not picked.** `tools/evaluate.mjs` gains a
+  table: for every labelled car, the proposal's confidence and whether it was
+  right. The floor is the highest confidence at which a proposal was wrong,
+  after step 2 has removed the no-island cases, rounded up to two places. If
+  that turns out to be a number that also excludes many right answers, say so
+  in the doc and choose the trade explicitly; the point is that the number has
+  a provenance. The backlog's own guess is that 0.2 is roughly where it lands,
+  since `explain` already warns below that, but a guess is what this step
+  exists to replace.
+- `tyres` and `brakes` are shader-gated and scored 0.95 and 0.96 across the
+  sweep. They are not in `VALIDATED`, and this plan does not add them, but the
+  same evaluation table should include them so that the floor is known to be
+  safe for the terms it will actually be applied to.
+
+**What it must establish.** A test in `test/integrity.test.mjs` with a
+profile whose `body` is `auto` at 0.1: the build reports `body` as uncertain,
+paints nothing on it, and the same profile with `source: "human"` paints. And
+the sweep: after steps 2 and 3, no car in the 25 has artwork on a sheet the
+classifier was guessing about, and the count of cars where the body was
+painted is recorded, so that the cost of the floor is a number too.
+
+## 4. Tag selections that match nothing
+
+**Symptom.** `[left, visible]` and `[right, visible]` matched no panel on 10
+of 25 cars each, so a portable design's flank lettering landed nowhere on 40%
+of the fleet. `[shared, visible]` matched nothing on 18.
+
+**Causes, which want separating before any of them is chased.** Some of these
+cars are the wrong-body cases fixed above. The rest are cars whose body panels
+genuinely carry neither tag, and there are at least three ways that happens in
+`computeTags`:
+
+- **Section and level are read off the centroid.** `mid` is the band from 0.38
+  to 0.62 of the car's length, and a panel is `mid` only if its centroid falls
+  in it. A GT3 flank is one island from the A-pillar to the rear arch; its
+  centroid lands wherever the unwrapper's vertex density puts it, and on the
+  NSX only 10 of 72 body panels are `mid` at all. `upper` and `lower` split at
+  half the car's height the same way. The island's `box3d` is computed in
+  `findIslands` and never written to the profile, so the tagger, which reads
+  only the profile by design, has nothing else to go on.
+- **`visible` is a threshold at 0.5.** A low, wide car whose flank curls under
+  can score 0.45 and lose the tag while being the most visible thing on the
+  car. The number is a fraction of sampled viewpoints, which is not the same
+  question as "can a spectator read it".
+- **`shared` is a fact about instancing, not a side.** The portable design uses
+  it as a third side, to catch a road car whose flanks are mirrored onto the
+  same texels. On a car with no instanced bodywork it matches nothing, which is
+  correct and is reported as a miss, which is not.
+
+**Fix, in the order the causes rank.**
+
+- **Write `extent3d` into the profile** from `box3d`, and assign section and
+  level tags by overlap rather than centroid. A panel spanning 0.30 to 0.70 of
+  the car's length is `front`, `mid` and `rear`; a design asking for `mid` gets
+  it. The centroid stays for `left`, `right` and `centre`, where it is the
+  right measure, since a flank does not straddle the centreline and a bonnet
+  does. `tagProfile` runs on existing profiles, so the three shipped ones gain
+  the field on regeneration and the tags change; the CI build of the portable
+  livery on both cars is what says whether anything moved that should not have.
+- **Diagnose a miss before changing `visible`.** The sweep in step 0 records,
+  for every `no-match`, the count of panels matching each subset of the tags:
+  `left` 14, `visible` 22, both 0. That is the nearest-miss explanation, and
+  it says whether the missing tag was `mid`, `visible` or `left` on each of
+  the 10 cars. Put the same line in the `no-match` note text and in the
+  portability report, because a person hitting this on a car of their own
+  needs the same answer. Only after that is read should the visibility
+  threshold be touched, and if it is, it should be re-measured on the same 10
+  cars rather than nudged.
+- **Let a region say a miss is expected.** `optional: true` on a region turns
+  its `no-match` from a reported skip into a silent one. The portable example's
+  `[shared, visible]` rule is exactly this: it exists for cars that have
+  instanced flanks and should say nothing on cars that do not. Nothing else
+  changes; `nothing may fail silently` is preserved because the design has
+  said, in the file, that this one may.
+- **Do not add OR to tag matching.** It was considered, as `[['left',
+  'shared'], 'visible']`. It would let the left rule also paint a shared panel,
+  and the right rule would then paint it again, stacking the artwork the way
+  `rectGroups` exists to prevent. Three rules with the third marked optional
+  is the honest shape.
+
+**What it must establish.** The synthetic fixture gets an island spanning two
+sections; the tag test asserts it carries both. The sweep's `[left, visible]`
+miss count is recorded before and after, per cause, and the backlog entry is
+rewritten with the new numbers rather than deleted.
+
+## 5. Binding more of the vocabulary
+
+**Symptom.** `body`, `tyres` and `brakes` are proposed automatically. `rims`,
+`interior`, `belts`, `steeringWheel`, `wing`, `metalTrim`, `heatShield`,
+`helmet`, `suit`, `gloves` and `crew` came back unbound on every car, so
+everything past the body and the tyres is a per-car `--explain` and a human
+confirmation, eleven times per car.
+
+**Two halves, and the second is the cheaper one.**
+
+**Scoring the regular terms.** Two of them are highly patterned across the
+fleet and have measurements already in the profile:
+
+- `rims`: the texture whose islands `measureWheels` places at the wheel
+  centres AC requires every car to name, that face along the axle, that are
+  not tyre parts, and whose shader is neither `ksTyres` nor `ksBrakeDisc`.
+  Four instances sharing one rectangle is the confirming signal; the Abarth's
+  `rims` has 64 panels for that reason.
+- `interior`: large area, straddles, low trackside visibility, high cockpit
+  visibility, and a box centred inside the car's own. `visibleFromCockpit` is
+  the decisive term here the way `visible` is for the body, and it is only
+  measured when a steering wheel is found, so the score has to say when it is
+  missing the way `explain` already does for visibility.
+
+Both go in with a `score` in `VOCABULARY`, neither goes in `VALIDATED` until
+`tools/evaluate.mjs` has a held-out label for them. The label for `rims` can be
+the same shape as the body's: filenames that unambiguously say `rim` or
+`wheel`, which the scorer never sees. `interior` is harder to label from names
+and may have to be validated on fewer cars; say how many.
+
+`helmet`, `suit`, `gloves` and `crew` are not in the car's model at all. They
+are the shared driver and crew kn5s, and the only evidence a car has about
+them is which files its skins ship. `guessRole` in `scan.mjs` already names
+them from the skins folder, and for these four a name is acceptable evidence,
+because the files are AC's own with fixed spellings rather than a modder's
+choice. Propose them from the skins scan at `source: "auto"` with a confidence
+that reflects that they were named, not measured, and let the floor from step
+3 decide whether they paint.
+
+`wing`, `floor`, `metalTrim`, `heatShield`, `belts` and `steeringWheel` stay
+human. Nothing measured separates a wing from a bumper on every car, and a
+scoring rule that is right on open-wheelers and wrong on road cars is worse
+than none.
+
+**Confirming in one pass instead of eleven.** This is where the thirty-second
+job actually goes.
+
+- `liverykit --explain <kn5> --all` prints every scorable term with its top
+  candidates and evidence, then a ready-to-paste `bind` block with every entry
+  at `source: "auto"`. A person reads it, changes the ones that are wrong,
+  flips `auto` to `human` on the ones they looked at, and pastes it once. The
+  tool still never writes `human`.
+- In the editor, a **Bindings** panel that lists each term with its proposal,
+  highlights the candidate texture's meshes on the car when a row is hovered,
+  and has one **Confirm** button per row that writes `source: "human"` to the
+  profile. A person clicking after seeing the part lit up on the car is the
+  human confirmation the field was designed to record. This is the one route
+  by which the tool writes `human`, and it is a click on a picture, which is
+  the whole distinction `docs/mcp.md` draws. The MCP still may not.
+
+**What it must establish.** For `rims` and `interior`, an accuracy figure on a
+held-out label, recorded in `docs/naming.md` beside the body's. For the
+one-pass confirmation, that a fresh car goes from an unbound profile to a
+fully human-confirmed one in one sitting, timed, and that regenerating the
+profile afterwards keeps every confirmation, which `preserve.test.mjs` already
+checks for the field and should now check for the route.
+
+## What this does not do
+
+It does not make a portable design place text well. After all of the above a
+number still sits centred in the biggest matching panel and hopes, because
+nothing here measures which part of a panel is flat. That is the next plan,
+not this one; see `docs/roadmap.md`.
+
+It does not touch the fit format, the design format or the checker. The sweep
+said those held, and nothing in the table at the top is about them.
+
+## Shape of the work
+
+**0. Harness.** `tools/sweep.mjs`, and `panels` and `uvLayout` recorded by
+`survey.mjs` into a regenerated fleet fixture. Needs the fleet on disk once.
+
+**1. Tiled materials.** `uvLayout` per texture, the log line, the `tiled`
+note, placement refused and fill allowed. Synthetic fixture case.
+
+**2. Islands as a classifier input.** `islands` and `uvLayout` in
+`textureFeatures`, zero score without them, the column in `explain`. Fleet
+accuracy re-measured; the two McLarens as a regression test.
+
+**3. The confidence floor.** `uncertain` status, measured floor, evaluation
+table, reported in build and portability. Integrity test.
+
+**4. Tags.** `extent3d` in the profile, overlap-based section and level,
+nearest-miss explanation in every `no-match`, `optional` on regions, the
+portable example updated. Sweep before and after.
+
+**5. Vocabulary.** `rims` and `interior` scored and validated, driver kit
+proposed from skins, `--explain --all`, the editor's Bindings panel.
+
+Steps 1 through 4 are each a day or two and independent of 5. Step 5's second
+half, the one-pass confirmation, is worth doing before its first half, because
+it makes every car cheap to bind by hand whether or not the scorers arrive.
