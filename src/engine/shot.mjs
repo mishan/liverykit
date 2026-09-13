@@ -1012,9 +1012,9 @@ export function onMeshShare(model, piece, tris, n = 96) {
  * score through a gap in the near one; every face still hides what is behind
  * it, as it does in the picture.
  *
- * What covers is what the picture draws opaque. Glass is drawn and hides
- * nothing — the paint under a windscreen's frit is seen through it — and a glow
- * adds light rather than standing in front. A cutout or a decal covers where its
+ * What covers is what the picture draws opaque. Glass hides what is behind its
+ * frit, where its own sheet is opaque, and nothing through the clear rest; a
+ * glow adds light rather than standing in front. A cutout or a decal covers where its
  * own alpha says it is there, which needs its sheet; a design's own surfaces are
  * not rasterised for this, and count as covering everywhere.
  */
@@ -1076,8 +1076,15 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
   const groupOf = new Int32Array(indices.length / 3).fill(-1);
   for (const [gi, g] of groups.entries()) {
     for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
-    if (g.lod === 'LR' || g.glass || g.add) continue;
+    if (g.lod === 'LR' || g.add) continue;
     const art = sheets.get(sheetKey(g)) ?? null;
+    // Glass covers where its own sheet is opaque, and nowhere else. It was
+    // skipped outright while the picture draws a windscreen's frit at the
+    // sheet's own alpha, so a number under the frit counted as whole and was
+    // hidden in the picture. The fresnel floor under the rest is a tint, and
+    // what is seen through it is seen. Glass with no car-owned sheet, painted
+    // glass included, is only that floor and still hides nothing.
+    if (g.glass && !art) continue;
     // An unpainted blended part with no sheet of its own is not drawn in the
     // picture either. A painted one is, and has no car-owned sheet because it
     // wears the design: skipped too, a painted number plate stood in front of
