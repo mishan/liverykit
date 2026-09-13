@@ -997,4 +997,33 @@ test('a fitting standing a few millimetres proud of the paint covers what is und
   // Ending 60 mm short of the handle, it is clear.
   const clear = fitment(name([0.1, 0.5, 0.55, 0.05]), profile, null, { model: strip });
   assert.deepEqual(clear.findings.filter((f) => f.kind === 'unseen'), []);
+
+  // And a fitting the car itself hides covers nothing. The NSX hides sixteen
+  // door number plates the renderer never draws; counted, they failed a team
+  // name a person had placed by hand and could see was clear.
+  const hides = { ...profile, hiddenByCar: { meshes: { DOOR_HANDLE: { by: 'name', pattern: 'DOOR_HANDLE' } } } };
+  const hidden = fitment(name([0.1, 0.5, 0.6, 0.05]), hides, null, { model: strip });
+  assert.deepEqual(hidden.findings.filter((f) => f.kind === 'unseen'), [], 'a hidden mesh is not in front of anything');
+});
+
+test('a number in a roundel is judged by where its letters are, not by its box', () => {
+  // A person laid out a door by hand: a 405 mm roundel, the number's box 309 x
+  // 291 mm inside it. The box's corners reach past the disc; the "85" does not.
+  // Tested against the box, that was a high finding on both doors of a layout
+  // anyone could see was right.
+  const roundel = { id: 'roundel', treatment: 'ring', panel: 'L', at: [0.3, 0.3, 0.4, 0.4], color: 'ink',
+    radius: 0.25, width: 0.5 };
+  const through = (at, extra = {}) => fitment(design([roundel,
+    { id: 'number', treatment: 'text', panel: 'L', at, text: '{number}', ...extra }]),
+  profile).findings.filter((f) => f.kind === 'overlap');
+  // A disc of radius 0.2 of the panel about (0.5, 0.5); this box's corners are
+  // 0.26 from the centre, and its single "7" about 0.15.
+  assert.deepEqual(through([0.31, 0.32, 0.38, 0.36]), [], 'letters inside the disc are a roundel doing its job');
+  // "auto" is the turn the panel needs, none here: that hand-made door said
+  // rotate "auto", and was still measured by its box.
+  assert.deepEqual(through([0.31, 0.32, 0.38, 0.36], { rotate: 'auto' }), [], 'rotate auto on an upright panel is upright');
+  const edge = through([0.55, 0.4, 0.3, 0.2]);
+  assert.equal(edge.length, 1, 'letters across the disc\'s edge are still found');
+  assert.equal(edge[0].severity, 'high');
+  assert.match(edge[0].why, /circle runs through/);
 });
