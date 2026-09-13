@@ -102,6 +102,11 @@ const rounds = Number(values.rounds);
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
 if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number, not ${values.looks}`);
+// Refused rather than run. `--views ,` split to nothing, so nothing was
+// rendered, the critic was never asked, and no round could pass a gate that
+// needs its verdict.
+const views = values.views.split(',').map((v) => v.trim()).filter(Boolean);
+if (!views.length) fail(`--views names no view (${JSON.stringify(values.views)}): give one or more, e.g. sheet or left,right`);
 const maxCost = Number(values['max-cost']);
 if (!(maxCost > 0)) fail(`--max-cost must be a positive number of dollars, not ${values['max-cost']}`);
 // One budget for the whole run, planner and critic together.
@@ -233,7 +238,7 @@ try {
     trace,
     rounds,
     log,
-    views: values.views.split(',').map((v) => v.trim()).filter(Boolean),
+    views,
     criticGates: !values['advisory-critic'],
     looks,
     propose: !values['no-propose'],
@@ -262,7 +267,8 @@ const selfHosted = sides.planner.backend === 'openai' || sides.critic.backend ==
 console.log('');
 console.log(result.passed
   ? `passed in round ${result.passedIn} of ${rounds}`
-  : `did not pass in ${result.rounds} round(s): ${result.history.at(-1)?.failures?.[0] ?? 'the critic did not pass it'}`);
+  : `did not pass in ${result.rounds} round(s): ` +
+    `${result.stopped ?? result.history.at(-1)?.failures?.[0] ?? 'the critic did not pass it'}`);
 console.log(`model calls: ${s.llmCalls} · tokens ${k(s.tokensIn)} in / ${k(s.tokensOut)} out · ` +
   `$${s.cost.toFixed(2)} at list price` +
   (s.unpriced ? ` + ${s.unpriced} call(s) not priced${selfHosted ? ' (self-hosted)' : ''}` : ''));

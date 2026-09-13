@@ -793,6 +793,119 @@ test('a verdict that lists something unreadable does not pass the round, however
   }
 });
 
+// A draft that measures clean on the fixture car: a big number on the left.
+const drafting = (count = { rounds: 0 }, beforeFinish = async () => {}) => ({
+  async round({ call }) {
+    count.rounds++;
+    const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+    await call('draft_design', { design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      { op: 'add-region', surface: 'surfaces.body', region: {
+        id: 'number-left', treatment: 'text', text: '85', panel: panels[0].panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
+    ] });
+    await beforeFinish(call);
+    await call('finish_round', { summary: 'a number' });
+  },
+});
+
+test('a critic that could not judge ends the run, rather than sending the planner round again with nothing to fix', async () => {
+  // A critic that threw failed the round with an empty mustFix, since there
+  // is nothing in an error to list, and the planner was paid for another
+  // round told to fix what the gate named. A gate given no views at all did
+  // the same, with no picture for the critic to be asked about.
+  const ed = await fixtureEditor();
+  try {
+    const broken = { judge: async () => { throw new Error("the critic's verdict was not JSON: I think it looks good"); } };
+    const go = async (tag, opts) => {
+      const count = { rounds: 0 };
+      const lines = [];
+      const out = join(ed.dir, tag);
+      const result = await run({
+        brief: 'number 85', mcp: ed.mcp, planner: drafting(count), critic: broken, trace: await createTrace({ dir: out }),
+        out, rounds: 3, views: ['left'], shot: { width: 200, height: 150 }, propose: false, log: (l) => lines.push(l), ...opts,
+      });
+      return { result, lines, count, out };
+    };
+
+    const threw = await go('threw', {});
+    assert.equal(threw.count.rounds, 1, 'no second round was asked for');
+    assert.equal(threw.result.passed, false);
+    assert.match(threw.result.stopped, /the critic could not judge round 1.*not JSON: I think it looks good/);
+    assert.equal(threw.result.history[0].gates.critic, 'could not judge');
+    assert.ok(threw.lines.some((l) => /stopped: the critic could not judge round 1/.test(l)), threw.lines.join('\n'));
+    const saved = JSON.parse(await readFile(join(threw.out, 'result.json'), 'utf8'));
+    assert.equal(saved.stopped, threw.result.stopped, 'and result.json says why');
+
+    const blind = await go('blind', { views: [] });
+    assert.equal(blind.count.rounds, 1);
+    assert.match(blind.result.stopped, /the critic could not judge round 1: it was given no views/);
+
+    // Advisory, it gates nothing, so the round is not failed on it; but it is said.
+    const advisory = await go('advisory', { criticGates: false, propose: true });
+    assert.equal(advisory.result.passed, true, advisory.lines.join('\n'));
+    assert.equal(advisory.result.history[0].gates.critic, 'could not judge (advisory)');
+    assert.ok(advisory.lines.some((l) => /critic COULD NOT JUDGE \(advisory\) \(the critic's verdict was not JSON/.test(l)),
+      advisory.lines.join('\n'));
+    const { proposal } = await get(ed.url, 'api/proposal');
+    assert.match(proposal.why, /The critic, which was advisory, could not judge it: the critic's verdict was not JSON/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a refused look costs no look, and a gate render that fails is the render failing, not fitment', async () => {
+  // A mistyped view was refused and still used up one of the round's looks.
+  // And a view the gate could not render was recorded as fitment failing, on
+  // a draft that had measured clean.
+  const ed = await fixtureEditor();
+  try {
+    const looked = [];
+    const planner = drafting(undefined, async (call) => {
+      looked.push(await call('render_car', { view: 'lfet' }));
+      for (let i = 0; i < 2; i++) looked.push(await call('render_car', { view: 'left' }));
+    });
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'number 85', present: true, where: 'left door' }], cut_off: [],
+      unreadable: [], notes: [] }) };
+    const lines = [];
+    const result = await run({
+      brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, 'run') }),
+      out: join(ed.dir, 'run'), rounds: 1, views: ['left', 'lfet'], shot: { width: 200, height: 150 }, looks: 2,
+      propose: false, log: (l) => lines.push(l),
+    });
+    assert.deepEqual(looked.map((r) => Boolean(r.isError)), [true, false, false],
+      looked.map((r) => r.content[0].text ?? '[image]').join('\n'));
+
+    const [round] = result.history;
+    assert.equal(round.gates.fitment, 'pass', 'the draft measured clean');
+    assert.equal(round.gates.render, 'fail');
+    assert.equal(round.passed, false, 'a view the gate could not render still fails the round');
+    assert.ok(round.failures.some((f) => /the lfet render failed/.test(f)), JSON.stringify(round.failures));
+    assert.ok(lines.some((l) => /render FAIL \(the lfet render failed/.test(l) && /fitment PASS/.test(l)), lines.join('\n'));
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('an empty list of views is refused before anything starts', async () => {
+  // `--views ,` split to nothing: no render, so the critic was never asked,
+  // and a gate that needs its verdict could not pass a single round.
+  const { spawnSync } = await import('node:child_process');
+  const out = await mkdtemp(join(tmpdir(), 'autolivery-views-'));
+  try {
+    const env = { ...process.env };
+    delete env.ANTHROPIC_API_KEY;
+    delete env.AGENTOPS_API_KEY;
+    // A local backend on a port nothing listens on: whatever happens, nothing is paid for.
+    const r = spawnSync(process.execPath, [join(ROOT, 'autolivery/bin.mjs'), 'number 85', '--views', ' , ',
+      '--backend', 'openai', '--base-url', 'http://127.0.0.1:1/v1', '--out', out], { env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /--views names no view/);
+  } finally {
+    await rm(out, { recursive: true, force: true });
+  }
+});
+
 test('find_space returns measured spots on a panel, and refuses a panel that is not there', async () => {
   const ed = await fixtureEditor();
   try {
