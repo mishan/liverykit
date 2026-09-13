@@ -550,8 +550,9 @@ test('something lying flush against a panel occludes it', () => {
   // could not see.
   //
   // Shrinking the lift does not fix it: at 2.5 cm cells the plate and the door
-  // are in the SAME cell, so no starting distance separates them. What
-  // separates them is that the cell carries two owners instead of one.
+  // are in the SAME cell, so no starting distance separates them. Nor do the
+  // cell's two owners, which a shell behind the door has too. What separates
+  // them is asking exactly: the ray straight out meets the plate 5 mm away.
   const model = plane({ rows: 6, cols: 6 });
   const clear = probe(model, [0.02, 0.02, 0.06, 0.06]);
   assert.equal(clear.fraction, 1, 'bare bodywork is visible');
@@ -561,6 +562,17 @@ test('something lying flush against a panel occludes it', () => {
     `a plate 5 mm off the paint hides it, got ${plated.fraction}`);
   assert.equal(plated.samples, clear.samples,
     'and the paint is still on the car — hidden is not the same as absent');
+});
+
+test('something behind a panel does not stand in front of it', () => {
+  // The other side of that ownership rule. A mesh a few millimetres BEHIND
+  // the paint — a door's inner shell, a bonnet's carbon liner — shares its
+  // voxels exactly as a plate in front of it does, and a shared voxel stopped
+  // every ray leaving the surface. The NSX's doors measured 64% visible for
+  // it, against 88% before ownership existed.
+  const model = plane({ rows: 6, cols: 6 });
+  const behind = probe(withPlate(model, -0.005), [0.02, 0.02, 0.06, 0.06]);
+  assert.equal(behind.fraction, 1, `a shell 5 mm behind the paint hides nothing, got ${behind.fraction}`);
 });
 
 /** The same sheet with a second mesh floating `gap` metres in front of it. */
