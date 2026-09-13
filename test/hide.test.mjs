@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { hidePlan } from '../src/build.mjs';
 import { loadProfile } from '../src/profile.mjs';
@@ -135,7 +136,10 @@ test('every shipped profile records whether a transparent sheet hides each textu
   // generated, so every hide on every shipped car answered "regenerate it" —
   // and the NSX's `car-hides` counted as hidden, so fitment stopped reporting
   // a twin the showroom still drew. A profile that ships stale fails here.
-  const dir = join(process.cwd(), 'cars');
+  // From this file, not from the working directory: run from anywhere but the
+  // repository root, `process.cwd()` found no cars/ and the test failed on a
+  // missing directory instead of on a stale profile.
+  const dir = fileURLToPath(new URL('../cars/', import.meta.url));
   const files = (await readdir(dir)).filter((f) => f.endsWith('.json'));
   assert.ok(files.length >= 3, `expected the shipped profiles in ${dir}`);
   for (const f of files) {
