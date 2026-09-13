@@ -804,6 +804,36 @@ test('a draft is measured without being proposed, and refused as a proposal woul
   }
 });
 
+test('a draft whose design or fit is not a list is refused, not measured as nothing', async () => {
+  // `draftOf` defaulted a missing list, and the staging applied operations
+  // only from an array. So a design sent as one object, or a whole proposal
+  // sent as a JSON string, applied nothing, and check_fitment returned the
+  // working design's verdict as the draft's: clean.
+  const { url, stop } = await setupTestEditor();
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const cases = [
+      [{ design: { op: 'set-palette' } }, /"design" must be a list of operations; got an object/],
+      [{ fit: 'set-override' }, /"fit" must be a list of operations; got a string/],
+      ['{"design":[]}', /must be an object .*; got a string/],
+    ];
+    for (const [proposal, says] of cases) {
+      const r = await tools.callTool('check_fitment', { proposal });
+      assert.ok(r.isError, `${JSON.stringify(proposal)} was measured: ${r.content[0].text}`);
+      assert.match(r.content[0].text, says);
+    }
+    const post = await fetch(new URL('api/proposal', url).href, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ why: 'a palette', design: { op: 'set-palette' } }),
+    });
+    assert.equal(post.status, 400);
+    assert.match((await post.json()).error, /"design" must be a list of operations; got an object/);
+    assert.equal((await (await fetch(new URL('api/proposal', url).href)).json()).proposal, null);
+  } finally {
+    await stop();
+  }
+});
+
 test('read_design shows what a draft amounts to, and proposes nothing', async () => {
   // A list of operations is not a design. An agent re-sending whole regions
   // had sixty operations for a handful of regions, and nothing could tell it
