@@ -84,7 +84,7 @@
   "calibration": {
     "method": "kn5",
     "source": "abarth500.kn5",
-    "date": "2026-09-05",
+    "date": "2026-09-13",
     "axes": {
       "left": "+X",
       "front": "+Z",
@@ -892,7 +892,8 @@
           0.929
         ],
         "textRotation": 0,
-        "visible": 0.79,
+        "visible": 0.78,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_front_upper",
           "centre_nose_lower_3",
@@ -1496,13 +1497,8 @@
           0
         ],
         "textRotation": 270,
-        "safe": [
-          0.0299,
-          0.0142,
-          0.1609,
-          0.5572
-        ],
-        "visible": 0.82,
+        "visible": 0.84,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail_lower",
           "centre_tail_upper",
@@ -1984,7 +1980,8 @@
           0,
           0
         ],
-        "visible": 0.76,
+        "visible": 0.83,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_rear",
           "left_mid_upper_2",
@@ -2148,7 +2145,8 @@
           1
         ],
         "textRotation": 270,
-        "visible": 0.8,
+        "visible": 0.73,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_mid",
         "adjacent": [
           "left_front",
@@ -2382,7 +2380,8 @@
           1
         ],
         "textRotation": 90,
-        "visible": 0.75,
+        "visible": 0.74,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid",
         "adjacent": [
           "right_front",
@@ -2616,7 +2615,8 @@
           0.32
         ],
         "textRotation": 0,
-        "visible": 0.84,
+        "visible": 0.91,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose",
           "centre_nose_lower_2",
@@ -3235,7 +3235,14 @@
           -0.001
         ],
         "textRotation": 90,
-        "visible": 0.82,
+        "safe": [
+          0.2038,
+          0.0075,
+          0.1497,
+          0.3158
+        ],
+        "visible": 0.83,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail",
           "centre_tail_upper",
@@ -3486,7 +3493,8 @@
           0.994
         ],
         "textRotation": 270,
-        "visible": 0.84,
+        "visible": 0.89,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear",
         "adjacent": [
           "centre_front_upper",
@@ -4030,7 +4038,8 @@
           0.995
         ],
         "textRotation": 90,
-        "visible": 0.85,
+        "visible": 0.89,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear",
         "adjacent": [
           "centre_front_upper",
@@ -4498,6 +4507,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tags": [
           "centre",
@@ -4538,13 +4548,8 @@
           0.994
         ],
         "textRotation": 270,
-        "safe": [
-          0.474,
-          0.5394,
-          0.1655,
-          0.2099
-        ],
-        "visible": 0.83,
+        "visible": 0.82,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front",
         "adjacent": [
           "centre_front_upper",
@@ -4941,7 +4946,8 @@
           0.994
         ],
         "textRotation": 90,
-        "visible": 0.75,
+        "visible": 0.81,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front",
         "adjacent": [
           "centre_front_upper",
@@ -5267,6 +5273,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "adjacent": [
           "centre_tail",
@@ -5523,12 +5530,13 @@
         ],
         "textRotation": 270,
         "safe": [
-          0.0085,
-          0.142,
-          0.0576,
-          0.2982
+          0.0083,
+          0.1404,
+          0.0591,
+          0.3016
         ],
-        "visible": 0.63,
+        "visible": 0.7,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail",
           "centre_tail_upper",
@@ -5880,7 +5888,8 @@
           1
         ],
         "textRotation": 270,
-        "visible": 0.76,
+        "visible": 0.88,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_mid_lower",
         "adjacent": [
           "left_front",
@@ -6034,7 +6043,8 @@
           1
         ],
         "textRotation": 90,
-        "visible": 0.8,
+        "visible": 0.89,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid_lower",
         "adjacent": [
           "right_front",
@@ -6210,7 +6220,8 @@
           0.0398,
           0.0186
         ],
-        "visible": 0.54,
+        "visible": 0.59,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "adjacent": [
           "centre_tail_upper",
@@ -6307,7 +6318,8 @@
           0.0398,
           0.0186
         ],
-        "visible": 0.56,
+        "visible": 0.59,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail",
         "adjacent": [
           "centre_tail_upper",
@@ -6398,6 +6410,7 @@
           -0.98
         ],
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tags": [
           "centre",
@@ -6438,6 +6451,7 @@
           0.002
         ],
         "visible": 0.98,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_mid",
           "left_mid_upper_2",
@@ -6683,13 +6697,8 @@
           0
         ],
         "textRotation": 270,
-        "safe": [
-          0.2117,
-          0.3163,
-          0.058,
-          0.2716
-        ],
-        "visible": 0.75,
+        "visible": 0.89,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose_upper",
           "left_nose",
@@ -7069,7 +7078,14 @@
           0.937
         ],
         "textRotation": 0,
-        "visible": 0.82,
+        "safe": [
+          0.0806,
+          0.5911,
+          0.3386,
+          0.0617
+        ],
+        "visible": 0.79,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose",
           "centre_nose_lower_3",
@@ -7291,12 +7307,13 @@
         ],
         "textRotation": 180,
         "safe": [
-          0.0199,
-          0.8602,
-          0.0072,
-          0.0005
+          0.013,
+          0.8332,
+          0.0567,
+          0.0275
         ],
-        "visible": 0.03,
+        "visible": 0.13,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_front_upper",
           "centre_nose",
@@ -7555,7 +7572,8 @@
           0.289
         ],
         "textRotation": 90,
-        "visible": 0,
+        "visible": 0.01,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_nose",
         "adjacent": [
@@ -7989,6 +8007,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_nose",
         "adjacent": [
@@ -8433,7 +8452,8 @@
           0.999
         ],
         "textRotation": 270,
-        "visible": 0.61,
+        "visible": 0.71,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_mid_upper",
         "adjacent": [
           "left_front",
@@ -8644,13 +8664,8 @@
           0.999
         ],
         "textRotation": 90,
-        "safe": [
-          0.8778,
-          0.2572,
-          0.0847,
-          0.2607
-        ],
-        "visible": 0.61,
+        "visible": 0.69,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid_upper",
         "adjacent": [
           "right_front",
@@ -8867,7 +8882,8 @@
           0.0265,
           0.0311
         ],
-        "visible": 0.52,
+        "visible": 0.75,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail"
@@ -8962,7 +8978,8 @@
           0.0265,
           0.0311
         ],
-        "visible": 0.56,
+        "visible": 0.75,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail"
@@ -9057,7 +9074,8 @@
           0.0874,
           0.055
         ],
-        "visible": 0.85,
+        "visible": 0.9,
+        "visibleFromCockpit": 0.01,
         "mirrorOf": "right_mid_lower_2",
         "adjacent": [
           "left_mid_lower_3"
@@ -9247,7 +9265,8 @@
           0.0874,
           0.055
         ],
-        "visible": 0.85,
+        "visible": 0.9,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid_lower_2",
         "adjacent": [
           "right_mid_lower_3"
@@ -9431,13 +9450,8 @@
           -0.168
         ],
         "textRotation": 270,
-        "safe": [
-          0.5249,
-          0.905,
-          0.1118,
-          0.0901
-        ],
-        "visible": 0.55,
+        "visible": 0.85,
+        "visibleFromCockpit": 0.03,
         "mirrorOf": "right_mid_lower_3",
         "adjacent": [
           "left_front_upper",
@@ -9676,13 +9690,8 @@
           -0.168
         ],
         "textRotation": 90,
-        "safe": [
-          0.5172,
-          0.8926,
-          0.1196,
-          0.1025
-        ],
-        "visible": 0.55,
+        "visible": 0.86,
+        "visibleFromCockpit": 0.02,
         "mirrorOf": "left_mid_lower_3",
         "adjacent": [
           "right_front_upper",
@@ -9921,8 +9930,14 @@
           0.002
         ],
         "textRotation": 90,
-        "visible": 0.01,
-        "hidden": true,
+        "safe": [
+          0.638,
+          0.7993,
+          0.0061,
+          0.1507
+        ],
+        "visible": 0.23,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
@@ -9962,13 +9977,8 @@
           -0.555
         ],
         "textRotation": 180,
-        "safe": [
-          0.5477,
-          0.8341,
-          0.0822,
-          0.0764
-        ],
-        "visible": 0.71,
+        "visible": 0.91,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper",
         "adjacent": [
           "left_mid_lower_3"
@@ -10132,13 +10142,8 @@
           -0.555
         ],
         "textRotation": 180,
-        "safe": [
-          0.5295,
-          0.8341,
-          0.102,
-          0.0764
-        ],
-        "visible": 0.73,
+        "visible": 0.91,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper",
         "adjacent": [
           "right_mid_lower_3"
@@ -10302,13 +10307,8 @@
           0
         ],
         "textRotation": 90,
-        "safe": [
-          0.0047,
-          0.5127,
-          0.0184,
-          0.1058
-        ],
-        "visible": 0.82,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_nose_upper",
           "left_nose",
@@ -10457,12 +10457,13 @@
         ],
         "textRotation": 270,
         "safe": [
-          0.0633,
-          0.1746,
-          0.0001,
-          0.2331
+          0.0515,
+          0.1525,
+          0.0186,
+          0.2775
         ],
-        "visible": 0.04,
+        "visible": 0.55,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_tail",
           "centre_tail_upper_2"
@@ -10722,7 +10723,8 @@
         "tags": [
           "centre",
           "tail",
-          "lower"
+          "lower",
+          "visible"
         ]
       },
       "right_mid_upper_2": {
@@ -10759,11 +10761,12 @@
         ],
         "safe": [
           0.7348,
-          0.9784,
-          0.2528,
-          0.014
+          0.9785,
+          0.2535,
+          0.017
         ],
-        "visible": 0.57,
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid_upper_2",
         "adjacent": [
           "centre_mid",
@@ -10914,11 +10917,12 @@
         ],
         "safe": [
           0.7362,
-          0.7562,
-          0.2522,
-          0.0135
+          0.7529,
+          0.2534,
+          0.0168
         ],
-        "visible": 0.48,
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_mid_upper_2",
         "adjacent": [
           "centre_mid",
@@ -11031,6 +11035,7 @@
           "left",
           "mid",
           "upper",
+          "visible",
           "mirrored"
         ]
       },
@@ -11067,13 +11072,8 @@
           0.999
         ],
         "textRotation": 90,
-        "safe": [
-          0.8891,
-          0.1355,
-          0.0739,
-          0.1195
-        ],
-        "visible": 0.63,
+        "visible": 0.86,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear_lower",
         "adjacent": [
           "right_mid",
@@ -11238,10 +11238,11 @@
         "safe": [
           0.382,
           0.1368,
-          0.0767,
+          0.0775,
           0.1193
         ],
-        "visible": 0.51,
+        "visible": 0.85,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear_lower",
         "adjacent": [
           "left_mid",
@@ -11404,6 +11405,7 @@
         ],
         "textRotation": 90,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
@@ -11445,6 +11447,7 @@
         ],
         "textRotation": 90,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "right_rear"
         ],
@@ -11608,6 +11611,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tags": [
           "left",
@@ -11649,6 +11653,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "centre_mid_lower",
         "tags": [
@@ -11692,6 +11697,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "centre_mid",
         "tags": [
@@ -11737,6 +11743,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.03,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -11797,6 +11804,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.02,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -11857,6 +11865,7 @@
         ],
         "textRotation": 180,
         "visible": 0.06,
+        "visibleFromCockpit": 0,
         "tiled": true,
         "uvBounds": [
           -17.3513,
@@ -11915,8 +11924,8 @@
           -0.045
         ],
         "textRotation": 180,
-        "visible": 0.02,
-        "hidden": true,
+        "visible": 0.05,
+        "visibleFromCockpit": 0.01,
         "tiled": true,
         "uvBounds": [
           -17.3513,
@@ -11976,6 +11985,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12031,6 +12041,7 @@
           -0.871
         ],
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12084,6 +12095,7 @@
           -0.871
         ],
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12138,6 +12150,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.39,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12195,6 +12208,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0.17,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12252,6 +12266,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0.04,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -12309,13 +12324,8 @@
           -0.003
         ],
         "textRotation": 0,
-        "safe": [
-          0.0168,
-          0.0168,
-          0.9664,
-          0.9665
-        ],
-        "visible": 0.51,
+        "visible": 0.78,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front",
         "adjacent": [
           "right_front_lower_2",
@@ -13084,13 +13094,8 @@
           -0.003
         ],
         "textRotation": 0,
-        "safe": [
-          0.0168,
-          0.0168,
-          0.9664,
-          0.9665
-        ],
-        "visible": 0.51,
+        "visible": 0.78,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail",
         "adjacent": [
           "right_rear",
@@ -13859,7 +13864,8 @@
           -0.003
         ],
         "textRotation": 0,
-        "visible": 0.9,
+        "visible": 0.79,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front",
         "adjacent": [
           "left_front_lower_2",
@@ -14628,7 +14634,8 @@
           -0.003
         ],
         "textRotation": 0,
-        "visible": 0.9,
+        "visible": 0.79,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "adjacent": [
           "left_rear",
@@ -15398,12 +15405,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2909,
-          0.3292,
-          0.4061,
-          0.3892
+          0.3413,
+          0.3332,
+          0.3174,
+          0.3062
         ],
-        "visible": 0.86,
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper",
         "adjacent": [
           "right_front_lower",
@@ -16027,6 +16035,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -16071,12 +16080,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2909,
-          0.3292,
-          0.4061,
-          0.3892
+          0.3413,
+          0.3332,
+          0.3174,
+          0.3062
         ],
-        "visible": 0.86,
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper",
         "adjacent": [
           "right_rear",
@@ -16700,6 +16710,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -16743,8 +16754,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.3413,
+          0.3332,
+          0.3174,
+          0.3062
+        ],
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper",
         "adjacent": [
           "left_front_lower",
@@ -17368,6 +17385,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -17411,8 +17429,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.3413,
+          0.3332,
+          0.3174,
+          0.3062
+        ],
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper",
         "adjacent": [
           "left_rear",
@@ -18036,6 +18060,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -18079,7 +18104,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.96,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower",
         "adjacent": [
           "right_front_upper"
@@ -18329,6 +18355,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -18372,7 +18399,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.95,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail_upper"
@@ -18622,6 +18650,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -18665,13 +18694,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.4332,
-          0.433,
-          0.1332,
-          0.1325
-        ],
-        "visible": 0.18,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower",
         "adjacent": [
           "left_front_upper"
@@ -18921,6 +18945,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -18964,13 +18989,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.4332,
-          0.433,
-          0.1332,
-          0.1325
-        ],
-        "visible": 0.18,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail_upper"
@@ -19220,6 +19240,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -19264,12 +19285,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.3821,
-          0.3018,
-          0.2382,
-          0.0187
+          0.2911,
+          0.0548,
+          0.4173,
+          0.2657
         ],
-        "visible": 0.13,
+        "visible": 0.48,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_2",
         "adjacent": [
           "right_front",
@@ -19700,12 +19722,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.3821,
-          0.3018,
-          0.2382,
-          0.0187
+          0.2911,
+          0.0548,
+          0.4173,
+          0.2657
         ],
-        "visible": 0.13,
+        "visible": 0.48,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_2",
         "adjacent": [
           "right_rear_lower",
@@ -20136,12 +20159,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2862,
+          0.2911,
           0.0548,
-          0.4277,
-          0.2543
+          0.4173,
+          0.2657
         ],
-        "visible": 0.81,
+        "visible": 0.48,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_2",
         "adjacent": [
           "left_front",
@@ -20572,12 +20596,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2862,
+          0.2911,
           0.0548,
-          0.4277,
-          0.2543
+          0.4173,
+          0.2657
         ],
-        "visible": 0.81,
+        "visible": 0.48,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_2",
         "adjacent": [
           "left_rear_lower",
@@ -21008,12 +21033,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2559,
-          0.577,
-          0.2395,
-          0.185
+          0.1217,
+          0.597,
+          0.3662,
+          0.3179
         ],
-        "visible": 0.3,
+        "visible": 0.49,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_2",
         "adjacent": [
           "right_front",
@@ -21448,12 +21474,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2559,
-          0.577,
-          0.2395,
-          0.185
+          0.1217,
+          0.597,
+          0.3662,
+          0.3179
         ],
-        "visible": 0.3,
+        "visible": 0.49,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear",
         "adjacent": [
           "right_rear_lower",
@@ -21888,12 +21915,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.1034,
-          0.5878,
-          0.3851,
-          0.3515
+          0.1217,
+          0.5866,
+          0.3662,
+          0.3282
         ],
-        "visible": 0.81,
+        "visible": 0.52,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_2",
         "adjacent": [
           "left_front",
@@ -22328,12 +22356,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.1034,
-          0.5878,
-          0.3851,
-          0.3515
+          0.1217,
+          0.5866,
+          0.3662,
+          0.3282
         ],
-        "visible": 0.81,
+        "visible": 0.52,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear",
         "adjacent": [
           "left_rear_lower",
@@ -22768,12 +22797,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2467,
-          0.3271,
-          0.1156,
-          0.2425
+          0.0591,
+          0.1926,
+          0.2737,
+          0.3935
         ],
-        "visible": 0.21,
+        "visible": 0.47,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose",
         "adjacent": [
           "right_front",
@@ -23208,12 +23238,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2369,
-          0.3115,
-          0.1255,
-          0.2581
+          0.0591,
+          0.1926,
+          0.2737,
+          0.3935
         ],
-        "visible": 0.24,
+        "visible": 0.47,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear_lower",
         "adjacent": [
           "right_rear",
@@ -23648,12 +23679,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.0532,
-          0.1818,
-          0.2962,
-          0.4072
+          0.0591,
+          0.1926,
+          0.2812,
+          0.4042
         ],
-        "visible": 0.81,
+        "visible": 0.51,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose",
         "adjacent": [
           "left_front",
@@ -24068,12 +24100,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.0532,
-          0.1818,
-          0.2962,
-          0.4072
+          0.0591,
+          0.1926,
+          0.2812,
+          0.4042
         ],
-        "visible": 0.81,
+        "visible": 0.51,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear_lower",
         "adjacent": [
           "left_rear",
@@ -24488,12 +24521,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5046,
-          0.578,
-          0.2236,
-          0.184
+          0.5121,
+          0.597,
+          0.3662,
+          0.3179
         ],
-        "visible": 0.28,
+        "visible": 0.49,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_3",
         "adjacent": [
           "right_front",
@@ -24924,12 +24958,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5046,
-          0.578,
-          0.2221,
-          0.184
+          0.5121,
+          0.597,
+          0.3662,
+          0.3179
         ],
-        "visible": 0.27,
+        "visible": 0.49,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_2",
         "adjacent": [
           "right_rear",
@@ -25360,12 +25395,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5114,
-          0.5878,
-          0.3851,
-          0.3515
+          0.5121,
+          0.5866,
+          0.3662,
+          0.3282
         ],
-        "visible": 0.81,
+        "visible": 0.52,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_3",
         "adjacent": [
           "left_front",
@@ -25796,12 +25832,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5114,
-          0.5878,
-          0.3851,
-          0.3515
+          0.5121,
+          0.5866,
+          0.3662,
+          0.3282
         ],
-        "visible": 0.81,
+        "visible": 0.52,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_2",
         "adjacent": [
           "left_rear",
@@ -26232,12 +26269,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.6376,
-          0.3115,
-          0.0908,
-          0.2461
+          0.6672,
+          0.1926,
+          0.2737,
+          0.3935
         ],
-        "visible": 0.19,
+        "visible": 0.47,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_3",
         "adjacent": [
           "right_front",
@@ -26664,12 +26702,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.6376,
-          0.3115,
-          0.1255,
-          0.2526
+          0.6672,
+          0.1926,
+          0.2737,
+          0.3935
         ],
-        "visible": 0.25,
+        "visible": 0.47,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_3",
         "adjacent": [
           "right_tail",
@@ -27096,12 +27135,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.6505,
-          0.1818,
-          0.2962,
-          0.4072
+          0.6597,
+          0.1926,
+          0.2812,
+          0.4041
         ],
-        "visible": 0.81,
+        "visible": 0.51,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_3",
         "adjacent": [
           "left_front",
@@ -27528,12 +27568,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.6505,
-          0.1818,
-          0.2962,
-          0.4072
+          0.6597,
+          0.1926,
+          0.2812,
+          0.4041
         ],
-        "visible": 0.81,
+        "visible": 0.51,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_3",
         "adjacent": [
           "left_tail",
@@ -27959,8 +28000,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_4",
         "adjacent": [
           "right_front",
@@ -28330,8 +28371,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_3",
         "adjacent": [
           "right_tail",
@@ -28701,13 +28742,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.5473,
-          0.6473,
-          0.3044,
-          0.2574
-        ],
-        "visible": 0.43,
+        "visible": 0.55,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_4",
         "adjacent": [
           "left_front",
@@ -29077,13 +29113,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.5473,
-          0.6473,
-          0.3044,
-          0.2574
-        ],
-        "visible": 0.43,
+        "visible": 0.55,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_3",
         "adjacent": [
           "left_tail",
@@ -29453,8 +29484,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.7051,
+          0.2256,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_4",
         "adjacent": [
           "right_front",
@@ -29824,8 +29861,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.7051,
+          0.2256,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_4",
         "adjacent": [
           "right_tail",
@@ -30195,7 +30238,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.7051,
+          0.2256,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.43,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_4",
         "adjacent": [
           "left_front",
@@ -30565,7 +30615,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.7051,
+          0.2256,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_4",
         "adjacent": [
           "left_tail",
@@ -30935,8 +30992,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.0835,
+          0.2241,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.38,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose_lower",
         "adjacent": [
           "right_front",
@@ -31306,8 +31369,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.0835,
+          0.2241,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear_lower_2",
         "adjacent": [
           "right_rear_lower",
@@ -31677,7 +31746,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.0835,
+          0.2241,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.45,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose_lower",
         "adjacent": [
           "left_front",
@@ -32047,7 +32123,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.0835,
+          0.2241,
+          0.2115,
+          0.3258
+        ],
+        "visible": 0.45,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear_lower_2",
         "adjacent": [
           "left_rear_lower",
@@ -32417,8 +32500,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_5",
         "adjacent": [
           "right_front",
@@ -32788,8 +32871,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear_upper",
         "adjacent": [
           "right_rear",
@@ -33159,13 +33242,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.1453,
-          0.6458,
-          0.3044,
-          0.2574
-        ],
-        "visible": 0.43,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_5",
         "adjacent": [
           "left_front",
@@ -33535,13 +33613,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.1453,
-          0.6458,
-          0.3044,
-          0.2574
-        ],
-        "visible": 0.43,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear_upper",
         "adjacent": [
           "left_rear",
@@ -33911,8 +33984,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1594
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_5",
         "adjacent": [
           "right_front",
@@ -34282,8 +34361,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1594
+        ],
+        "visible": 0.4,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_5",
         "adjacent": [
           "right_tail",
@@ -34653,7 +34738,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1652
+        ],
+        "visible": 0.57,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_5",
         "adjacent": [
           "left_front",
@@ -35023,7 +35115,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "safe": [
+          0.332,
+          0.083,
+          0.3376,
+          0.1652
+        ],
+        "visible": 0.6,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_5",
         "adjacent": [
           "left_tail",
@@ -35394,6 +35493,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_front_upper_6",
         "adjacent": [
@@ -36276,6 +36376,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_tail_upper_4",
         "adjacent": [
@@ -37158,6 +37259,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_front_upper_6",
         "adjacent": [
@@ -38040,6 +38142,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_tail_upper_4",
         "adjacent": [
@@ -38922,6 +39025,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_front_lower_6",
         "adjacent": [
@@ -39191,6 +39295,7 @@
         ],
         "textRotation": 270,
         "visible": 0.01,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_tail_lower_6",
         "adjacent": [
@@ -39460,6 +39565,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_front_lower_6",
         "adjacent": [
@@ -39728,7 +39834,8 @@
           0
         ],
         "textRotation": 90,
-        "visible": 0,
+        "visible": 0.01,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_tail_lower_6",
         "adjacent": [
@@ -39997,8 +40104,14 @@
           0.046
         ],
         "textRotation": 180,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.0851,
+          0.9466,
+          0.0121,
+          0.0437
+        ],
+        "visible": 0.09,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_7",
         "adjacent": [
           "right_front_lower_6"
@@ -40106,12 +40219,13 @@
         ],
         "textRotation": 180,
         "safe": [
-          0.0861,
+          0.0851,
           0.9466,
-          0.004,
-          0
+          0.016,
+          0.0437
         ],
-        "visible": 0.04,
+        "visible": 0.13,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_5",
         "adjacent": [
           "right_tail_lower_6"
@@ -40218,8 +40332,14 @@
           0.046
         ],
         "textRotation": 180,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.0851,
+          0.9466,
+          0.0121,
+          0.0437
+        ],
+        "visible": 0.11,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_7",
         "adjacent": [
           "left_front_lower_6"
@@ -40326,8 +40446,14 @@
           0.046
         ],
         "textRotation": 180,
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.0851,
+          0.9466,
+          0.016,
+          0.0437
+        ],
+        "visible": 0.15,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_5",
         "adjacent": [
           "left_tail_lower_6"
@@ -40437,6 +40563,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0.01,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -40491,6 +40618,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -40545,6 +40673,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.02,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -40851,6 +40980,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -41157,6 +41287,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -41503,6 +41634,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -41849,6 +41981,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -42095,6 +42228,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.01,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -42348,7 +42482,8 @@
           0.4235,
           0.4256
         ],
-        "visible": 0.31,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front",
         "adjacent": [
           "right_front_lower",
@@ -42601,6 +42736,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -42650,7 +42786,8 @@
           0.4235,
           0.4256
         ],
-        "visible": 0.29,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail",
         "adjacent": [
           "right_tail_lower",
@@ -42903,6 +43040,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -42946,7 +43084,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 1,
+        "safe": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front",
         "adjacent": [
           "left_front_lower",
@@ -43199,6 +43344,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -43242,7 +43388,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 1,
+        "safe": [
+          0.2882,
+          0.2872,
+          0.4235,
+          0.4256
+        ],
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "adjacent": [
           "left_tail_lower",
@@ -43495,6 +43648,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -43544,7 +43698,8 @@
           0.9664,
           0.9665
         ],
-        "visible": 0.6,
+        "visible": 0.8,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper",
         "adjacent": [
           "right_front",
@@ -44054,7 +44209,8 @@
           0.9664,
           0.9665
         ],
-        "visible": 0.6,
+        "visible": 0.8,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper",
         "adjacent": [
           "right_tail",
@@ -44558,7 +44714,14 @@
           0
         ],
         "textRotation": 0,
-        "visible": 1,
+        "safe": [
+          0.0168,
+          0.0168,
+          0.9664,
+          0.9665
+        ],
+        "visible": 0.8,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper",
         "adjacent": [
           "left_front",
@@ -45063,6 +45226,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper",
         "adjacent": [
           "left_tail",
@@ -45566,8 +45730,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower",
         "adjacent": [
           "right_front",
@@ -46250,6 +46414,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -46293,8 +46458,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 0.5,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail",
@@ -46977,6 +47142,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -47020,7 +47186,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.49,
+        "visible": 0.54,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower",
         "adjacent": [
           "left_front",
@@ -47703,6 +47870,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -47746,7 +47914,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.49,
+        "visible": 0.55,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail",
@@ -48429,6 +48598,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -48472,7 +48642,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.97,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_2",
         "adjacent": [
           "right_front_lower_3"
@@ -48722,6 +48893,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -48765,7 +48937,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.95,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_2",
         "adjacent": [
           "right_tail_lower_3"
@@ -49015,6 +49188,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -49058,13 +49232,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.4332,
-          0.433,
-          0.1332,
-          0.1325
-        ],
-        "visible": 0.18,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_2",
         "adjacent": [
           "left_front_lower_3"
@@ -49314,6 +49483,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -49357,13 +49527,8 @@
           0
         ],
         "textRotation": 0,
-        "safe": [
-          0.4332,
-          0.433,
-          0.1332,
-          0.1325
-        ],
-        "visible": 0.18,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_2",
         "adjacent": [
           "left_tail_lower_3"
@@ -49613,6 +49778,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -49663,6 +49829,7 @@
           0.3895
         ],
         "visible": 0.77,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_2",
         "adjacent": [
           "right_front",
@@ -50083,6 +50250,7 @@
           0.3895
         ],
         "visible": 0.75,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_2",
         "adjacent": [
           "right_tail",
@@ -50497,6 +50665,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_2",
         "adjacent": [
           "left_front",
@@ -50911,6 +51080,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_2",
         "adjacent": [
           "left_tail",
@@ -51324,8 +51494,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_3",
         "adjacent": [
           "right_front",
@@ -52007,6 +52177,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -52050,8 +52221,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_3",
         "adjacent": [
           "right_tail",
@@ -52733,6 +52904,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -52776,7 +52948,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 1,
+        "visible": 0.99,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_3",
         "adjacent": [
           "left_front",
@@ -53458,6 +53631,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -53501,7 +53675,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 1,
+        "visible": 0.99,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_3",
         "adjacent": [
           "left_tail",
@@ -54183,6 +54358,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -54227,6 +54403,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower_3",
         "adjacent": [
           "right_front_lower_2",
@@ -54700,6 +54877,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -54744,6 +54922,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower_3",
         "adjacent": [
           "right_tail_lower_2",
@@ -55217,6 +55396,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -55260,8 +55440,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower_3",
         "adjacent": [
           "left_front_lower_2",
@@ -55735,6 +55915,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -55778,8 +55959,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0,
-        "hidden": true,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower_3",
         "adjacent": [
           "left_tail_lower_2",
@@ -56253,6 +56434,7 @@
         ],
         "tags": [
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -56297,6 +56479,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_upper_4",
         "adjacent": [
           "right_front_lower_3",
@@ -56710,6 +56893,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper_4",
         "adjacent": [
           "right_tail_lower_3",
@@ -57122,7 +57306,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_upper_4",
         "adjacent": [
           "left_front_lower_3",
@@ -57535,7 +57720,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.5,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper_4",
         "adjacent": [
           "left_tail_lower_3",
@@ -57949,6 +58135,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_front_lower_4",
         "adjacent": [
@@ -58057,6 +58244,7 @@
         ],
         "textRotation": 90,
         "visible": 0.01,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "left_tail_lower_4",
         "adjacent": [
@@ -58165,6 +58353,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_front_lower_4",
         "adjacent": [
@@ -58272,7 +58461,8 @@
           0.016
         ],
         "textRotation": 90,
-        "visible": 0,
+        "visible": 0.01,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_tail_lower_4",
         "adjacent": [
@@ -58384,12 +58574,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5685,
+          0.5741,
           0.0077,
-          0.4119,
-          0.0344
+          0.4004,
+          0.1324
         ],
-        "visible": 0.04,
+        "visible": 0.05,
+        "visibleFromCockpit": 0.34,
         "adjacent": [
           "centre_mid",
           "centre_mid_lower",
@@ -58790,7 +58981,8 @@
         "tags": [
           "centre",
           "front",
-          "upper"
+          "upper",
+          "cockpit"
         ]
       },
       "left_mid": {
@@ -58827,12 +59019,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.2715,
+          0.1982,
           0.2452,
-          0,
-          0
+          0.0733,
+          0.0005
         ],
-        "visible": 0.02,
+        "visible": 0.05,
+        "visibleFromCockpit": 0.24,
         "mirrorOf": "right_mid",
         "adjacent": [
           "centre_front",
@@ -59051,12 +59244,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.3527,
+          0.3171,
           0.2296,
-          0.0371,
-          0
+          0.0724,
+          0.011
         ],
         "visible": 0.05,
+        "visibleFromCockpit": 0.48,
         "mirrorOf": "left_mid",
         "adjacent": [
           "centre_front",
@@ -59274,12 +59468,13 @@
           0.695
         ],
         "safe": [
-          0.3937,
-          0.0838,
-          0,
-          0
+          0.3901,
+          0.0077,
+          0.0037,
+          0.1342
         ],
-        "visible": 0.03,
+        "visible": 0.11,
+        "visibleFromCockpit": 0.38,
         "adjacent": [
           "centre_tail",
           "left_mid_upper_4",
@@ -59368,7 +59563,8 @@
         "tags": [
           "centre",
           "rear",
-          "upper"
+          "upper",
+          "cockpit"
         ]
       },
       "left_mid_upper": {
@@ -59405,6 +59601,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0.38,
         "hidden": true,
         "mirrorOf": "right_mid_upper",
         "adjacent": [
@@ -59527,6 +59724,7 @@
         "tags": [
           "rear",
           "upper",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -59569,6 +59767,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0.56,
         "hidden": true,
         "mirrorOf": "left_mid_upper",
         "adjacent": [
@@ -59691,6 +59890,7 @@
         "tags": [
           "rear",
           "upper",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -59733,6 +59933,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.33,
         "hidden": true,
         "mirrorOf": "right_mid_upper_2",
         "adjacent": [
@@ -59847,6 +60048,7 @@
         "tags": [
           "mid",
           "lower",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -59889,6 +60091,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.49,
         "hidden": true,
         "mirrorOf": "left_mid_upper_2",
         "adjacent": [
@@ -60003,6 +60206,7 @@
         "tags": [
           "mid",
           "lower",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -60045,6 +60249,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.63,
         "hidden": true,
         "adjacent": [
           "left_mid_lower"
@@ -60366,7 +60571,8 @@
         "tags": [
           "left",
           "mid",
-          "upper"
+          "upper",
+          "cockpit"
         ]
       },
       "centre_mid": {
@@ -60403,6 +60609,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.3,
         "hidden": true,
         "adjacent": [
           "centre_front",
@@ -60599,7 +60806,8 @@
         "tags": [
           "centre",
           "mid",
-          "lower"
+          "lower",
+          "cockpit"
         ]
       },
       "left_mid_upper_4": {
@@ -60636,12 +60844,13 @@
         ],
         "textRotation": 270,
         "safe": [
-          0.0066,
-          0.2479,
-          0.0959,
-          0.5264
+          0.0277,
+          0.2778,
+          0.0841,
+          0.5979
         ],
-        "visible": 0.05,
+        "visible": 0.09,
+        "visibleFromCockpit": 0.37,
         "mirrorOf": "right_mid_upper_3",
         "adjacent": [
           "centre_front",
@@ -60874,6 +61083,7 @@
         "tags": [
           "mid",
           "upper",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -60916,12 +61126,13 @@
         ],
         "textRotation": 90,
         "safe": [
-          0.0066,
-          0.2479,
-          0.1038,
-          0.4226
+          0.0436,
+          0.2931,
+          0.0682,
+          0.6797
         ],
-        "visible": 0.05,
+        "visible": 0.07,
+        "visibleFromCockpit": 0.47,
         "mirrorOf": "left_mid_upper_4",
         "adjacent": [
           "centre_front",
@@ -61154,6 +61365,7 @@
         "tags": [
           "mid",
           "upper",
+          "cockpit",
           "mirrored",
           "shared"
         ],
@@ -61196,6 +61408,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.48,
         "hidden": true,
         "adjacent": [
           "centre_front",
@@ -61364,7 +61577,8 @@
         "tags": [
           "centre",
           "mid",
-          "lower"
+          "lower",
+          "cockpit"
         ]
       },
       "left_front": {
@@ -61401,6 +61615,7 @@
         ],
         "textRotation": 90,
         "visible": 0,
+        "visibleFromCockpit": 0.17,
         "hidden": true,
         "adjacent": [
           "centre_front",
@@ -61707,8 +61922,14 @@
           -0.214,
           0.973
         ],
-        "visible": 0,
-        "hidden": true,
+        "safe": [
+          0.1842,
+          0.5405,
+          0.0124,
+          0.1455
+        ],
+        "visible": 0.04,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_front",
           "left_front"
@@ -61929,6 +62150,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.23,
         "hidden": true,
         "adjacent": [
           "centre_front",
@@ -62122,6 +62344,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.17,
         "hidden": true,
         "adjacent": [
           "left_mid_upper_3"
@@ -62567,7 +62790,14 @@
           -0.254
         ],
         "textRotation": 180,
-        "visible": 0.47,
+        "safe": [
+          0.0068,
+          0.6127,
+          0.0236,
+          0.099
+        ],
+        "visible": 0.12,
+        "visibleFromCockpit": 0,
         "adjacent": [
           "centre_rear",
           "left_mid_upper_4",
@@ -62654,7 +62884,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.6,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "tiled": true,
         "uvBounds": [
           -0.0024,
@@ -62726,7 +62957,8 @@
           0
         ],
         "textRotation": 0,
-        "visible": 0.58,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "tiled": true,
         "uvBounds": [
           -0.0024,
@@ -62799,6 +63031,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front",
         "wheel": {
           "part": "sidewall",
@@ -62864,6 +63097,7 @@
         ],
         "textRotation": 0,
         "visible": 1,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "wheel": {
           "part": "sidewall",
@@ -62934,7 +63168,8 @@
           0.5152,
           0.1195
         ],
-        "visible": 0.14,
+        "visible": 0.21,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_front_lower",
         "wheel": {
           "part": "sidewall",
@@ -63004,7 +63239,8 @@
           0.6277,
           0.2159
         ],
-        "visible": 0.19,
+        "visible": 0.29,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_upper",
         "wheel": {
           "part": "sidewall",
@@ -63074,7 +63310,8 @@
           0.5152,
           0.1195
         ],
-        "visible": 0.14,
+        "visible": 0.21,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_front_lower",
         "wheel": {
           "part": "sidewall",
@@ -63144,7 +63381,8 @@
           0.6277,
           0.1813
         ],
-        "visible": 0.17,
+        "visible": 0.26,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_upper",
         "wheel": {
           "part": "sidewall",
@@ -63211,6 +63449,7 @@
         ],
         "textRotation": 270,
         "visible": 0,
+        "visibleFromCockpit": 0.01,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63259,6 +63498,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63315,6 +63555,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63371,6 +63612,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.05,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63427,6 +63669,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.04,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63483,6 +63726,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.23,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63536,6 +63780,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.06,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -63592,12 +63837,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.0122,
-          0.0715,
-          0.3612,
-          0.5333
+          0.0781,
+          0.0242,
+          0.2952,
+          0.5553
         ],
-        "visible": 0.18,
+        "visible": 0.13,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose",
         "adjacent": [
           "right_nose_lower"
@@ -63849,12 +64095,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.0168,
-          0.0356,
-          0.351,
-          0.6139
+          0.0771,
+          0.0242,
+          0.2963,
+          0.5553
         ],
-        "visible": 0.19,
+        "visible": 0.15,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose",
         "adjacent": [
           "left_nose_lower"
@@ -64106,12 +64353,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.9041,
-          0.3945,
-          0.0288,
-          0.0641
+          0.5631,
+          0.418,
+          0.3341,
+          0.3622
         ],
         "visible": 0.03,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose_lower",
         "adjacent": [
           "right_nose"
@@ -64423,6 +64671,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "mirrorOf": "right_nose_lower",
         "adjacent": [
@@ -64735,12 +64984,13 @@
         ],
         "textRotation": 270,
         "safe": [
-          0.1569,
-          0.7765,
-          0.0938,
-          0.038
+          0.0074,
+          0.8132,
+          0.5178,
+          0.0744
         ],
-        "visible": 0.07,
+        "visible": 0.2,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose_upper",
         "wheel": {
           "part": "sidewall",
@@ -64795,12 +65045,13 @@
         ],
         "textRotation": 90,
         "safe": [
-          0.0523,
-          0.7919,
-          0.0402,
-          0.0214
+          0.0074,
+          0.8132,
+          0.5178,
+          0.0574
         ],
-        "visible": 0.05,
+        "visible": 0.15,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose_upper",
         "wheel": {
           "part": "sidewall",
@@ -64857,6 +65108,7 @@
         ],
         "textRotation": 0,
         "visible": 0.45,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "front",
@@ -64903,6 +65155,7 @@
           0.4137
         ],
         "visible": 0.6,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
@@ -64949,7 +65202,8 @@
           0.3481,
           0.2861
         ],
-        "visible": 0.61,
+        "visible": 0.56,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "tags": [
           "tail",
@@ -64998,11 +65252,12 @@
         "textRotation": 90,
         "safe": [
           0.3824,
-          0.6999,
-          0.3606,
-          0.2846
+          0.7027,
+          0.3528,
+          0.2818
         ],
-        "visible": 0.56,
+        "visible": 0.55,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail",
         "tags": [
           "tail",
@@ -65052,10 +65307,11 @@
         "safe": [
           0.0522,
           0.678,
-          0.2966,
+          0.2886,
           0.2797
         ],
-        "visible": 0.53,
+        "visible": 0.52,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose",
         "tags": [
           "left",
@@ -65105,6 +65361,7 @@
           0.2323
         ],
         "visible": 0.45,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose",
         "tags": [
           "right",
@@ -65152,7 +65409,8 @@
           0.1729,
           0.1404
         ],
-        "visible": 0.47,
+        "visible": 0.45,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose_lower",
         "tags": [
           "left",
@@ -65194,13 +65452,19 @@
           0.26
         ],
         "textRotation": 0,
-        "visible": 0.53,
+        "safe": [
+          0.1424,
+          0.7367,
+          0.1821,
+          0.174
+        ],
+        "visible": 0.46,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose_lower",
         "tags": [
           "right",
           "nose",
           "lower",
-          "visible",
           "mirrored"
         ]
       }
@@ -65240,11 +65504,13 @@
           0.86
         ],
         "textRotation": 0,
-        "visible": 0.38,
+        "visible": 0.91,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "front",
-          "upper"
+          "upper",
+          "visible"
         ]
       },
       "centre_tail": {
@@ -65280,17 +65546,13 @@
           0.683
         ],
         "textRotation": 180,
-        "safe": [
-          0.0108,
-          0.007,
-          0.5328,
-          0.3176
-        ],
-        "visible": 0.48,
+        "visible": 0.88,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
-          "upper"
+          "upper",
+          "visible"
         ]
       },
       "left_nose": {
@@ -65327,16 +65589,18 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.554,
+          0.5673,
           0.0289,
-          0.3644,
-          0.3225
+          0.3511,
+          0.347
         ],
-        "visible": 0.41,
+        "visible": 0.67,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose",
         "tags": [
           "nose",
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65379,16 +65643,18 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5728,
-          0.0347,
-          0.3457,
-          0.2694
+          0.5673,
+          0.0289,
+          0.3511,
+          0.347
         ],
-        "visible": 0.33,
+        "visible": 0.68,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose",
         "tags": [
           "nose",
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65433,10 +65699,11 @@
         "safe": [
           0.6363,
           0.7196,
-          0.3286,
-          0.266
+          0.3381,
+          0.2663
         ],
-        "visible": 0.52,
+        "visible": 0.82,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail",
         "tags": [
           "tail",
@@ -65484,12 +65751,13 @@
         ],
         "textRotation": 90,
         "safe": [
-          0.6676,
-          0.7246,
-          0.3072,
-          0.261
+          0.6363,
+          0.7196,
+          0.3381,
+          0.2663
         ],
-        "visible": 0.51,
+        "visible": 0.82,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail",
         "tags": [
           "tail",
@@ -65537,16 +65805,18 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.8587,
+          0.8558,
           0.3401,
-          0.1194,
-          0.097
+          0.1258,
+          0.1203
         ],
-        "visible": 0.45,
+        "visible": 0.76,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_nose_lower",
         "tags": [
           "nose",
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65590,15 +65860,17 @@
         "textRotation": 0,
         "safe": [
           0.8533,
-          0.3402,
+          0.3401,
           0.1283,
-          0.1202
+          0.1203
         ],
-        "visible": 0.44,
+        "visible": 0.78,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_nose_lower",
         "tags": [
           "nose",
           "lower",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65642,13 +65914,8 @@
           0.303
         ],
         "textRotation": 0,
-        "safe": [
-          0.0006,
-          0.0849,
-          0.4857,
-          0.8337
-        ],
-        "visible": 0.86,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "nose",
@@ -65689,7 +65956,8 @@
           -0.594
         ],
         "textRotation": 0,
-        "visible": 0.93,
+        "visible": 1,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
@@ -65732,11 +66000,12 @@
         "textRotation": 0,
         "safe": [
           0.4985,
-          0.0131,
+          0.0066,
           0.4988,
-          0.274
+          0.3021
         ],
-        "visible": 0.84,
+        "visible": 0.93,
+        "visibleFromCockpit": 0,
         "tags": [
           "centre",
           "tail",
@@ -65778,16 +66047,18 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.6013,
-          0.5137,
-          0.3083,
-          0.4455
+          0.5062,
+          0.5281,
+          0.4034,
+          0.4311
         ],
-        "visible": 0.41,
+        "visible": 0.65,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_rear",
         "tags": [
           "rear",
           "upper",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65830,16 +66101,18 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5071,
-          0.5137,
-          0.4133,
-          0.3656
+          0.5062,
+          0.5281,
+          0.4034,
+          0.4311
         ],
         "visible": 0.63,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_rear",
         "tags": [
           "rear",
           "upper",
+          "visible",
           "mirrored",
           "shared"
         ],
@@ -65888,6 +66161,7 @@
           0.1523
         ],
         "visible": 0.85,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_mid",
         "tags": [
           "rear",
@@ -65935,12 +66209,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5193,
-          0.344,
-          0.3644,
-          0.145
+          0.5311,
+          0.3336,
+          0.3526,
+          0.1523
         ],
-        "visible": 0.95,
+        "visible": 0.85,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_mid",
         "tags": [
           "rear",
@@ -65989,7 +66264,9 @@
           -0.501
         ],
         "textRotation": 0,
-        "visible": 0.25,
+        "visible": 0,
+        "visibleFromCockpit": 0,
+        "hidden": true,
         "mirrorOf": "right_tail",
         "adjacent": [
           "left_tail_lower",
@@ -66391,13 +66668,9 @@
           -0.501
         ],
         "textRotation": 0,
-        "safe": [
-          0.0476,
-          0.0126,
-          0.8943,
-          0.9302
-        ],
-        "visible": 0.22,
+        "visible": 0,
+        "visibleFromCockpit": 0,
+        "hidden": true,
         "mirrorOf": "left_tail",
         "adjacent": [
           "right_tail_lower",
@@ -66800,12 +67073,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.112,
-          0.7083,
-          0.4643,
-          0.2345
+          0.0746,
+          0.2924,
+          0.0795,
+          0.4809
         ],
-        "visible": 0.07,
+        "visible": 0.14,
+        "visibleFromCockpit": 0,
         "mirrorOf": "left_tail_lower",
         "adjacent": [
           "right_tail",
@@ -67029,12 +67303,13 @@
         ],
         "textRotation": 0,
         "safe": [
-          0.5764,
-          0.7083,
-          0,
-          0
+          0.0776,
+          0.2924,
+          0.0766,
+          0.4809
         ],
-        "visible": 0.02,
+        "visible": 0.12,
+        "visibleFromCockpit": 0,
         "mirrorOf": "right_tail_lower",
         "adjacent": [
           "left_tail",
@@ -67257,13 +67532,9 @@
           0.592
         ],
         "textRotation": 180,
-        "safe": [
-          0.877,
-          0.0176,
-          0,
-          0.0061
-        ],
-        "visible": 0.05,
+        "visible": 0,
+        "visibleFromCockpit": 0,
+        "hidden": true,
         "mirrorOf": "left_tail_lower_2",
         "adjacent": [
           "right_tail",
@@ -67355,7 +67626,9 @@
           0.592
         ],
         "textRotation": 180,
-        "visible": 0.43,
+        "visible": 0,
+        "visibleFromCockpit": 0,
+        "hidden": true,
         "mirrorOf": "right_tail_lower_2",
         "adjacent": [
           "left_tail",
@@ -67450,6 +67723,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -67504,6 +67778,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -67558,6 +67833,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0.02,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -67612,6 +67888,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "tiled": true,
         "uvBounds": [
@@ -67668,6 +67945,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "adjacent": [
           "left_front_upper"
@@ -67712,6 +67990,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "adjacent": [
           "left_front"
@@ -67756,6 +68035,7 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "adjacent": [
           "left_mid_lower"
@@ -67994,11 +68274,13 @@
         ],
         "textRotation": 0,
         "visible": 0,
+        "visibleFromCockpit": 0.47,
         "hidden": true,
         "tags": [
           "centre",
           "mid",
-          "upper"
+          "upper",
+          "cockpit"
         ]
       },
       "left_mid_lower": {
@@ -68035,6 +68317,7 @@
         ],
         "textRotation": 180,
         "visible": 0,
+        "visibleFromCockpit": 0,
         "hidden": true,
         "adjacent": [
           "left_mid"
