@@ -54,7 +54,7 @@ Answer each field strictly:
 - palette_ok: the colours are the ones the brief asks for or the style it names uses, or suit it if it names none, with enough contrast between artwork and base. An accent colour that neither the brief nor its style has fails it: a Gulf livery is blue and orange, and a pink stripe added for the team's name is not Gulf.
 - requirements: one entry for each separate thing the brief explicitly asks for: a colour scheme, a number, each name or sponsor, a placement. When the brief names a style (a famous livery, a team's colours, an era), also list each of that style's signature elements as its own entry, such as the stripe it is known for and where each of its colours goes, because the colours alone are not the style. Requirements come from the brief and the style it names, never from the designer's account of the design: what the designer chose to add is not something the brief asked for. "present" is true only if you can see it on the car in these renders, and for a team or driver name only if it is where a spectator looks for it, beside the race number on the doors; a name tucked on a rear quarter, a roof or a bumper is not present. "where" says in which view and on which part of the car, or "not visible".
 - matches_brief: true only if every requirement is present.
-- cut_off: every piece of artwork that is cut off, clipped or partly hidden, each as { what, where } with where naming the view and the part of the car. Empty only if every piece is whole in every view.
+- cut_off: every piece of artwork that is cut off, clipped or partly hidden in the view that shows it best, each as { what, where, id } with where naming the view and the part of the car, and id as above. A piece on one side of the car is not cut off because a view of the other side cannot see it. Empty only if every piece is whole where it is seen best.
 - unreadable: every piece of lettering, number or logo that would not read from trackside, each as { what, where, why }. Empty only if every one reads.
 - notes: every problem, each specific enough to act on: what, where on the car, in which view, and what would fix it. Empty when there is nothing to fix. No praise.`;
 
@@ -221,7 +221,9 @@ export function verdictOf(text) {
       // that listed nothing has not checked anything.
       : k === 'requirements' ? items(k, { asked: 'string', present: 'boolean', where: 'string' }) && v[k].length > 0
       // Empty is the answer wanted in these two, so only the shape is checked.
-      : k === 'cut_off' ? items(k, { what: 'string', where: 'string' })
+      // `id` too: the gate holds a cut-off entry against the count by it, and
+      // an entry without one is a claim nothing can check.
+      : k === 'cut_off' ? items(k, { what: 'string', where: 'string', id: 'string' })
       : k === 'unreadable' ? items(k, { what: 'string', where: 'string', why: 'string' })
       : typeof v?.[k] === 'boolean';
     if (!want) throw new Error(`the critic's verdict has no usable "${k}": ${JSON.stringify(v?.[k])}`);

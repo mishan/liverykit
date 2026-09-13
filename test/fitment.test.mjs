@@ -101,6 +101,33 @@ test('a name is held to the number only where the design says so', async () => {
   assert.equal(d.surfaces.body.regions[0].constraints.groupWith, 'number');
 });
 
+test('find_space refuses a margin or a count it cannot honour, before measuring anything', async () => {
+  // A negative margin returned spots with less clearance than asked for, and a
+  // count of NaN switched off both limits on a loop where every step walks the
+  // whole mesh. Refused before the grid is touched, so an empty one will do.
+  const { findSpace, largestSpace } = await import('../src/space.mjs');
+  const ask = (over) => () => findSpace({ grid: {}, widthMm: 100, ...over });
+  assert.throws(ask({ marginMm: -5 }), /marginMm is clean bodywork all round in mm, zero or more; got -5/);
+  assert.throws(ask({ marginMm: NaN }), /marginMm/);
+  assert.throws(ask({ count: NaN }), /count is how many spots to return, a whole number from 1; got null/);
+  assert.throws(ask({ count: 0 }), /count/);
+  assert.throws(ask({ count: 2.5 }), /count/);
+  assert.throws(() => largestSpace({ grid: {}, aspect: 1, marginMm: -1 }), /marginMm/);
+});
+
+test('the parts a crash or a spinning wheel swaps in stand in front of nothing', async () => {
+  // The renderer and the near-field test already left them out; the voxel
+  // occluders did not, so fitment could call artwork hidden by a mesh the car
+  // at rest does not show.
+  const { carOccluders } = await import('../src/engine/visibility.mjs');
+  const model = {
+    meshes: [{ name: 'BODY', materialId: 0 }, { name: 'EXT_RIM_BLUR_LF', materialId: 0 }, { name: 'GLASS_DAMAGE', materialId: 1 }],
+    materials: [{ shader: 'ksPerPixel' }, { shader: 'ksBrokenGlass' }],
+  };
+  assert.deepEqual(carOccluders(model, {}).map((m) => m.name), ['BODY']);
+  assert.deepEqual(carOccluders(model, { hiddenByCar: { meshes: { BODY: {} } } }).map((m) => m.name), []);
+});
+
 test('letters on a panel laid a quarter turn stand along u', () => {
   // A road car turns its doors sideways to pack the sheet, and the text is
   // turned back upright. Its letters then run along the texture's u, which on

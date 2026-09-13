@@ -300,5 +300,5 @@ if (result.proposalId) {
 }
 // Success is a design in front of a person. A pass the editor refused to take
 // delivered nothing, and a script reading the exit code must not be told
-// otherwise.
-process.exit(result.passed && (result.proposalId || values['no-propose']) ? 0 : 1);
+// otherwise. A replay proposes nothing by design, so its pass is the gate's.
+process.exit(result.passed && (result.proposalId || values['no-propose'] || replaying) ? 0 : 1);
