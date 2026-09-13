@@ -12,6 +12,9 @@ import { createTrace } from '../autolivery/trace.mjs';
 import { run } from '../autolivery/loop.mjs';
 import { createPlanner } from '../autolivery/claude.mjs';
 import * as local from '../autolivery/openai.mjs';
+import { PLANNER_SYSTEM } from '../autolivery/prompts.mjs';
+import { fitment } from '../src/fitment.mjs';
+import { createToolHandler } from '../src/mcp/tools.mjs';
 import '../src/index.mjs';
 
 const ROOT = process.cwd();
@@ -51,6 +54,45 @@ async function fixtureEditor() {
 }
 
 const get = async (url, path) => (await fetch(new URL(path, url).href)).json();
+
+test('the number group the planner is told to lay out clears the disc with room to spare', async () => {
+  // As first written the roundel was 60% of an aspect-0.75 group and the name
+  // its bottom quarter, so the disc reached 0.6 of the group's width down and
+  // the name's box began at 0.5625: the letters cleared the rim by about 1% of
+  // the width, and a name drawn larger had the disc through it. find_space's
+  // own description gave the same group as "about 0.8".
+  const aspect = Number(PLANNER_SYSTEM.match(/largest: true, aspect ([\d.]+)/)?.[1]);
+  const roundel = Number(PLANNER_SYSTEM.match(/the roundel is (\d+)% of the group's width/)?.[1]) / 100;
+  const band = Number(PLANNER_SYSTEM.match(/in the bottom (\d+)% of its height/)?.[1]) / 100;
+  assert.ok(aspect > 0 && roundel > 0 && band > 0, 'the prompt states the group\'s proportions');
+
+  // Laid out as told on a square panel, so a fraction of it is the same length either way.
+  const profile = {
+    id: 'fixture', name: 'Fixture',
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { D: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 1, tags: [] } } },
+  };
+  const [gx, gy, gw] = [0.1, 0.1, 0.8], gh = gw * aspect, d = gw * roundel;
+  const group = (scale) => ({
+    name: 'G', packs: ['core'], palette: { ink: '#101014', white: '#FFFFFF' }, identity: { team: 'GULF', number: '9' },
+    surfaces: { body: { regions: [
+      { id: 'roundel', treatment: 'ring', panel: 'D', at: [gx + (gw - d) / 2, gy, d, d], color: 'white',
+        radius: 0.25, width: 0.5 },
+      { id: 'team', treatment: 'text', panel: 'D', at: [gx, gy + gh * (1 - band), gw, gh * band], text: '{team}',
+        color: 'ink', scale },
+    ] } },
+  });
+  // At the default scale, and at a name filling its whole band.
+  for (const scale of [0.7, 1]) {
+    const overlap = fitment(group(scale), profile).findings.filter((f) => f.kind === 'overlap');
+    assert.deepEqual(overlap, [], `with the name at scale ${scale}`);
+  }
+
+  const tools = await createToolHandler({}).listTools();
+  const said = tools.find((t) => t.name === 'find_space').inputSchema.properties.aspect.description;
+  assert.equal(Number(said.match(/a roundel over a name, ([\d.]+)/)?.[1]), aspect, `find_space says the same: ${said}`);
+});
 
 test('a draft is rendered as drafted, and nothing is proposed by looking at it', async () => {
   const ed = await fixtureEditor();
