@@ -119,15 +119,17 @@ test('a profile records what the car hides, and a texture worn only by hidden me
  * A sheet parallel to the left flank at `x`, over most of it, in small
  * triangles: occupancy samples a triangle at most twelve times along a side,
  * so one 2.4 m triangle is a sieve. A real plate or shell is small and dense.
- * `facing` is its normal's x: out from the car, or in.
+ * `facing` is its normal's x: out from the car, or in. `uv` is where it lands
+ * on the sheet: a speck by default, and big enough to be a panel of its own
+ * where a test reads the sheet's own `visible`.
  */
-function flankSheet(name, x, facing = 1) {
+function flankSheet(name, x, facing = 1, [u0, v0, du, dv] = [0.99, 0.99, 0.005, 0.005]) {
   const N = 40;
   const sheet = { name, verts: [], indices: [] };
   for (let j = 0; j <= N; j++) {
     for (let i = 0; i <= N; i++) {
       sheet.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N),
-        0.99 + 0.005 * (i / N), 0.99 + 0.005 * (j / N), [facing, 0, 0]));
+        u0 + du * (i / N), v0 + dv * (j / N), [facing, 0, 0]));
     }
   }
   for (let j = 0; j < N; j++) {
@@ -220,6 +222,35 @@ test('a mesh behind the paint stands in front of nothing either, and one flush i
   // only the exact test along the normal can now tell from the shell.
   const flush = await left(flankSheet('PLATE_L', 0.95 + 0.004));
   assert.ok(flush < bare - 0.2, `a plate 4 mm proud covers the flank: ${flush} against ${bare}`);
+});
+
+test('a motion-blur rim is measured as the rim it stands in for, not as something behind it', async () => {
+  // AC swaps WHEEL_xx/RIM_xx for WHEEL_xx/RIM_BLUR_xx by wheel speed, so the
+  // two are never drawn together. The NSX's rim sheet is also worn by its
+  // static blur rim, 1.2 mm behind the drawn one, and 39 panels measured on
+  // that copy fell from 0.87 visible to under 0.1 once the exact test along
+  // the normal found the drawn rim standing in front of it.
+  const drawnAt = [0.315, 0.05, 0.03, 0.2], blurAt = [0.315, 0.26, 0.03, 0.2];
+  const rims = async (behind) => {
+    const dir = await mkdtemp(join(tmpdir(), 'lk-blur-'));
+    await writeFile(join(dir, 'fixture.kn5'), carKn5({ wrapped: [
+      { name: 'RIM_LF', meshes: [flankSheet('EXT_RIM_LF', 0.98, 1, drawnAt)] },
+      { name: behind.node, meshes: [flankSheet(behind.mesh, 0.98 - 0.0012, 1, blurAt)] },
+    ] }));
+    const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+    const all = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+    return [all.find((q) => q.source?.mesh === 'EXT_RIM_LF'), all.find((q) => q.source?.mesh === behind.mesh)];
+  };
+
+  const [drawn, blur] = await rims({ node: 'RIM_BLUR_LF', mesh: 'EXT_RIM_BLUR_STATIC_LF' });
+  assert.ok(drawn && blur, 'both rims are panels of the sheet they wear');
+  assert.ok(drawn.visible > 0.5, `the drawn rim is in plain view: ${drawn.visible}`);
+  assert.ok(Math.abs(blur.visible - drawn.visible) < 0.05,
+    `the blur rim is as visible as the rim it replaces: ${blur.visible} against ${drawn.visible}`);
+
+  // The same sheet 1.2 mm behind, drawn at rest: that one IS behind the rim.
+  const [, inner] = await rims({ node: 'RIM_INNER_LF', mesh: 'EXT_RIM_INNER_LF' });
+  assert.ok(inner.visible < 0.1, `a drawn mesh behind the rim is covered by it: ${inner.visible}`);
 });
 
 test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {

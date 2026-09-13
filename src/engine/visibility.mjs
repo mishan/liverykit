@@ -57,6 +57,44 @@ function viewDirections(rings = 16) {
   return dirs;
 }
 
+/**
+ * For each motion-blur mesh, the indices of the drawn meshes it is swapped
+ * with, so that neither stands in front of the other.
+ *
+ * The blur meshes are already out of the occluders, so they cover nothing.
+ * The other way round was left: the NSX's rim sheet is worn by its static
+ * blur rim too, 1.2 mm behind the drawn one, and 39 panels measured on that
+ * copy fell from 0.87 visible to under 0.1 once the exact test along the
+ * normal found the drawn rim in front of it. The two are never on screen
+ * together, so a blur mesh is measured as the rim it stands in for.
+ *
+ * By NODE, which is where AC makes the swap: WHEEL_xx carries RIM_xx and
+ * RIM_BLUR_xx, and hides one or the other. Mesh names do not pair — the
+ * RSS 4's drawn rim is RIM_RF_Mesh_SUB0 and its blur copy
+ * RF_RIM_BLUR_Mesh_SUB0 — while the node above each does, on all three cars
+ * here. So the first node on the blur mesh's path that is named for blur,
+ * with the word taken out, names the sibling to look under.
+ */
+export function blurTwins(model) {
+  const paths = model.meshes.map((m) => String(m.path ?? m.name ?? '').split('/'));
+  const out = new Map();
+  model.meshes.forEach((m, i) => {
+    if (!motionBlurOnly(m.name)) return;
+    const at = paths[i].findIndex((s) => motionBlurOnly(s));
+    if (at < 0) return;
+    const drawn = paths[i][at].replace(/(^|_)blur(_static)?(?=_|$)/i, '').replace(/^_/, '').toLowerCase();
+    const twins = new Set();
+    model.meshes.forEach((o, j) => {
+      const p = paths[j];
+      if (motionBlurOnly(o.name) || p.length <= at || p[at].toLowerCase() !== drawn) return;
+      for (let k = 0; k < at; k++) if (p[k] !== paths[i][k]) return;
+      twins.add(j);
+    });
+    if (twins.size) out.set(i, twins);
+  });
+  return out;
+}
+
 /** Coarse occupancy grid over every mesh in the model, so occluders count. */
 function buildOccupancy(model, meshes, cellSize) {
   let x0 = Infinity, y0 = Infinity, z0 = Infinity;
@@ -150,7 +188,7 @@ function buildOccupancy(model, meshes, cellSize) {
       }
     }
   }
-  return { grid, shared, x0, y0, z0, nx, ny, nz, cellSize, idx };
+  return { grid, shared, x0, y0, z0, nx, ny, nz, cellSize, idx, twins: blurTwins(model) };
 }
 
 /**
@@ -165,9 +203,18 @@ function buildOccupancy(model, meshes, cellSize) {
  *
  * Default -1 means "not standing on anything", under which every occupied cell
  * blocks, which is what every caller wanted before ownership existed.
+ *
+ * A motion-blur mesh stands on the drawn mesh it is swapped with as much as
+ * on itself: see `blurTwins`.
  */
 function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
   const step = occ.cellSize * 0.7;
+  const twins = own >= 0 ? occ.twins?.get(own) : undefined;
+  const mine = (marks) => {
+    if (marks.has(own + 1)) return true;
+    if (twins !== undefined) for (const t of twins) if (marks.has(t + 1)) return true;
+    return false;
+  };
   let x = px, y = py, z = pz;
   for (let s = 0; s < maxSteps; s++) {
     x += dx * step; y += dy * step; z += dz * step;
@@ -178,7 +225,8 @@ function escapes(occ, px, py, pz, dx, dy, dz, maxSteps, own = -1) {
     const at = occ.idx(i, j, k);
     const c = occ.grid[at];
     if (c === 0 || c === own + 1) continue;
-    if (c === -1 && own >= 0 && occ.shared.get(at).has(own + 1)) continue;
+    if (c > 0 && twins !== undefined && twins.has(c - 1)) continue;
+    if (c === -1 && own >= 0 && mine(occ.shared.get(at))) continue;
     return false;
   }
   return true;
@@ -207,6 +255,7 @@ const nearKey = (i, j, k) => ((i + 512) * 1024 + (j + 512)) * 1024 + (k + 512);
 
 function buildNear(model, meshes) {
   const cells = new Map();
+  const twins = blurTwins(model);
   const cell = (v) => Math.floor(v / NEAR_CELL);
   for (const mesh of meshes) {
     // Not drawn until the car is damaged, or only when a wheel is spinning:
@@ -239,7 +288,7 @@ function buildNear(model, meshes) {
       }
     }
   }
-  return cells;
+  return { cells, twins };
 }
 
 /** Distance along the ray to triangle `t`, either face, or Infinity. */
@@ -261,13 +310,15 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
   const cell = (v) => Math.floor(v / NEAR_CELL);
   const ex = p.x + p.nx * reach, ey = p.y + p.ny * reach, ez = p.z + p.nz * reach;
   const tested = new Set();
+  // A blur rim is not covered by the rim it replaces; see `blurTwins`.
+  const twins = near.twins.get(p.mesh);
   // Every cell the segment's box touches, so a ray clipping a corner is not
   // missed: at 5 cm cells and 5 cm of reach that is at most 27 of them.
   for (let i = cell(Math.min(p.x, ex)); i <= cell(Math.max(p.x, ex)); i++) {
     for (let j = cell(Math.min(p.y, ey)); j <= cell(Math.max(p.y, ey)); j++) {
       for (let k = cell(Math.min(p.z, ez)); k <= cell(Math.max(p.z, ez)); k++) {
-        for (const t of near.get(nearKey(i, j, k)) ?? []) {
-          if (t.own === p.mesh || tested.has(t)) continue;
+        for (const t of near.cells.get(nearKey(i, j, k)) ?? []) {
+          if (t.own === p.mesh || tested.has(t) || twins?.has(t.own)) continue;
           tested.add(t);
           const d = rayTriangle(p.x, p.y, p.z, p.nx, p.ny, p.nz, t);
           if (d >= floor && d <= reach) return t.own;   // which mesh: the thing to move away from
