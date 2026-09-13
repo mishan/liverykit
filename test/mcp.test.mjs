@@ -8,7 +8,7 @@ import { loadProfile } from '../src/profile.mjs';
 import { loadLivery } from '../src/livery.mjs';
 import { createProtocolServer } from '../src/mcp/protocol.mjs';
 import { createEditorClient } from '../src/mcp/client.mjs';
-import { createToolHandler } from '../src/mcp/tools.mjs';
+import { createToolHandler, axesOf } from '../src/mcp/tools.mjs';
 import '../src/index.mjs';
 
 const ROOT = process.cwd();
@@ -141,6 +141,27 @@ test('mcp tools: render_view', async () => {
   }
 });
 
+test('a panel axis that was not measured clearly is not named', () => {
+  // Labelled by the largest component alone, the NSX's right_front_lower
+  // interior panel, measured u [1, 0, 0] and v [-1, 0, 0], ran "across the
+  // car" both ways, and a label sticker at 45 degrees ran "across" by 0.004.
+  // The planner is told to trust these for which way a stripe runs.
+  const clear = axesOf({ uAxis: [0.05, -0.1, 0.99], vAxis: [0, -0.99, 0.1] });
+  assert.deepEqual(clear, { x: 'along the car', y: 'up and down' });
+
+  const diagonal = axesOf({ uAxis: [-0.707, 0.078, 0.703], vAxis: [0, -1, 0] });
+  assert.equal(diagonal.x, null, JSON.stringify(diagonal));
+  assert.equal(diagonal.y, 'up and down');
+  assert.match(diagonal.unclear, /x runs diagonally.*across the car.*along the car/, diagonal.unclear);
+
+  const parallel = axesOf({ uAxis: [1, 0, 0], vAxis: [-1, 0, 0] });
+  assert.equal(parallel.x, null, JSON.stringify(parallel));
+  assert.equal(parallel.y, null);
+  assert.match(parallel.unclear, /both.*across the car/, parallel.unclear);
+
+  assert.equal(axesOf({}), null, 'a panel with no measured axes says nothing');
+});
+
 test('mcp tools: find_panels with filters', async () => {
   const { url, stop } = await setupTestEditor();
   try {
@@ -155,9 +176,13 @@ test('mcp tools: find_panels with filters', async () => {
     assert.ok(dataTag.panels.every((p) => p.tags.includes('left')));
     // Which way each panel's `at` runs on the car, so a stripe meant to run
     // along it is not drawn across it.
+    // An axis not measured clearly is null, and the answer says why.
     const ways = ['along the car', 'across the car', 'up and down'];
+    const said = (a) => ways.includes(a.x) && ways.includes(a.y) && a.unclear === undefined;
+    const declined = (a) => [a.x, a.y].every((w) => w === null || ways.includes(w))
+      && (a.x === null || a.y === null) && typeof a.unclear === 'string';
     assert.ok(dataTag.panels.some((p) => p.axes), 'panels say which way they run');
-    assert.ok(dataTag.panels.every((p) => !p.axes || (ways.includes(p.axes.x) && ways.includes(p.axes.y))),
+    assert.ok(dataTag.panels.every((p) => !p.axes || said(p.axes) || declined(p.axes)),
       JSON.stringify(dataTag.panels.map((p) => p.axes)));
 
     // Search by role. On this car `body` binds two textures, body and bodyRear,
