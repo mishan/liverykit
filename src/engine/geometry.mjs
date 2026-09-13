@@ -49,9 +49,16 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   let hi = [-Infinity, -Infinity, -Infinity];
 
   const claimed = new Set();
+  // Which mesh each run of triangles came from, in index order. Kept beside
+  // the groups rather than on them, since the groups travel to the browser and
+  // this is for the one question that needs a name: what is standing in front
+  // of the artwork. "DOOR_L_Handle" is something a person can find on the car;
+  // the texture the handle wears is not.
+  const parts = [];
   const emit = (meshes, group) => {
     const start = indices.length;
     for (const mesh of meshes) {
+      const from = indices.length;
       const base = positions.length / 3;
       for (let i = 0; i < mesh.vertexCount; i++) {
         const v = vertex(model, mesh, i);
@@ -65,6 +72,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         }
       }
       for (const [a, b, c] of triangles(model, mesh)) indices.push(base + a, base + b, base + c);
+      if (indices.length > from) parts.push({ name: mesh.name, start: from, count: indices.length - from });
     }
     if (indices.length > start) {
       // The material's OWN lighting constants, carried so the viewer can stop
@@ -356,6 +364,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     tangents: Float32Array.from(tangents),
     indices: Uint32Array.from(indices),
     groups,
+    parts,
     bounds: { lo, hi },
     // Where a driver's eyes sit, for the cockpit view. Computed here rather
     // than left to the caller: it needs the raw kn5 meshes, which this is
