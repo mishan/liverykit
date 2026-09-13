@@ -1672,3 +1672,25 @@ test('a piece that runs off its island is not whole, and a critic calling it cut
   }
 });
 
+test('eval overrules a critic only where the gate would', async () => {
+  // eval overruled every "cut off" the count called whole, while the gate
+  // does not for a piece a high finding names or one counted in a view the
+  // critic was not shown, so eval scored a verdict the gate never gives.
+  const { overruleCase } = await import('../autolivery/cases.mjs');
+  const measured = [
+    { id: 'clear', home: 'left', whole: true },
+    { id: 'faulted', home: 'left', whole: true },
+    { id: 'roof', home: 'top', whole: true },
+  ];
+  const cut = (ids) => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+    requirements: [], unreadable: [], notes: [], cut_off: ids.map((id) => ({ what: id, where: 'left', id })) });
+  const findings = [{ kind: 'off-mesh', severity: 'high', ids: ['faulted'] }];
+  const left = overruleCase(cut(['clear', 'faulted', 'roof']), { measured, findings, images: [{ view: 'left' }] });
+  assert.deepEqual(left.overruled.map((c) => c.id), ['clear']);
+  assert.deepEqual(left.cut_off.map((c) => c.id), ['faulted', 'roof']);
+  const sheet = overruleCase(cut(['roof']), { measured, images: [{ view: 'sheet' }] });
+  assert.deepEqual(sheet.overruled.map((c) => c.id), ['roof']);
+  assert.deepEqual(overruleCase(cut(['clear']), { images: [{ view: 'left' }] }).cut_off.map((c) => c.id), ['clear'],
+    'a case with no count overrules nothing');
+});
+
