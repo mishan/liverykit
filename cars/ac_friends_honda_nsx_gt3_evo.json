@@ -83,7 +83,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior": {
       "file": "Cockpit_LR_Colour.dds",
@@ -93,7 +94,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap_emissive"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_2": {
       "file": "INT_HR_Occlusion.dds",
@@ -105,6 +107,7 @@
         "ksPerPixelMultiMap_NMDetail",
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "bake": true
     },
     "ext_skin_sponsors": {
@@ -114,7 +117,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelMultiMap_damage_dirt"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_3": {
       "file": "INT_Electronics_Colour.dds",
@@ -124,7 +128,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "rims": {
       "file": "EXT_Rim_Colour.dds",
@@ -133,7 +138,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_mechanics_colour": {
       "file": "EXT_Mechanics_Colour.dds",
@@ -144,7 +150,8 @@
         "ksPerPixelMultiMap",
         "ksPerPixelMultiMap_emissive",
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_4": {
       "file": "INT_Net_Colour.dds",
@@ -154,7 +161,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_lights_colour": {
       "file": "EXT_Lights_Colour.dds",
@@ -164,7 +172,8 @@
       "shaders": [
         "ksPerPixelMultiMap_emissive",
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_5": {
       "file": "INT_Hood.dds",
@@ -174,7 +183,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "belts": {
       "file": "Belt_OMP_Colour.dds",
@@ -184,7 +194,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "steeringWheel": {
       "file": "INT_Steer_Colour.dds",
@@ -195,7 +206,8 @@
       "shaders": [
         "ksPerPixelMultiMap",
         "ksPerPixelMultiMap_NMDetail"
-      ]
+      ],
+      "alphaHides": false
     },
     "tyres": {
       "file": "Tyre_Dry_Colour_2.dds",
@@ -208,7 +220,8 @@
       ],
       "shaders": [
         "ksTyres"
-      ]
+      ],
+      "alphaHides": false
     },
     "glass": {
       "file": "INTERNAL_glass.dds",
@@ -219,7 +232,8 @@
       "shaders": [
         "ksPerPixelReflection",
         "ksWindscreen"
-      ]
+      ],
+      "alphaHides": true
     },
     "ext_disc_colour": {
       "file": "EXT_Disc_Colour.dds",
@@ -228,7 +242,8 @@
       "alpha": true,
       "shaders": [
         "ksBrakeDisc"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_6": {
       "file": "INT_Decals_Colour.dds",
@@ -242,7 +257,8 @@
       "shaders": [
         "ksPerPixelAT_NM",
         "ksPerPixelMultiMap_emissive"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_decals_colour": {
       "file": "EXT_Decals_Colour.dds",
@@ -256,7 +272,8 @@
       "shaders": [
         "ksPerPixelAT_NM",
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_caliper": {
       "file": "EXT_Caliper.dds",
@@ -266,7 +283,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_7": {
       "file": "INT_Bakes_2.dds",
@@ -277,6 +295,7 @@
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
       ],
+      "alphaHides": false,
       "bake": true
     },
     "glass_2": {
@@ -287,7 +306,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksBrokenGlass"
-      ]
+      ],
+      "alphaHides": true
     },
     "glass_3": {
       "file": "glass.dds",
@@ -297,7 +317,8 @@
       "shaders": [
         "ksPerPixelAlpha",
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaHides": true
     },
     "honda_emissive": {
       "file": "honda_emissive.dds",
@@ -306,7 +327,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelAlpha"
-      ]
+      ],
+      "alphaHides": true
     },
     "ext_lights_colour_yellow": {
       "file": "EXT_Lights_Colour_Yellow.dds",
@@ -316,7 +338,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap_emissive"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_banner_colour": {
       "file": "EXT_Banner_Colour.dds",
@@ -330,6 +353,7 @@
       "shaders": [
         "ksPerPixelNM"
       ],
+      "alphaHides": false,
       "notes": "The windscreen banner, and it is two-sided on one sheet: centre_mid_upper_2 (visible 0.59) is the face the world sees, and centre_mid / centre_mid_upper (visible 0) are the underside and the interior mesh, which only the driver sees. Artwork below v 0.49 shows in the cockpit and nowhere else. These panels come from the generator's own island pass, run for this texture by hand: profilegen skips a texture under `minCoverage` and the banner is two small meshes, so the role shipped with no panels at all. Seams and outlines were left out — the only seam here is between the two faces, and continuing artwork across it is the mistake this note exists to prevent."
     },
     "glass_4": {
@@ -340,7 +364,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelAlpha"
-      ]
+      ],
+      "alphaHides": true
     },
     "lumirank_3_slots_colour": {
       "file": "Lumirank_3_slots_Colour.dds",
@@ -350,7 +375,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap"
-      ]
+      ],
+      "alphaHides": false
     },
     "rims_2": {
       "file": "Rim_blur.dds",
@@ -359,7 +385,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": true
     },
     "plastic_dark": {
       "file": "plastic_dark.dds",
@@ -372,7 +399,8 @@
       ],
       "shaders": [
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "lights_aux_colour": {
       "file": "Lights_Aux_Colour.dds",
@@ -382,7 +410,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap_emissive"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_grid_2_colour": {
       "file": "EXT_Grid_2_Colour.dds",
@@ -392,7 +421,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelAT_NM"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_8": {
       "file": "INT_SAS_Colour.dds",
@@ -402,7 +432,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap_emissive"
-      ]
+      ],
+      "alphaHides": false
     },
     "mat_carbon": {
       "file": "MAT_Carbon.dds",
@@ -412,7 +443,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "plastic_white": {
       "file": "plastic_white.dds",
@@ -421,7 +453,8 @@
       "alpha": true,
       "shaders": [
         "ksPerPixelNM"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_9": {
       "file": "INT_Windshield_Clean.dds",
@@ -431,7 +464,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksWindscreen"
-      ]
+      ],
+      "alphaHides": true
     },
     "ext_grid_1_colour": {
       "file": "EXT_Grid_1_Colour.dds",
@@ -441,7 +475,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelAT_NM"
-      ]
+      ],
+      "alphaHides": false
     },
     "chrome": {
       "file": "chrome.dds",
@@ -454,7 +489,8 @@
       ],
       "shaders": [
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaHides": false
     },
     "blancpain_numberplate_silver2_emissive": {
       "file": "Blancpain_Numberplate_Silver2_Emissive.dds",
@@ -465,6 +501,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "blancpain_numberplate_silver2_colour": {
@@ -476,6 +513,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "blancpain_numberplate_silver_emissive": {
@@ -487,6 +525,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "blancpain_numberplate_silver_colour": {
@@ -498,6 +537,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "interior_10": {
@@ -508,7 +548,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixel"
-      ]
+      ],
+      "alphaHides": false
     },
     "igt_numberplate_colour": {
       "file": "IGT_Numberplate_Colour.dds",
@@ -522,6 +563,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "igt_numberplate_emissive": {
@@ -536,6 +578,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "mirror": {
@@ -546,7 +589,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelReflection"
-      ]
+      ],
+      "alphaHides": false
     },
     "interior_11": {
       "file": "int_decals.dds",
@@ -556,7 +600,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixel"
-      ]
+      ],
+      "alphaHides": false
     },
     "imsa_numberplate_l": {
       "file": "IMSA_Numberplate_L.dds",
@@ -567,6 +612,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "imsa_numberplate_l_emissive": {
@@ -578,6 +624,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "imsa_numberplate_r": {
@@ -589,6 +636,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "imsa_numberplate_r_emissive": {
@@ -600,6 +648,7 @@
       "shaders": [
         "ksPerPixelAlpha"
       ],
+      "alphaHides": true,
       "hiddenByCar": true
     },
     "interior_12": {
@@ -610,7 +659,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelAT"
-      ]
+      ],
+      "alphaHides": false
     },
     "display": {
       "file": "Display.dds",
@@ -620,7 +670,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixel"
-      ]
+      ],
+      "alphaHides": false
     },
     "radiator": {
       "file": "Radiator.dds",
@@ -630,7 +681,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelMultiMap_NMDetail"
-      ]
+      ],
+      "alphaHides": false
     },
     "sas_ready": {
       "file": "SAS_Ready.dds",
@@ -640,7 +692,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixelAlpha"
-      ]
+      ],
+      "alphaHides": true
     },
     "display_rl": {
       "file": "Display_RL.dds",
@@ -650,7 +703,8 @@
       "sizeFrom": "model",
       "shaders": [
         "ksPerPixel"
-      ]
+      ],
+      "alphaHides": false
     },
     "ext_skin_sponsors1": {
       "file": "EXT_Skin_Sponsors1.dds",
