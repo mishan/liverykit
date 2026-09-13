@@ -33,7 +33,7 @@ const round = (n) => Math.round(n * 1000) / 1000;
 
 /**
  * Each whole piece, measured in each view, judged by its HOME view: the one
- * that shows the most of it. A door roundel's home is the side view, a bonnet
+ * in which it is largest, hidden parts and all. A door roundel's home is the side view, a bonnet
  * roundel's the top. Held to the home view because that is the picture in which
  * a person would call it whole or not; half of it hidden from the front, by the
  * car's own nose, is how cars are.
@@ -62,12 +62,14 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
     const home = seen[i].reduce((a, b) => (!a || b.whole > a.whole ? b : a), null);
     if (!home) {
       // Said, because a piece with a floor that nothing measured would
-      // otherwise read as one that met it.
+      // otherwise read as one that met it — and high, as a shortfall is,
+      // because low passed a gate: a `minVisible: 1` roundel no view shows at
+      // all went through as met.
       if (p.minVisible !== null) {
         findings.push({
-          kind: 'hidden-in-view', severity: 'low', surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
-          why: `${p.id} shows fewer than ${TOO_FEW_PX} pixels in every view (${views.join(', ')}), so how much ` +
-            'of it a picture of the car shows could not be counted',
+          kind: 'hidden-in-view', severity: 'high', surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
+          why: `${p.id} shows fewer than ${TOO_FEW_PX} pixels in every view (${views.join(', ')}), so whether ` +
+            `it meets its minVisible ${p.minVisible} could not be counted. Make it bigger, or move it where a view of the car shows it.`,
         });
       }
       return;
@@ -93,7 +95,7 @@ export function inView(design, profile, fit, geometry, sheets, { views = SHEET_V
       surface: p.surface, role: p.role, panel: p.panel, ids: [p.id],
       view: home.view, visible: m.visible,
       why: `${p.id} (${p.what}) is ${Math.round(fraction * 100)}% visible in the ${home.view} view, the view ` +
-        `that shows the most of it; the rest is behind ${behind}` +
+        `in which it is largest; the rest is behind ${behind}` +
         (p.minVisible !== null ? `, and it asked for minVisible ${p.minVisible}` : '') +
         '. Move it clear of what stands in front, or make it smaller.',
     });

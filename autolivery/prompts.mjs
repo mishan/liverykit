@@ -151,8 +151,8 @@ export function measuredNote(measured) {
     const others = Object.entries(m.views ?? {}).filter(([v]) => v !== m.home).map(([v, f]) => `${v} ${pct(f)}`);
     return `- ${m.id}: ${m.what}${m.panel ? `, on ${m.panel}` : ''}. ` +
       (m.whole
-        ? `Whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it.`
-        : `Not whole: ${pct(m.visible)} of it is in the ${m.home} view, the one that shows the most of it; ` +
+        ? `Whole: ${pct(m.visible)} of it is in the ${m.home} view, the one in which it is largest.`
+        : `Not whole: ${pct(m.visible)} of it is in the ${m.home} view, the one in which it is largest; ` +
           `the rest is behind ${m.hiddenBy ?? 'another part of the car'}.`) +
       (others.length ? ` Other views: ${others.join(', ')}.` : '');
   });
