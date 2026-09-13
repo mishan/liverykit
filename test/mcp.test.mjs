@@ -171,6 +171,10 @@ test('mcp tools: find_panels with filters', async () => {
     assert.ok(!resRear.isError, resRear.content[0].text);
     const dataRear = JSON.parse(resRear.content[0].text);
     assert.ok(dataRear.count > 0 && dataRear.panels.every((p) => p.role === 'bodyRear'), 'and it can be asked for by name');
+    // ...and as paint.<role>, the form find_space and a design's paint block use.
+    const resPaint = await handler.callTool('find_panels', { role: 'paint.bodyRear' });
+    assert.ok(!resPaint.isError, resPaint.content[0].text);
+    assert.equal(JSON.parse(resPaint.content[0].text).count, dataRear.count);
 
     // Search by mirror
     const resMirror = await handler.callTool('find_panels', { hasMirror: true });

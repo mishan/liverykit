@@ -389,12 +389,15 @@ export function carOccluders(model, profile) {
 
 export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {
   const occ = buildOccupancy(model, occluders, cellSize);
+  let near = null;
   return {
     occ,
     cellSize,
     dirs: viewDirections(),
     maxSteps: Math.ceil(Math.max(occ.nx, occ.ny, occ.nz) * 1.5),
-    near: buildNear(model, occluders),
+    // Built on first use: the index of every triangle is the dearer half, and
+    // a caller asking nothing about paint never needs it.
+    get near() { return (near ??= buildNear(model, occluders)); },
   };
 }
 

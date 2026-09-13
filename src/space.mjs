@@ -216,6 +216,56 @@ export function findSpace({
 }
 
 /**
+ * The largest shape of a given proportion that fits whole on a panel, and where.
+ *
+ * A sweep of sizes, not a guess at one. Fitting only gets easier as a shape
+ * shrinks, so the limit is found by halving: about a dozen questions of the
+ * panel's sweep, which is kept, so each costs a slide and a re-measure. An
+ * agent told "a roundel about 400 mm" put a 240 mm one on a door that held
+ * 400, and a name box half the size a person had fitted by hand; asked for
+ * the limit, it gets the limit, and can stand back from it deliberately.
+ *
+ * `aspect` is height over width. What comes back is the largest `widthMm` and
+ * `heightMm` that fit with `marginMm` all round, and the spot, as `find_space`
+ * gives one.
+ */
+export function largestSpace({
+  grid = null, profile, model, prepared, role, panel, aspect = 1, marginMm = 0, cellMm, across, precisionMm = 10,
+}) {
+  if (!(aspect > 0)) {
+    throw new Error('find_space with largest needs an aspect above zero: the shape\'s height over its width.');
+  }
+  const g = grid ?? cleanGrid({ profile, model, prepared, role, panel,
+    ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
+  let lo = 0, hi = Math.min(g.boxMm[0], g.boxMm[1] / aspect);
+  let largest = null, sizesTried = 0;
+  while (hi - lo > precisionMm && sizesTried < 16) {
+    sizesTried++;
+    const w = (lo + hi) / 2;
+    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1 });
+    if (r.candidates.length) {
+      lo = w;
+      largest = { widthMm: Math.round(w), heightMm: Math.round(w * aspect), ...r.candidates[0] };
+    } else {
+      hi = w;
+    }
+  }
+  return {
+    role: g.role,
+    panel: g.name,
+    boxMm: g.boxMm.map(Math.round),
+    aspect,
+    marginMm,
+    largest,
+    sizesTried,
+    ...(largest ? {} : {
+      note: `Nothing of that proportion fits whole on ${g.name} with ${marginMm} mm of clean bodywork all round. ` +
+        'Try a smaller margin, another proportion, or another panel.',
+    }),
+  };
+}
+
+/**
  * How far rectangle `a` can grow on every side before it touches `b`: zero
  * when they touch or overlap. The larger of the two gaps, not the diagonal,
  * because minMargin grows the box by the same amount on every side, and a

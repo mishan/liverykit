@@ -1096,6 +1096,14 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     }
     assert.ok(Array.isArray(s.map) && s.map.length > 0);
 
+    // And the limit, rather than a guess: the largest shape of a proportion.
+    const big = await ed.mcp.callTool('find_space', { panel: panels[0].panel, largest: true, aspect: 0.8, marginMm: 50 });
+    assert.ok(!big.isError, big.content[0].text);
+    const L = JSON.parse(big.content[0].text);
+    assert.ok(L.largest && L.largest.widthMm > 300, JSON.stringify(L));
+    assert.ok(Math.abs(L.largest.heightMm - L.largest.widthMm * 0.8) <= 1, 'in the proportion asked for');
+    assert.ok(L.largest.marginMm >= 50 && L.largest.at.length === 4);
+
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);
     assert.match(bad.content[0].text, /No panel called "no_such_panel"/);
