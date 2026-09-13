@@ -84,7 +84,7 @@ brief ─► planner (Claude) ──── tools ────► autolivery loop
                                               │
             gate, run by the loop every round:
               ├─ check_fitment: no high or fatal finding, and every check ran
-              ├─ critic (a vision model, on a contact sheet of four views):
+              ├─ critic (a vision model, on a contact sheet of six views):
               │    { reads_at_distance, number_legible, palette_ok, matches_brief,
               │      requirements: [{ asked, present, where }], cut_off, unreadable, notes }
               └─ second look, only when fitment passed and the critic did not:
@@ -110,7 +110,9 @@ first Claude run passed by lowering its own door-number floor from 95% to 90% on
 the car, and the roundel went onto the car cut in half by the shut line the
 check had found.
 
-The critic judges a contact sheet: four labelled views in one picture. The
+The critic judges a contact sheet: six labelled views in one picture, top and front
+among them, because a stripe drawn across the bonnet instead of along it was
+ticked present by a critic that had only glimpsed the bonnet from an angle. The
 planner may ask for one too, and gets two looks a round (`--looks`), because a
 look is a turn and a turn re-reads the whole conversation. For the same reason
 the harness asks describe_car, list_treatments, list_constraints and find_panels
