@@ -744,8 +744,13 @@ test('read_design shows what a draft amounts to, and proposes nothing', async ()
     const band = d.surfaces.body.regions.filter((r) => r.id === 'band');
     assert.equal(band.length, 1, 'three operations, one region');
     assert.equal(band[0].color, 'gulf-blue');
-    const f = JSON.parse((await tools.callTool('read_fit', { proposal: draft })).content[0].text);
-    assert.deepEqual(f.regions.band.at, [0, 0.2, 1, 0.1]);
+    // The same shape as without a draft, stale ids included: a draft returning
+    // the bare fit dropped the one report the tool promises. Stale against the
+    // DRAFT, so the band it adds is not stale and an override naming nothing is.
+    const stale = { ...draft, fit: [...draft.fit, { op: 'set-override', id: 'ghost', at: [0, 0, 1, 1] }] };
+    const f = JSON.parse((await tools.callTool('read_fit', { proposal: stale })).content[0].text);
+    assert.deepEqual(f.fit.regions.band.at, [0, 0.2, 1, 0.1]);
+    assert.deepEqual(f.staleIds, ['ghost'], JSON.stringify(f));
 
     const plain = JSON.parse((await tools.callTool('read_design', {})).content[0].text);
     assert.equal(plain.surfaces.body.regions.some((r) => r.id === 'band'), false, 'the working design is untouched');

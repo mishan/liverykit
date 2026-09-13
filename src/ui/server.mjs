@@ -1335,9 +1335,21 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         // The staged design and fit ride along: what a draft AMOUNTS to is the
         // other question a caller holding a list of operations has, and this
         // is the one place that has already worked it out.
+        //
+        // Stale ids too, against the DRAFT: read_fit promises them, and a draft
+        // answering with the bare fit dropped them. Measured the way the build
+        // measures them, and said rather than swallowed if that cannot be done
+        // — fitment reports the same design as unresolvable, and the rest of
+        // this answer still stands.
+        let staleIds = null, staleIdsError;
+        try {
+          staleIds = unusedFitIds(staged.fit, fitUsage(staged.design, profile, staged.fit));
+        } catch (e) {
+          staleIdsError = e.message;
+        }
         return json(200, {
           ...fitment(staged.design, profile, staged.fit, { model }), modelError,
-          design: staged.design, fit: staged.fit,
+          design: staged.design, fit: staged.fit, staleIds, staleIdsError,
         });
       }
 

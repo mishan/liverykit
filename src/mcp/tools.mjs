@@ -135,17 +135,17 @@ async function toolListTreatments(client) {
  * amounted to was a handful of regions. Staged by the same code as a
  * proposal, so a draft the inbox would refuse is refused here too.
  */
-async function draftApplied(client, args, key) {
+async function draftApplied(client, args, shape) {
   try {
     const r = await client.checkFitment(draftOf(args));
-    return { content: [{ type: 'text', text: JSON.stringify(r[key], null, 2) }] };
+    return { content: [{ type: 'text', text: JSON.stringify(shape(r), null, 2) }] };
   } catch (e) {
     return { content: [{ type: 'text', text: e.message }], isError: true };
   }
 }
 
 async function toolReadDesign(client, args = {}) {
-  if (draftOf(args)) return draftApplied(client, args, 'design');
+  if (draftOf(args)) return draftApplied(client, args, (r) => r.design);
   const state = await client.getState();
   return {
     content: [{ type: 'text', text: JSON.stringify(state.design, null, 2) }],
@@ -153,7 +153,14 @@ async function toolReadDesign(client, args = {}) {
 }
 
 async function toolReadFit(client, args = {}) {
-  if (draftOf(args)) return draftApplied(client, args, 'fit');
+  // The same shape with a draft as without. Returning the bare fit here left
+  // out the stale ids the description promises, and changed the shape a caller
+  // parses depending on whether it passed a proposal.
+  if (draftOf(args)) {
+    return draftApplied(client, args, (r) => ({
+      fit: r.fit, staleIds: r.staleIds, ...(r.staleIdsError ? { staleIdsError: r.staleIdsError } : {}),
+    }));
+  }
   const state = await client.getState();
   const fit = state.fit;
 
