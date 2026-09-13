@@ -27,6 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
+import { MARGIN_CLEAN, FINE_MM } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -144,6 +145,13 @@ export function findSpace({
   if (!(widthMm > 0) || !(heightMm > 0)) {
     throw new Error('find_space needs a size on the car: widthMm, and heightMm (which defaults to it), above zero.');
   }
+  // Refused rather than coerced. A negative margin returned spots with less
+  // clearance than was asked for, and a count of NaN disabled both limits on
+  // the loop below, each of which walks the whole mesh.
+  checkMargin(marginMm);
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`find_space's count is how many spots to return, a whole number from 1; got ${JSON.stringify(count)}.`);
+  }
   const g = grid ?? cleanGrid({ profile, model, prepared, role, panel,
     ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
   const { boxMm, cols, rows, clean } = g;
@@ -197,6 +205,20 @@ export function findSpace({
     const onCar = v ? v.samples / v.of : 0;
     const visible = v ? v.fraction : 0;
     if (onCar < CLEAN || visible < CLEAN) continue;
+    // The margin too, as `minMargin` will hold it: the box grown by it on
+    // every side, sampled every few millimetres, against the same bar. The
+    // clearance above came from the coarse cells alone, and an edge or a
+    // fitting narrower than a cell could sit inside it and fail the constraint
+    // the caller is told to add.
+    if (marginMm > 0) {
+      const m = [shape[0] - marginMm, shape[1] - marginMm, shape[2] + marginMm, shape[3] + marginMm];
+      const fine = (mm) => Math.max(14, Math.min(160, Math.ceil(mm / FINE_MM)));
+      const around = rectVisibility(model, prepared, g.meshes,
+        [px + (m[0] / boxMm[0]) * pw, py + (m[1] / boxMm[1]) * ph,
+          ((m[2] - m[0]) / boxMm[0]) * pw, ((m[3] - m[1]) / boxMm[1]) * ph],
+        { grid: [fine(m[2] - m[0]), fine(m[3] - m[1])] });
+      if (!around || around.samples / around.of < MARGIN_CLEAN || around.fraction < MARGIN_CLEAN) continue;
+    }
     candidates.push({ at: at.map(r3), marginMm: Math.round(clearance), onCar: r2(onCar), visible: r2(visible) });
   }
 
@@ -235,6 +257,7 @@ export function largestSpace({
   if (!(aspect > 0)) {
     throw new Error('find_space with largest needs an aspect above zero: the shape\'s height over its width.');
   }
+  checkMargin(marginMm);
   const g = grid ?? cleanGrid({ profile, model, prepared, role, panel,
     ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
   let lo = 0, hi = Math.min(g.boxMm[0], g.boxMm[1] / aspect);
@@ -273,6 +296,12 @@ export function largestSpace({
  * though it is 57 mm away diagonally.
  */
 const gap = (a, b) => Math.max(0, b[0] - a[2], a[0] - b[2], b[1] - a[3], a[1] - b[3]);
+
+function checkMargin(marginMm) {
+  if (!Number.isFinite(marginMm) || marginMm < 0) {
+    throw new Error(`find_space's marginMm is clean bodywork all round in mm, zero or more; got ${JSON.stringify(marginMm)}.`);
+  }
+}
 
 /** How much of rectangle `a` rectangle `b` covers. */
 const overlapShare = (a, b) => {
