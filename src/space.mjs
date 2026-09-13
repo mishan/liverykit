@@ -210,16 +210,24 @@ export function findSpace({
     // clearance above came from the coarse cells alone, and an edge or a
     // fitting narrower than a cell could sit inside it and fail the constraint
     // the caller is told to add.
-    if (marginMm > 0) {
-      const m = [shape[0] - marginMm, shape[1] - marginMm, shape[2] + marginMm, shape[3] + marginMm];
-      const fine = (mm) => Math.max(14, Math.min(160, Math.ceil(mm / FINE_MM)));
+    const holds = (mm) => {
+      const m = [shape[0] - mm, shape[1] - mm, shape[2] + mm, shape[3] + mm];
+      const fine = (d) => Math.max(14, Math.min(160, Math.ceil(d / FINE_MM)));
       const around = rectVisibility(model, prepared, g.meshes,
         [px + (m[0] / boxMm[0]) * pw, py + (m[1] / boxMm[1]) * ph,
           ((m[2] - m[0]) / boxMm[0]) * pw, ((m[3] - m[1]) / boxMm[1]) * ph],
         { grid: [fine(m[2] - m[0]), fine(m[3] - m[1])] });
-      if (!around || around.samples / around.of < MARGIN_CLEAN || around.fraction < MARGIN_CLEAN) continue;
-    }
-    candidates.push({ at: at.map(r3), marginMm: Math.round(clearance), onCar: r2(onCar), visible: r2(visible) });
+      return !!around && around.samples / around.of >= MARGIN_CLEAN && around.fraction >= MARGIN_CLEAN;
+    };
+    if (marginMm > 0 && !holds(marginMm)) continue;
+    // And the clearance REPORTED is one the fine grid has held too. It came
+    // from the cells, and the planner is told to write it as `minMargin`: a
+    // handle narrower than a cell could sit inside it, and the margin the
+    // caller was told would pass then failed. What was asked has been held,
+    // so it is the fallback.
+    const roomy = Math.floor(clearance);
+    const held = roomy > marginMm && holds(roomy) ? roomy : marginMm;
+    candidates.push({ at: at.map(r3), marginMm: held, onCar: r2(onCar), visible: r2(visible) });
   }
 
   return {
