@@ -94,7 +94,12 @@ function preserveSkinOnlyRoles(profile, prior, report, skinsGiven) {
   if (skinsGiven) return;
   for (const [role, was] of Object.entries(prior.textures ?? {})) {
     if (was?.sizeFrom !== 'skin' || profile.textures?.[role]) continue;
-    (profile.textures ??= {})[role] = structuredClone(was);
+    // Said outright, as the generator says it of a skin-only texture it finds.
+    // Copied as it was, a prior from before `inModel` carried nothing, and the
+    // hide check sent `hide: ['suit']` to a regeneration that cannot answer —
+    // every regeneration without --skins carrying it forward still unflagged,
+    // though this one has just looked through the model and not found it.
+    (profile.textures ??= {})[role] = { ...structuredClone(was), inModel: false };
     const panels = prior.panels?.[role];
     if (panels && Object.keys(panels).length) (profile.panels ??= {})[role] = structuredClone(panels);
     else (profile.panels ??= {})[role] ??= {};
