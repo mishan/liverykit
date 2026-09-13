@@ -247,7 +247,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   try {
     ({ targets } = resolveTargets(profile, design));
   } catch (e) {
-    return { car: profile.id, checked: [], notChecked: ['everything'], findings: [
+    return { car: profile.id, checked: [], notChecked: ['everything'], unsupported: [], findings: [
       { kind: 'unresolvable', severity: 'fatal', why: e.message },
     ] };
   }
@@ -263,7 +263,15 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
   // region and stay in `checked`, so a name nobody measured read exactly
   // like one that passed.
   const unmeasured = [];
-  const skip = (s) => unmeasured.push(s);
+  // And which of those the car's PROFILE could not support, so a gate can
+  // tell them from a check the draft kept from running. RSS4's helmet has no
+  // scale, and a gate that failed every unmeasured name failed every round
+  // with a driver name on it, whatever the planner drafted.
+  const unsupported = [];
+  const skip = (s, cannot = null) => {
+    unmeasured.push(s);
+    if (cannot) unsupported.push({ ...cannot, notChecked: s });
+  };
   // Every surface's placements, for the one check that asks about two regions
   // that may be on different surfaces.
   const all = [];
@@ -328,6 +336,10 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin', 'margin'].includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
     notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : [])]), ...unmeasured],
+    // The entries of notChecked that nothing in a design can make run, each
+    // with the entry it explains. Still in notChecked, so nothing that reads
+    // only that stops seeing them.
+    unsupported,
     // Surfaces that threw. Empty is the answer callers want; non-empty means
     // the findings below cover less of the car than they appear to.
     notPlaced: failed,
@@ -1105,14 +1117,22 @@ const noScale = (p) => (p.frac.panel
   ? `its panel ${p.region.panel} has no measured scale (metresPerUv); regenerate the profile with --from-kn5`
   : 'it names no panel, so nothing says how big it is on the car');
 
+/** Whether a placement's panel is there and has no scale: the profile's gap, not the design's. */
+const scaleless = (p) => {
+  const per = p.frac.panel?.metresPerUv;
+  return Boolean(p.frac.panel) && !(Array.isArray(per) && per.length === 2 && per[0] > 0 && per[1] > 0);
+};
+
 /**
  * Text too small to read on the car.
  *
  * Needs `metresPerUv`, which only profiles regenerated since it existed carry.
  * Without it nothing is guessed, and nothing is passed either: a region that
  * declared a floor gets the high finding `margins` gives the same absence, and
- * any other is named in `notChecked`. The height is the region's box, not the
- * glyphs: `text` fits itself to the box and may end up smaller, so this is an
+ * any other is named in `notChecked` and marked as the profile's. Text placed
+ * on no panel is the design's choice, and a low finding says it went
+ * unmeasured, as `tooSmall` says of a span. The height is the region's box,
+ * not the glyphs: `text` fits itself to the box and may end up smaller, so this is an
  * upper bound and a clean one. If the box is 20 mm the lettering cannot be
  * bigger than that.
  */
@@ -1128,10 +1148,15 @@ function unreadable(placed, profile, t, say, skip) {
     // the short side of the box around it.
     const m = metresNarrowest(p.frac);
     if (m === null) {
-      if (declared === null) skip(`unreadable for ${name(t, p.id)}: ${noScale(p)}`);
-      else {
+      if (declared !== null) {
         say({ kind: 'unreadable', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
           why: `${name(t, p.id)} asks for at least ${declared} mm, and ${noScale(p)}.` });
+      } else if (!p.frac.panel) {
+        say({ kind: 'unreadable', severity: 'low', surface: t.from, ids: [p.id], measured: false,
+          why: `${name(t, p.id)} could not be measured, because ${noScale(p)}; check its size in a picture of the car.` });
+      } else {
+        skip(`unreadable for ${name(t, p.id)}: ${noScale(p)}`, scaleless(p) &&
+          { check: 'unreadable', surface: t.from, role: t.role, ids: [p.id], why: noScale(p) });
       }
       continue;
     }
@@ -1238,11 +1263,16 @@ function tooSmall(placed, t, say, size, identity, skip) {
     const is = textIs(p.region, identity);
     if (!is || !String(p.region.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? '')).trim()) continue;
     const got = letterSize(p, size, identity);
-    // Unmeasured is said, never passed. No scale is the profile's to fix, and
-    // named in `notChecked` as `unreadable` names it; a span or an angle is the
-    // design's own choice, so a low finding says so without failing a gate
-    // over something no planner could measure either.
-    if (got.noScale) { skip(`too-small for ${name(t, p.id)}: ${got.why}`); continue; }
+    // Unmeasured is said, never passed. No scale on a panel is the profile's
+    // to fix, named in `notChecked` and marked as the profile's as `unreadable`
+    // does; no panel at all, a span or an angle is the design's own choice, so
+    // a low finding says so without failing a gate over something no planner
+    // could measure either.
+    if (got.noScale && p.frac.panel) {
+      skip(`too-small for ${name(t, p.id)}: ${got.why}`, scaleless(p) &&
+        { check: 'too-small', surface: t.from, role: t.role, ids: [p.id], why: got.why });
+      continue;
+    }
     if (got.why) {
       say({ kind: 'too-small', severity: 'low', surface: t.from, panel: p.region.panel, ids: [p.id], measured: false,
         why: `${name(t, p.id)}'s letters could not be measured, because ${got.why}; check their size in a picture of the car.` });

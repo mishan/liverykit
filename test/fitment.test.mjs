@@ -272,9 +272,12 @@ test('a region that names no panel is checked, not skipped', () => {
   assert.deepEqual(over.map((f) => f.ids), [['ground', 'team']],
     'a name under a full-sheet fill is the same finding it would be on a panel');
 
-  // And the checks that need a panel say nothing rather than guessing: there
-  // is no safe area to be outside of, and no metres to be too small in.
-  assert.deepEqual(r.findings.filter((f) => ['outside-safe', 'unreadable'].includes(f.kind)), []);
+  // And the checks that need a panel do not guess: there is no safe area to be
+  // outside of, and no metres to be too small in. Size says it went unmeasured,
+  // low, rather than nothing: a name nobody measured read exactly like one
+  // that passed.
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'outside-safe'), []);
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'unreadable').map((f) => [f.severity, f.measured]), [['low', false]]);
 });
 
 test('artwork on the face of a sheet the world cannot see is reported', () => {
@@ -1405,6 +1408,44 @@ test('a size that could not be measured is named, not passed', () => {
 
   assert.deepEqual(fitment(design([team]), profile).notChecked.filter((s) => /unreadable|too-small/.test(s)), [],
     'and a panel with a scale leaves nothing unmeasured');
+});
+
+test('a size the profile cannot measure is marked as the profile\'s, and text with no panel as the design\'s', () => {
+  // RSS4's helmet, suit, gloves, crew and belts have no metresPerUv, so a
+  // driver name on the helmet was two notChecked entries, and the loop fails a
+  // round on any of them: no draft could pass, whatever the planner did. The
+  // entries stay, and say they are the profile's, so a gate can tell them from
+  // a check the draft itself prevented.
+  const driver = { id: 'driver', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.8, 0.2], text: '{team}' };
+  const unscaled = structuredClone(profile);
+  delete unscaled.panels.body.L.metresPerUv;
+
+  const r = fitment(design([driver]), unscaled);
+  const skipped = r.notChecked.filter((s) => /^(unreadable|too-small) /.test(s));
+  assert.equal(skipped.length, 2, r.notChecked.join('\n'));
+  assert.deepEqual(r.unsupported.map((u) => u.notChecked).sort(), skipped.sort(), 'each is marked as the profile\'s');
+  assert.deepEqual(r.unsupported.map((u) => u.check).sort(), ['too-small', 'unreadable']);
+  for (const u of r.unsupported) {
+    assert.deepEqual(u.ids, ['driver']);
+    assert.match(u.why, /its panel L has no measured scale/);
+  }
+
+  // A floor the design declared is still the design's promise, and still high.
+  const asked = fitment(design([{ ...driver, constraints: { minMm: 40 } }]), unscaled);
+  assert.equal(asked.findings.find((f) => f.kind === 'unreadable')?.severity, 'high');
+  assert.ok(!asked.unsupported.some((u) => u.check === 'unreadable'), 'and is not excused as the profile\'s');
+
+  // Text placed on no panel has no size because of where the design put it,
+  // as a span or an angle does: said as low and unmeasured, not left out.
+  const loose = fitment(design([{ id: 'driver', treatment: 'text', at: [0.1, 0.1, 0.3, 0.1], text: '{team}' }]), profile);
+  assert.deepEqual(loose.notChecked.filter((s) => /^(unreadable|too-small) /.test(s)), [], loose.notChecked.join('\n'));
+  assert.deepEqual(loose.unsupported, []);
+  const said = loose.findings.filter((f) => f.kind === 'unreadable' || f.kind === 'too-small');
+  assert.deepEqual(said.map((f) => [f.kind, f.severity, f.measured]).sort(),
+    [['too-small', 'low', false], ['unreadable', 'low', false]], JSON.stringify(said));
+  for (const f of said) assert.match(f.why, /names no panel/);
+
+  assert.deepEqual(fitment(design([driver]), profile).unsupported, [], 'and a panel with a scale leaves nothing to excuse');
 });
 
 test('contrast is measured whatever the palette calls a colour, and on the background the renderer paints', () => {

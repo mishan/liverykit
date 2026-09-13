@@ -338,6 +338,9 @@ async function toolCheckFitment(client, args = {}) {
       car: r.car,
       checked: r.checked ?? [],
       notChecked: r.notChecked ?? [],
+      // Which of those the car's profile cannot support. Left out, a caller
+      // gating on notChecked could only fail every draft on such a car.
+      unsupported: r.unsupported ?? [],
       notPlaced: r.notPlaced ?? [],
       // Worst first, so truncation loses the least important end.
       findings: [...findings].sort((a, b) =>
@@ -611,7 +614,8 @@ export function createToolHandler(client) {
         'Call this BEFORE proposing a fit change and ' +
         'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
         'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +
-        'findings list from a partial run does not mean the design is good. Pass `proposal` ' +
+        'findings list from a partial run does not mean the design is good. An entry also in ' +
+        '`unsupported` is one this car\'s profile cannot measure, which no draft can change. Pass `proposal` ' +
         'to measure a change BEFORE offering it: a proposal only reaches the working design ' +
         `once a person accepts it. ${PROMPT_NOTE}`,
       inputSchema: {

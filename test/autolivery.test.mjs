@@ -26,11 +26,12 @@ const ROOT = process.cwd();
 // scripts. What is under test is the harness — that the gate is the harness's
 // measurement and not the planner's word, and that nothing reaches the editor
 // until a draft has passed.
-async function fixtureEditor({ kn5 = {} } = {}) {
+async function fixtureEditor({ kn5 = {}, tweak = null } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'autolivery-'));
   const modelPath = join(dir, 'fixture.kn5');
   await writeFile(modelPath, carKn5(kn5));
   const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  tweak?.(profile);
   // Primer and nothing else, like the demo's starting design: a design that
   // paints nothing at all is refused outright, which is right for a build.
   const livery = {
@@ -721,6 +722,66 @@ test('a group that failed cannot be undeclared to pass', async () => {
     assert.equal(result.history[1].passed, false);
     assert.ok(result.history[1].failures.some((f) => /team-left: groupWith removed after it failed round 1/.test(f)),
       JSON.stringify(result.history[1].failures));
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('text on a panel the profile cannot measure can pass, and is said to be unmeasured', async () => {
+  // RSS4's helmet has no metresPerUv, so a driver name on it was two
+  // notChecked entries, and the gate failed any round that had one. Nothing a
+  // planner drafts gives a panel a scale, so no round could pass. Here the
+  // left panels have no scale, and the round's one real fault is the draft's.
+  const ed = await fixtureEditor({ tweak: (p) => {
+    for (const panels of Object.values(p.panels ?? {})) {
+      for (const pan of Object.values(panels)) if (pan.tags?.includes('left')) delete pan.metresPerUv;
+    }
+  } });
+  try {
+    const feedbacks = [];
+    const planner = {
+      async round({ n, feedback, call }) {
+        feedbacks.push(feedback);
+        const side = async (tag) => JSON.parse((await call('find_panels', { tag })).content[0].text).panels[0].panel;
+        if (n === 1) {
+          const [left, right] = [await side('left'), await side('right')];
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'ink', value: '#101014' },
+            { op: 'set-identity', key: 'driver', value: 'Ada Vance' },
+            { op: 'add-region', surface: 'surfaces.body', region: {
+              id: 'driver-left', treatment: 'text', text: '{driver}', panel: left, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
+            { op: 'add-region', surface: 'surfaces.body', region: {
+              id: 'sponsor-right', treatment: 'text', text: 'ACME', panel: right, at: [0.3, 0.45, 0.4, 0.02], color: 'ink',
+              constraints: { minMm: 100 } } },
+          ] });
+        } else {
+          await call('draft_design', { design: [{ op: 'remove-region', id: 'sponsor-right' }] });
+        }
+        await call('finish_round', { summary: `round ${n}` });
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'driver Ada Vance', present: true, where: 'left door' }],
+      cut_off: [], unreadable: [], notes: [] }) };
+    const result = await run({
+      brief: 'driver Ada Vance', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, 'run') }),
+      out: join(ed.dir, 'run'), rounds: 2, views: ['left'], shot: { width: 200, height: 150 },
+    });
+
+    assert.equal(result.passedIn, 2, JSON.stringify(result.history.map((h) => h.failures), null, 2));
+    assert.ok(result.history[0].failures.some((f) => /high unreadable: .*sponsor-right/.test(f)), JSON.stringify(result.history[0].failures));
+    assert.ok(!result.history[0].failures.some((f) => /driver-left/.test(f)),
+      `round 1 failed for what the draft did, not for what the profile cannot measure: ${JSON.stringify(result.history[0].failures)}`);
+
+    // Said everywhere a person or the planner reads, so passing is not silence.
+    for (const h of result.history) {
+      assert.deepEqual(h.fitment.unsupported.map((u) => u.check).sort(), ['too-small', 'unreadable'], JSON.stringify(h.fitment));
+    }
+    assert.match(feedbacks[1].text, /driver-left[^\n]*no measured scale/, 'the planner heard what could not be measured');
+    const { proposal } = await get(ed.url, 'api/proposal');
+    assert.equal(proposal?.id, result.proposalId);
+    assert.match(proposal.why, /not measured, because this car's profile cannot/i);
+    assert.match(proposal.why, /driver-left/);
   } finally {
     await ed.stop();
   }

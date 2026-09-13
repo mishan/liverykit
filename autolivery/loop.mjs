@@ -486,7 +486,13 @@ export async function run({
       fitment = JSON.parse(textOf(fr));
       const blocking = fitment.findings.filter((f) => f.severity === 'fatal' || f.severity === 'high');
       for (const f of blocking) reasons.push(`${f.severity} ${f.kind}: ${f.why}`);
-      if (fitment.notChecked.length) reasons.push(`checks that did not run: ${fitment.notChecked.join(', ')}`);
+      // Except a check the car's profile cannot support. RSS4's helmet has no
+      // scale, so a driver name on it could not be measured in any round, and
+      // failing the round on that failed every round whatever the planner
+      // did. It is still in the record and the proposal, just not a reason.
+      const excused = new Set((fitment.unsupported ?? []).map((u) => u.notChecked));
+      const skipped = fitment.notChecked.filter((c) => !excused.has(c));
+      if (skipped.length) reasons.push(`checks that did not run: ${skipped.join(', ')}`);
       if (fitment.notPlaced.length) reasons.push(`not placed: ${clip(fitment.notPlaced, 400)}`);
     }
 
@@ -608,6 +614,7 @@ export async function run({
         blocking: fitment.findings.filter((f) => f.severity !== 'low').map(brief),
         minor: fitment.findings.filter((f) => f.severity === 'low').map(brief),
         notChecked: fitment.notChecked,
+        unsupported: fitment.unsupported ?? [],
         notPlaced: fitment.notPlaced,
         // One line a piece rather than every view: whether it is whole where
         // it shows best, and if not, what is in front of it.
@@ -696,15 +703,20 @@ export async function run({
 
   if (passed && propose) {
     const last = history.at(-1);
+    const unmeasured = last.fitment?.unsupported ?? [];
     const why = `${summary}\n\nMeasured before it was offered: in round ${passedIn}, every fitment ` +
-      'check ran with no high or fatal finding' +
+      `check ${unmeasured.length ? 'this car\'s profile supports ' : ''}ran with no high or fatal finding` +
       (last.gates.critic === 'pass'
         ? (last.secondLook
           ? ', and a closer second look passed the renders against the brief after the critic had not.'
           : ', and the critic passed the renders against the brief.')
         : last.critic && !last.critic.error
           ? `. The critic did not pass it, and was advisory: ${(last.critic.notes ?? []).join('; ')}`
-          : `. The critic, which was advisory, could not judge it: ${last.critic?.error ?? 'it was given no views to render'}`);
+          : `. The critic, which was advisory, could not judge it: ${last.critic?.error ?? 'it was given no views to render'}`) +
+      (unmeasured.length
+        ? `\n\nNot measured, because this car's profile cannot: ` +
+          `${unmeasured.map((u) => `${u.check} for ${u.ids.join(', ')} (${u.why})`).join('; ')}.`
+        : '');
     const { r } = await traced(trace.root, 'propose_design', { design: draft.design.length, fit: draft.fit.length }, () =>
       mcp.callTool('propose_design', { why, design: draft.design, fit: draft.fit }));
     if (r.isError) {
