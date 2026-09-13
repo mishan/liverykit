@@ -7,7 +7,7 @@
  * change to the critic's prompt is tried against every past mistake before a
  * paid run discovers a new one. The renders live in autolivery/runs/, which is
  * not committed; a case whose pictures are not on this machine is skipped and
- * said to be.
+ * said to be, and a run that judged no case at all fails.
  */
 
 import { parseArgs } from 'node:util';
@@ -15,7 +15,7 @@ import { readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTrace } from './trace.mjs';
-import { score } from './cases.mjs';
+import { score, checkPatterns } from './cases.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -58,8 +58,41 @@ const quit = (m) => { console.error(`eval: ${m}`); process.exit(1); };
 const unknown = [...(wanted ?? [])].filter((id) => !set.cases.some((c) => c.id === id));
 if (unknown.length) quit(`--only names no case called ${unknown.join(', ')}; the cases are ${set.cases.map((c) => c.id).join(', ')}`);
 if (!cases.length) quit('there are no cases to judge');
+try {
+  checkPatterns(set.cases);
+} catch (e) {
+  quit(`${e.message} (in ${values.cases})`);
+}
 const maxCost = Number(values['max-cost']);
 if (!(maxCost > 0 && Number.isFinite(maxCost))) quit(`--max-cost must be a positive number of dollars, not ${values['max-cost']}`);
+
+// The pictures are read before a critic is connected or a trace begun. Every
+// case's are in runs/, which is not committed, so on any other machine every
+// case was skipped and eval reported 0 agreed and 0 not, and exited 0: green,
+// with nothing judged.
+let skipped = 0;
+const ready = [];
+for (const c of cases) {
+  const images = [];
+  let why = null;
+  for (const im of c.images) {
+    try {
+      images.push({ view: im.view, data: (await readFile(resolve(ROOT, im.path))).toString('base64') });
+    } catch (e) {
+      // Only a file that is not there is not on this machine. A bare catch said
+      // so of a directory, and of a render it had no permission to read.
+      why = e.code === 'ENOENT' ? `${im.path} is not on this machine` : `${im.path} could not be read: ${e.message}`;
+      break;
+    }
+  }
+  if (why) {
+    skipped++;
+    console.log(`- ${c.id}: skipped, ${why}`);
+    continue;
+  }
+  ready.push({ c, images });
+}
+if (!ready.length) quit(`judged nothing: all ${skipped} case(s) were skipped, so there is no agreement to report`);
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const trace = await createTrace({ dir: join(HERE, 'runs', `eval-${stamp}`), name: 'autolivery-eval', tags: ['eval'] });
@@ -86,23 +119,7 @@ if (backend === 'anthropic') {
 
 let agreed = 0;
 let disagreed = 0;
-let skipped = 0;
-for (const c of cases) {
-  const images = [];
-  let absent = null;
-  for (const im of c.images) {
-    try {
-      images.push({ view: im.view, data: (await readFile(resolve(ROOT, im.path))).toString('base64') });
-    } catch {
-      absent = im.path;
-      break;
-    }
-  }
-  if (absent) {
-    skipped++;
-    console.log(`- ${c.id}: skipped, ${absent} is not on this machine`);
-    continue;
-  }
+for (const { c, images } of ready) {
   let v;
   try {
     v = await critic.judge({

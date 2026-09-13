@@ -161,9 +161,10 @@ draft as one round.
 real runs, each with a verdict a person gave or checked by eye. It runs the local
 critic by default, so a prompt change is tried against every past mistake before a
 paid run finds a new one. The renders stay in `runs/`, which is not committed, so a
-case whose pictures are missing is skipped. On its first run the local critic
-agreed with the person on 2 of 8. It called a whole roundel "cut off" in 4 of the 6
-cases that had one, and those false alarms account for most of the wasted rounds.
+case whose pictures are missing is skipped, and a run that judged none fails. On
+its first run the local critic agreed with the person on 2 of 8. It called a whole
+roundel "cut off" in 4 of the 6 cases that had one, and those false alarms account
+for most of the wasted rounds.
 
 ## The trust boundary
 
