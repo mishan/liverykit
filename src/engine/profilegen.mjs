@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, blends } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -178,6 +178,12 @@ export async function profileFromKn5(path, {
         (hides.unmatched.length ? `; ${hides.unmatched.length} HIDE pattern(s) matched nothing: ${hides.unmatched.join(', ')}` : '') +
         (skinOnly.length ? `; ${skinOnly.length} apply only to some skins and were not applied` : ''));
   }
+  // What can stand in front of paint: the same meshes `fitment` casts against,
+  // so a panel's `visible` and the check that reads it agree. Every mesh used
+  // to count here, and once the visibility cast learned to find a fitting
+  // standing flush on the paint, the NSX's sixteen door plates — hidden by
+  // its config, drawn by nothing — took its doors from 88% visible to 56%.
+  const occluders = carOccluders(model, { hiddenByCar: { meshes: Object.fromEntries(hides?.hidden ?? []) } });
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -422,14 +428,14 @@ export async function profileFromKn5(path, {
     // rolled out as a strip and one laid out as a disc want different
     // artwork, and the texture cannot say which it is. See wheels.mjs.
     const wheels = measureWheels(model, keep);
-    // Every mesh occludes, not just the painted ones — a wheel hides bodywork
-    // as effectively as bodywork does.
+    // Every drawn mesh occludes, not just the painted ones — a wheel hides
+    // bodywork as effectively as bodywork does.
     if (visibility) {
-      computeSafeAreas(model, keep, { occluders: model.meshes, log });
+      computeSafeAreas(model, keep, { occluders, log });
       // Visibility isn't a property of a surface, it's a property of a surface
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
-      if (eye) computeCockpitVisibility(model, keep, { eye, occluders: model.meshes, log });
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, log });
     }
 
     log(`  ${role.padEnd(8)} ${texName.padEnd(26)} ${islands.length} islands, ${keep.length} above threshold`);

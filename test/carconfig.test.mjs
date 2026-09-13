@@ -115,6 +115,47 @@ test('a profile records what the car hides, and a texture worn only by hidden me
   assert.equal(Object.values(plain.textures)[0].hiddenByCar, undefined);
 });
 
+test('a mesh the car hides stands in front of nothing when the profile measures visibility', async () => {
+  // The NSX's sixteen door plates are hidden by its config and drawn by
+  // nothing, and `fitment` already leaves them out of the cast. The profile
+  // did not: once the cast stopped lifting each ray 4 cm clear of the paint,
+  // the plates took the doors from 88% visible to 56%, and every tag and safe
+  // area that reads `visible` moved with them.
+  // A voxel out from the left flank, and in small triangles: occupancy samples
+  // a triangle at most twelve times along a side, so one 2.4 m triangle is a
+  // sieve. A real plate is small and dense.
+  const x = 0.95 + 0.03, N = 40;
+  const plate = { name: 'PLATE_L', verts: [], indices: [] };
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      plate.verts.push(vert(x, 0.2 + 1.1 * (j / N), -1.2 + 2.4 * (i / N), 0.99 + 0.005 * (i / N), 0.99 + 0.005 * (j / N), [1, 0, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      plate.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const leftOf = async (kn5, config) => {
+    const dir = await mkdtemp(join(tmpdir(), 'lk-occl-'));
+    await writeFile(join(dir, 'fixture.kn5'), kn5);
+    if (config) {
+      await mkdir(join(dir, 'extension'));
+      await writeFile(join(dir, 'extension', 'ext_config.ini'), config);
+    }
+    const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+    const panels = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+    return panels.find((q) => Math.abs(q.rect[0] - 0.02) < 0.01 && Math.abs(q.rect[1] - 0.02) < 0.01).visible;
+  };
+
+  const bare = await leftOf(carKn5());
+  const plated = await leftOf(carKn5({ extraMeshes: [plate] }));
+  const hidden = await leftOf(carKn5({ extraMeshes: [plate] }), '[MODEL_REPLACEMENT_...]\nHIDE=PLATE_L\n');
+  assert.ok(plated < bare - 0.2, `a drawn plate covers the flank: ${plated} against ${bare}`);
+  assert.ok(Math.abs(hidden - bare) < 0.02, `a hidden one covers nothing: ${hidden} against ${bare}`);
+});
+
 test('a config that exists and cannot be read stops the profile rather than being read as absent', async () => {
   // Absent is the common case and is not an error. Unreadable is a different
   // fact wearing the same clothes: the car has hide rules, they were not
