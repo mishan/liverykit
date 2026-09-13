@@ -50,7 +50,7 @@ const dist = (a, b) => (Array.isArray(a) && Array.isArray(b)
 export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   const report = {
     roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
-    name: null, skinOnly: [], dangling: [],
+    name: null, skinOnly: [], dangling: [], textureNotes: [],
   };
   if (!prior) return report;
 
@@ -61,6 +61,7 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   preserveSkinOnlyRoles(profile, prior, report, skinsGiven);
   preserveBlocks(profile, prior, report);
   preserveTextureSizes(profile, prior, report);
+  preserveTextureNotes(profile, prior, report);
   preserveUnmeasuredPanels(profile, prior, report);
   preserveAliases(profile, prior, report);
   dropDanglingBindings(profile, report);
@@ -243,8 +244,25 @@ function preserveTextureSizes(profile, prior, report) {
     now.modelSize = [...was.modelSize];
     now.width = was.width;
     now.height = was.height;
-    if (was.notes && !now.notes) now.notes = was.notes;
     report.sizes.push({ role, width: was.width, height: was.height, modelSize: now.modelSize });
+  }
+}
+
+/**
+ * A note a person wrote on one texture.
+ *
+ * It used to travel only with a hand-set size, above. The NSX's windscreen
+ * banner had hand-written panels, kept by `preserveUnmeasuredPanels`, and a
+ * page on why its two faces must never be spanned — and no size override, so
+ * a regeneration kept the panels and dropped the reason for them. A model has
+ * nothing to say about a note, so any texture still here keeps its own.
+ */
+function preserveTextureNotes(profile, prior, report) {
+  for (const [role, was] of Object.entries(prior.textures ?? {})) {
+    const now = profile.textures?.[role];
+    if (!now || was?.notes === undefined || now.notes !== undefined) continue;
+    now.notes = structuredClone(was.notes);
+    report.textureNotes.push(role);
   }
 }
 
@@ -320,6 +338,9 @@ export function describeHandwork(report, source) {
   for (const s of report.sizes) {
     out.push(`  kept hand-set size for ${s.role}: ${s.width}x${s.height} ` +
       `(the model says ${s.modelSize.join('x')})`);
+  }
+  if (report.textureNotes.length) {
+    out.push(`  kept the hand-written note on ${report.textureNotes.length} texture(s): ${report.textureNotes.join(', ')}`);
   }
   if (report.panels.length) {
     out.push(`  kept hand-written panels for ${report.panels.length} role(s) the model ` +
