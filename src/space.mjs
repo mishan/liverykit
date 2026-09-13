@@ -139,7 +139,7 @@ export function cleanGrid({ profile, model, prepared, role, panel: asked, cellMm
 
 export function findSpace({
   grid = null, profile, model, prepared, role, panel,
-  widthMm, heightMm = widthMm, marginMm = 0, count = 5, cellMm, across,
+  widthMm, heightMm = widthMm, marginMm = 0, count = 5, tries = count * 3, cellMm, across,
 }) {
   if (!(widthMm > 0) || !(heightMm > 0)) {
     throw new Error('find_space needs a size on the car: widthMm, and heightMm (which defaults to it), above zero.');
@@ -188,7 +188,7 @@ export function findSpace({
   const tried = [];
   const candidates = [];
   for (const { shape, clearance } of found) {
-    if (candidates.length >= count || tried.length >= count * 3) break;
+    if (candidates.length >= count || tried.length >= tries) break;
     if (tried.some((s) => overlapShare(s, shape) > 0.5)) continue;
     tried.push(shape);
     const at = [shape[0] / boxMm[0], shape[1] / boxMm[1], widthMm / boxMm[0], heightMm / boxMm[1]];
@@ -239,17 +239,22 @@ export function largestSpace({
     ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
   let lo = 0, hi = Math.min(g.boxMm[0], g.boxMm[1] / aspect);
   let largest = null, sizesTried = 0;
+  // More spots tried per size than find_space's own three for one. A size
+  // judged not to fit is never asked about again, so three roomy spots
+  // failing the fine check on a fitting narrower than a cell, with a fourth
+  // clear, reported 300 mm on a panel that held 390.
+  const tries = 12;
   while (hi - lo > precisionMm && sizesTried < 16) {
     sizesTried++;
     const w = (lo + hi) / 2;
-    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1 });
+    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries });
     if (r.candidates.length) {
       lo = w;
       // Reported at a size that was itself measured. Rounded to the nearest
       // millimetre, the size could be larger than the shape that passed, and
       // the spot, clearance and fractions beside it were for another shape.
       const fw = Math.floor(w), fh = Math.floor(w * aspect);
-      const at = fw > 0 && fh > 0 ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1 }) : null;
+      const at = fw > 0 && fh > 0 ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1, tries }) : null;
       if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
     } else {
       hi = w;

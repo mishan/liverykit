@@ -995,6 +995,35 @@ test('find_space can sweep sizes and say how big a shape of a given proportion c
   assert.throws(() => largestSpace({ grid, model: half, prepared, aspect: 0 }), /aspect above zero/);
 });
 
+test('the sweep keeps looking past three spots that fail the fine check', async () => {
+  // Two fittings 30 mm wide stand proud of a 1600 x 400 mm panel, between the
+  // coarse samples, so every cell reads clean. Any 390 mm square that starts
+  // left of 565 mm crosses one; the spots the sweep tries first all do, and
+  // one further along does not. Given three fine checks a size, the sweep
+  // judged 350 mm not to fit and reported 300 on a panel that holds 390.
+  const { findSpace, largestSpace, cleanGrid } = await import('../src/space.mjs');
+  const sheet = plane({ rows: 8, cols: 8 });
+  sheet.meshes[0].world[5] = 0.25;                  // 1.6 m long, 0.4 m tall
+  const bar = (x) => {
+    const m = { ...sheet.meshes[0], materialId: 1, world: [...sheet.meshes[0].world] };
+    m.world[0] = 0.03 / 1.6; m.world[12] = x; m.world[14] = 0.005;
+    return m;
+  };
+  const model = { ...sheet, materials: [...sheet.materials, { slots: { txDiffuse: 'plate.dds' } }],
+    meshes: [sheet.meshes[0], bar(0.335), bar(0.535)] };
+  const long = { ...profile, panels: { body: { L: { ...profile.panels.body.L, metresPerUv: [4, 1] } } } };
+  const prepared = occupancyFor(model);
+  const grid = cleanGrid({ profile: long, model, prepared, role: 'body', panel: 'L', cellMm: 100, across: 2 });
+  assert.ok(grid.clean.every((row) => row.every(Boolean)), 'the coarse sweep does not see the fittings');
+
+  const r = largestSpace({ grid, model, prepared, aspect: 1 });
+  assert.ok(r.largest?.widthMm >= 380, `the panel holds a 390 mm square: ${JSON.stringify(r)}`);
+  assert.ok(r.largest.at[0] * 1600 >= 565 - 1, `beyond the fittings: ${JSON.stringify(r.largest)}`);
+  // Other callers keep their budget: five spots, three tries each.
+  assert.deepEqual(findSpace({ grid, model, prepared, widthMm: 390, count: 1 }).candidates, [],
+    'find_space asked for one spot still stops after three');
+});
+
 test('a surface bound to two textures is asked about on the one that has the panel', async () => {
   // A formula car's body binds body AND bodyRear. Asked for a panel only the
   // second has, taking the first bound texture reported the panel absent.
