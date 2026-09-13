@@ -23,7 +23,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { accessSync, statSync, constants } from 'node:fs';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -470,6 +470,12 @@ async function inBrowser(driver, {
   await new Promise((ok) => proxy.close(ok));
   if (typeof real.server.closeAllConnections === 'function') real.server.closeAllConnections();
   await new Promise((ok) => real.server.close(ok));
+  // Before the assertions, so a failing run cleans up too. Nothing removed the
+  // profile, and each launch leaves one of about 40 MB: 240 of them, 7.8 GB,
+  // filled a tmpfs /tmp until the suite began failing with ENOSPC somewhere
+  // unrelated. The group was SIGKILLed above, so nothing is still writing to it;
+  // the retries cover a process the kernel has not reaped yet.
+  await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
   assert.ok(report, 'the browser never reported back. ' + child.why(waited)
     + '\n' + howFar(trail));
