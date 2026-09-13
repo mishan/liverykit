@@ -438,14 +438,25 @@ export async function run({
     // for the check below, which compares this round with the last.
     let standing = null;
     let effective = null;
+    let unread = null;
     const { r: rd } = await traced(span, 'read_design', { proposal: '(the draft)' }, () =>
       mcp.callTool('read_design', { proposal: draft }));
-    if (!rd.isError) {
+    if (rd.isError) unread = textOf(rd);
+    else {
       try {
         effective = JSON.parse(textOf(rd));
         standing = JSON.stringify({ palette: effective.palette, identity: effective.identity,
           surfaces: effective.surfaces, paint: effective.paint });
-      } catch { /* left out rather than guessed */ }
+      } catch (e) {
+        unread = `its answer was not JSON (${e.message})`;
+      }
+    }
+    // The gate breaking, not a pass. Without the design the draft amounts to,
+    // no constraint can be held to what it was last round, and the next round
+    // could loosen the one that failed with nothing to notice.
+    if (unread) {
+      reasons.push(`read_design could not say what the draft amounts to, so no constraint could be held to ` +
+        `last round's: ${clip(unread, 300)}`);
     }
 
     // A constraint that failed, lowered the next round, is the planner
@@ -470,9 +481,7 @@ export async function run({
     // What the renderer counted of each piece meant to be seen whole, told to
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
-    const against = new Set((fitment?.findings ?? [])
-      .filter((f) => f.severity === 'fatal' || f.severity === 'high').flatMap((f) => f.ids ?? []).map(String));
-    const whole = new Set((measured ?? []).filter((m) => m.whole && !against.has(m.id)).map((m) => m.id));
+    const whole = wholeIds(measured, fitment?.findings);
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
@@ -500,9 +509,10 @@ export async function run({
     // Asked of the referee when there is one (Claude, beside a local critic),
     // told what the first look flagged, and shown full-size side views. Its
     // verdict decides and both are kept. A round that failed fitment has to
-    // be revised anyway, so it costs no second look.
+    // be revised anyway, so it costs no second look — and nor does one whose
+    // critic is advisory, since its verdict gates nothing and the look is paid.
     let second = null;
-    if (fitmentPass && !criticPass && verdict && !verdict.error && closer.length) {
+    if (criticGates && fitmentPass && !criticPass && verdict && !verdict.error && closer.length) {
       const closeImages = [];
       const missed = [];
       for (const view of closer) {
@@ -565,6 +575,7 @@ export async function run({
     // the one that passed. ERROR is kept for the gate itself breaking: a
     // render, the fitment check, or a verdict that did not come back.
     const broke = fr.isError ? `check_fitment refused the draft: ${textOf(fr)}`
+      : unread ? `read_design: ${unread}`
       : views.length && !images.length ? 'no render came back'
         : verdict?.error ? `the critic: ${verdict.error}`
           : second?.error ? `the second look: ${second.error}` : null;
@@ -620,24 +631,52 @@ export async function run({
   const { passed } = result;
 
   if (passed && propose) {
-    const last = history.at(-1);
-    const why = `${summary}\n\nMeasured before it was offered: in round ${passedIn}, every fitment ` +
-      'check ran with no high or fatal finding' +
-      (last.gates.critic === 'pass'
-        ? (last.secondLook
-          ? ', and a closer second look passed the renders against the brief after the critic had not.'
-          : ', and the critic passed the renders against the brief.')
-        : `. The critic did not pass it, and was advisory: ${(last.critic?.notes ?? []).join('; ')}`);
-    const { r } = await traced(trace.root, 'propose_design', { design: draft.design.length, fit: draft.fit.length }, () =>
-      mcp.callTool('propose_design', { why, design: draft.design, fit: draft.fit }));
-    if (r.isError) {
-      result.proposalError = textOf(r);
-      log(`  ✗ propose_design — ${textOf(r)}`);
-    } else {
-      result.proposalId = JSON.parse(textOf(r)).proposalId;
-    }
+    Object.assign(result, await proposeDesign(result, async (args) => (await traced(trace.root, 'propose_design',
+      { design: args.design.length, fit: args.fit.length }, () => mcp.callTool('propose_design', args))).r));
+    if (result.proposalError) log(`  ✗ propose_design — ${result.proposalError}`);
   }
 
   await save(result);
   return result;
+}
+
+/**
+ * Offer a passed run's draft to the editor's inbox, saying how it was measured.
+ *
+ * Apart from `run` because a run is not its only caller. An editor holds one
+ * proposal at a time, so a pass whose proposal was refused — a leftover from
+ * the last demo is how — existed only in result.json, and the one way back
+ * into the inbox was paying for another run. `--propose <run dir>` sends it
+ * from there. `send` makes the call, so each caller traces it its own way.
+ */
+export async function proposeDesign(result, send) {
+  const last = result.history.at(-1);
+  const why = `${result.summary}\n\nMeasured before it was offered: in round ${result.passedIn}, every fitment ` +
+    'check ran with no high or fatal finding' +
+    (last.gates.critic === 'pass'
+      ? (last.secondLook
+        ? ', and a closer second look passed the renders against the brief after the critic had not.'
+        : ', and the critic passed the renders against the brief.')
+      : `. The critic did not pass it, and was advisory: ${(last.critic?.notes ?? []).join('; ')}`);
+  const r = await send({ why, design: result.draft.design, fit: result.draft.fit });
+  return r.isError ? { proposalError: textOf(r) } : { proposalId: JSON.parse(textOf(r)).proposalId };
+}
+
+/**
+ * Which pieces the renderer counted whole, for `overrule`: by piece id, and
+ * by the region's own id, which is what `lastGate.failed` goes by. A high
+ * finding on `band@left_mid` protected nothing called `band` here, because
+ * this kept the piece's id and that the region's. A region is whole when
+ * every piece of it is, and none of it with a high or fatal finding counts.
+ */
+export function wholeIds(measured, findings) {
+  const base = (id) => String(id).split('@')[0];
+  const against = new Set((findings ?? []).filter((f) => f.severity === 'fatal' || f.severity === 'high')
+    .flatMap((f) => f.ids ?? []).map(base));
+  const pieces = (measured ?? []).filter((m) => !against.has(base(m.id)));
+  const whole = new Set(pieces.filter((m) => m.whole).map((m) => m.id));
+  for (const id of new Set(pieces.map((m) => base(m.id)))) {
+    if (pieces.filter((m) => base(m.id) === id).every((m) => m.whole)) whole.add(id);
+  }
+  return whole;
 }
