@@ -55,6 +55,8 @@ async function fixtureEditor() {
 }
 
 const get = async (url, path) => (await fetch(new URL(path, url).href)).json();
+const cli = (script, ...args) => new Promise((ok) => execFile(process.execPath,
+  [join(ROOT, 'autolivery', script), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
 
 test('the number group the planner is told to lay out clears the disc with room to spare', async () => {
   // As first written the roundel was 60% of an aspect-0.75 group and the name
@@ -1201,8 +1203,6 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     // A run records the working design it started from, and a replay in front
     // of another one replays different operations, so it is refused.
     assert.equal(original.base, 'b1');
-    const cli = (script, ...args) => new Promise((ok) => execFile(process.execPath,
-      [join(ROOT, 'autolivery', script), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
     const moved = join(ed.dir, 'moved');
     await mkdir(moved);
     await writeFile(join(moved, 'result.json'), JSON.stringify({ brief: 'b', base: 'not-this-design', passed: false,
@@ -1211,12 +1211,62 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     assert.equal(wrong.code, 1);
     assert.match(wrong.stderr, /--replay: the editor's working design is not the one/);
 
+    // A replay judges the drafts against the brief they were drafted for; one
+    // typed beside it is refused, not silently judged against instead.
+    const briefed = await cli('bin.mjs', '--replay', moved, '--editor', 'http://127.0.0.1:1/', 'a', 'different', 'brief');
+    assert.equal(briefed.code, 1);
+    assert.match(briefed.stderr, /--replay judges a run against the brief it was given/);
+    assert.match(briefed.stderr, /"a different brief"/);
+
     // And the critic's evaluator refuses a case it does not have, and a cost
     // cap that is not a number, before judging or paying for anything.
     const typo = await cli('eval.mjs', '--only', 'no-such-case');
     assert.equal(typo.code, 1);
     assert.match(typo.stderr, /--only names no case called no-such-case/);
     assert.match((await cli('eval.mjs', '--max-cost', 'nope')).stderr, /--max-cost must be a positive number of dollars, not nope/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a replay is held to the fit its run began from, and an older record says it cannot check one', async () => {
+  // The fingerprint covered the design alone, so an editor opened with another
+  // --fit took the recorded draft_fit operations onto a different fit and the
+  // replay passed its own check.
+  const { designDigest, checkBase } = await import('../autolivery/replay.mjs');
+  const ed = await fixtureEditor();
+  try {
+    const before = await designDigest(ed.mcp);
+    assert.match(before.design, /^[0-9a-f]{16}$/);
+    assert.match(before.fit, /^[0-9a-f]{16}$/);
+    const { fit } = await get(ed.url, '/api/state');
+    const saved = await fetch(new URL('/api/fit', ed.url).href, { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...fit, regions: { ghost: { drop: true } } }) });
+    assert.equal(saved.status, 200, await saved.text());
+    const after = await designDigest(ed.mcp);
+    assert.equal(after.design, before.design, 'the design did not change');
+    assert.notEqual(after.fit, before.fit, 'the fit did');
+
+    const recorded = join(ed.dir, 'other-fit');
+    await mkdir(recorded);
+    await writeFile(join(recorded, 'result.json'), JSON.stringify({ brief: 'b', base: before, passed: false,
+      history: [{ draft: { design: [], fit: [] }, summary: 's' }] }));
+    const wrong = await cli('bin.mjs', '--replay', recorded, '--editor', ed.url);
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.stderr, /--replay: the editor's working fit is not the one/);
+
+    // A run recorded before the fit was fingerprinted holds the design's alone.
+    // It still refuses another design, and says plainly that the fit is unchecked
+    // rather than passing it or failing a run that may well be right.
+    const dir = 'runs/x';
+    assert.deepEqual(checkBase({ dir, base: after }, after), {});
+    assert.match(checkBase({ dir, base: before }, after).error, /working fit is not the one runs\/x started from/);
+    assert.match(checkBase({ dir, base: { design: 'other', fit: after.fit } }, after).error, /working design is not the one/);
+    const legacy = checkBase({ dir, base: after.design }, after);
+    assert.equal(legacy.error, undefined);
+    assert.match(legacy.note, /recorded the design it started from but not the fit, so the replay cannot check the fit/);
+    assert.match(checkBase({ dir, base: 'other' }, after).error, /working design is not the one/);
+    assert.match(checkBase({ dir }, after).note, /did not record the design it started from/);
   } finally {
     await ed.stop();
   }

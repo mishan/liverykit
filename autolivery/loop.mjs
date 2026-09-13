@@ -633,8 +633,8 @@ export async function run({
   }
 
   const passed = passedIn !== null;
-  // `base` identifies the working design the run started from, which its
-  // operations were written against: a replay onto another design is not one.
+  // `base` identifies the working design and fit the run started from, which
+  // its operations were written against: a replay onto another is not one.
   const result = { brief: theBrief, ...(base ? { base } : {}), passed, passedIn, rounds: history.length, summary, draft, history,
     ...(stopped ? { stopped } : {}) };
 

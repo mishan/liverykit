@@ -1,22 +1,14 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { createHash } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
 import { run } from './loop.mjs';
-import { loadRecording, createReplayPlanner } from './replay.mjs';
+import { loadRecording, createReplayPlanner, designDigest, checkBase } from './replay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVERYKIT = resolve(HERE, '../bin/liverykit.mjs');
-
-/** A short fingerprint of the editor's working design, or null if it could not be read. */
-async function designDigest(mcp) {
-  const r = await mcp.callTool('read_design', {});
-  const text = r.isError ? null : r.content?.[0]?.text;
-  return text ? createHash('sha256').update(text).digest('hex').slice(0, 16) : null;
-}
 
 const USAGE = `autolivery — give it a brief; it designs a livery, fits it to the car's real
 model, and revises until the fitment check and a critic both pass. The result
@@ -37,9 +29,10 @@ The loop:
   --no-seed              let the planner fetch the car's description itself, rather
                          than starting with it in its first message
   --replay <run dir>     no planner: put back what that run drafted, round by
-                         round, and judge it with today's gate. The brief comes
-                         from the run, the critic and second look default to the
-                         local server, and nothing is proposed: free, by default
+                         round, and judge it with today's gate against the run's
+                         own brief, so give none. The critic and second look
+                         default to the local server, and nothing is proposed:
+                         free, by default
   --out <dir>            renders, trace and result.json (default autolivery/runs/<time>)
   --no-propose           keep the passing design out of the editor's inbox
 
@@ -115,7 +108,13 @@ const fail = (m) => {
 const log = (m) => console.log(m);
 
 // A replay brings its own brief and its own number of rounds: it is the same
-// designs, asked of today's gate.
+// designs, asked of today's gate. A brief typed beside --replay used to replace
+// the recorded one without a word, and the drafts were judged against something
+// they were never asked to be.
+if (values.replay && positionals.length) {
+  fail(`--replay judges a run against the brief it was given, and takes no other: "${positionals.join(' ')}" ` +
+    'would have replaced it. Drop it, or run that brief without --replay.');
+}
 let recording = null;
 if (values.replay) {
   try {
@@ -125,7 +124,7 @@ if (values.replay) {
   }
 }
 const replaying = Boolean(recording);
-const brief = positionals.join(' ') || recording?.brief || '';
+const brief = replaying ? (recording.brief ?? '') : positionals.join(' ');
 const rounds = replaying ? recording.rounds.length : Number(values.rounds);
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
@@ -178,29 +177,29 @@ try {
 } catch (e) {
   fail(e.message);
 }
-// Which working design the run starts from. A draft is operations on it, so a
-// replay put in front of another design — after a proposal was accepted, or
-// with another livery open — replays different operations and is not a replay.
-// A run that cannot say what it started from is not started: its replay could
-// check nothing.
+// Which working design and fit the run starts from. A draft is operations on
+// both, so a replay put in front of another — after a proposal was accepted,
+// with another livery open, or with the editor started on another --fit —
+// replays different operations and is not a replay. A run that cannot say what
+// it started from is not started: its replay could check nothing.
 let base = null;
 try {
   base = await designDigest(mcp);
 } catch (e) {
   mcp.close();
-  fail(`could not read the editor's working design: ${e.message}`);
+  fail(`could not read the editor's working design and fit: ${e.message}`);
 }
 if (!base) {
   mcp.close();
-  fail("could not read the editor's working design, so this run could not record what it starts from");
+  fail("could not read the editor's working design and fit, so this run could not record what it starts from");
 }
-if (replaying && recording.base && recording.base !== base) {
-  mcp.close();
-  fail(`--replay: the editor's working design is not the one ${recording.dir} started from, so its ` +
-    'operations would land on a different design. Open the livery that run was made against, as it was then.');
-}
-if (replaying && !recording.base) {
-  log('  (this run did not record the design it started from, so the replay cannot check the editor holds it)');
+if (replaying) {
+  const { error, note } = checkBase(recording, base);
+  if (error) {
+    mcp.close();
+    fail(`--replay: ${error}`);
+  }
+  if (note) log(`  (${note})`);
 }
 
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
