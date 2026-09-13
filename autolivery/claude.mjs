@@ -1,5 +1,5 @@
 import { clip, costOf, llmAttributes } from './trace.mjs';
-import { PLANNER_SYSTEM, CRITIC_SYSTEM, VERDICT, verdictOf, cutOff, NO_CALL, recheckOf } from './prompts.mjs';
+import { PLANNER_SYSTEM, CRITIC_SYSTEM, VERDICT, verdictOf, cutOff, NO_CALL, recheckOf, measuredNote } from './prompts.mjs';
 
 /**
  * The two model-shaped parts of the loop, played by Claude: a planner that
@@ -182,13 +182,15 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
 
 export function createCritic({ client, model, effort, trace, fallback = true, budget = null }) {
   return {
-    async judge({ brief, summary, images, parent, recheck = null, name = 'critic' }) {
+    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null }) {
       const content = [];
       for (const im of images) {
         content.push({ type: 'text', text: `${im.view} view:` });
         content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: im.data } });
       }
       content.push({ type: 'text', text: `The brief:\n${brief}\n\nWhat the designer says it is:\n${summary || '(nothing)'}` });
+      const note = measuredNote(measured);
+      if (note) content.push({ type: 'text', text: note });
       if (recheck) content.push({ type: 'text', text: recheckOf(recheck) });
       const res = await ask(client, {
         model,

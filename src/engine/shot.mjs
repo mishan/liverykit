@@ -453,6 +453,40 @@ function sampleTexel(tex, u, v, wrap, out) {
 }
 
 /**
+ * What a named view is looking at: its angles, the model's bounds, and the lens.
+ *
+ * One function for the picture and for the measurement of what a picture
+ * shows (`piecesInView`), because the two are only worth comparing if they are
+ * the same camera. Everything here scales with the frame, so a measurement
+ * taken at one size describes a picture taken at another.
+ */
+function viewFrame(positions, view, width, height) {
+  // hasOwn rather than a lookup with a fallback: `VIEWS['constructor']` is
+  // truthy and has no yaw, which yields NaN everywhere downstream and a picture
+  // that looks like an empty stage rather than an error.
+  //
+  // RESOLVED ONCE and passed on. This was guarded here and then looked up
+  // again, unguarded, on the way into frameCamera — so the fallback protected
+  // the projection and the camera got the NaN anyway, which is the same empty
+  // stage by a longer route. One name, used by both.
+  const angles = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
+      if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
+    }
+  }
+  return {
+    angles, lo, hi,
+    span: Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 4,
+    focal: (height / 2) / Math.tan(0.32),
+    centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
+  };
+}
+
+/**
  * Render the model to raw RGBA.
  *
  * `sheets` maps a sheetKey to rasterised artwork — see above.
@@ -492,34 +526,15 @@ export function rasterise(model, groups, sheets, {
   const ss = Math.max(1, Math.min(4, Math.round(samples) || 1));
   const width = outWidth * ss;
   const height = outHeight * ss;
-  // hasOwn rather than a lookup with a fallback: `VIEWS['constructor']` is
-  // truthy and has no yaw, which yields NaN everywhere downstream and a picture
-  // that looks like an empty stage rather than an error.
-  //
-  // RESOLVED ONCE and passed on. This was guarded here and then looked up
-  // again, unguarded, on the way into frameCamera — so the fallback protected
-  // the projection and the camera got the NaN anyway, which is the same empty
-  // stage by a longer route. One name, used by both.
-  const angles = Object.hasOwn(VIEWS, view) ? VIEWS[view] : VIEWS.left;
-  const { yaw, pitch } = angles;
   const { positions, uvs, normals, indices } = model;
-
-  const lo = [Infinity, Infinity, Infinity];
-  const hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < positions.length; i += 3) {
-    for (let k = 0; k < 3; k++) {
-      if (positions[i + k] < lo[k]) lo[k] = positions[i + k];
-      if (positions[i + k] > hi[k]) hi[k] = positions[i + k];
-    }
-  }
-  const span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 4;
-  const focal = (height / 2) / Math.tan(0.32);
+  const frame = viewFrame(positions, view, width, height);
+  const { lo, hi, span, focal } = frame;
 
   // Reused verbatim when the caller states one — see the mirrored pass, which
   // has to look through this pass's camera and cannot derive it, since its own
   // vertices are the car upside down.
-  const cam = camera ?? frameCamera(positions, angles,
-    { width, height, focal, span, centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2) });
+  const cam = camera ?? frameCamera(positions, frame.angles,
+    { width, height, focal, span, centre: frame.centre });
   const { eye, fwd, right, up } = cam;
 
   const px = Buffer.alloc(width * height * 4);
@@ -886,6 +901,231 @@ export function rasterise(model, groups, sheets, {
     }
   }
   return { data: out, width: outWidth, height: outHeight, skipped };
+}
+
+/** A texel's alpha, 0 to 1, nearest rather than filtered: this is a yes or no. */
+function alphaAt(tex, u, v) {
+  const x = Math.min(tex.w - 1, Math.max(0, Math.floor(u * tex.w)));
+  const y = Math.min(tex.h - 1, Math.max(0, Math.floor(v * tex.h)));
+  return tex.data[(y * tex.w + x) * 4 + 3] / 255;
+}
+
+/**
+ * How much of each piece of artwork a view shows, counted rather than judged.
+ *
+ * The critic's worst mistake was calling a whole roundel "cut off": four of the
+ * six eval cases that had one, and most of the wasted rounds and money. The
+ * fitment check casts from forty-nine directions and says how visible a piece
+ * is in general, which is not what was being argued about. Whether it is whole
+ * in the LEFT VIEW is a question about pixels in a picture this project draws
+ * itself, so it can be answered by counting.
+ *
+ * Two passes, neither of them a picture. The first draws the whole car and
+ * keeps, for every pixel, the triangle nearest the camera and the texture
+ * coordinate it shows there. The second, one per piece, draws only the
+ * triangles whose texture reaches that piece, with nothing else in front. A
+ * pixel of the piece in the second pass that the first pass also shows is seen;
+ * one the first pass gives to something else is hidden, and what it was given
+ * to is named. Shown over the second pass's count is how much of the piece
+ * this view shows.
+ *
+ * No shading, one sample per pixel and nearest texel, because a blended or
+ * filtered pixel belongs to two things at once and cannot be counted as either.
+ *
+ * `pieces` are shapes in a texture: `{ role, box: [u0, v0, u1, v1], contains(u,
+ * v) }`. Only faces turned toward the camera count, so the far door does not
+ * score through a gap in the near one; every face still hides what is behind
+ * it, as it does in the picture.
+ *
+ * What covers is what the picture draws opaque. Glass is drawn and hides
+ * nothing — the paint under a windscreen's frit is seen through it — and a glow
+ * adds light rather than standing in front. A cutout or a decal covers where its
+ * own alpha says it is there, which needs its sheet; a design's own surfaces are
+ * not rasterised for this, and count as covering everywhere.
+ */
+export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540 } = {}) {
+  const { positions, uvs, normals, indices } = model;
+  const frame = viewFrame(positions, view, width, height);
+  const { focal } = frame;
+  const { eye, fwd, right, up } = frameCamera(positions, frame.angles,
+    { width, height, focal, span: frame.span, centre: frame.centre });
+
+  // Every vertex projected once. A triangle's corners are shared with its
+  // neighbours, and projecting per triangle did that sum six times over.
+  const nv = positions.length / 3;
+  const sx = new Float32Array(nv);
+  const sy = new Float32Array(nv);
+  const sz = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) {
+    const dx = positions[i * 3] - eye[0];
+    const dy = positions[i * 3 + 1] - eye[1];
+    const dz = positions[i * 3 + 2] - eye[2];
+    const z = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+    sz[i] = z;
+    if (z <= 0.01) continue;
+    sx[i] = width / 2 + ((dx * right[0] + dy * right[1] + dz * right[2]) * focal) / z;
+    sy[i] = height / 2 - ((dx * up[0] + dy * up[1] + dz * up[2]) * focal) / z;
+  }
+
+  // The same coverage rule as `rasterise` — pixel centres, barycentric weights
+  // all non-negative — inside a window of the frame.
+  const walk = (t, x0, y0, x1, y1, visit) => {
+    const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+    if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) return;
+    const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
+    const minX = Math.max(x0, Math.floor(Math.min(ax, bx, cx)));
+    const maxX = Math.min(x1 - 1, Math.ceil(Math.max(ax, bx, cx)));
+    const minY = Math.max(y0, Math.floor(Math.min(ay, by, cy)));
+    const maxY = Math.min(y1 - 1, Math.ceil(Math.max(ay, by, cy)));
+    if (maxX < minX || maxY < minY) return;
+    const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+    if (Math.abs(area) < 1e-9) return;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const px = x + 0.5, py = y + 0.5;
+        const w0 = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area;
+        const w1 = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        visit(x, y, w0 * sz[ia] + w1 * sz[ib] + w2 * sz[ic], w0, w1, w2, ia, ib, ic);
+      }
+    }
+  };
+  const uvAt = (w0, w1, w2, ia, ib, ic, k) => w0 * uvs[ia * 2 + k] + w1 * uvs[ib * 2 + k] + w2 * uvs[ic * 2 + k];
+
+  // Pass one: the whole car.
+  const depth = new Float32Array(width * height).fill(Infinity);
+  const who = new Int32Array(width * height).fill(-1);
+  const hitU = new Float32Array(width * height);
+  const hitV = new Float32Array(width * height);
+  const groupOf = new Int32Array(indices.length / 3).fill(-1);
+  for (const [gi, g] of groups.entries()) {
+    for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
+    if (g.lod === 'LR' || g.glass || g.add) continue;
+    const art = sheets.get(sheetKey(g)) ?? null;
+    if (g.blend && !art) continue;                  // not drawn in the picture either
+    const cut = art ? (g.alphaTest ?? (g.blend ? 0.5 : null)) : null;
+    for (let t = g.start; t < g.start + g.count; t += 3) {
+      walk(t, 0, 0, width, height, (x, y, z, w0, w1, w2, ia, ib, ic) => {
+        const at = y * width + x;
+        if (z >= depth[at]) return;
+        const u = uvAt(w0, w1, w2, ia, ib, ic, 0);
+        const v = uvAt(w0, w1, w2, ia, ib, ic, 1);
+        if (cut !== null && alphaAt(art, u, v) < cut) return;
+        depth[at] = z; who[at] = t; hitU[at] = u; hitV[at] = v;
+      });
+    }
+  }
+
+  const facing = (t) => {
+    const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+    let d = 0;
+    for (let k = 0; k < 3; k++) {
+      const n = normals[ia * 3 + k] + normals[ib * 3 + k] + normals[ic * 3 + k];
+      const c = (positions[ia * 3 + k] + positions[ib * 3 + k] + positions[ic * 3 + k]) / 3;
+      d += n * (eye[k] - c);
+    }
+    return d > 0;
+  };
+  const partName = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? 'an untextured part';
+  // The mesh a triangle came from, by name, where the geometry records it — see
+  // `parts` in wholeModelGeometry. In index order, so a binary search.
+  const parts = model.parts ?? [];
+  const meshOf = (t) => {
+    let a = 0, b = parts.length - 1;
+    while (a <= b) {
+      const mid = (a + b) >> 1;
+      if (t < parts[mid].start) b = mid - 1;
+      else if (t >= parts[mid].start + parts[mid].count) a = mid + 1;
+      else return parts[mid].name;
+    }
+    return null;
+  };
+
+  // Pass two: each piece with nothing in front of it.
+  return pieces.map((piece) => {
+    const [u0, v0, u1, v1] = piece.box;
+    const mine = [];
+    let bx0 = width, by0 = height, bx1 = 0, by1 = 0;
+    for (const g of groups) {
+      if (g.role !== piece.role || g.lod === 'LR') continue;
+      for (let t = g.start; t < g.start + g.count; t += 3) {
+        const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+        const tu0 = Math.min(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]);
+        const tu1 = Math.max(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]);
+        const tv0 = Math.min(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]);
+        const tv1 = Math.max(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]);
+        if (tu1 < u0 || tu0 > u1 || tv1 < v0 || tv0 > v1) continue;
+        if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) continue;
+        mine.push(t);
+        bx0 = Math.min(bx0, sx[ia], sx[ib], sx[ic]); bx1 = Math.max(bx1, sx[ia], sx[ib], sx[ic]);
+        by0 = Math.min(by0, sy[ia], sy[ib], sy[ic]); by1 = Math.max(by1, sy[ia], sy[ib], sy[ic]);
+      }
+    }
+    const x0 = Math.max(0, Math.floor(bx0)), y0 = Math.max(0, Math.floor(by0));
+    const x1 = Math.min(width, Math.ceil(bx1) + 1), y1 = Math.min(height, Math.ceil(by1) + 1);
+    const none = { whole: 0, shown: 0, blockers: [], box: null };
+    if (!mine.length || x1 <= x0 || y1 <= y0) return none;
+
+    const bw = x1 - x0, bh = y1 - y0;
+    const d2 = new Float32Array(bw * bh).fill(Infinity);
+    const w2 = new Int32Array(bw * bh).fill(-1);
+    const u2 = new Float32Array(bw * bh);
+    const v2 = new Float32Array(bw * bh);
+    for (const t of mine) {
+      walk(t, x0, y0, x1, y1, (x, y, z, a, b, c, ia, ib, ic) => {
+        const at = (y - y0) * bw + (x - x0);
+        if (z >= d2[at]) return;
+        d2[at] = z; w2[at] = t;
+        u2[at] = uvAt(a, b, c, ia, ib, ic, 0);
+        v2[at] = uvAt(a, b, c, ia, ib, ic, 1);
+      });
+    }
+
+    const faces = new Map();
+    let whole = 0, shown = 0;
+    let px0 = Infinity, py0 = Infinity, px1 = -Infinity, py1 = -Infinity;
+    const blockers = new Map();
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (y - y0) * bw + (x - x0);
+        const t = w2[i];
+        if (t < 0 || !piece.contains(u2[i], v2[i])) continue;
+        if (!faces.has(t)) faces.set(t, facing(t));
+        if (!faces.get(t)) continue;
+        whole++;
+        px0 = Math.min(px0, x); py0 = Math.min(py0, y); px1 = Math.max(px1, x + 1); py1 = Math.max(py1, y + 1);
+        const at = y * width + x;
+        const t1 = who[at];
+        // Seen when the whole car gives this pixel to the same triangle, to a
+        // surface at the same depth, or to another triangle painting the same
+        // piece — mirrored bodywork shares its texels, and either side showing
+        // the artwork is the artwork showing. Half a millimetre, because a
+        // door handle stands a few millimetres proud and a tie is a tie.
+        if (t1 === t || depth[at] >= d2[i] - 0.0005
+          || (t1 >= 0 && groups[groupOf[t1 / 3]]?.role === piece.role && piece.contains(hitU[at], hitV[at]))) {
+          shown++;
+          continue;
+        }
+        const key = t1 >= 0 ? `${meshOf(t1) ?? ''} ${partName(groups[groupOf[t1 / 3]])}` : ' nothing';
+        blockers.set(key, (blockers.get(key) ?? 0) + 1);
+      }
+    }
+    if (!whole) return none;
+    return {
+      whole,
+      shown,
+      // What stands in front: the mesh where it has a name, and the texture
+      // it wears, which says whether it is part of the same painted surface.
+      blockers: [...blockers].sort((a, b) => b[1] - a[1]).map(([k, px]) => {
+        const [mesh, sheet] = k.split(' ');
+        return { mesh: mesh || null, sheet, px };
+      }),
+      // Where the piece sits in the frame and how much of it it takes, as
+      // fractions of the frame, so the answer does not depend on its size.
+      box: [px0 / width, py0 / height, (px1 - px0) / width, (py1 - py0) / height],
+    };
+  });
 }
 
 /**

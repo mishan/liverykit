@@ -3,7 +3,8 @@
 Ideas worth doing that are not yet being worked on. The work ahead of them moves
 the judgments the critic keeps getting wrong into measurement. In order:
 
-- what each view shows of a region, from an ID render
+- what each view shows of a region, from an ID render (done: `hidden-in-view`,
+  and the count the critic is told)
 - minimum sizes for numbers and names
 - a table of well-known liveries
 - a rule that keeps the team name with the number

@@ -1,5 +1,5 @@
 {
-  "about": "Renders from real runs, each with a verdict a person gave or checked by eye. The pictures live in autolivery/runs/, which is not committed; node autolivery/eval.mjs skips a case whose pictures are not on this machine.",
+  "about": "Renders from real runs, each with a verdict a person gave or checked by eye. The pictures live in autolivery/runs/, which is not committed; node autolivery/eval.mjs skips a case whose pictures are not on this machine. A case with \"measured\" carries what the renderer counted of each whole piece in that draft (check_fitment's inView); the critic is told it, and a cut_off naming a piece measured whole is overruled before scoring, as the gate does. Cases whose round's draft was not kept have no count.",
   "brief": "Gulf-style, number 85, Neon Doll Racing, number readable from trackside. Use a white roundel with the number inside it, whole and fully visible, clear of every edge.",
   "cases": [
     {
@@ -62,7 +62,109 @@
         "notCutOff": [
           "roundel|\\b85\\b"
         ]
-      }
+      },
+      "measured": [
+        {
+          "id": "roundel-right",
+          "what": "a disc in white",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "roundel-left",
+          "what": "a disc in white",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-rim-right",
+          "what": "a ring in gulf-orange",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "roundel-rim-left",
+          "what": "a ring in gulf-orange",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "number-right",
+          "what": "the text \"85\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "number-left",
+          "what": "the text \"85\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "team-right",
+          "what": "the text \"Neon Doll Racing\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "team-left",
+          "what": "the text \"Neon Doll Racing\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        }
+      ]
     },
     {
       "id": "run18-r3-pink-not-gulf",
@@ -91,7 +193,86 @@
         "notCutOff": [
           "roundel|\\b85\\b"
         ]
-      }
+      },
+      "measured": [
+        {
+          "id": "roundel-left",
+          "what": "a disc in white",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-right",
+          "what": "a disc in white",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1,
+            "top": 1
+          }
+        },
+        {
+          "id": "number-left",
+          "what": "the text \"85\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "number-right",
+          "what": "the text \"85\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "team-left",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "left_rear",
+          "home": "top",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "team-right",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "right_rear",
+          "home": "top",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1,
+            "top": 1
+          }
+        }
+      ]
     },
     {
       "id": "run19-r2-stripe-across",
@@ -116,7 +297,110 @@
         "missing": [
           "stripe"
         ]
-      }
+      },
+      "measured": [
+        {
+          "id": "halo-left",
+          "what": "a ring in gulf-orange",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-left",
+          "what": "a disc in white",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "number-left",
+          "what": "the text \"85\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "halo-right",
+          "what": "a ring in gulf-orange",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1,
+            "top": 1
+          }
+        },
+        {
+          "id": "roundel-right",
+          "what": "a disc in white",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1,
+            "top": 1
+          }
+        },
+        {
+          "id": "number-right",
+          "what": "the text \"85\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "name-left",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "name-right",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        }
+      ]
     },
     {
       "id": "run20-r1-stripe-gaps-are-the-car",
@@ -169,7 +453,134 @@
         "notCutOff": [
           "stripe"
         ]
-      }
+      },
+      "measured": [
+        {
+          "id": "roundel-halo-left",
+          "what": "a ring in gulf-orange",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-left",
+          "what": "a disc in white",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "number-left",
+          "what": "the text \"85\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-halo-right",
+          "what": "a ring in gulf-orange",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "roundel-right",
+          "what": "a disc in white",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "number-right",
+          "what": "the text \"85\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "name-left",
+          "what": "the text \"NEON DOLL\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "name-right",
+          "what": "the text \"NEON DOLL\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "name2-left",
+          "what": "the text \"RACING\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "name2-right",
+          "what": "the text \"RACING\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        }
+      ]
     },
     {
       "id": "user-door-layout",
@@ -193,7 +604,85 @@
           "neon|doll|racing",
           "\\b85\\b"
         ]
-      }
+      },
+      "measured": [
+        {
+          "id": "roundel-left",
+          "what": "a disc in white",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "roundel-right",
+          "what": "a disc in white",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1,
+            "top": 1
+          }
+        },
+        {
+          "id": "number-left",
+          "what": "the text \"85\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "number-right",
+          "what": "the text \"85\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        },
+        {
+          "id": "team-left",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "left_mid",
+          "home": "left",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "three-quarter": 1,
+            "left": 1,
+            "top": 1,
+            "rear-left": 1
+          }
+        },
+        {
+          "id": "team-right",
+          "what": "the text \"NEON DOLL RACING\"",
+          "panel": "right_mid",
+          "home": "right",
+          "visible": 1,
+          "whole": true,
+          "views": {
+            "right": 1
+          }
+        }
+      ]
     }
   ]
 }

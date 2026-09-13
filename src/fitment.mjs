@@ -27,7 +27,7 @@ import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders } from './engine/visibility.mjs';
-import { polyArea, sharedArea, rectPoly } from './engine/poly.mjs';
+import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
 import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
 // From the editor's op module, because the BROWSER needs this list too — to
 // build the controls and to refuse a constraint nothing enforces — and
@@ -684,6 +684,70 @@ function inkBox(p, size, identity = {}) {
     left = x0 + x0 + w - (left + inkW);
   }
   return [Math.max(x0, left), Math.max(y0, top), Math.min(x0 + w, left + inkW), Math.min(y0 + h, bottom)];
+}
+
+/**
+ * The pieces of a design that are meant to be seen whole, as shapes on their
+ * texture — for `inView`, which counts how much of each a picture of the car
+ * shows.
+ *
+ * Text is its letters (`inkBox`), not its box: a number's box is mostly air,
+ * and a corner of it under a window frame hides nothing anybody would miss. A
+ * ring is its stroke, which for a filled disc is the disc. Anything else that
+ * declares minVisible is its placed shape. Fills and stripes are meant to bleed
+ * off an edge and are not asked about.
+ *
+ * Placed exactly as `fitment` places them, fit and all. A surface that cannot
+ * be placed is skipped here because `fitment` reports it, in the same answer.
+ */
+export function wholePieces(design, profile, fit = null) {
+  const out = [];
+  let targets;
+  try {
+    ({ targets } = resolveTargets(profile, design));
+  } catch {
+    return out;
+  }
+  for (const t of targets) {
+    let placed;
+    try {
+      placed = placements(profile, t, t.spec ?? {}, fit);
+    } catch {
+      continue;
+    }
+    const size = texSize(profile, t.role);
+    for (const p of placed) {
+      const tr = p.region.treatment;
+      const c = constraintsOf(p.region, p.id, t, () => {});
+      const minVisible = typeof c.minVisible === 'number' ? c.minVisible : null;
+      let box; let contains; let what; let text = null;
+      if (tr === 'text') {
+        text = String(p.region.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(design.identity?.[k] ?? ''));
+        if (!text.trim()) continue;
+        const [x0, y0, x1, y1] = inkBox(p, size, design.identity ?? {});
+        box = [x0 / size.w, y0 / size.h, x1 / size.w, y1 / size.h];
+        contains = (u, v) => u >= box[0] && u <= box[2] && v >= box[1] && v <= box[3];
+        what = `the text "${text}"`;
+      } else if (tr === 'ring') {
+        const g = ringGeometry(p, size);
+        box = [(g.cx - g.outer) / size.w, (g.cy - g.outer) / size.h, (g.cx + g.outer) / size.w, (g.cy + g.outer) / size.h];
+        contains = (u, v) => {
+          const d = Math.hypot(u * size.w - g.cx, v * size.h - g.cy);
+          return d >= g.inner && d <= g.outer;
+        };
+        what = g.inner > 0 ? `a ring in ${p.region.color ?? 'its colour'}` : `a disc in ${p.region.color ?? 'its colour'}`;
+      } else if (minVisible !== null) {
+        const poly = shapeOf(p.frac);
+        box = [Math.min(...poly.map((q) => q[0])), Math.min(...poly.map((q) => q[1])),
+          Math.max(...poly.map((q) => q[0])), Math.max(...poly.map((q) => q[1]))];
+        contains = (u, v) => inPoly(poly, [u, v]);
+        what = tr;
+      } else continue;
+      out.push({ id: p.id, role: t.role, surface: t.from, panel: p.region.panel, treatment: tr, what, text,
+        minVisible, box, contains });
+    }
+  }
+  return out;
 }
 
 /** Whether either edge of a ring's stroke passes through the letters of a text placement. */

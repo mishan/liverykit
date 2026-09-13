@@ -550,6 +550,7 @@ and several other things:
 | `crossed` | something is painted across a region that asked to be kept clear |
 | `off-mesh` | the box lands on texture space no triangle uses |
 | `unseen` | the bodywork hides it from trackside, or a fitting stands on it (a door handle, a number plate) |
+| `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
 | `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimetres at the car's real scale |
 | `outside-safe` | outside the part of the panel measurement found readable |
