@@ -57,8 +57,15 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
     else p.resolve(msg.result);
   });
 
+  // The pipe can fail before the exit event arrives — a write after close()
+  // did — and that is the server gone too, not a stream error nobody catches.
+  child.stdin.on('error', (e) => {
+    gone ??= `the liverykit MCP server's input closed (${e.message})`;
+    failAll(gone);
+  });
   const send = (msg) => child.stdin.write(JSON.stringify(msg) + '\n');
   const request = (method, params) => new Promise((resolve, reject) => {
+    if (!gone && !child.stdin.writable) gone = 'the liverykit MCP server\'s input is closed';
     if (gone) return reject(new ServerGone(gone));
     const id = nextId++;
     pending.set(id, { resolve, reject, method });
@@ -75,7 +82,11 @@ export async function connect({ command = process.execPath, args = [], cwd, env 
   return {
     listTools: async () => (await request('tools/list', {})).tools,
     callTool: (name, args = {}) => request('tools/call', { name, arguments: args }),
+    // Gone from this moment, not from whenever the exit event gets round to
+    // it: a call in between wrote to a stream that had already ended.
     close: () => {
+      gone ??= 'the liverykit MCP server was closed by this client';
+      failAll(gone);
       child.stdin.end();
       child.kill();
     },

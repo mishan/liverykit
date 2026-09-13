@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clip } from './trace.mjs';
 import { ServerGone } from './mcp.mjs';
@@ -227,7 +227,7 @@ export async function run({
   brief: theBrief, mcp, planner, critic, trace, out,
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {},
-  referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true,
+  referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
 }) {
   await mkdir(out, { recursive: true });
   const tools = plannerTools(await mcp.listTools());
@@ -239,8 +239,17 @@ export async function run({
   let feedback = null;
   let summary = '';
   let passedIn = null;
-  const snapshot = () => ({ brief: theBrief, passed: passedIn !== null, passedIn, rounds: history.length, summary, draft, history });
-  const save = (result) => writeFile(join(out, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  // `base` identifies the working design the run started from, which its
+  // operations were written against: a replay onto another design is not one.
+  const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), passed: passedIn !== null, passedIn,
+    rounds: history.length, summary, draft, history });
+  // Whole or not at all. Written in place, a crash mid-write left half a file
+  // where the last round's had been, and nothing could replay or propose it.
+  const save = async (result) => {
+    const partial = join(out, 'result.json.partial');
+    await writeFile(partial, JSON.stringify(result, null, 2) + '\n');
+    await rename(partial, join(out, 'result.json'));
+  };
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
@@ -348,7 +357,14 @@ export async function run({
         case 'finish_round':
           // Kept by the harness from the call itself, not left to whichever
           // planner remembers to hand it back: a replay reads it from here.
-          if (typeof args?.summary === 'string' && args.summary.trim()) summary = args.summary;
+          // And required: it is what a person reads in the inbox, and a round
+          // submitted without one went out under the last round's words. Not
+          // every server enforces a tool's schema.
+          if (typeof args?.summary !== 'string' || !args.summary.trim()) {
+            return refuse('finish_round needs a summary: what the draft is, in a sentence or two. ' +
+              'It is what a person reads when the design reaches the inbox.');
+          }
+          summary = args.summary;
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
@@ -366,7 +382,9 @@ export async function run({
         return refuse('This round was already submitted with finish_round, so this call was not run. ' +
           'Make the change next round if the gate asks for one.');
       }
-      if (++calls > roundCalls) {
+      // finish_round is never counted: the refusal below tells the planner to
+      // call it, and counted, it was refused too and the round could not end.
+      if (name !== 'finish_round' && ++calls > roundCalls) {
         return refuse(`This round has used its ${roundCalls} tool calls. Call finish_round now.`);
       }
       const { r, ms } = await traced(round, name, args, () => dispatch(name, args));
@@ -441,7 +459,7 @@ export async function run({
     let unread = null;
     const { r: rd } = await traced(span, 'read_design', { proposal: '(the draft)' }, () =>
       mcp.callTool('read_design', { proposal: draft }));
-    if (rd.isError) unread = textOf(rd);
+    if (rd.isError) unread = textOf(rd) || 'an error, with no message';
     else {
       try {
         effective = JSON.parse(textOf(rd));
@@ -481,7 +499,7 @@ export async function run({
     // What the renderer counted of each piece meant to be seen whole, told to
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
-    const whole = wholeIds(measured, fitment?.findings);
+    const whole = wholeIds(measured, fitment?.findings, views);
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
@@ -668,15 +686,20 @@ export async function proposeDesign(result, send) {
  * finding on `band@left_mid` protected nothing called `band` here, because
  * this kept the piece's id and that the region's. A region is whole when
  * every piece of it is, and none of it with a high or fatal finding counts.
+ *
+ * And only where the critic was shown the view that counted it. The count
+ * covers the sheet's six views; a critic given `left` alone was otherwise
+ * overruled on the strength of a view it never saw.
  */
-export function wholeIds(measured, findings) {
+export function wholeIds(measured, findings, views = ['sheet']) {
   const base = (id) => String(id).split('@')[0];
   const against = new Set((findings ?? []).filter((f) => f.severity === 'fatal' || f.severity === 'high')
     .flatMap((f) => f.ids ?? []).map(base));
+  const seen = (m) => m.whole && (views.includes('sheet') || views.includes(m.home));
   const pieces = (measured ?? []).filter((m) => !against.has(base(m.id)));
-  const whole = new Set(pieces.filter((m) => m.whole).map((m) => m.id));
+  const whole = new Set(pieces.filter(seen).map((m) => m.id));
   for (const id of new Set(pieces.map((m) => base(m.id)))) {
-    if (pieces.filter((m) => base(m.id) === id).every((m) => m.whole)) whole.add(id);
+    if (pieces.filter((m) => base(m.id) === id).every(seen)) whole.add(id);
   }
   return whole;
 }

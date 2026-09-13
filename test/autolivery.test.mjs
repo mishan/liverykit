@@ -8,7 +8,8 @@ import { join } from 'node:path';
 import { startUi } from '../src/ui/server.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { carKn5, vert, CAR } from './fixtures/kn5.mjs';
-import { connect } from '../autolivery/mcp.mjs';
+import { connect, ServerGone } from '../autolivery/mcp.mjs';
+import { existsSync } from 'node:fs';
 import { createTrace } from '../autolivery/trace.mjs';
 import { run } from '../autolivery/loop.mjs';
 import { createPlanner } from '../autolivery/claude.mjs';
@@ -180,7 +181,7 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
     const out = join(ed.dir, 'run');
     const trace = await createTrace({ dir: out });
     await assert.rejects(run({ brief: 'b', mcp: ed.mcp, planner, critic, trace, out, rounds: 4,
-      views: ['left'], shot: { width: 200, height: 150 } }), /MCP server exited/);
+      views: ['left'], shot: { width: 200, height: 150 }, base: 'b1' }), /MCP server exited/);
     assert.deepEqual(asked, [1, 2], 'the planner is not asked again');
     assert.equal(afterDeath, 1, 'and its one call after the server died was its last');
 
@@ -188,10 +189,49 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
     assert.equal(saved.finished, false);
     assert.equal(saved.rounds, 1);
     assert.equal(saved.draft.design.length, 60, 'the draft round 1 ended with is on disk');
+    assert.equal(saved.base, 'b1', 'with the design it was written against');
+    assert.equal(existsSync(join(out, 'result.json.partial')), false, 'renamed into place, not written over it');
 
     const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     const drafted = spans.find((s) => s.name === 'draft_design');
     assert.deepEqual(drafted.attrs['tool.parameters'], { design: palette }, 'and the trace keeps the draft whole');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
+  // Past the limit, every call was refused with "call finish_round now" —
+  // finish_round included, so the round could never end. And a finish_round
+  // with no summary was accepted, and the inbox got the last round's words.
+  const ed = await fixtureEditor();
+  try {
+    const said = [];
+    const planner = { async round({ call }) {
+      for (let i = 0; i < 3; i++) said.push(await call('describe_car'));
+      said.push(await call('finish_round', {}));
+      said.push(await call('finish_round', { summary: 'a bare car' }));
+    } };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [], cut_off: [], unreadable: [], notes: [] }) };
+    const out = join(ed.dir, 'run');
+    const result = await run({ brief: 'b', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }), out,
+      rounds: 1, roundCalls: 2, views: ['left'], shot: { width: 200, height: 150 }, propose: false });
+    assert.match(said[2].content[0].text, /used its 2 tool calls/);
+    assert.ok(said[3].isError);
+    assert.match(said[3].content[0].text, /finish_round needs a summary/);
+    assert.ok(!said[4].isError, said[4].content[0].text);
+    assert.equal(result.summary, 'a bare car');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a call after close() is the server gone, not a write to a closed pipe', async () => {
+  const ed = await fixtureEditor();
+  try {
+    ed.mcp.close();
+    await assert.rejects(ed.mcp.callTool('describe_car'), (e) => e instanceof ServerGone);
   } finally {
     await ed.stop();
   }
@@ -948,6 +988,25 @@ test('a run can be replayed round by round against today\'s gate, with no planne
     assert.match(again.stderr, /the editor refused the proposal: .*already pending/);
     const failed = await bin('--propose', refusedDir, '--editor', ed.url);
     assert.match(failed.stderr, /did not pass its gate/);
+
+    // A replay in front of a design other than the one the run started from
+    // replays different operations, so it is refused.
+    const moved = join(ed.dir, 'moved');
+    await mkdir(moved);
+    await writeFile(join(moved, 'result.json'), JSON.stringify({ brief: 'b', base: 'not-this-design', passed: false,
+      history: [{ draft: { design: [], fit: [] }, summary: 's' }] }));
+    const wrong = await bin('--replay', moved, '--editor', ed.url);
+    assert.equal(wrong.code, 1);
+    assert.match(wrong.stderr, /--replay: the editor's working design is not the one/);
+
+    // And the critic's evaluator refuses a case it does not have, and a cost
+    // cap that is not a number, before judging or paying for anything.
+    const evaluate = (...args) => new Promise((ok) => execFile(process.execPath,
+      [join(ROOT, 'autolivery/eval.mjs'), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
+    const typo = await evaluate('--only', 'no-such-case');
+    assert.equal(typo.code, 1);
+    assert.match(typo.stderr, /--only names no case called no-such-case/);
+    assert.match((await evaluate('--max-cost', 'nope')).stderr, /--max-cost must be a positive number of dollars, not nope/);
   } finally {
     await ed.stop();
   }
@@ -967,6 +1026,9 @@ test('a region is whole when every piece of it is, and a high finding on a piece
   assert.deepEqual([...clean].sort(), ['band', 'band@left_mid', 'band@left_rear', 'name@left_mid', 'number']);
   const flagged = wholeIds(measured, [{ severity: 'high', ids: ['band@left_rear'] }, { severity: 'low', ids: ['number'] }]);
   assert.deepEqual([...flagged].sort(), ['name@left_mid', 'number'], 'a high finding on one piece protects them all');
+  // Counted in a view the critic was never shown, a piece clears nothing.
+  const onlyLeft = wholeIds([{ id: 'roof-roundel', whole: true, home: 'top' }, { id: 'number', whole: true, home: 'left' }], [], ['left']);
+  assert.deepEqual([...onlyLeft], ['number']);
 });
 
 test('a draft the gate cannot read back fails the round, and says the gate broke', async () => {
@@ -991,6 +1053,16 @@ test('a draft the gate cannot read back fails the round, and says the gate broke
       JSON.stringify(result.history[0].failures));
     const spans = (await readFile(join(out, 'trace.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
     assert.match(spans.find((s) => s.name === 'gate').error, /read_design: the editor went away/);
+
+    // An error with no text is still an error.
+    const silent = { ...ed.mcp, callTool: (name, args) => (name === 'read_design' && args?.proposal
+      ? Promise.resolve({ isError: true, content: [] })
+      : ed.mcp.callTool(name, args)) };
+    const quietOut = join(ed.dir, 'quiet');
+    const quiet = await run({ brief: 'b', mcp: silent, planner, critic, trace: await createTrace({ dir: quietOut }),
+      out: quietOut, rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, propose: false });
+    assert.ok(quiet.history[0].failures.some((f) => /read_design could not say .*an error, with no message/.test(f)),
+      JSON.stringify(quiet.history[0].failures));
   } finally {
     await ed.stop();
   }
