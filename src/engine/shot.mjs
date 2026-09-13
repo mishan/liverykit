@@ -1257,6 +1257,19 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
  */
 export const SHEET_VIEWS = ['three-quarter', 'left', 'right', 'top', 'front', 'rear-left'];
 
+/** Columns on a contact sheet of `n` views: two across for up to four, three for more. */
+const sheetColumns = (n) => (n > 4 ? 3 : 2);
+
+/**
+ * The frame one view gets on a contact sheet of this size, for the count of
+ * what each view shows: taken at the sheet's own size it framed the car at
+ * another aspect from the cells the critic was looking at.
+ */
+export function sheetCell(width, height, n = SHEET_VIEWS.length) {
+  const nc = sheetColumns(n);
+  return { width: Math.floor(width / nc), height: Math.floor(height / Math.ceil(n / nc)) };
+}
+
 /**
  * Several views of the car in one picture, each labelled.
  *
@@ -1276,7 +1289,7 @@ export async function shootSheet(model, groups, surfaces, { sheets: stock = null
   }
   // Two across for up to four views, three for more. The size asked for,
   // exactly: what does not divide goes to the last column and the last row.
-  const nc = views.length > 4 ? 3 : 2;
+  const nc = sheetColumns(views.length);
   const nr = Math.ceil(views.length / nc);
   const split = (total, n) => Array.from({ length: n }, (_, i) =>
     (i < n - 1 ? Math.floor(total / n) : total - Math.floor(total / n) * (n - 1)));

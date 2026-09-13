@@ -49,7 +49,7 @@ import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
-import { shoot, carSheets, VIEWS, shootSheet } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
@@ -1391,10 +1391,20 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       // answer now beats a full one in two seconds, but a caller deciding
       // whether its draft passes needs the geometry checks to have run.
       if (req.method === 'POST' && url.pathname === '/api/proposal/evaluate') {
-        const staged = stage(await body());
+        const asked = await body();
+        const staged = stage(asked);
         if (staged.refused) return json(staged.status, { error: staged.refused });
         await getModel();
         const found = fitment(staged.design, profile, staged.fit, { model });
+        // Counted at the frame the pictures being judged were drawn at, given
+        // as render_car was and clamped as /api/shot clamps it; a sheet's is
+        // the frame of one of its cells. It was 900x540 whatever the critic
+        // saw, and the camera's distance is fitted to the frame's aspect.
+        const c = asked?.count ?? null;
+        const clamp = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Number(v ?? d) || 0));
+        const frame = !c ? { width: 900, height: 540 }
+          : c.view === 'sheet' ? sheetCell(clamp(c.width, 400, 2400, 1400), clamp(c.height, 300, 1440, 840))
+            : { width: clamp(c.width, 200, 1400, 760), height: clamp(c.height, 150, 900, 460) };
         // And how much of each whole piece the gate's views show, counted in
         // the renderer. Only here, not in /api/fitment: that one answers a
         // panel while somebody drags, and this is the caller deciding whether
@@ -1406,7 +1416,7 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           try {
             const { g } = carFor(model, staged.design);
             const { sheets } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
-            const seen = inView(staged.design, profile, staged.fit, g, sheets);
+            const seen = inView(staged.design, profile, staged.fit, g, sheets, frame);
             found.findings.push(...seen.findings);
             found.checked = [...found.checked, 'hidden-in-view'];
             measured = seen.measured;
@@ -1432,7 +1442,8 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           staleIdsError = e.message;
         }
         return json(200, {
-          ...found, inView: measured, ...(inViewError ? { inViewError } : {}), modelError,
+          ...found, inView: measured, ...(measured ? { inViewAt: frame } : {}),
+          ...(inViewError ? { inViewError } : {}), modelError,
           design: staged.design, fit: staged.fit, staleIds, staleIdsError,
         });
       }

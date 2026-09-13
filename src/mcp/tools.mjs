@@ -313,7 +313,7 @@ async function toolReport(client) {
 async function toolCheckFitment(client, args = {}) {
   let r;
   try {
-    r = await client.checkFitment(draftOf(args));
+    r = await client.checkFitment(draftOf(args), args.count ?? null);
   } catch (e) {
     // A draft the inbox would refuse is refused here too, in the same words,
     // and that is an answer about the draft rather than a broken tool.
@@ -344,7 +344,7 @@ async function toolCheckFitment(client, args = {}) {
         ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
       // Passed through when the editor counted it, which it does for a
       // proposal: how much of each whole piece each view shows.
-      ...(r.inView ? { inView: r.inView } : {}),
+      ...(r.inView ? { inView: r.inView, inViewAt: r.inViewAt } : {}),
     }, null, 2) }],
   };
 }
@@ -603,7 +603,16 @@ export function createToolHandler(client) {
         `once a person accepts it. ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
-        properties: { proposal: DRAFT_SCHEMA },
+        properties: {
+          proposal: DRAFT_SCHEMA,
+          count: {
+            type: 'object',
+            description: 'Optional, with a proposal: the pictures being judged, as render_car was given them ' +
+              '({ view, width, height }; a sheet counts each view at the size of one of its cells). inView is ' +
+              'counted at that frame so it describes those pictures. Default 900x540 per view.',
+            properties: { view: { type: 'string' }, width: { type: 'number' }, height: { type: 'number' } },
+          },
+        },
       },
     },
     {

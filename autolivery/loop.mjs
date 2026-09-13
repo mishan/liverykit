@@ -471,8 +471,14 @@ export async function run({
       for (const s of await saveImages(r, `round-${n}-${view}`)) images.push({ view, ...s });
     }
 
+    // Counted at the frame the critic's pictures were drawn at: a sheet's
+    // cell, or the size of the single views. It was counted at 900x540
+    // whatever the critic saw. A referee's closer views are not recounted:
+    // they share the single views' aspect, and a fraction of a piece in view
+    // barely moves with the size of the frame it is counted in.
+    const count = views.includes('sheet') ? { view: 'sheet', ...sheetShot } : { view: views[0], ...shot };
     const { r: fr } = await traced(span, 'check_fitment', {}, () =>
-      mcp.callTool('check_fitment', { proposal: draft }));
+      mcp.callTool('check_fitment', { proposal: draft, count }));
     let fitment = null;
     if (fr.isError) {
       reasons.push(`check_fitment refused the draft: ${textOf(fr)}`);

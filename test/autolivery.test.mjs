@@ -1483,6 +1483,43 @@ test('a piece is judged in every view that shows it nearly as large as its home 
   }
 });
 
+test('the count is taken at the frame the critic\'s pictures were drawn at', async () => {
+  // It was taken at 900x540 whatever the gate rendered, and a piece needed
+  // 30 pixels to count at any size: at the critic's 200x150 a small plate
+  // had no view at all.
+  const ed = await fixtureEditor();
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const design = [{ op: 'set-palette', name: 'ink', value: '#101014' },
+      plate('plate-small', panels[0].panel, [0.48, 0.45, 0.03, 0.05])];
+    const at = async (count) => JSON.parse((await ed.mcp.callTool('check_fitment', { proposal: { design }, count })).content[0].text);
+    const small = await at({ view: 'left', width: 200, height: 150 });
+    assert.deepEqual(small.inViewAt, { width: 200, height: 150 });
+    const m = small.inView.find((x) => x.id === 'plate-small');
+    assert.equal(m.home, 'left', JSON.stringify(m));
+    assert.ok(m.size[0] * 200 * m.size[1] * 150 < 30, `under the old fixed floor: ${JSON.stringify(m)}`);
+    // A sheet of six is three across and two down, and each view is a cell.
+    assert.deepEqual((await at({ view: 'sheet', width: 2100, height: 960 })).inViewAt, { width: 700, height: 480 });
+
+    const calls = [];
+    const mcp = { listTools: () => ed.mcp.listTools(),
+      callTool: (name, args) => { calls.push([name, args]); return ed.mcp.callTool(name, args); } };
+    const planner = { async round({ call }) {
+      await call('draft_design', { design });
+      await call('finish_round', { summary: 'a small plate' });
+    } };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [], cut_off: [], unreadable: [], notes: [] }) };
+    const dir = join(ed.dir, 'run');
+    await run({ brief: 'a plate', mcp, planner, critic, trace: await createTrace({ dir }), out: dir,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, closer: [], propose: false });
+    const gate = calls.filter(([name, args]) => name === 'check_fitment' && args.count);
+    assert.deepEqual(gate.map(([, args]) => args.count), [{ view: 'left', width: 200, height: 150 }]);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('a blended surface the design paints stands in front of what is behind it', async () => {
   // The whole-car pass skipped every blended part without a car-owned sheet,
   // and a part the design paints has none, since it wears the design. So a

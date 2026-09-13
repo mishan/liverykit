@@ -42,10 +42,12 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
     // No design or fit in the body: the editor answers about the working ones
     // it already holds, which are the ones a proposal would land on top of.
     // With a proposal, about those with it applied — and nothing is proposed.
-    checkFitment: async (proposal) => request(proposal ? 'api/proposal/evaluate' : 'api/fitment', {
+    // `count` is the frame the pictures being judged were drawn at, which the
+    // evaluation counts what each view shows in.
+    checkFitment: async (proposal, count = null) => request(proposal ? 'api/proposal/evaluate' : 'api/fitment', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(proposal ?? {}),
+      body: JSON.stringify(proposal ? { ...proposal, ...(count ? { count } : {}) } : {}),
     }),
     findSpace: async (args) => request('api/space', {
       method: 'POST',
