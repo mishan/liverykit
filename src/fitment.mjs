@@ -693,38 +693,72 @@ function ringGeometry(p, size) {
  * roundel a person had laid out by hand, whose "85" sat well inside the disc.
  * Worked out the same way here, but estimated wider than the treatment does
  * (0.72 em a glyph against its 0.62), so an error leans toward the ring
- * touching. Turned a quarter, or anything else not undone by a half turn,
- * the answer is the whole box.
+ * touching. At an angle that is not a quarter turn the answer is the whole
+ * box.
+ *
+ * A quarter turn used to be the whole box too, while `letterSize` handled it —
+ * so on the Abarth's doors, which measure 90 and 270, a number in a roundel
+ * got the high overlap this exists to prevent. Both now take the frame from
+ * `textFrame`, so they cannot drift apart again.
  */
 function inkBox(p, size, identity = {}) {
   const T = p.frac;
   const x0 = T.x * size.w, y0 = T.y * size.h, w = T.w * size.w, h = T.h * size.h;
   const box = [x0, y0, x0 + w, y0 + h];
   const o = p.region;
-  // "auto" is whatever turn the panel's unwrap needs, which the profile
-  // states; left as "not 0" it sent every upright number back to its box.
-  const turn = o.rotate === 'auto' ? (T.panel?.textRotation ?? 0) : (o.rotate ?? 0);
-  if (o.treatment !== 'text' || (turn !== 0 && turn !== 180)) return box;
-  const s = String(o.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
-  if (!s.length) return box;
-  const tracking = o.tracking ?? 0.08;
-  const ax = o.aspect ?? (T.panel?.anisotropy ? 1 / T.panel.anisotropy : 1);
-  let em = h * (o.scale ?? 0.7);
-  if (o.fit !== false) {
-    const est = s.length * em * (0.62 + tracking) * ax;
-    if (est > w) em *= w / est;
-  }
-  const inkW = Math.min(w, s.length * em * (0.72 + tracking) * ax);
+  if (o.treatment !== 'text') return box;
+  const f = textFrame(p, size, identity);
+  if (!f) return box;
+  const { s, turn, em, ax } = f;
+  // The frame the treatment draws in, about the box's centre (see render.mjs).
+  const cx = x0 + w / 2, cy = y0 + h / 2;
+  const fx = cx - f.w / 2, fy = cy - f.h / 2;
+  const inkW = Math.min(f.w, s.length * em * (0.72 + (o.tracking ?? 0.08)) * ax);
   const anchor = o.anchor ?? 'middle';
-  let left = anchor === 'start' ? x0 : anchor === 'end' ? x0 + w - inkW : x0 + (w - inkW) / 2;
-  const base = y0 + h * 0.78;
-  let top = base - 0.75 * em;
-  let bottom = base + (/[a-z]/.test(s) ? 0.22 * em : 0.02 * em);
-  if (turn === 180) {                               // the box turned about its centre
-    [top, bottom] = [y0 + y0 + h - bottom, y0 + y0 + h - top];
-    left = x0 + x0 + w - (left + inkW);
+  const left = anchor === 'start' ? fx : anchor === 'end' ? fx + f.w - inkW : fx + (f.w - inkW) / 2;
+  const base = fy + f.h * 0.78;
+  const top = base - 0.75 * em;
+  const bottom = base + (/[a-z]/.test(s) ? 0.22 * em : 0.02 * em);
+  // Then turned as SVG's rotate(turn, cx, cy) turns it: (dx, dy) goes to
+  // (-dy, dx) at 90, y being down.
+  const turned = [[left, top], [left + inkW, bottom]].map(([x, y]) => {
+    const dx = x - cx, dy = y - cy;
+    return turn === 90 ? [cx - dy, cy + dx] : turn === 180 ? [cx - dx, cy - dy]
+      : turn === 270 ? [cx + dy, cy - dx] : [x, y];
+  });
+  const [[ax0, ay0], [ax1, ay1]] = turned;
+  return [Math.max(x0, Math.min(ax0, ax1)), Math.max(y0, Math.min(ay0, ay1)),
+    Math.min(x0 + w, Math.max(ax0, ax1)), Math.min(y0 + h, Math.max(ay0, ay1))];
+}
+
+/**
+ * How the text treatment sets a placement's letters, in the frame it draws
+ * them in: `w` along the line and `h` across it, which on a panel laid a
+ * quarter turn are the box's height and width, and the font size `em` after
+ * shrinking to fit. Null where there are no letters or the turn is not a
+ * multiple of a quarter.
+ *
+ * "auto" is whatever turn the panel's unwrap needs, which the profile states.
+ */
+function textFrame(p, size, identity) {
+  const T = p.frac, o = p.region;
+  const asked = o.rotate === 'auto' ? (T.panel?.textRotation ?? 0) : (o.rotate ?? 0);
+  const turn = ((Number(asked) % 360) + 360) % 360;
+  if (turn % 90 !== 0) return null;
+  const s = String(o.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
+  if (!s.trim()) return null;
+  const quarter = turn === 90 || turn === 270;
+  const w = quarter ? T.h * size.h : T.w * size.w;
+  const h = quarter ? T.w * size.w : T.h * size.h;
+  const an = T.anisotropy ?? T.panel?.anisotropy;
+  const ax = o.aspect ?? (an ? 1 / an : 1);
+  let em = h * (o.scale ?? 0.7);
+  let shrunk = false;
+  if (o.fit !== false) {
+    const est = s.length * em * (0.62 + (o.tracking ?? 0.08)) * ax;
+    if (est > w) { em *= w / est; shrunk = true; }
   }
-  return [Math.max(x0, left), Math.max(y0, top), Math.min(x0 + w, left + inkW), Math.min(y0 + h, bottom)];
+  return { s, turn, quarter, w, h, em, ax, shrunk };
 }
 
 /**
@@ -1141,25 +1175,11 @@ function textIs(region, identity) {
  * cut up by seams rather than the frame it was drawn in.
  */
 function letterSize(p, size, identity) {
-  const T = p.frac;
-  const per = T.panel?.metresPerUv;
+  const per = p.frac.panel?.metresPerUv;
   if (!Array.isArray(per) || per.length !== 2 || p.region.span === true) return null;
-  const o = p.region;
-  const asked = o.rotate === 'auto' ? (T.panel?.textRotation ?? 0) : (o.rotate ?? 0);
-  const turn = ((Number(asked) % 360) + 360) % 360;
-  const quarter = turn === 90 || turn === 270;
-  if (!quarter && turn !== 0 && turn !== 180) return null;
-  const s = String(o.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? ''));
-  if (!s.trim()) return null;
-  const w = quarter ? T.h * size.h : T.w * size.w;
-  const h = quarter ? T.w * size.w : T.h * size.h;
-  const ax = o.aspect ?? ((T.anisotropy ?? T.panel?.anisotropy) ? 1 / (T.anisotropy ?? T.panel.anisotropy) : 1);
-  let em = h * (o.scale ?? 0.7);
-  let shrunk = false;
-  if (o.fit !== false) {
-    const est = s.length * em * (0.62 + (o.tracking ?? 0.08)) * ax;
-    if (est > w) { em *= w / est; shrunk = true; }
-  }
+  const f = textFrame(p, size, identity);
+  if (!f) return null;
+  const { quarter, w, h, em, shrunk } = f;
   // Pixels along the axis the letters stand on, to metres along that axis.
   const mm = (px, alongU) => (alongU ? (px / size.w) * per[0] : (px / size.h) * per[1]) * 1000;
   return { mm: mm(CAP * em, quarter), shrunk, boxMm: [mm(w, !quarter), mm(h, quarter)] };
