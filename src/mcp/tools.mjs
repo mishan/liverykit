@@ -417,7 +417,9 @@ const DRAFT_SCHEMA = {
   description:
     'Optional. Operations to apply ON TOP of the working design before answering, in the ' +
     'shape propose_design takes: { design: [...ops], fit: [...ops] }. Nothing is proposed ' +
-    'and nothing in the editor changes — this is how to measure a change before offering it.',
+    'and nothing in the editor changes — this is how to measure a change before offering it. ' +
+    'Design operations are refused when the editor was opened on a .mjs livery, which it cannot ' +
+    'write back; fit operations still work there.',
   properties: {
     design: { type: 'array', items: { type: 'object' } },
     fit: { type: 'array', items: { type: 'object' } },
@@ -566,6 +568,7 @@ export function createToolHandler(client) {
           count: { type: 'number', description: 'How many spots (default 5)' },
           largest: { type: 'boolean', description: 'Instead of a size, sweep sizes and return the LARGEST shape of the given aspect that fits whole, with its spot' },
           aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, 0.85)' },
+          cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
         },
         required: ['panel'],
       },
@@ -578,7 +581,7 @@ export function createToolHandler(client) {
         'to. Call this after proposing a change and before claiming it is an improvement. ' +
         'Views: ' + [...Object.keys(VIEWS), 'sheet'].join(', ') + '. "sheet" is six labelled views in ' +
         'one picture (three-quarter, left, right, top, front, rear-left), the cheapest way to look all ' +
-        'round, and the only one that sees the bonnet, roof and rear deck squarely. ' +
+        'round; it and "top" are the views that see the bonnet, roof and rear deck squarely. ' +
         'Unpainted parts wear the car\'s own ' +
         'textures, where the model carries them. Note the limits — no normal maps, no ' +
         'environment reflections and one fixed light rig, so it answers "does the artwork land ' +
@@ -601,8 +604,9 @@ export function createToolHandler(client) {
         'artwork outside a panel\'s readable area, text too small to read at the car\'s real ' +
         'scale, broken left/right mirroring, placements painted into texture space no triangle ' +
         'uses, and placements the bodywork hides. With a proposal it also counts, in pixels, how ' +
-        'much of each number, word and ring every view of the car shows (inView), and reports ' +
-        'hidden-in-view where the view that shows a piece best has part of it behind something. ' +
+        'much of each number, word, ring and anything declaring minVisible each of the six views ' +
+        'in render_car\'s sheet shows (inView), and reports hidden-in-view where the view in which ' +
+        'a piece is largest, or one that shows it nearly as large, has part of it behind something. ' +
         'Call this BEFORE proposing a fit change and ' +
         'AGAIN after, and compare: a change that trades one finding for a worse one is not an ' +
         'improvement. Read `notChecked` — it names checks that did not run, and an empty ' +

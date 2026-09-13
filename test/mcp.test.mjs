@@ -1,7 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { carKn5 } from './fixtures/kn5.mjs';
 
 import { startUi } from '../src/ui/server.mjs';
 import { loadProfile } from '../src/profile.mjs';
@@ -802,6 +806,85 @@ test('a draft is measured without being proposed, and refused as a proposal woul
   } finally {
     await stop();
   }
+});
+
+test('every tool reads what its schema declares, and declares what it reads', async () => {
+  // A declared input nothing reads is a knob that does nothing; a read nothing
+  // declares is a knob no agent is told about. find_space's server read
+  // `cellMm`, which its schema never mentioned, because the client forwards
+  // the whole argument object. The same check test/packs.test.mjs makes of
+  // treatments: run each tool with a recording proxy and compare.
+  //
+  // What the tool reads is caught on its arguments. What the SERVER reads is
+  // caught when it parses a body carrying PROBE, which only arguments forwarded
+  // wholesale do. Reads made while serialising are not reads of meaning.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-mcp-schema-'));
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const { server, url } = await startUi({
+    livery: { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+      palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } },
+    profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+    liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {},
+  });
+
+  const PROBE = '__schemaProbe';
+  const read = new Set();
+  let quiet = 0;
+  // `then` is `await` asking whether the body is a promise, not a read.
+  const note = (k) => { if (typeof k === 'string' && k !== PROBE && k !== 'then' && !quiet) read.add(k); };
+  const spy = (o) => new Proxy(o, {
+    get: (t, k) => { note(k); return t[k]; },
+    has: (t, k) => { note(k); return k in t; },
+  });
+  const { stringify, parse } = JSON;
+  JSON.stringify = function (...a) { quiet++; try { return stringify.apply(this, a); } finally { quiet--; } };
+  JSON.parse = function (...a) {
+    const v = parse.apply(this, a);
+    return v && typeof v === 'object' && !Array.isArray(v) && Object.hasOwn(v, PROBE) ? spy(v) : v;
+  };
+
+  const SAMPLE = {
+    role: 'body', panel: 'left_mid', tag: 'left', view: 'left', seed: 's', why: 'a schema test',
+    width: 300, height: 200, widthMm: 200, heightMm: 200, marginMm: 0, count: 1, aspect: 1, cellMm: 100,
+    minVisibility: 0, minArea: 0, maxAnisotropy: 10,
+    proposal: { design: [], fit: [] }, design: [{ op: 'set-palette', name: 'ink', value: '#101014' }], fit: [],
+  };
+  const drift = [];
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    for (const tool of await tools.listTools()) {
+      const declared = Object.keys(tool.inputSchema?.properties ?? {});
+      read.clear();
+      for (const flag of [true, false]) {
+        const args = { [PROBE]: 1 };
+        for (const k of declared) {
+          const type = tool.inputSchema.properties[k].type;
+          args[k] = type === 'boolean' ? flag : SAMPLE[k];
+          assert.notEqual(args[k], undefined, `no sample for ${tool.name}.${k}; add one`);
+        }
+        await tools.callTool(tool.name, spy(args));
+        // One proposal at a time, so the next tool is not refused for this one.
+        const { proposal } = await (await fetch(new URL('api/proposal', url).href)).json();
+        if (proposal) {
+          await fetch(new URL('api/proposal/ack', url).href, { method: 'POST',
+            headers: { 'content-type': 'application/json' }, body: stringify({ id: proposal.id, status: 'discarded' }) });
+        }
+      }
+      const unread = declared.filter((k) => !read.has(k));
+      const undeclared = [...read].filter((k) => !declared.includes(k));
+      if (unread.length) drift.push(`${tool.name} declares ${unread.join(', ')} and nothing reads it`);
+      if (undeclared.length) drift.push(`${tool.name} reads ${undeclared.join(', ')} and does not declare it`);
+    }
+  } finally {
+    JSON.stringify = stringify;
+    JSON.parse = parse;
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+  assert.deepEqual(drift, []);
 });
 
 test('a draft whose design or fit is not a list is refused, not measured as nothing', async () => {
