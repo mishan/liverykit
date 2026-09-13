@@ -251,6 +251,39 @@ test('mcp tools: read_design & read_fit', async () => {
   }
 });
 
+test('read_fit without a draft calls stale what the build does, an override by position included', async () => {
+  // Without a draft, read_fit works its stale ids out from the editor's state
+  // rather than asking applyFit what each id reached, as the build and the
+  // draft path do. It was suspected of calling an override of an unnamed
+  // region stale, since that region has no id and is addressed by position,
+  // surfaces.body#1. It does not; this holds it to that.
+  const profile = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  const livery = {
+    name: 'Stale Test', folder: 'stale_test', palette: { ink: '#101014' },
+    surfaces: { body: { regions: [
+      { id: 'stripe-centre', treatment: 'stripe', tags: ['centre'], at: [0, 0.4, 1, 0.2] },
+      { treatment: 'stripe', tags: ['centre'], at: [0, 0.1, 1, 0.1] },
+    ] } },
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'lk-stale-'));
+  const fitPath = join(dir, 'stale-test@rss_formula_rss_4.json');
+  await writeFile(fitPath, JSON.stringify({ livery: 'stale-test', car: 'rss_formula_rss_4', regions: {
+    'surfaces.body#1': { at: [0, 0.2, 1, 0.1] },
+    ghost: { at: [0, 0, 1, 1] },
+  } }));
+  const { server, url } = await startUi({ livery, profile, fitPath, liveryId: 'stale-test', port: 0, log: () => {} });
+  try {
+    const tools = createToolHandler(createEditorClient(url));
+    const { fit, staleIds } = JSON.parse((await tools.callTool('read_fit', {})).content[0].text);
+    assert.ok(fit.regions['surfaces.body#1'], 'the fit was loaded');
+    assert.deepEqual(staleIds, ['ghost']);
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('mcp tools: report', async () => {
   const { url, stop } = await setupTestEditor();
   try {
