@@ -638,7 +638,8 @@ the design paints is never hidden.
 In the editor a hidden surface is simply not drawn. In the game there is no such
 switch, so the build ships a **fully transparent texture** for it — which works
 when the part's material composites alpha, and not otherwise. The profile records
-each texture's `shaders` so the build can tell, and it says which of four things
+`alphaHides` for each texture, measured from the blend mode of every material that
+wears it, so the build can tell, and it says which of four things
 happened to every hidden role: shipped transparent (a 4x4 sheet — a texture
 with nothing on it needs no resolution); an opaque shader, so no sheet would
 work, but the car's own config hides the mesh in the game; an opaque shader and

@@ -87,6 +87,15 @@ export function hidePlan(profile, livery, { paintedRoles = null } = {}) {
     // rather than a file that claims to hide something and does not.
     if (tex.alphaHides !== true) {
       const drawn = tex.shaders?.length ? ` (${tex.shaders.join(', ')})` : '';
+      // A texture only the skins folder knows has no wearer in this model to
+      // measure: the driver's suit, the crew, a part an extension model
+      // draws. "Regenerate it" sent people to a regeneration that cannot
+      // answer, and every shipped profile has a few.
+      if (tex.alphaHides === undefined && tex.sizeFrom === 'skin') {
+        return cannot(`no mesh in this car's model wears ${tex.file}: it is known only from the skins folder and ` +
+          'drawn by another model, so whether a transparent texture hides it cannot be measured here, and it is ' +
+          'treated as opaque');
+      }
       return cannot(tex.alphaHides === false
         ? `${tex.file} is drawn by a material that ignores alpha${drawn} — a transparent texture would not hide it`
         : `this profile does not record whether the materials drawing ${tex.file}${drawn} honour alpha; regenerate it`);
