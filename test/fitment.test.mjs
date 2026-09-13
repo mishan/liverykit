@@ -1085,6 +1085,35 @@ test('a region can ask for clean bodywork all round it, and find_space finds whe
   assert.match(none.note, /No spot on L fits 900 x 900 mm/);
 });
 
+test('find_space reports a clearance the fine grid holds, even where the coarse cells missed a fitting', async () => {
+  // The coarse cells sample every 20 mm here, so a fitting narrower than
+  // that can sit between samples and every cell still reads clean. The map
+  // below says so outright, over a car with a 40 mm plate standing 5 mm off
+  // the paint at 1.2 m across. The spots are 300 mm wide and nothing bounds
+  // them but the panel's edges, so the cells alone gave them a clearance of
+  // hundreds of millimetres, straight through the plate: returned as
+  // marginMm, then written as minMargin, that failed. Held to the fine grid
+  // instead, it fell back to the margin asked for, which was none, and a
+  // spot with a good deal of room reported zero.
+  const { findSpace, cleanGrid } = await import('../src/space.mjs');
+  const model = withPlate(plane({ rows: 8, cols: 8 }), 0.005);
+  model.meshes[1].world[0] = 40 / 1600;
+  model.meshes[1].world[12] = 1.2;
+  const prepared = occupancyFor(model);
+  const swept = cleanGrid({ profile, model, prepared, role: 'body', panel: 'L', cellMm: 100 });
+  const missed = { ...swept, clean: swept.clean.map((row) => row.map(() => true)) };
+
+  const found = findSpace({ grid: missed, model, prepared, widthMm: 300, count: 5 });
+  assert.ok(found.candidates.length > 0, JSON.stringify(found));
+  for (const c of found.candidates) {
+    assert.ok(c.marginMm > 0, `a spot with room beside it reports that room, not zero: ${JSON.stringify(c)}`);
+    const reported = fitment(design([{ id: 'roundel', treatment: 'fill', panel: 'L', at: c.at, color: 'ink',
+      constraints: { minMargin: c.marginMm } }]), profile, null, { model });
+    assert.deepEqual(reported.findings.filter((f) => f.kind === 'margin'), [],
+      `a spot's reported ${c.marginMm} mm holds as minMargin: ${JSON.stringify(c)}`);
+  }
+});
+
 test('find_space can sweep sizes and say how big a shape of a given proportion can be', async () => {
   // An agent told "about 400 mm" put a 240 mm roundel on a door that held 400.
   // Asked for the limit, it gets the limit: the largest that fits, and the

@@ -209,9 +209,13 @@ export function findSpace({
     // every side, sampled every few millimetres, against the same bar. The
     // clearance above came from the coarse cells alone, and an edge or a
     // fitting narrower than a cell could sit inside it and fail the constraint
-    // the caller is told to add.
+    // the caller is told to add. Measured on the `at` the caller is handed,
+    // rounded as it is, so that a margin found right at its limit is not
+    // then lost to the rounding.
+    const sent = at.map(r3);
     const holds = (mm) => {
-      const m = [shape[0] - mm, shape[1] - mm, shape[2] + mm, shape[3] + mm];
+      const m = [sent[0] * boxMm[0] - mm, sent[1] * boxMm[1] - mm,
+        (sent[0] + sent[2]) * boxMm[0] + mm, (sent[1] + sent[3]) * boxMm[1] + mm];
       const fine = (d) => Math.max(14, Math.min(160, Math.ceil(d / FINE_MM)));
       const around = rectVisibility(model, prepared, g.meshes,
         [px + (m[0] / boxMm[0]) * pw, py + (m[1] / boxMm[1]) * ph,
@@ -223,11 +227,27 @@ export function findSpace({
     // And the clearance REPORTED is one the fine grid has held too. It came
     // from the cells, and the planner is told to write it as `minMargin`: a
     // handle narrower than a cell could sit inside it, and the margin the
-    // caller was told would pass then failed. What was asked has been held,
-    // so it is the fallback.
+    // caller was told would pass then failed. Where the cells' figure does not
+    // hold, the largest that does is found by halving between it and what was
+    // asked, which has been held. Falling back to what was asked reported
+    // zero for a spot with hundreds of millimetres of room whenever no margin
+    // was asked, and a planner told zero has no margin to write. The halving
+    // stops at the fine grid's own step, below which it samples nothing new;
+    // each question walks the whole mesh, so this is a handful per spot.
+    let held = marginMm;
     const roomy = Math.floor(clearance);
-    const held = roomy > marginMm && holds(roomy) ? roomy : marginMm;
-    candidates.push({ at: at.map(r3), marginMm: held, onCar: r2(onCar), visible: r2(visible) });
+    if (roomy > held) {
+      if (holds(roomy)) held = roomy;
+      else {
+        let over = roomy;
+        while (over - held > FINE_MM) {
+          const mid = Math.floor((held + over) / 2);
+          if (holds(mid)) held = mid;
+          else over = mid;
+        }
+      }
+    }
+    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible) });
   }
 
   return {
