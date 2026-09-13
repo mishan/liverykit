@@ -290,10 +290,25 @@ export function applyFitOp(fit, op) {
   }
 }
 
+const shapeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'a list'
+  : typeof v === 'object' ? 'an object' : `a ${typeof v}`);
+
 export function applyProposalDiff({ design: currentDesign, fit: currentFit }, proposal) {
   const design = structuredClone(currentDesign ?? {});
   const fit = structuredClone(currentFit ?? { regions: {}, copies: {} });
   fit.regions ??= {};
+
+  // Refused, not skipped. Operations used to be applied only `if` they were a
+  // list, so a design sent as one operation object, or as the JSON string of
+  // a list, applied nothing — and a draft measured that way came back with
+  // the working design's verdict, clean, as if it were the draft's.
+  for (const key of ['design', 'fit']) {
+    const ops = proposal?.[key];
+    if (ops !== undefined && !Array.isArray(ops)) {
+      throw new Error(`A proposal's "${key}" must be a list of operations; got ${shapeOf(ops)}: ` +
+        `${String(JSON.stringify(ops)).slice(0, 200)}.`);
+    }
+  }
 
   if (JSON.stringify(proposal ?? {}).includes('"source":"human"') || JSON.stringify(proposal ?? {}).includes('"source": "human"')) {
     throw new Error('Proposals may not specify source: "human". Confirming bindings is a human action.');
