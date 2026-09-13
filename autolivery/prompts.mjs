@@ -16,6 +16,7 @@ How a design is written:
 - Colours are palette names: set-palette first, one colour per name, as { "op": "set-palette", "name": "gulf-blue", "value": "#7BB3D9" }; then use the name as "color". Identity values (set-identity: number, team, driver) are used in text as "{number}", "{team}".
 - Give every region an id. A pair for the two sides of the car is named with -left and -right, e.g. number-left and number-right.
 - Text is scaled to fit its box and corrected for the panel's stretch. "rotate": "auto" turns it upright on a panel the unwrapper laid sideways.
+- Names and numbers must read from trackside, which is further than it looks in a render. Give a team or driver name a box at least 120 mm tall on the car, a race number far more, and declare minMm on it so the measurement holds you to that. Colour it to contrast hard with what is under it: dark on a light base, white on a dark one, or on a band of contrasting colour. Keep it clear of shut lines and fittings; find_space with widthMm and heightMm finds room for a name as well as a roundel. Put it where a spectator looks for it: beside the number, on the same panels on both sides.
 - Treatments and their options: list_treatments. Constraints a region can declare: list_constraints.
 - A ring's radius and width are fractions of its box's shorter side, and the stroke is centred on the radius, so it reaches radius + width/2. Keep that at or under 0.5, or the ring paints outside its box where no check looks. A filled disc is radius 0.25, width 0.5. A halo around a disc is a second ring in a slightly LARGER box, not a smaller circle inside the same one, where it would run through the number.
 - A shape that must appear whole (a roundel behind a number, a logo, a sponsor box) needs two constraints: minOnCar 1 (all of it lands on the car) and minVisible 1 (all of it can be seen from trackside, not tucked under a window frame, mirror or wing). Text is held to lower floors by default and a fill may bleed off an edge, so without them a roundel cut by a panel gap or the window line passes. Most panels have plenty of room. To choose where, call find_space with the shape's size on the car in millimetres and a margin (60 mm is a good start), place it at one of the spots it returns, and add minMargin with that margin. A panel's box is not the panel: its middle is often against a window frame, an arch or a shut line.
@@ -23,7 +24,7 @@ How a design is written:
 What the gate checks every round, whatever you say about it:
 1. check_fitment on the draft, in millimetres and visible fractions against the car's real geometry. Any fatal or high finding fails the round, and so does any check that did not run.
 2. An independent critic that sees renders of the draft and judges them against the brief: reads at distance, race number legible, palette, matches the brief.
-Both come back to you as structured data. Fix what they name. A fitment finding is a measurement, not an opinion: move, resize or remove what it names. A constraint you set is a requirement, not a setting: lowering one that has just failed fails the round.
+Both come back to you as structured data, led by mustFix (what failed the round) and advice (everything else the critic said). Fix every mustFix item. Advice is optional: take it only if every element the brief asks for is still on the car afterwards. Fix a flagged element by repairing it (move, resize, realign, recolour, join the pieces up), never by deleting something the brief or the style it names depends on. A fitment finding is a measurement, not an opinion: move, resize or remove what it names. A constraint you set is a requirement, not a setting: lowering one that has just failed fails the round.
 
 Working method:
 - Every turn re-reads the whole conversation, so fewer, fuller turns are faster: put every call that does not need another's answer in the same turn.
@@ -45,7 +46,7 @@ Answer each field strictly:
 - reads_at_distance: the main shapes and any lettering would read from trackside, at roughly the scale of these renders. Clutter, low contrast and tiny marks fail it, and so does anything in unreadable.
 - number_legible: if the brief asks for a race number, it is clearly readable in at least one side view: large, high contrast, not cut off or distorted. If the brief asks for no number, true.
 - palette_ok: the colours are the ones the brief asks for, or suit it if it names none, with enough contrast between artwork and base.
-- requirements: one entry for each separate thing the brief explicitly asks for: a colour scheme, a number, each name or sponsor, a placement. "present" is true only if you can see it on the car in these renders; "where" says in which view and on which part of the car, or "not visible".
+- requirements: one entry for each separate thing the brief explicitly asks for: a colour scheme, a number, each name or sponsor, a placement. When the brief names a style (a famous livery, a team's colours, an era), also list each of that style's signature elements as its own entry, such as the stripe it is known for and where each of its colours goes, because the colours alone are not the style. "present" is true only if you can see it on the car in these renders; "where" says in which view and on which part of the car, or "not visible".
 - matches_brief: true only if every requirement is present.
 - cut_off: every piece of artwork that is cut off, clipped or partly hidden, each as { what, where } with where naming the view and the part of the car. Empty only if every piece is whole in every view.
 - unreadable: every piece of lettering, number or logo that would not read from trackside, each as { what, where, why }. Empty only if every one reads.
@@ -172,14 +173,19 @@ export function verdictOf(text) {
   } catch {
     throw new Error(`the critic's verdict was not JSON: ${String(text).slice(0, 200)}`);
   }
+  // Every field of every item, as the schema declares it. A server is not
+  // bound to honour response_format, and "present: true" with no "where" is
+  // a requirement ticked by a critic that did not say where it saw it.
+  const items = (k, fields) => Array.isArray(v?.[k]) && v[k].every((it) =>
+    it !== null && typeof it === 'object' && Object.entries(fields).every(([f, t]) => typeof it[f] === t));
   for (const k of VERDICT.required) {
-    const want = k === 'notes' ? Array.isArray(v?.[k])
+    const want = k === 'notes' ? Array.isArray(v?.[k]) && v[k].every((s) => typeof s === 'string')
       // Empty is refused too: every brief asks for something, and a critic
       // that listed nothing has not checked anything.
-      : k === 'requirements' ? Array.isArray(v?.[k]) && v[k].length > 0
-        && v[k].every((r) => typeof r?.asked === 'string' && typeof r?.present === 'boolean')
-      // Empty is the answer wanted here, so only the shape is checked.
-      : k === 'cut_off' || k === 'unreadable' ? Array.isArray(v?.[k]) && v[k].every((c) => typeof c?.what === 'string')
+      : k === 'requirements' ? items(k, { asked: 'string', present: 'boolean', where: 'string' }) && v[k].length > 0
+      // Empty is the answer wanted in these two, so only the shape is checked.
+      : k === 'cut_off' ? items(k, { what: 'string', where: 'string' })
+      : k === 'unreadable' ? items(k, { what: 'string', where: 'string', why: 'string' })
       : typeof v?.[k] === 'boolean';
     if (!want) throw new Error(`the critic's verdict has no usable "${k}": ${JSON.stringify(v?.[k])}`);
   }

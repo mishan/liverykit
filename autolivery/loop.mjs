@@ -185,6 +185,15 @@ const passes = (v) => Boolean(v && !v.error && v.reads_at_distance && v.number_l
   && v.matches_brief && !(v.requirements ?? []).some((r) => !r.present) && !(v.cut_off ?? []).length
   && !(v.unreadable ?? []).length);
 
+/** What in a failing verdict failed it, one line each. */
+const blockingOf = (v) => (!v || v.error ? [] : [
+  ...(v.requirements ?? []).filter((r) => !r.present).map((r) => `missing: ${r.asked} (${r.where})`),
+  ...(v.cut_off ?? []).map((c) => `cut off: ${c.what} (${c.where})`),
+  ...(v.unreadable ?? []).map((u) => `will not read: ${u.what} (${u.where}; ${u.why})`),
+  ...['reads_at_distance', 'number_legible', 'palette_ok', 'matches_brief']
+    .filter((k) => v[k] === false).map((k) => `the critic answered ${k}: false`),
+]);
+
 /** The fields of a finding worth a planner's attention, without the noise. */
 const brief = (f) => Object.fromEntries(
   ['kind', 'severity', 'surface', 'panel', 'ids', 'why', 'mm', 'visible', 'coverage']
@@ -308,11 +317,21 @@ export async function run({
       }
     };
 
+    // Submitting seals the round. Both planners run every call in a turn, so
+    // a turn holding finish_round and then another draft_design changed the
+    // draft after the summary describing it was written, and the gate judged
+    // a design nobody had described.
+    let sealed = false;
     const call = async (name, args = {}) => {
+      if (sealed) {
+        return refuse('This round was already submitted with finish_round, so this call was not run. ' +
+          'Make the change next round if the gate asks for one.');
+      }
       if (++calls > roundCalls) {
         return refuse(`This round has used its ${roundCalls} tool calls. Call finish_round now.`);
       }
       const { r, ms } = await traced(round, name, args, () => dispatch(name, args));
+      if (name === 'finish_round' && !r.isError) sealed = true;
       const note = r.isError ? ` — ${clip(textOf(r), 160)}` : '';
       log(`  ${r.isError ? '✗' : '✓'} ${name} ${Math.round(ms)} ms${note}`);
       return r;
@@ -434,18 +453,28 @@ export async function run({
     let second = null;
     if (fitmentPass && !criticPass && verdict && !verdict.error && closer.length) {
       const closeImages = [];
+      const missed = [];
       for (const view of closer) {
         const { r } = await traced(span, 'render_car', { view }, () =>
           mcp.callTool('render_car', { view, ...closeShot, proposal: draft }));
-        if (!r.isError) for (const s of await saveImages(r, `round-${n}-closer-${view}`)) closeImages.push({ view, ...s });
+        const saved = r.isError ? [] : await saveImages(r, `round-${n}-closer-${view}`);
+        if (!saved.length) missed.push(`${view}: ${r.isError ? textOf(r) : 'no image came back'}`);
+        for (const s of saved) closeImages.push({ view, ...s });
       }
-      try {
-        second = await (referee ?? critic).judge({
-          brief: theBrief, summary, images: [...images, ...closeImages], parent: span, recheck: verdict, name: 'referee',
-        });
-        criticPass = passes(second);
-      } catch (e) {
-        second = { error: e.message };
+      // Without its closer views a second look has only the picture the first
+      // one failed, and clearing a verdict on that evidence is not a second
+      // look. The critic's verdict stands.
+      if (missed.length) {
+        second = { error: `the closer views did not render (${clip(missed.join('; '), 200)}), so the critic's verdict stands` };
+      } else {
+        try {
+          second = await (referee ?? critic).judge({
+            brief: theBrief, summary, images: [...images, ...closeImages], parent: span, recheck: verdict, name: 'referee',
+          });
+          criticPass = passes(second);
+        } catch (e) {
+          second = { error: e.message };
+        }
       }
     }
     const passed = fitmentPass && (criticPass || !criticGates);
@@ -500,13 +529,21 @@ export async function run({
         .flatMap((f) => f.ids ?? []).map((id) => String(id).split('@')[0])),
     };
 
+    // What failed the round, apart from what was merely said about it. A
+    // planner told everything at once acted on all of it: a note that the
+    // Gulf centre stripe was "broken where it crosses the roof" failed
+    // nothing, and the planner shortened the stripe twice and then deleted
+    // it, taking the livery's best-known element with it.
+    const deciding = second && !second.error ? second : verdict;
+    const mustFix = [...reasons, ...(criticPass || !criticGates ? [] : blockingOf(deciding))];
+    const advice = deciding?.error ? [] : (deciding?.notes ?? []);
     const { renders, ...forPlanner } = record;
     return {
       passed,
       broke,
       record,
       feedback: {
-        text: JSON.stringify({ ...forPlanner, roundsLeft: rounds - n }, null, 2),
+        text: JSON.stringify({ mustFix, advice, roundsLeft: rounds - n, ...forPlanner }, null, 2),
         images: images.map(({ view, data }) => ({ view, data })),
         design: standing,
       },
