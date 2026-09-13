@@ -217,6 +217,23 @@ test('a hand-set texture size survives while the model still says what it said',
   assert.equal(report.sizes.length, 1);
 });
 
+test("a texture's hand-written note survives the regeneration it was written to outlive", () => {
+  // The NSX's windscreen banner carried a page on why its two faces must not
+  // be spanned. Its hand-written panels were kept, and the note that explained
+  // them was dropped: it rode along only with a hand-set SIZE, and the banner
+  // has none.
+  const prior = { textures: { banner: { file: 'Banner.dds', width: 1024, height: 1024, notes: 'two-sided; never span it' } } };
+  const fresh = { textures: { banner: { file: 'Banner.dds', width: 1024, height: 1024 } } };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.textures.banner.notes, 'two-sided; never span it');
+  assert.deepEqual(report.textureNotes, ['banner']);
+  assert.ok(describeHandwork(report, 'prior.json').some((l) => /note.*banner/.test(l)), 'and says so');
+
+  const written = { textures: { banner: { file: 'Banner.dds', notes: 'fresh' } } };
+  preserveHandwork(written, prior);
+  assert.equal(written.textures.banner.notes, 'fresh', 'never over a note the new profile has');
+});
+
 test('a hand-set size is abandoned once the model itself changes size', () => {
   // The override was a judgement about a 28x28 texture. If the model now ships
   // 512x512, that judgement was about something else.
