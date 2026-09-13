@@ -678,6 +678,15 @@ test('find_panels knows a surface by the name a design uses, and refuses one it 
   }
 });
 
+test('propose_design names every constraint there is', async () => {
+  // It named four of the five, and an agent reads a list as the list: the
+  // minMargin this change adds went unproposed.
+  const { CONSTRAINTS } = await import('../src/ui/ops.js');
+  const tools = createToolHandler(createEditorClient('http://127.0.0.1:1/'));
+  const propose = (await tools.listTools()).find((t) => t.name === 'propose_design');
+  for (const key of Object.keys(CONSTRAINTS)) assert.match(propose.description, new RegExp(`\\b${key}\\b`), `${key} is named`);
+});
+
 test('a draft is measured without being proposed, and refused as a proposal would be', async () => {
   // A proposal reaches the working state only once a person accepts it, so an
   // agent that proposed and then called check_fitment was measuring the design
