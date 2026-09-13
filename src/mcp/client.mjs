@@ -41,19 +41,30 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
     }),
     // No design or fit in the body: the editor answers about the working ones
     // it already holds, which are the ones a proposal would land on top of.
-    checkFitment: async () => request('api/fitment', {
+    // With a proposal, about those with it applied — and nothing is proposed.
+    checkFitment: async (proposal) => request(proposal ? 'api/proposal/evaluate' : 'api/fitment', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+      body: JSON.stringify(proposal ?? {}),
+    }),
+    findSpace: async (args) => request('api/space', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(args ?? {}),
     }),
     /** A PNG of the car. Binary, so it cannot go through `request`. */
-    shoot: async (view = 'left', width, height) => {
+    shoot: async (view = 'left', width, height, proposal) => {
       const q = new URLSearchParams({ view });
       if (width) q.set('width', String(width));
       if (height) q.set('height', String(height));
-      const res = await fetch(new URL(`api/shot?${q}`, url).href, {
-        headers: { connection: 'close' },
-      }).catch(() => { throw new Error(`No fitting editor is listening at ${url}.`); });
+      const res = await fetch(new URL(`api/shot?${q}`, url).href, proposal
+        ? {
+            method: 'POST',
+            headers: { connection: 'close', 'content-type': 'application/json' },
+            body: JSON.stringify({ proposal }),
+          }
+        : { headers: { connection: 'close' } },
+      ).catch(() => { throw new Error(`No fitting editor is listening at ${url}.`); });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);

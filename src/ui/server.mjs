@@ -48,9 +48,11 @@ import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment } from '../fitment.mjs';
-import { shoot, carSheets, VIEWS } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS, shootSheet } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
+import { occupancyFor } from '../engine/visibility.mjs';
+import { findSpace, cleanGrid, spaceRole } from '../space.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Where the profiles this checkout ships live. A profile is the entirety of what
@@ -855,6 +857,13 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   // done the work twice. Validated on the way in, same as the save path.
   const started = new Date().toISOString().slice(11, 19);
   let pendingProposal = null;
+  // find_space answers, by question, and the panel sweeps behind them, by
+  // panel: the sweep does not depend on the size asked about, and an agent
+  // asks one door six sizes. It is one walk over the car's triangles now, a
+  // few tens of milliseconds, and kept anyway because it never changes.
+  const spaces = new Map();
+  const grids = new Map();
+  let spacePrepared = null;
   let fit = null;
   let workingFit = null;
   let workingDesign = livery;
@@ -870,6 +879,30 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       throw new Error(`Could not load ${fitPath}: ${e.message}`);
     }
   }
+
+  // A proposal applied to the working state, and everything a save would
+  // refuse about the result. Shared by the inbox and by the endpoints that
+  // measure a proposal without offering it, so the two cannot disagree about
+  // what is acceptable.
+  const stage = (prop) => {
+    try {
+      const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
+      const baseDesign = workingDesign ?? livery;
+      const next = applyProposalDiff({ design: baseDesign, fit: baseFit }, prop);
+      if (liveryPath && Array.isArray(prop?.design) && prop.design.length > 0) {
+        const refusal = designRefusal(next.design, liveryPath);
+        if (refusal) return { status: 409, refused: `Proposed design rejected: ${refusal}` };
+      }
+      try {
+        validateFit(next.fit, fitPath);
+      } catch (e) {
+        return { status: 409, refused: `Proposed fit rejected: ${e.message}` };
+      }
+      return next;
+    } catch (e) {
+      return { status: 400, refused: e.message };
+    }
+  };
 
   const server = createServer(async (req, res) => {
     const send = (code, type, body) => {
@@ -975,19 +1008,30 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
       //
       // Rendered from the WORKING design and fit, like everything else here,
       // and from the same geometry the browser gets.
-      if (req.method === 'GET' && url.pathname === '/api/shot') {
+      //
+      // POST takes a PROPOSAL and draws the working design with it applied,
+      // adopting nothing — see /api/proposal/evaluate for why that exists.
+      if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/shot') {
+        let design = workingDesign ?? livery;
+        let useFit = workingFit ?? fit;
+        if (req.method === 'POST') {
+          const sent = await body();
+          if (sent.proposal !== undefined) {
+            const staged = stage(sent.proposal);
+            if (staged.refused) return json(staged.status, { error: staged.refused });
+            ({ design, fit: useFit } = staged);
+          }
+        }
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const view = url.searchParams.get('view') ?? 'left';
         // hasOwn, not a truthy lookup: `VIEWS['toString']` is a function from
         // the prototype, so it passed the check and then destructured to
         // undefined yaw and pitch — NaN camera, blank picture, 200 OK.
-        if (!Object.hasOwn(VIEWS, view)) {
+        if (view !== 'sheet' && !Object.hasOwn(VIEWS, view)) {
           return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
-            `Known views: ${Object.keys(VIEWS).join(', ')}` });
+            `Known views: ${Object.keys(VIEWS).join(', ')}, sheet` });
         }
-        const design = workingDesign ?? livery;
-        const useFit = workingFit ?? fit;
         // EVERY role, not just the primary one per term. `editorState` returns
         // one entry per vocabulary term — right for a surface picker, wrong
         // here: `surfaces.body` on a formula car binds body AND bodyRear, the
@@ -1019,12 +1063,21 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
           log(`  shot: ${absent.length} texture(s) the model does not carry: ${absent.join(', ')}`);
         }
         const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v) || 0));
-        const shot = await shoot(g, g.groups, surfaces, {
-          view,
-          sheets: stock,
-          width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
-          height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
-        });
+        // A sheet is four views at half size each, so it may have twice the
+        // pixels of one view across and down: its quarters are then as sharp
+        // as a single picture.
+        const shot = view === 'sheet'
+          ? await shootSheet(g, g.groups, surfaces, {
+              sheets: stock,
+              width: clamp(url.searchParams.get('width') ?? 1400, 400, 2400),
+              height: clamp(url.searchParams.get('height') ?? 840, 300, 1440),
+            })
+          : await shoot(g, g.groups, surfaces, {
+              view,
+              sheets: stock,
+              width: clamp(url.searchParams.get('width') ?? 760, 200, 1400),
+              height: clamp(url.searchParams.get('height') ?? 460, 150, 900),
+            });
         res.writeHead(200, {
           'content-type': 'image/png',
           'cache-control': 'no-store',
@@ -1204,6 +1257,41 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         return json(200, { saved: fitPath });
       }
 
+      // Where a shape of a given size fits whole on a panel — see space.mjs.
+      // Waits for the model, like evaluate: without it there is no answer.
+      if (req.method === 'POST' && url.pathname === '/api/space') {
+        const q = await body();
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model' });
+        const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
+        if (where.error) return json(400, { error: where.error });
+        const cellMm = q.cellMm ? Number(q.cellMm) : undefined;
+        const key = JSON.stringify([where.role, q.panel, q.widthMm, q.heightMm, q.marginMm, q.count, cellMm]);
+        try {
+          if (!spaces.has(key)) {
+            spacePrepared ??= occupancyFor(m);
+            const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
+            if (!grids.has(gridKey)) {
+              grids.set(gridKey, cleanGrid({ profile, model: m, prepared: spacePrepared, role: where.role,
+                panel: q.panel, ...(cellMm ? { cellMm } : {}) }));
+            }
+            spaces.set(key, {
+              ...findSpace({
+                grid: grids.get(gridKey), model: m, prepared: spacePrepared,
+                widthMm: Number(q.widthMm),
+                heightMm: q.heightMm === undefined ? undefined : Number(q.heightMm),
+                marginMm: Number(q.marginMm ?? 0),
+                count: Number(q.count ?? 5),
+              }),
+              ...(where.chosen ? { roleChosen: where.chosen } : {}),
+            });
+          }
+          return json(200, spaces.get(key));
+        } catch (e) {
+          return json(400, { error: e.message });
+        }
+      }
+
       if (req.method === 'GET' && url.pathname === '/api/proposal') {
         return json(200, { proposal: pendingProposal });
       }
@@ -1216,26 +1304,41 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
         if (!prop.why || typeof prop.why !== 'string' || !prop.why.trim()) {
           return json(400, { error: 'Proposal requires a non-empty "why" field explaining the change.' });
         }
-        try {
-          const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
-          const baseDesign = workingDesign ?? livery;
-          const { design: nextDesign, fit: nextFit } = applyProposalDiff({ design: baseDesign, fit: baseFit }, prop);
-          if (liveryPath && Array.isArray(prop.design) && prop.design.length > 0) {
-            const refusal = designRefusal(nextDesign, liveryPath);
-            if (refusal) return json(409, { error: `Proposed design rejected: ${refusal}` });
-          }
-          try {
-            validateFit(nextFit, fitPath);
-          } catch (e) {
-            return json(409, { error: `Proposed fit rejected: ${e.message}` });
-          }
+        const staged = stage(prop);
+        if (staged.refused) return json(staged.status, { error: staged.refused });
+        const id = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        pendingProposal = { id, why: prop.why.trim(), design: prop.design ?? [], fit: prop.fit ?? [] };
+        return json(200, { id });
+      }
 
-          const id = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-          pendingProposal = { id, why: prop.why.trim(), design: prop.design ?? [], fit: prop.fit ?? [] };
-          return json(200, { id });
-        } catch (e) {
-          return json(400, { error: e.message });
-        }
+      // What a proposal WOULD do, measured, without offering it to anybody.
+      //
+      // The inbox applies a proposal in the browser, and only an accepted one
+      // reaches the working state that check_fitment and the shot read. So an
+      // agent that proposed and then checked was checking the design BEFORE its
+      // own change, and one working with nobody at the editor could not check
+      // its change at all — the proposal sat pending and every measurement
+      // described the car without it. The alternative was letting an agent
+      // accept its own proposals, which is the one thing the inbox exists to
+      // prevent. This lets it measure a draft instead, and still leaves the
+      // only way onto the car through a person.
+      //
+      // The same staging as a real proposal, so a draft that passes here is
+      // one the inbox will take. And unlike /api/fitment this WAITS for the
+      // model: that one serves a panel a person is looking at, where a partial
+      // answer now beats a full one in two seconds, but a caller deciding
+      // whether its draft passes needs the geometry checks to have run.
+      if (req.method === 'POST' && url.pathname === '/api/proposal/evaluate') {
+        const staged = stage(await body());
+        if (staged.refused) return json(staged.status, { error: staged.refused });
+        await getModel();
+        // The staged design and fit ride along: what a draft AMOUNTS to is the
+        // other question a caller holding a list of operations has, and this
+        // is the one place that has already worked it out.
+        return json(200, {
+          ...fitment(staged.design, profile, staged.fit, { model }), modelError,
+          design: staged.design, fit: staged.fit,
+        });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/proposal/ack') {

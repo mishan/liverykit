@@ -13,6 +13,12 @@ export const CONSTRAINTS = {
     'replacing the global 25 mm floor. Applies to any treatment, not just text.',
   minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
     'A background fill is meant to bleed off an island; a name is not.',
+  minVisible: 'number 0-1 — the fraction of the box that must be seen from trackside, ' +
+    'by the same ray casting as the visibility check, which otherwise only speaks up ' +
+    'below 35%. A roundel tucked under a window frame is on the car and still cut off.',
+  minMargin: 'number, mm — clean bodywork the box must have all round: with this much added ' +
+    'on every side it must still be on the car and visible. Keeps a roundel off shut lines, ' +
+    'window frames and arches.',
 };
 
 
@@ -41,11 +47,11 @@ export function opSetConstraint(design, { id, key, value }) {
     if (typeof value !== want) {
       throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
     }
-    if (key === 'minOnCar' && (value < 0 || value > 1)) {
-      throw new Error(`Constraint "minOnCar" is a fraction between 0 and 1; got ${value}.`);
+    if ((key === 'minOnCar' || key === 'minVisible') && (value < 0 || value > 1)) {
+      throw new Error(`Constraint "${key}" is a fraction between 0 and 1; got ${value}.`);
     }
-    if (key === 'minMm' && !(value > 0)) {
-      throw new Error(`Constraint "minMm" is a size in millimetres, above zero; got ${value}.`);
+    if ((key === 'minMm' || key === 'minMargin') && !(value > 0)) {
+      throw new Error(`Constraint "${key}" is a size in millimetres, above zero; got ${value}.`);
     }
   }
   for (const grp of ['surfaces', 'paint']) {
