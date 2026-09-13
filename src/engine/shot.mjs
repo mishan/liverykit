@@ -985,6 +985,113 @@ export function onMeshShare(model, piece, tris, n = 96) {
   return on / wanted;
 }
 
+// The whole-car pass of `piecesInView`, kept per geometry and frame. It
+// depends on the car and the car's own sheets and on nothing a draft changes,
+// and it was redrawn for every view of every evaluate while the editor's
+// event loop waited. Kept on the geometry, so it goes when that does, and
+// checked against the sheet each group wears, since a texture that could not
+// be read once is allowed to be read the next time.
+const passOnes = new WeakMap();
+
+/** The same coverage rule as `rasterise` — pixel centres, barycentric weights all non-negative — inside a window of the frame. */
+function walker(indices, sx, sy, sz) {
+  return (t, x0, y0, x1, y1, visit) => {
+    const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+    if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) return;
+    const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
+    const minX = Math.max(x0, Math.floor(Math.min(ax, bx, cx)));
+    const maxX = Math.min(x1 - 1, Math.ceil(Math.max(ax, bx, cx)));
+    const minY = Math.max(y0, Math.floor(Math.min(ay, by, cy)));
+    const maxY = Math.min(y1 - 1, Math.ceil(Math.max(ay, by, cy)));
+    if (maxX < minX || maxY < minY) return;
+    const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
+    if (Math.abs(area) < 1e-9) return;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const px = x + 0.5, py = y + 0.5;
+        const w0 = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area;
+        const w1 = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area;
+        const w2 = 1 - w0 - w1;
+        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
+        visit(x, y, w0 * sz[ia] + w1 * sz[ib] + w2 * sz[ic], w0, w1, w2, ia, ib, ic);
+      }
+    }
+  };
+}
+
+function passOne(model, groups, sheets, view, width, height) {
+  const worn = groups.map((g) => sheets.get(sheetKey(g)) ?? null);
+  let frames = passOnes.get(model);
+  if (!frames) passOnes.set(model, (frames = new Map()));
+  const key = `${view} ${width}x${height}`;
+  const kept = frames.get(key);
+  if (kept && kept.groups === groups && kept.worn.every((w, i) => w === worn[i])) return kept;
+
+  const { positions, uvs, indices } = model;
+  const frame = viewFrame(positions, view, width, height);
+  const { focal } = frame;
+  const { eye, fwd, right, up } = frameCamera(positions, frame.angles,
+    { width, height, focal, span: frame.span, centre: frame.centre });
+
+  // Every vertex projected once. A triangle's corners are shared with its
+  // neighbours, and projecting per triangle did that sum six times over.
+  const nv = positions.length / 3;
+  const sx = new Float32Array(nv);
+  const sy = new Float32Array(nv);
+  const sz = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) {
+    const dx = positions[i * 3] - eye[0];
+    const dy = positions[i * 3 + 1] - eye[1];
+    const dz = positions[i * 3 + 2] - eye[2];
+    const z = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+    sz[i] = z;
+    if (z <= 0.01) continue;
+    sx[i] = width / 2 + ((dx * right[0] + dy * right[1] + dz * right[2]) * focal) / z;
+    sy[i] = height / 2 - ((dx * up[0] + dy * up[1] + dz * up[2]) * focal) / z;
+  }
+  const walk = walker(indices, sx, sy, sz);
+  const uvAt = (w0, w1, w2, ia, ib, ic, k) => w0 * uvs[ia * 2 + k] + w1 * uvs[ib * 2 + k] + w2 * uvs[ic * 2 + k];
+
+
+  // Pass one: the whole car.
+  const depth = new Float32Array(width * height).fill(Infinity);
+  const who = new Int32Array(width * height).fill(-1);
+  const hitU = new Float32Array(width * height);
+  const hitV = new Float32Array(width * height);
+  const groupOf = new Int32Array(indices.length / 3).fill(-1);
+  for (const [gi, g] of groups.entries()) {
+    for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
+    if (g.lod === 'LR' || g.add) continue;
+    const art = worn[gi];
+    // Glass covers where its own sheet is opaque, and nowhere else. It was
+    // skipped outright while the picture draws a windscreen's frit at the
+    // sheet's own alpha, so a number under the frit counted as whole and was
+    // hidden in the picture. The fresnel floor under the rest is a tint, and
+    // what is seen through it is seen. Glass with no car-owned sheet, painted
+    // glass included, is only that floor and still hides nothing.
+    if (g.glass && !art) continue;
+    // An unpainted blended part with no sheet of its own is not drawn in the
+    // picture either. A painted one is, and has no car-owned sheet because it
+    // wears the design: skipped too, a painted number plate stood in front of
+    // a door name and hid nothing, while the picture showed it covering.
+    if (g.blend && !art && !g.role) continue;
+    const cut = art ? (g.alphaTest ?? (g.blend ? 0.5 : null)) : null;
+    for (let t = g.start; t < g.start + g.count; t += 3) {
+      walk(t, 0, 0, width, height, (x, y, z, w0, w1, w2, ia, ib, ic) => {
+        const at = y * width + x;
+        if (z >= depth[at]) return;
+        const u = uvAt(w0, w1, w2, ia, ib, ic, 0);
+        const v = uvAt(w0, w1, w2, ia, ib, ic, 1);
+        if (cut !== null && alphaAt(art, u, v) < cut) return;
+        depth[at] = z; who[at] = t; hitU[at] = u; hitV[at] = v;
+      });
+    }
+  }
+  const out = { groups, worn, eye, sx, sy, sz, depth, who, hitU, hitV, groupOf };
+  frames.set(key, out);
+  return out;
+}
+
 /**
  * How much of each piece of artwork a view shows, counted rather than judged.
  *
@@ -1018,90 +1125,11 @@ export function onMeshShare(model, piece, tris, n = 96) {
  * own alpha says it is there, which needs its sheet; a design's own surfaces are
  * not rasterised for this, and count as covering everywhere.
  */
-export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540 } = {}) {
+export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540, triangles = null } = {}) {
   const { positions, uvs, normals, indices } = model;
-  const frame = viewFrame(positions, view, width, height);
-  const { focal } = frame;
-  const { eye, fwd, right, up } = frameCamera(positions, frame.angles,
-    { width, height, focal, span: frame.span, centre: frame.centre });
-
-  // Every vertex projected once. A triangle's corners are shared with its
-  // neighbours, and projecting per triangle did that sum six times over.
-  const nv = positions.length / 3;
-  const sx = new Float32Array(nv);
-  const sy = new Float32Array(nv);
-  const sz = new Float32Array(nv);
-  for (let i = 0; i < nv; i++) {
-    const dx = positions[i * 3] - eye[0];
-    const dy = positions[i * 3 + 1] - eye[1];
-    const dz = positions[i * 3 + 2] - eye[2];
-    const z = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
-    sz[i] = z;
-    if (z <= 0.01) continue;
-    sx[i] = width / 2 + ((dx * right[0] + dy * right[1] + dz * right[2]) * focal) / z;
-    sy[i] = height / 2 - ((dx * up[0] + dy * up[1] + dz * up[2]) * focal) / z;
-  }
-
-  // The same coverage rule as `rasterise` — pixel centres, barycentric weights
-  // all non-negative — inside a window of the frame.
-  const walk = (t, x0, y0, x1, y1, visit) => {
-    const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
-    if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) return;
-    const ax = sx[ia], ay = sy[ia], bx = sx[ib], by = sy[ib], cx = sx[ic], cy = sy[ic];
-    const minX = Math.max(x0, Math.floor(Math.min(ax, bx, cx)));
-    const maxX = Math.min(x1 - 1, Math.ceil(Math.max(ax, bx, cx)));
-    const minY = Math.max(y0, Math.floor(Math.min(ay, by, cy)));
-    const maxY = Math.min(y1 - 1, Math.ceil(Math.max(ay, by, cy)));
-    if (maxX < minX || maxY < minY) return;
-    const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
-    if (Math.abs(area) < 1e-9) return;
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const px = x + 0.5, py = y + 0.5;
-        const w0 = ((bx - px) * (cy - py) - (cx - px) * (by - py)) / area;
-        const w1 = ((cx - px) * (ay - py) - (ax - px) * (cy - py)) / area;
-        const w2 = 1 - w0 - w1;
-        if (w0 < 0 || w1 < 0 || w2 < 0) continue;
-        visit(x, y, w0 * sz[ia] + w1 * sz[ib] + w2 * sz[ic], w0, w1, w2, ia, ib, ic);
-      }
-    }
-  };
+  const { eye, sx, sy, sz, depth, who, hitU, hitV, groupOf } = passOne(model, groups, sheets, view, width, height);
+  const walk = walker(indices, sx, sy, sz);
   const uvAt = (w0, w1, w2, ia, ib, ic, k) => w0 * uvs[ia * 2 + k] + w1 * uvs[ib * 2 + k] + w2 * uvs[ic * 2 + k];
-
-  // Pass one: the whole car.
-  const depth = new Float32Array(width * height).fill(Infinity);
-  const who = new Int32Array(width * height).fill(-1);
-  const hitU = new Float32Array(width * height);
-  const hitV = new Float32Array(width * height);
-  const groupOf = new Int32Array(indices.length / 3).fill(-1);
-  for (const [gi, g] of groups.entries()) {
-    for (let t = g.start; t < g.start + g.count; t += 3) groupOf[t / 3] = gi;
-    if (g.lod === 'LR' || g.add) continue;
-    const art = sheets.get(sheetKey(g)) ?? null;
-    // Glass covers where its own sheet is opaque, and nowhere else. It was
-    // skipped outright while the picture draws a windscreen's frit at the
-    // sheet's own alpha, so a number under the frit counted as whole and was
-    // hidden in the picture. The fresnel floor under the rest is a tint, and
-    // what is seen through it is seen. Glass with no car-owned sheet, painted
-    // glass included, is only that floor and still hides nothing.
-    if (g.glass && !art) continue;
-    // An unpainted blended part with no sheet of its own is not drawn in the
-    // picture either. A painted one is, and has no car-owned sheet because it
-    // wears the design: skipped too, a painted number plate stood in front of
-    // a door name and hid nothing, while the picture showed it covering.
-    if (g.blend && !art && !g.role) continue;
-    const cut = art ? (g.alphaTest ?? (g.blend ? 0.5 : null)) : null;
-    for (let t = g.start; t < g.start + g.count; t += 3) {
-      walk(t, 0, 0, width, height, (x, y, z, w0, w1, w2, ia, ib, ic) => {
-        const at = y * width + x;
-        if (z >= depth[at]) return;
-        const u = uvAt(w0, w1, w2, ia, ib, ic, 0);
-        const v = uvAt(w0, w1, w2, ia, ib, ic, 1);
-        if (cut !== null && alphaAt(art, u, v) < cut) return;
-        depth[at] = z; who[at] = t; hitU[at] = u; hitV[at] = v;
-      });
-    }
-  }
 
   const facing = (t) => {
     const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
@@ -1129,24 +1157,17 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
   };
 
   // Pass two: each piece with nothing in front of it.
-  return pieces.map((piece) => {
-    const [u0, v0, u1, v1] = piece.box;
+  return pieces.map((piece, pi) => {
     const mine = [];
     let bx0 = width, by0 = height, bx1 = 0, by1 = 0;
-    for (const g of groups) {
-      if (g.role !== piece.role || g.lod === 'LR') continue;
-      for (let t = g.start; t < g.start + g.count; t += 3) {
-        const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
-        const tu0 = Math.min(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]);
-        const tu1 = Math.max(uvs[ia * 2], uvs[ib * 2], uvs[ic * 2]);
-        const tv0 = Math.min(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]);
-        const tv1 = Math.max(uvs[ia * 2 + 1], uvs[ib * 2 + 1], uvs[ic * 2 + 1]);
-        if (tu1 < u0 || tu0 > u1 || tv1 < v0 || tv0 > v1) continue;
-        if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) continue;
-        mine.push(t);
-        bx0 = Math.min(bx0, sx[ia], sx[ib], sx[ic]); bx1 = Math.max(bx1, sx[ia], sx[ib], sx[ic]);
-        by0 = Math.min(by0, sy[ia], sy[ib], sy[ic]); by1 = Math.max(by1, sy[ia], sy[ib], sy[ic]);
-      }
+    // Found once per piece by a caller asking about several views: this
+    // scanned every triangle of the role, per piece and again per view.
+    for (const t of triangles?.[pi] ?? pieceTriangles(model, groups, piece)) {
+      const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
+      if (sz[ia] <= 0.01 || sz[ib] <= 0.01 || sz[ic] <= 0.01) continue;
+      mine.push(t);
+      bx0 = Math.min(bx0, sx[ia], sx[ib], sx[ic]); bx1 = Math.max(bx1, sx[ia], sx[ib], sx[ic]);
+      by0 = Math.min(by0, sy[ia], sy[ib], sy[ic]); by1 = Math.max(by1, sy[ia], sy[ib], sy[ic]);
     }
     const x0 = Math.max(0, Math.floor(bx0)), y0 = Math.max(0, Math.floor(by0));
     const x1 = Math.min(width, Math.ceil(bx1) + 1), y1 = Math.min(height, Math.ceil(by1) + 1);
