@@ -1615,6 +1615,13 @@ test('glass covers where its own texture is opaque, as the picture draws its fri
   const [, after] = piecesInView(model, groups, clearGlass, [piece('clear', 0.2), piece('frit', 0.6)],
     { view: 'left', width: 300, height: 200 });
   assert.equal(after.shown, after.whole, JSON.stringify(after));
+
+  // A kn5 mesh name may hold any byte, NUL included, and what stands in front
+  // is reported as the pair it is rather than split back out of one string.
+  const odd = { ...model, parts: [model.parts[0], { ...model.parts[1], name: 'WIND\u0000SCREEN' }] };
+  const [, named] = piecesInView(odd, groups, sheets, [piece('clear', 0.2), piece('frit', 0.6)],
+    { view: 'left', width: 300, height: 200 });
+  assert.deepEqual(named.blockers.map(({ mesh, sheet }) => [mesh, sheet]), [['WIND\u0000SCREEN', 'glass.dds']]);
 });
 
 // A ring whose stroke is drawn past its own box (radius + width/2 = 0.75), at

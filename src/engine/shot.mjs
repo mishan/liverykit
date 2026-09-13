@@ -1214,8 +1214,14 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
           shown++;
           continue;
         }
-        const key = t1 >= 0 ? `${meshOf(t1) ?? ''}\u0000${partName(groups[groupOf[t1 / 3]])}` : '\u0000nothing';
-        blockers.set(key, (blockers.get(key) ?? 0) + 1);
+        // By mesh, then by what it wears: a key joined with a separator and
+        // split back out came apart on a kn5 mesh name holding that byte, and
+        // a name may hold any byte.
+        const mesh = t1 >= 0 ? meshOf(t1) : null;
+        const sheet = t1 >= 0 ? partName(groups[groupOf[t1 / 3]]) : 'nothing';
+        if (!blockers.has(mesh)) blockers.set(mesh, new Map());
+        const bySheet = blockers.get(mesh);
+        bySheet.set(sheet, (bySheet.get(sheet) ?? 0) + 1);
       }
     }
     if (!whole) return none;
@@ -1224,10 +1230,9 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
       shown,
       // What stands in front: the mesh where it has a name, and the texture
       // it wears, which says whether it is part of the same painted surface.
-      blockers: [...blockers].sort((a, b) => b[1] - a[1]).map(([k, px]) => {
-        const [mesh, sheet] = k.split('\u0000');
-        return { mesh: mesh || null, sheet, px };
-      }),
+      blockers: [...blockers]
+        .flatMap(([mesh, bySheet]) => [...bySheet].map(([sheet, px]) => ({ mesh: mesh || null, sheet, px })))
+        .sort((a, b) => b.px - a.px),
       // Where the piece sits in the frame and how much of it it takes, as
       // fractions of the frame, so the answer does not depend on its size.
       box: [px0 / width, py0 / height, (px1 - px0) / width, (py1 - py0) / height],
