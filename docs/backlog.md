@@ -9,6 +9,10 @@ Ordered roughly by how much they cost the person looking at the preview.
 
 ## Portability, measured: what a portable design does on an untouched car
 
+> The fixes for the five entries under this heading are planned in
+> [portability-plan.md](portability-plan.md); the wider direction they sit in
+> is [roadmap.md](roadmap.md).
+
 Written from a sweep rather than an impression, so the entries under it can be
 argued with. 26 cars were sampled from a 254-car install — every eleventh, plus
 the three this repository already knows — profiled from scratch with
@@ -93,6 +97,32 @@ per-car `--explain` and a human confirmation, which is a thirty-second job
 repeated eleven times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than eleven.
+
+## A profile's `visible` counts meshes behind the paint as in front of it
+
+**Symptom.** Regenerating the NSX takes its doors from 88% visible to 64% and
+its bonnet from 95% to about 61%, and moves 191 tags and 363 safe areas with
+them, though nothing about the car changed. The checked-in NSX profile keeps
+its older measurements for this reason, with only `alphaHides` grafted onto
+them; the Abarth and RSS4 were regenerated after the cause and carry it.
+
+**Cause.** Since 097ded3, `computeSafeAreas` (`src/engine/visibility.mjs`)
+casts from each vertex with no lift and relies on voxel ownership to step over
+the surface's own cells, and a voxel marked by two meshes stops every ray. At
+2.5 cm cells any mesh within about 2.5 cm of the skin shares its voxels,
+including meshes BEHIND it: on the NSX door, `DOOR_Left_INT` (the door's inner
+shell), `COCKPIT_LR_SUB0` and `EXT_Carpaint_Inst_SUB0`; on the bonnet,
+`Front_Hood_SUB3`, the carbon liner, which blocks every vertex that fails. Of
+9,862 blocked rays from the door, 9,637 die on the first step.
+
+**What the fix has to establish.** That a shared voxel stops a ray only when
+the other mesh is in front of the surface — by testing the first steps exactly
+against the triangles on the outward side, as `rectVisibility`'s near-field
+test (95c26bb) does, or by ignoring a shared voxel whose other owner lies
+behind the normal. It must still catch what 097ded3 was for, a plate or a
+handle a few millimetres proud. Then check fitment's `rectVisibility`, which
+steps through the same grid, for the same artifact, regenerate all three
+profiles, and drop the NSX graft.
 
 ## The CLI renderer has one light rig, not the car's materials
 

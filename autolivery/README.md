@@ -126,7 +126,7 @@ only hard gate.
 
 A critic can be wrong the other way too. A local one failed three rounds of one
 run on a roundel that was whole in every render and a team name that was on the
-car but small in a sheet of four views, and the planner, believing it, shrank the
+car but small in what was then a sheet of four views, and the planner, believing it, shrank the
 roundel each time. So when a draft measures clean and the critic alone fails it,
 the gate takes a second look: full-size left and right views, the list of what
 was flagged, and the whole brief judged again. The second verdict decides, and
