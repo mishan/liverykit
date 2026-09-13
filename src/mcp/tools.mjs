@@ -91,7 +91,11 @@ async function toolFindPanels(client, args) {
   // was told four times that there were no panels, and concluded the car had
   // none. An empty answer to a question about a name that does not exist is
   // not an answer; it is refused, with the names that do.
-  const named = (s) => [s.role, s.from, s.from?.replace(/^(surfaces|paint)\./, '')].includes(args.role);
+  // `paint.<role>` too, the form find_space and a design's own `paint` block
+  // use to name one texture outright.
+  const asked = typeof args.role === 'string' ? args.role.replace(/^paint\./, '') : args.role;
+  const named = (s) => [s.role, s.from, s.from?.replace(/^(surfaces|paint)\./, '')].includes(asked)
+    || s.from === args.role;
   // Every texture the design paints, not only each term's primary: a term can
   // bind several, and a panel on the second is as placeable as one on the first.
   const all = [...state.surfaces, ...(state.secondarySurfaces ?? [])];
@@ -99,7 +103,8 @@ async function toolFindPanels(client, args) {
   if (args.role && !surfaces.length) {
     return {
       content: [{ type: 'text', text: `No surface called ${JSON.stringify(args.role)} on this car. ` +
-        `Ask by texture role or by the design's surface: ${all.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
+        `Ask by texture role (or paint.<role>) or by the design's surface: ` +
+        `${all.map((s) => `${s.role} (${s.from})`).join(', ')}.` }],
       isError: true,
     };
   }
@@ -513,12 +518,14 @@ export function createToolHandler(client) {
         properties: {
           panel: { type: 'string', description: 'Panel name, as find_panels lists it' },
           role: { type: 'string', description: 'Texture role or surface, when the panel name is on more than one' },
-          widthMm: { type: 'number', description: 'Width of the shape on the car, in mm' },
+          widthMm: { type: 'number', description: 'Width of the shape on the car, in mm (not with largest)' },
           heightMm: { type: 'number', description: 'Height on the car, in mm; defaults to widthMm, as a roundel is' },
           marginMm: { type: 'number', description: 'Only spots with at least this much clean bodywork all round (default 0)' },
           count: { type: 'number', description: 'How many spots (default 5)' },
+          largest: { type: 'boolean', description: 'Instead of a size, sweep sizes and return the LARGEST shape of the given aspect that fits whole, with its spot' },
+          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, about 0.8)' },
         },
-        required: ['panel', 'widthMm'],
+        required: ['panel'],
       },
     },
     {
