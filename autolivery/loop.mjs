@@ -140,9 +140,10 @@ function constraintsById(design) {
 
 /**
  * What got looser between two sets of constraints. Every constraint in the
- * vocabulary is a floor (a number the placement must reach) or a requirement
- * (true), so going down and no longer being true are the two ways to loosen
- * one. A constraint that is neither would have to say so here.
+ * vocabulary is a floor (a number the placement must reach), a requirement
+ * (true), or a region to sit with (an id), so going down, no longer being
+ * true and naming something else are the ways to loosen one. A constraint that
+ * is none of these would have to say so here.
  */
 function loosened(was, is) {
   const out = [];
@@ -150,6 +151,9 @@ function loosened(was, is) {
     const now = is[k];
     if (typeof v === 'number' && !(typeof now === 'number' && now >= v)) out.push(`${k} lowered from ${v} to ${now ?? 'nothing'}`);
     if (v === true && now !== true) out.push(`${k} removed`);
+    // A region to sit with: letting go of it, or naming another, gets out of
+    // the group the round failed on just as surely as lowering a floor.
+    if (typeof v === 'string' && now !== v) out.push(now === undefined ? `${k} removed` : `${k} changed from ${v} to ${now}`);
   }
   return out;
 }

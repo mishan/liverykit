@@ -22,7 +22,7 @@
 // the editor, the MCP and a test all read the same ones.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, spanPlacements, panel as panelOf } from './profile.mjs';
+import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, spanPlacements, panel as panelOf, panelName } from './profile.mjs';
 import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
@@ -207,6 +207,9 @@ function constraintsOf(region, id, t, say) {
     if (!Object.hasOwn(CONSTRAINTS, k)) continue;          // already reported
     if (k === 'keepClear') {
       if (typeof v !== 'boolean') { bad(k, 'must be true or false.'); continue; }
+    } else if (k === 'groupWith') {
+      if (typeof v !== 'string' || !v.trim()) { bad(k, 'must be the id of another region.'); continue; }
+      if (v === region.id) { bad(k, 'names this region itself.'); continue; }
     } else if (typeof v !== 'number' || !Number.isFinite(v)) {
       bad(k, 'must be a number.'); continue;
     } else if ((k === 'minOnCar' || k === 'minVisible') && (v < 0 || v > 1)) {
@@ -251,6 +254,9 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
   const failed = [];
   let wantsMargin = false;
+  // Every surface's placements, for the one check that asks about two regions
+  // that may be on different surfaces.
+  const all = [];
   for (const t of targets) {
     const spec = t.spec ?? {};
 
@@ -287,6 +293,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // reported rather than quietly enforcing nothing.
     for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, sayHere);
     if (placed.some((p) => typeof p.constraints.minMargin === 'number')) wantsMargin = true;
+    all.push({ t, placed });
 
     const size = texSize(profile, t.role);
     overlaps(placed, t, sayHere, size, design.identity ?? {});
@@ -301,7 +308,8 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     if (seen) margins(placed, profile, t, seen, sayHere);
   }
 
-  // Across surfaces rather than within one, so it cannot live in the loop above.
+  // Across surfaces rather than within one, so these cannot live in the loop above.
+  grouped(all, design, fit, profile, say);
   if (model) stacked(model, profile, targets, say, { design });
 
   return {
@@ -334,7 +342,7 @@ function preparedFor(model, profile) {
   return byHides.get(hides);
 }
 
-const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'unmirrored',
+const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'ungrouped', 'unmirrored',
   'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
 
 /**
@@ -1191,6 +1199,64 @@ function tooSmall(placed, t, say, size, identity) {
           (is === 'name' ? ', or split the name over two lines.' : '.')
         : `. Make its box taller (it is ${bh} mm).`),
     });
+  }
+}
+
+/**
+ * A region that asked to sit with another and is on a different panel.
+ *
+ * A person marked run 18's team name, on the rear quarter, as nowhere a
+ * spectator looks; run 17 did the same. The planner was asked to put the name
+ * under the number on the door, and sometimes did not, and nothing measured
+ * it. This does — but only where the design says `groupWith`. A brief may want
+ * the name on the roof, and a rule nobody declared would be this checker's
+ * taste standing in for the design's.
+ *
+ * The same panel, after aliases, on the same texture: the whole of what is
+ * measured. A neighbouring panel would need the adjacency spans use, and
+ * "beside" is not yet a question with an answer here.
+ */
+function grouped(all, design, fit, profile, say) {
+  const byKey = new Map();
+  for (const { t, placed } of all) {
+    for (const p of placed) {
+      if (!byKey.has(p.key)) byKey.set(p.key, []);
+      byKey.get(p.key).push({ t, p });
+    }
+  }
+  const known = new Set(Object.keys(fit?.copies ?? {}));
+  for (const group of ['surfaces', 'paint']) {
+    for (const spec of Object.values(design?.[group] ?? {})) {
+      for (const r of spec?.regions ?? []) if (r?.id) known.add(r.id);
+    }
+  }
+  const where = ({ t, p }) => (p.region.panel ? `${t.role} ${panelName(profile, t.role, p.region.panel)}` : null);
+
+  for (const { t, placed } of all) {
+    for (const p of placed) {
+      const g = p.constraints?.groupWith;
+      if (typeof g !== 'string') continue;
+      const partners = byKey.get(g) ?? [];
+      if (!partners.length) {
+        // A misspelled id is the worst case — a rule that reads as in force
+        // and holds nothing — so it is refused like a misspelled constraint.
+        say(known.has(g)
+          ? { kind: 'ungrouped', severity: 'high', role: t.role, surface: t.from, panel: p.region.panel, ids: [p.id, g],
+            why: `${name(t, p.id)} asked to sit with ${g} (groupWith), and ${g} is not placed on this car, ` +
+              'so there is nothing for it to sit with' }
+          : { kind: 'bad-constraint', severity: 'fatal', role: t.role, surface: t.from, ids: [p.id],
+            why: `${name(t, p.id)} has groupWith: ${JSON.stringify(g)}, and no region in this design is called that.` });
+        continue;
+      }
+      const mine = where({ t, p });
+      if (mine && partners.some((q) => where(q) === mine)) continue;
+      const theirs = [...new Set(partners.map((q) => q.p.region.panel ?? 'the whole sheet'))].join(', ');
+      say({
+        kind: 'ungrouped', severity: 'high', role: t.role, surface: t.from, panel: p.region.panel, ids: [p.id, g],
+        why: `${name(t, p.id)} asked to sit with ${g} (groupWith), and is on ${p.region.panel ?? 'the whole sheet'} ` +
+          `while ${g} is on ${theirs}. Move it onto the same panel as ${g}.`,
+      });
+    }
   }
 }
 

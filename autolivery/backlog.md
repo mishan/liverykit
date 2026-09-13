@@ -7,7 +7,8 @@ the judgments the critic keeps getting wrong into measurement. In order:
   and the count the critic is told)
 - minimum sizes for numbers and names (done: `too-small`)
 - a table of well-known liveries
-- a rule that keeps the team name with the number
+- a rule that keeps the team name with the number (done: `groupWith`, which a
+  design declares; never assumed)
 
 ## Check a stripe's direction and continuity in 3D
 
