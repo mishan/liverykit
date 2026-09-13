@@ -351,6 +351,14 @@ async function toolRenderView(client, args = {}) {
 function draftOf(args) {
   const d = args?.proposal;
   if (d === undefined || d === null) return null;
+  // A string is the likeliest mistake — the JSON of a draft rather than the
+  // draft — and read as an object it had no `design`, so it measured as the
+  // working design and passed.
+  if (typeof d !== 'object' || Array.isArray(d)) {
+    throw new Error('A draft must be an object { design: [...ops], fit: [...ops] }; ' +
+      `got ${Array.isArray(d) ? 'a list' : `a ${typeof d}`}: ${String(JSON.stringify(d)).slice(0, 200)}.`);
+  }
+  // Whatever was sent goes on as sent; the staging refuses anything but a list.
   return { design: d.design ?? [], fit: d.fit ?? [] };
 }
 
