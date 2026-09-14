@@ -453,8 +453,12 @@ export async function run({
       said = await planner.round({ n, rounds, brief: theBrief, feedback, tools, call, parent: round, facts });
     } catch (e) {
       // A polish round that cannot finish — the budget spent, the planner
-      // declining — costs the pass nothing. A dead server is still the end.
-      if (!kept || e instanceof ServerGone) throw e;
+      // declining — costs the pass nothing. A dead server is still the end,
+      // and so is any error in a replay: there the planner is the recording,
+      // and its throwing is the replay failing, as when today's editor refuses
+      // a recorded draft. Caught here, a replay put the earlier pass back and
+      // reported passed without ever judging the polish it was asked to.
+      if (!kept || followRecording || e instanceof ServerGone) throw e;
       history.push({ round: n, passed: false, polish: true, gates: { render: 'not run', fitment: 'not run', critic: 'not run' },
         failures: [`round ${n} could not be finished: ${e.message}`] });
       restore(n, `it could not be finished (${clip(e.message, 200)})`);
