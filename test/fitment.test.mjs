@@ -1255,6 +1255,18 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
     text: '{number}' }]), identity: { number: '85' } }, { ...twoSheets, bind: { body: { roles: [sheet], source: 'human' } } }).n.mm;
   assert.equal(both.n.mm, Math.min(one('body'), one('rear')), 'the smaller of the two sheets\' sizes');
   assert.ok(one('rear') < one('body'));
+  // Laid out on one of them, the layout says the regions belong on that sheet alone.
+  const onBody = lay(twoSheets);
+  assert.match(onBody.sheet ?? '', /also paints rear.*paint\.body/, JSON.stringify(onBody.sheet));
+  assert.equal(big.sheet, undefined, 'and says nothing where the surface paints one sheet');
+
+  // What comes back passes check_fitment with the car loaded and the
+  // constraints the planner is told to give the roundel.
+  const held = { ...asDesign(big.layout) };
+  held.surfaces.body.regions[0].constraints = { minOnCar: 1, minVisible: 1, minMargin: big.layout.marginMm };
+  const onCar = fitment(held, profile, null, { model }).findings
+    .filter((f) => f.severity === 'high' || f.severity === 'fatal').filter((f) => f.kind !== 'low-contrast');
+  assert.deepEqual(onCar, [], JSON.stringify(onCar));
 
   assert.throws(() => lay(profile, { number: '' }), /layout needs number/);
   assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
