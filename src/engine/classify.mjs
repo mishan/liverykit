@@ -396,7 +396,7 @@ export function proposeAll(features) {
   return bind;
 }
 
-const pct =(n) => `${Math.round(n * 100)}%`.padStart(4);
+const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
 
 /**
  * A human-readable ranking, for `liverykit --explain`.
