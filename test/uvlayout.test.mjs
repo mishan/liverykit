@@ -126,6 +126,16 @@ test('an unwrap shifted by a whole sheet is an unwrap, measured where a livery p
     `rect ${JSON.stringify(panels[0].rect)} should be the cushion's own [0.05, 0.05, 0.9, 0.9]`));
 });
 
+test('an unwrap straddling a sheet boundary is an unwrap, not a tiled material', async () => {
+  // Half of it above v = 0 and half below, as the S14 Zenki's livery is laid
+  // out. Every island fits within a sheet, so the image is mapped once, and a
+  // measure that asked how much sat on one copy of the sheet called it tiled
+  // and refused placement on the car's real livery.
+  const { profile, seat } = await profileWith({ repeat: 1, shift: [0, -0.5] });
+  assert.equal(profile.textures[seat].uvLayout, 'unwrapped');
+  assert.equal(profile.textures[seat].uvInside, 1);
+});
+
 test('an island is moved back onto the sheet only when it fits wholly on another copy', () => {
   const model = parseKn5Buffer(carKn5({
     extraMeshes: [
@@ -156,6 +166,23 @@ test('an island is moved back onto the sheet only when it fits wholly on another
   assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
   assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
     'a mesh with nothing to move reads exactly as stored');
+});
+
+test('an island that repeats across many sheets does not crowd the real panels out', async () => {
+  // A strip on the body's own texture whose UVs run a thousand sheets wide, as
+  // one does on the mp412c's chassis. Its UV area counted every repeat, and the
+  // car's six face panels fell under the minimum share of the sheet beside it.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({ extraMeshes: [{ ...cushion({ name: 'STRIP', repeat: 1000 }), materialId: 0 }] }));
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+    const names = Object.keys(profile.panels.body ?? Object.values(profile.panels)[0]);
+    for (const face of ['left_mid', 'right_mid']) assert.ok(names.includes(face), `${face} is kept: ${names}`);
+    assert.ok(names.length >= 6, `the six faces are all still panels: ${names}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('a readable area never reaches off its panel', () => {
@@ -311,6 +338,51 @@ test('every island straddling a sheet boundary is counted, including one no pane
     const lines = [];
     await profileFromKn5(file, { id: 'c', visibility: false, log: (s) => lines.push(s) });
     assert.match(lines.join('\n'), /! 2 island\(s\) straddle a sheet boundary \(2 on seat\.dds\)/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('an island the layout calls one sheet is moved back whole or reported, never cut to a sliver', async () => {
+  // Three measures of "wider than a sheet" disagreed: 1.05 sheets for the
+  // layout and the panel threshold, and 1.02 for moving an island and for
+  // counting a straddler. An island 1.03 sheets tall was one sheet to the
+  // first two and neither moved nor counted by the others, so its panel was the
+  // 0.015 of it left on the sheet, and placement went ahead onto that.
+  const tall = (name, v0) => {
+    const N = 6;
+    const verts = [];
+    const indices = [];
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) verts.push(vert(-0.3 + 0.1 * i, 0.5, -0.3 + 0.1 * j, 0.05 + 0.9 * i / N, v0 + 1.03 * j / N));
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = j * (N + 1) + i;
+        indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+      }
+    }
+    return { name, verts, indices, materialId: 1 };
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [
+        tall('CENTRED', -1.015),    // v = -1.015 to 0.015: a sheet down, bleeding at both edges
+        tall('LOPSIDED', -1.04),    // v = -1.04 to -0.01: on no one copy of the sheet
+      ],
+      materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+      extraTextures: [{ name: 'seat.dds', width: 64, height: 64 }],
+    }));
+    const lines = [];
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+    const seat = Object.entries(profile.textures).find(([, t]) => t.file === 'seat.dds')[0];
+    assert.equal(profile.textures[seat].uvLayout, 'unwrapped');
+    const rects = Object.values(profile.panels[seat]).map((p) => p.rect);
+    assert.deepEqual(rects, [[0.05, 0, 0.9, 1]], 'the centred island is the whole sheet, not a sliver of it');
+    assert.match(lines.join('\n'), /! 1 island\(s\) straddle a sheet boundary \(1 on seat\.dds\)/,
+      'and the one with no copy to move to is said');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -9,14 +9,14 @@ What did not hold was the part that decides *where* a portable design lands:
 
 | what went wrong | on how many of 26 |
 |---|---|
-| body bound to a texture with no UV islands at all | 1 (`mclaren_mp412c_gt3`, confidence 0.04) |
+| body bound to a texture with no UV islands at all | 0; 1 (`mclaren_mp412c_gt3`) before step 2, which now binds its paint at 0.82 |
 | body bound to the right texture, whose islands were all dropped | 0; 2 (Avensis, RX3) before the shifted-sheet fix, and the 180SX's kept 2 panels |
 | body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds its paint at 0.79 |
 | an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
-| `[left, visible]` or `[right, visible]` matched no panel | 1 each, the mp412c, whose body is tiled |
+| `[left, visible]` or `[right, visible]` matched no panel | 0; 1 each, the mp412c, before step 2 |
 | a `[mid, upper, visible]` selection matched nothing on a car with a right body | 3 on the left, 2 on the right; 7 and 6 before tags read each panel's extent |
 | `[shared, visible]` matched no panel | 16 |
-| a body on a tiled material, not an unwrapped sheet | 1 (the mp412c's `black.dds`) |
+| a body on a tiled material, not an unwrapped sheet | 0; the mp412c's `black.dds` before step 2 |
 | surfaces the design paints that were bound on arrival | 2 of 14 |
 
 These are the output of `tools/sweep.mjs` (step 0). The first version of this
@@ -27,7 +27,8 @@ step 1's measurement showed: it listed three cars as painted with tiled
 materials, and none of the three is. Two are unwraps shifted off the sheet by
 a whole copy of it, and the third mostly is. The fix for that moved those
 cars' islands back onto the sheet, and the table is the sweep on that engine,
-with step 4's first fix, tags read from each panel's extent, in place.
+with step 4's first fix, tags read from each panel's extent, in place, and step
+2, so that no body is bound to a sheet without islands.
 
 Every one of these is a case of the tool doing something confidently that it
 had the information to doubt. The classifier had the island counts beside it.
@@ -43,9 +44,9 @@ cheap and the classifier fix depends on it. The two classifier items come before
 the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
-*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 and 1
+*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0, 1 and 2
 are built, and so are the shifted-sheet fix step 1 turned up and the first two
-parts of step 4; steps 2, 3 and 5, and the rest of step 4, are not.*
+parts of step 4; steps 3 and 5, and the rest of step 4, are not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -114,7 +115,9 @@ shifted-sheet fix, which gives 101 cars new island counts or visibility and
 leaves only 2 without visibility at all; the classifier still scored 189/193.
 It was packed once more when a texture the model names twice became one role,
 which turns two ambiguous labels into clean ones: 191/195, with the same four
-disagreements.
+disagreements. And once more for step 2, when an island repeating across many
+sheets stopped crowding real panels out of the threshold: 192/195, with the
+mp412c among the right ones.
 
 Three places rebuild classifier features from records instead of from a model:
 `survey.mjs` itself, `tools/evaluate.mjs`, which reads the survey's raw output,
@@ -146,14 +149,23 @@ them is a proposed body in the sweep, the mp412c's `black.dds`.
 **What was built.**
 
 - `src/engine/uvlayout.mjs` measures, per texture and before any island is
-  found, the share of its surface whose triangles lie on the one copy of the
-  sheet holding the most of it. `textures[role].uvLayout` is `tiled` below 0.5,
-  `unwrapped` at 0.9 or above and `mixed` between; `uvInside` records the share
-  and `uvTile` the offset when the sheet is not at [0, 0]. The 0.5 sits in the
-  fleet's valley: of 4,026 textures, 3,271 are at 0.9 or above, 523 below 0.5,
-  and 26 between 0.4 and 0.5. "Inside [0, 1]" was the first measure tried, and
-  it would have called 316 ordinary unwraps tiled. Textures below
-  `minCoverage` are not measured, and an absent `uvLayout` means exactly that.
+  filtered out, the share of its surface on islands no wider or taller than one
+  sheet, wherever they sit (`SHEET_SPAN`, 1.05, allowing for edge bleed). The
+  constant lives in `src/engine/kn5.mjs`, and `placeOnSheet` and the straddle
+  count use the same span, so an island the layout calls one sheet is either
+  moved back whole or counted as straddling; three thresholds for the one idea
+  had left islands 1.02 to 1.05 sheets wide as unmoved slivers nobody counted.
+  `textures[role].uvLayout` is `tiled` below 0.5, `unwrapped` at 0.9 or above
+  and `mixed` between; `uvInside` records the share, and `uvTile` the copy of
+  the sheet holding most of the surface when that is not [0, 0]. The 0.5 sits in
+  the fleet's valley: of 4,026 textures, 3,455 are at 0.9 or above, 468 below
+  0.5, and 19 between 0.4 and 0.5. Two measures came first, and each was wrong
+  on real bodies. "Inside [0, 1]" would have called 316 whole-copy shifts
+  tiled. "On the one copy of the sheet holding most of it", which this step
+  first shipped, called the S14 Zenki's livery tiled — an ordinary unwrap
+  straddling a sheet boundary — and so refused placement on it; step 2 found
+  that. Textures below `minCoverage` are not measured, and an absent
+  `uvLayout` means exactly that.
 - The generator logs `N of M paintable textures are tiled materials; nothing
   on them can be placed`, a second line in words when the largest texture
   spanning the car is tiled, and a line naming the shifted sheets whose
@@ -174,7 +186,8 @@ them is a proposed body in the sweep, the mp412c's `black.dds`.
   region on a tiled panel of a mixed texture too. Measured, 10 of the 41 flagged
   panels in the shipped profiles overhang the sheet by 0.01 or less, which is
   rounding on an ordinary unwrap, so refusing on the flag would refuse good
-  panels. It wants this per-texture measure applied per island first.
+  panels. It wants the span test the texture measure now uses, in place of its
+  thousandth of overhang, which is a change to `findIslands` not made here.
 
 **What it established.** `test/uvlayout.test.mjs` gives the synthetic car a
 cushion on its own texture. Repeated 40 times across it, the texture is `tiled`
@@ -192,8 +205,8 @@ shifted sheets named in the log, because tiling was never their problem.
 
 **Symptom.** `mclaren_mp412c_gt3` bound `body` to a role called `black` that
 has zero panels, on a car whose interior has 90 and whose rims have 84.
-`black.dds` is also a tiled material: 9.7% of its surface lies on any one copy
-of the sheet. `ks_mclaren_650_gt3`, the other close call, is not this case: its
+`black.dds` is also a tiled material: a quarter of its surface lies on islands
+that fit within a sheet. `ks_mclaren_650_gt3`, the other close call, is not this case: its
 pick has 47 panels, and only the margin is thin, which is step 3's business.
 
 **Cause.** `scoreBody` in `src/engine/classify.mjs` weighs area, whether the
@@ -204,26 +217,38 @@ would have settled the mp412c, and it is already known in the function that
 calls `propose`: `profileFromKn5` builds `panels` before it proposes bindings,
 and `--explain` builds a full profile before it explains.
 
-**Fix.**
+**What was built.**
 
-- `textureFeatures` gains two fields: `islands`, the number of panels above
-  threshold on that texture, and `uvLayout` from step 1. The generator and
-  `--explain` both have the profile in hand and pass them from it, so their two
-  rankings cannot disagree; the record readers from step 0 pass them from the
-  survey's fields.
-- `scoreBody` returns 0 for `islands === 0` and for `uvLayout === 'tiled'`.
-  Zero, not a penalty: the comment on `VOCABULARY` says "0 excludes", and a
-  sheet nothing is mapped onto is not a weaker body candidate, it is not a
-  candidate. The `minCoverage` gate in the generator also leaves a texture with
-  no panels, but a texture under 0.8% of the car's coverage was never going to
-  outscore a real body on area, so the exclusion changes nothing there.
-- On a car where every texture is tiled or empty, nothing scores, `propose`
-  returns null, and `body` is left out of `bind`. `resolveTargets` already
-  reports that as `unbound`. That is the right answer for such a car, and it
-  arrives next to step 1's `tiled` line rather than as a mystery.
-- `explain` prints the island count as a column, and says `no islands` in
-  words next to a candidate it excluded for that reason, so a person reading
-  the ranking sees why a large, visible, symmetric texture is not on it.
+- `textureFeatures` gains `islands`, the number of panels on each texture,
+  from the caller's profile, and `uvLayout` from its texture entry. The
+  generator and `--explain` pass the same profile's panels, and
+  `featuresFromRecord` reads both from survey records, so no ranking the tool
+  prints can disagree with the one that proposed the binding.
+- `excludedWhy` in `classify.mjs` holds the rule, and `scoreBody` returns 0
+  when it applies: a texture with no islands is not a candidate. Zero, not a
+  penalty: the comment on `VOCABULARY` says "0 excludes", and a sheet nothing
+  is mapped onto is not a weaker body candidate. The `minCoverage` gate also
+  leaves a texture with no panels, but one under 0.8% of the car's coverage was
+  never going to outscore a real body on area.
+- **Not** `uvLayout === 'tiled'`, though this step first said so. Measured on
+  the fleet it cost two points: it excluded the S14 Zenki's livery and the 992
+  Cup's body sheet, whose islands run 1.3 to 1.9 sheets. Every swatch it would
+  have caught has no islands and is caught by the rule above.
+- The mp412c then showed a second problem underneath. Its paint, `SKIN_00`,
+  kept 1 panel of 102, measured 14% visible on that one, and lost to a carbon
+  bake: one 111-vertex strip on its chassis, with UVs running 1,222 sheets
+  wide, carried 11,123 of the texture's 11,124 units of UV area, and
+  `minPanelArea` is a share of that total. Islands spanning more than a sheet
+  now stay out of it, which leaves `SKIN_00` 62 panels and changes nothing on a
+  texture without such an island.
+- Step 1's measure was wrong on the Zenki too, and is now asked per island (see
+  step 1), so its livery is placeable again.
+- On a car where every texture has no islands, nothing scores, `propose`
+  returns null, and `body` is left out of `bind`, which `resolveTargets`
+  already reports as `unbound`.
+- `explain` prints the island count as a column, and names in words the
+  largest textures it excluded and why, so a person reading the ranking sees
+  why a large, visible, symmetric texture is not on it.
 
 **What it must establish.** Re-run the survey and `tools/evaluate.mjs` with
 islands as an input. The figure to hold is 191/195 as the evaluator counts it on
@@ -234,6 +259,25 @@ number is downstream of this one. It must not fall, and the mp412c must move. Th
 the two, in which the correct answer is now ranked first. The synthetic
 fixture covers the mechanism with a car whose largest, most visible texture
 has no islands.
+
+**What it established.** On the sweep no body is bound to a texture without
+islands, and the mp412c binds its paint, `SKIN_00`, at 0.82 rather than
+`black.dds` at 0.04, so every one of the 26 cars now takes the flank rules and
+`[upper, visible]`. 23 bodies are confident, 2 shaky and 1 a guess — the 650
+GT3 at 0.04, whose pick is right and whose margin is step 3's business — and
+the mean confidence rises from 0.78 to 0.83, because a runner-up with no
+islands no longer narrows anyone's margin. Profiled before and after, every
+sample profile changes, since `uvInside` now measures the per-island share;
+beyond that, panel sets change only on textures carrying an island that spans
+more than a sheet, and tags move on a few others, where the new panels shift
+the car-wide frame the tagger measures in. The new tests — the exclusion rule
+on hand-built features, the mp412c from the fleet fixture, a canopy with no
+islands that outscores the synthetic car's body on area, the repeating island
+and the straddling unwrap — each fail with the change reverted. On the fleet
+fixture the classifier scores 192/195, up from 191, and 175/195 without
+visibility. The three it gets wrong are the two Evora labels and the 180SX,
+whose label names a LOD texture with no islands while the pick is the paint
+nine skins override — the label, most likely, again.
 
 ## 3. A guess below a floor is not painted
 
@@ -512,14 +556,15 @@ the tree, `panels` and `uvLayout` carried into a regenerated fleet fixture, and
 one feature reader shared by the evaluator and the classifier test. Needs the
 fleet on disk once.
 
-**1. Tiled materials.** `uvLayout` per texture, measured on one copy of the
-sheet before the island filter, `uvTile` for a shifted sheet, the log lines,
+**1. Tiled materials.** `uvLayout` per texture, measured per island before the
+island filter, `uvTile` for a shifted sheet, the log lines,
 the `tiled` caveat and `unplaceable` notes, placement refused and fill allowed.
 Synthetic fixture case.
 
 **2. Islands as a classifier input.** `islands` and `uvLayout` in
-`textureFeatures` at every call site, zero score without them, the column in
-`explain`. Fleet accuracy re-measured; the two McLarens as a regression test.
+`textureFeatures` at every call site, zero score without islands, repeating
+islands out of the panel threshold, the column in `explain`. Fleet accuracy
+re-measured; the mp412c as a regression test.
 
 **3. The confidence floor.** `uncertain` status, measured floor, evaluation
 table with labels for `tyres` and `brakes`, reported in build and, as its own

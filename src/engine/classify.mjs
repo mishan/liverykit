@@ -32,11 +32,12 @@
 // filename is unambiguous, which this code never sees — the first four signals
 // pick the right body on 175/195 (90%). The failures are a coherent group:
 // interior occlusion maps, engine bays and undertrays, all large, all symmetric,
-// all invisible. Adding visibility takes it to 191/195 (97.9%), and two of the
-// four remaining misses are the LABEL being wrong: on the Evora GTE and its
+// all invisible. Adding visibility, and the island count (see excludedWhy),
+// takes it to 192/195 (98.5%), and two of the three remaining misses are the
+// LABEL being wrong: on the Evora GTE and its
 // carbon variant this picks Carpaint_D, which every stock skin overrides and
 // which is 79% visible, over a labelled Skin_soft that no skin overrides and
-// that is 0.1% visible. Counted properly, 193/195.
+// that is 0.1% visible. Counted properly, 194/195.
 //
 // Re-measure with `node tools/survey.mjs cars --all --visibility` after any
 // change to the weights. That number is the thing to defend.
@@ -64,7 +65,7 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
  * `skinCounts` maps lowercased filename -> how many stock skins ship it.
  * `visibleByFile` maps filename -> mean trackside visibility, when computed.
  */
-export function textureFeatures(model, { roles = {}, skinCounts = new Map(), skinCount = 0, visibleByFile = new Map() } = {}) {
+export function textureFeatures(model, { roles = {}, skinCounts = new Map(), skinCount = 0, visibleByFile = new Map(), panels = null } = {}) {
   const areaOf = new Map();
   const boxOf = new Map();
   let X0 = Infinity, X1 = -Infinity, Y0 = Infinity, Y1 = -Infinity, Z0 = Infinity, Z1 = -Infinity;
@@ -144,6 +145,13 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       skinFraction: skinCount ? (skinCounts.get(file.toLowerCase()) ?? 0) / skinCount : 0,
       shaders: [...(shadersFor.get(file.toLowerCase()) ?? [])],
       ...(visibleByFile.has(file) ? { visible: visibleByFile.get(file) } : {}),
+      // What the caller's profile found on the texture: how many paintable
+      // islands, and how its UVs use the image. This function measures the
+      // model and cannot know either, so both come from the profile that is
+      // always in hand when bindings are proposed or explained. A caller
+      // without one gets neither, and nothing is excluded on their account.
+      ...(panels ? { islands: Object.keys(panels[role] ?? {}).length } : {}),
+      ...(typeof tex === 'object' && tex.uvLayout ? { uvLayout: tex.uvLayout } : {}),
     });
   }
   return out;
@@ -174,6 +182,7 @@ export function featuresFromRecord(car, { shaderNames = [] } = {}) {
     shaders: t.shaders ?? t.sh.map((i) => shaderNames[i]),
     ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
     ...(typeof t.panels === 'number' ? { islands: t.panels } : {}),
+    ...(t.uvLayout ? { uvLayout: t.uvLayout } : {}),
   }));
 }
 
@@ -225,6 +234,30 @@ export const VOCABULARY = {
 export const SCORABLE = Object.keys(VOCABULARY).filter((t) => VOCABULARY[t].score);
 
 /**
+ * Why a texture cannot be the body at all, or null.
+ *
+ * A sheet no island lives on has nothing a livery could be placed on. It is not
+ * a weaker candidate but no candidate, and the comment on VOCABULARY says what 0
+ * means. The mp412c GT3 bound its body to `black.dds`, a flat swatch with no
+ * islands, on a car whose interior has 90 panels — and every tag selection on
+ * it then matched nothing.
+ *
+ * A tiled `uvLayout` is deliberately NOT a reason, though the plan first said it
+ * should be. Measured on the fleet it excluded two real bodies and cost two
+ * points: the S14 Zenki's livery is an ordinary unwrap straddling a sheet
+ * boundary, which the layout measure reads as tiled, and the 992 Cup's body
+ * sheet has islands running past one sheet. Every swatch it would have caught
+ * has no islands and is caught here anyway.
+ *
+ * Only when the caller says: `islands` comes from a profile, and features
+ * without it are scored as they always were.
+ */
+export function excludedWhy(f) {
+  if (f.islands === 0) return 'no islands';
+  return null;
+}
+
+/**
  * Bodywork score.
  *
  * Multiplicative rather than additive on purpose: these signals are conjunctive.
@@ -233,6 +266,8 @@ export const SCORABLE = Object.keys(VOCABULARY).filter((t) => VOCABULARY[t].scor
  * one, which is exactly how engine bays win.
  */
 function scoreBody(f) {
+  // Zero, not a penalty: see excludedWhy.
+  if (excludedWhy(f)) return 0;
   let s = f.area;
 
   // Bodywork crosses the centreline. A part that sits entirely on one side is a
@@ -334,22 +369,36 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   if (!VALIDATED.has(term)) {
     lines.push('  ! This term\'s scoring has NOT been measured against the fleet. Treat it as a hint.');
   }
+  // Named, because a large, visible, symmetric texture missing from the table
+  // reads as the classifier overlooking it, not as a decision it made.
+  const notCandidates = term === 'body'
+    ? features.filter((f) => excludedWhy(f) && f.area >= 0.02).sort((a, b) => b.area - a.area).slice(0, 3)
+    : [];
+  const sayExcluded = () => {
+    for (const f of notCandidates) {
+      lines.push(`  not a candidate: ${f.file} — ${excludedWhy(f)}, ${pct(f.area).trim()} of the car's area`);
+    }
+  };
   if (!ranked.length) {
     lines.push('  No candidate scored above zero. This car may genuinely lack the surface;');
     lines.push('  bind it to null in the profile to say so explicitly.');
+    sayExcluded();
     return lines.join('\n');
   }
 
   lines.push('');
   lines.push('  ' + 'role'.padEnd(24) + 'file'.padEnd(30) +
-    'area  seen  skins  sym  shader');
+    'area  seen  skins  sym  isl  shader');
   for (const f of ranked.slice(0, limit)) {
     const sym = f.straddles ? ' yes' : '  no';
     const seen = typeof f.visible === 'number' ? pct(f.visible) : '   ?';
+    const isl = typeof f.islands === 'number' ? String(f.islands).padStart(3) : '  ?';
     const shader = f.shaders.find((s) => /damage_dirt|ksTyres|ksBrakeDisc/i.test(s)) ?? f.shaders[0] ?? '';
     lines.push('  ' + f.role.slice(0, 23).padEnd(24) + f.file.slice(0, 29).padEnd(30) +
-      pct(f.area) + '  ' + seen + '  ' + pct(f.skinFraction) + ' ' + sym + '  ' + shader.slice(0, 28));
+      pct(f.area) + '  ' + seen + '  ' + pct(f.skinFraction) + ' ' + sym + '  ' + isl + '  ' + shader.slice(0, 28));
   }
+  if (notCandidates.length) lines.push('');
+  sayExcluded();
 
   const best = ranked[0];
   lines.push('');
