@@ -1541,8 +1541,11 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (stripe !== null && (typeof stripe !== 'object' || Array.isArray(stripe))) {
           return json(400, { error: `stripe is { widthMm, offsetMm, name }, the band to lay along the car; got ${JSON.stringify(stripe)}.` });
         }
-        if (stripe && (layout || largest || widthMm !== undefined)) {
-          return json(400, { error: 'stripe lays a band along the whole car: ask it without layout, largest or widthMm.' });
+        // heightMm too: sent alone it names no question of its own, and a
+        // stripe beside it answered as though it had never been asked.
+        if (stripe && (layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'stripe lays a band along the whole car, as wide as stripe.widthMm: ' +
+            'ask it without layout, largest, widthMm or heightMm.' });
         }
         if (stripe) {
           const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
