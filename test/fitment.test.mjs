@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import '../src/index.mjs';
-import { fitment, wholePieces } from '../src/fitment.mjs';
+import { fitment, wholePieces, panelOnCar, stripeAt } from '../src/fitment.mjs';
 import { occupancyFor, rectVisibility } from '../src/engine/visibility.mjs';
 
 const probe = (model, rect) =>
@@ -1620,6 +1620,9 @@ const striped = [
   { name: 'wing', front: -1.65, back: -1.95, y0: 1.4, y1: 1.4, half: 0.7, uv: [0.3, 0.5, 0.075, 0.35] },
   { name: 'duct', front: 1.5, back: 1.4, y0: 0.75, y1: 0.75, half: 0.3, uv: [0.85, 0.02, 0.025, 0.15] },
   { name: 'duct-wall', front: 1.4, back: 1.3, y0: 0.75, y1: 0.99, half: 0.3, uv: [0.9, 0.02, Math.hypot(0.1, 0.24) / 4, 0.15] },
+  // A hatch in the roof, an island of its own set off the centreline as the
+  // NSX's is: from 40 to 440 mm left, so a centred 300 mm stripe crosses 110 mm of it.
+  { name: 'hatch', front: 0.1, back: -0.3, y0: 1.301, y1: 1.301, x0: 0.04, x1: 0.44, uv: [0.5, 0.35, 0.1, 0.1] },
 ];
 const alongOf = (q) => {
   const l = Math.hypot(q.y1 - q.y0, q.back - q.front);
@@ -1627,10 +1630,10 @@ const alongOf = (q) => {
 };
 // A panel's stretch from `from` back to `to`, as a quad on its own part of the sheet.
 const quadOf = (q, from = q.front, to = q.back) => {
-  const a = alongOf(q), [ux, uy, uw, uh] = q.uv;
+  const a = alongOf(q), [ux, uy, uw, uh] = q.uv, x0 = q.x0 ?? -q.half, x1 = q.x1 ?? q.half;
   const f = (z) => (q.front - z) / (q.front - q.back), y = (z) => q.y0 + (q.y1 - q.y0) * f(z);
   return { name: q.name.toUpperCase(), uv: [ux + f(from) * uw, uy, (f(to) - f(from)) * uw, uh], normal: [0, -a[2], a[1]],
-    corners: [[-q.half, y(from), from], [-q.half, y(to), to], [q.half, y(to), to], [q.half, y(from), from]] };
+    corners: [[x0, y(from), from], [x0, y(to), to], [x1, y(to), to], [x1, y(from), from]] };
 };
 const stripedModel = carOf([
   // The bonnet is one panel with a hole in it from 1.5 to 1.3.
@@ -1706,21 +1709,29 @@ test('a stripe along the car runs nose to tail and over the wing, and is not hel
   const bridge = piece('stripe-bridge', 'bridge', [0, 0.40625, 1, 0.1875]);
   const deck = piece('stripe-deck', 'deck', [0, 0.40625, 1, 0.1875]);
   const wing = piece('stripe-wing', 'wing', [0, 0.39286, 1, 0.21429]);
+  const hatch = piece('stripe-hatch', 'hatch', [0, 0, 1, 0.275]);
   const gaps = (regions) => stripeFindings(regions, { model: stripedModel }).filter((f) => f.kind === 'stripe-gap');
   const near = (got, want) => Math.abs(got - want) <= 40;
 
   // Nor about the vent: the duct, seen through it, is on the body's sheet and
   // visible, 250 mm below the bonnet at its floor and level with it at the
   // top of its rear wall. Run 20 was nearly told to paint down the NSX's.
-  assert.deepEqual(stripeFindings([front, roof, bridge, deck, wing], { model: stripedModel }), [],
+  assert.deepEqual(stripeFindings([front, roof, hatch, bridge, deck, wing], { model: stripedModel }), [],
     'nose to tail and over the wing, lined up, and nothing said about the windscreen or the vent');
+
+  // The hatch left out: a notch in the stripe, not a stretch of it, named by
+  // where it lies and not by its name. From 1900 to 2300 mm behind the nose.
+  const notch = gaps([front, roof, bridge, deck, wing]);
+  assert.deepEqual(notch.map((f) => [f.severity, f.panel]), [['high', 'hatch']], JSON.stringify(notch));
+  assert.ok(near(notch[0].from, 1900) && near(notch[0].to, 2300) && notch[0].mm >= 80 && notch[0].mm <= 120, JSON.stringify(notch[0]));
+  assert.match(notch[0].why, /hatch lies inside the stripe "centre" from \d+ to \d+ mm behind the nose, carrying \d+ mm of its \d+ mm width there, and the stripe does not paint it: a notch of the base colour in the stripe where it crosses roof/);
 
   // The slope from the roof to the deck left bare, and the wing: each a
   // stretch of its own, high, placed from the nose and named by its panel.
   // The bonnet's front edge is at z 2.0, the slope from -0.6 to -1.0 and the
   // wing from -1.65 to -1.95.
-  const two = gaps([front, roof, deck]);
-  assert.deepEqual(two.map((f) => [f.severity, f.panel, f.ids.length]), [['high', 'bridge', 3], ['high', 'wing', 3]], JSON.stringify(two));
+  const two = gaps([front, roof, hatch, deck]);
+  assert.deepEqual(two.map((f) => [f.severity, f.panel, f.ids.length]), [['high', 'bridge', 4], ['high', 'wing', 4]], JSON.stringify(two));
   assert.ok(near(two[0].from, 2600) && near(two[0].to, 3000), JSON.stringify(two[0]));
   assert.match(two[0].why, /leaves \d+ mm of the car bare seen from above, from \d+ to \d+ mm behind the nose between stripe-roof and stripe-deck: that stretch is bridge \(90% visible\)/);
   assert.ok(near(two[1].from, 3650) && near(two[1].to, 3950), JSON.stringify(two[1]));
@@ -1728,10 +1739,30 @@ test('a stripe along the car runs nose to tail and over the wing, and is not hel
   assert.match(two[1].why, /in the middle of stripe-deck: that stretch is wing .* It stands 300 mm above the stripe ahead of it, as a rear wing does/);
 
   // Stopping short of the nose is the same fault at the end of the stripe.
-  const short = gaps([piece('stripe-front', 'bonnet', [0.25, 0.40625, 0.75, 0.1875]), roof, bridge, deck, wing]);
+  const short = gaps([piece('stripe-front', 'bonnet', [0.25, 0.40625, 0.75, 0.1875]), roof, hatch, bridge, deck, wing]);
   assert.deepEqual(short.map((f) => [f.panel, f.from]), [['bonnet', 0]], JSON.stringify(short));
   assert.ok(near(short[0].to, 300), JSON.stringify(short[0]));
   assert.match(short[0].why, /from 0 to \d+ mm behind the nose ahead of stripe-front/);
+});
+
+test('a panel maps to the car in millimetres, and a band across the car maps back to each panel\'s "at"', () => {
+  // The mapping the stripe check stands on. Every piece of one stripe wants
+  // the same band across the car, and the fractions that paint it differ
+  // from panel to panel: 0.1875 of the 1.6 m bonnet, 0.25 of the 1.2 m roof,
+  // and on the hatch, which starts 40 mm left of centre, its first 0.275.
+  const near = (got, want, by = 10) => got.every((v, i) => Math.abs(v - want[i]) <= by);
+  const bonnet = panelOnCar(stripedModel, stripedProfile, 'body', 'bonnet');
+  assert.ok(near(bonnet.across, [-800, 800]) && near(bonnet.up, [1000, 1000]) && near(bonnet.behindNose, [0, 1200]), JSON.stringify(bonnet));
+  const hatchOnCar = panelOnCar(stripedModel, stripedProfile, 'body', 'hatch', [0, 0, 1, 0.5]);
+  assert.ok(near(hatchOnCar.across, [40, 240]) && near(hatchOnCar.behindNose, [1900, 2300]), JSON.stringify(hatchOnCar));
+
+  const band = { across: [-150, 150] };
+  for (const [panel, want] of [['bonnet', [0, 0.40625, 1, 0.1875]], ['roof', [0, 0.375, 1, 0.25]],
+    ['deck', [0, 0.40625, 1, 0.1875]], ['wing', [0, 0.39286, 1, 0.21429]], ['hatch', [0, 0, 1, 0.275]]]) {
+    const got = stripeAt(stripedModel, stripedProfile, 'body', panel, band);
+    assert.ok(near(got.at, want, 0.01) && got.error <= 5, `${panel}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
+  }
+  assert.equal(stripeAt(stripedModel, stripedProfile, 'body', 'hatch', { across: [-400, -200] }).at, null, 'a band that misses the hatch');
 });
 
 test('a stripe without the model says which of its checks did not run', async () => {

@@ -728,6 +728,7 @@ export function scanGrids(model, meshes, grids) {
               y: A.y * b0 + B.y * b1 + C.y * b2,
               z: A.z * b0 + B.z * b1 + C.z * b2,
               nx: nx / nl, ny: ny / nl, nz: nz / nl,
+              u, v,
               mesh: own,
             };
           }
