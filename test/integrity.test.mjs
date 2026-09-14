@@ -66,6 +66,26 @@ test('profile rejects panels on an unknown texture role', () => {
   }), /unknown texture role/);
 });
 
+test('profile rejects a panel extent that is not a box', () => {
+  // The tagger reads section and level off `extent3d` where there is one, and
+  // falls back to the centroid where there is not. A malformed one used to
+  // count as absent, so a hand edit that swapped two corners retagged the
+  // panel by its centroid and said nothing.
+  const car = (extent3d) => ({
+    id: 'x',
+    textures: { body: { file: 'a.dds', width: 64, height: 64 } },
+    panels: { body: { p: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 0], extent3d } } },
+  });
+  assert.doesNotThrow(() => validateProfile(car([[0, 0, -1], [1, 1, 1]])));
+  assert.doesNotThrow(() => validateProfile(car([[0, 0, 0], [0, 0, 0]])), 'a flat box is still a box');
+  assert.throws(() => validateProfile(car([[0, 0, -1]])), /body\.p\.extent3d must be \[\[x0, y0, z0\], \[x1, y1, z1\]\]/);
+  assert.throws(() => validateProfile(car([[0, 0], [1, 1]])), /body\.p\.extent3d must be/);
+  assert.throws(() => validateProfile(car([[0, 0, -1], [1, null, 1]])), /body\.p\.extent3d must be numbers/);
+  assert.throws(() => validateProfile(car([[0, 0, -1], [1, Infinity, 1]])), /body\.p\.extent3d must be numbers/);
+  assert.throws(() => validateProfile(car([[0, 0, 1], [1, 1, -1]])), /body\.p\.extent3d has its corners the wrong way round/);
+  assert.throws(() => validateProfile(car('box')), /body\.p\.extent3d must be/);
+});
+
 test('panel-relative coordinates resolve against the panel rect', () => {
   const whole = resolveRect(profile, 'body', { panel: 'flank' });
   assert.deepEqual(
