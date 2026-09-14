@@ -307,6 +307,29 @@ test('every round lands on the attempts page as it is judged, and the page stops
   }
 });
 
+test('the attempts page reloads until the run ends, and a run that dies says so on it', async () => {
+  const { attemptsPage } = await import('../autolivery/attempts.mjs');
+  // Passed, and not finished: a polish round or the proposal is still coming.
+  const between = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false,
+    history: [{ round: 1, passed: true, gates: { render: 'pass', fitment: 'pass', critic: 'pass' } }] });
+  assert.match(between, /http-equiv="refresh"/, 'still reloading after a pass');
+  assert.match(between, /still going/);
+
+  const ed = await fixtureEditor();
+  try {
+    const out = join(ed.dir, 'dies');
+    const planner = { async round() { throw new Error('the planner declined: policy'); } };
+    const critic = { async judge() { throw new Error('never asked'); } };
+    await assert.rejects(run({ brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+      out, rounds: 2, views: ['left'], shot: { width: 200, height: 150 } }), /declined/);
+    const left = await readFile(join(out, 'index.html'), 'utf8');
+    assert.doesNotMatch(left, /http-equiv="refresh"/, 'a dead run\'s page stops reloading');
+    assert.match(left, /stopped: the run ended: the planner declined: policy/);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
   // Past the limit, every call was refused with "call finish_round now",
   // finish_round included, so the round could never end. And a finish_round

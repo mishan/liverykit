@@ -66,10 +66,13 @@ function roundHtml(h, { passedIn }) {
  */
 export function attemptsPage(result, { rounds = null, refresh = 3 } = {}) {
   const history = result.history ?? [];
-  const running = !result.finished && !result.passed && !result.stopped;
+  // Running until the run says it has ended. A pass is not the end: a polish
+  // round can follow it and the proposal is sent after, and a page that
+  // stopped reloading at the pass never showed either.
+  const running = !result.finished && !result.stopped;
   const status = result.passed
-    ? `passed in round ${result.passedIn}` + (result.proposalId
-      ? ' — in the editor\'s inbox, for a person to accept or discard'
+    ? `passed in round ${result.passedIn}` + (running ? ' — the run is still going: a polish round, then the proposal'
+      : result.proposalId ? ' — in the editor\'s inbox, for a person to accept or discard'
       : result.proposalError ? ` — but the editor refused the proposal: ${result.proposalError}` : '')
     : result.stopped ? `stopped: ${result.stopped}`
       : running ? `round ${history.length + 1}${rounds ? ` of ${rounds}` : ''} in progress`
