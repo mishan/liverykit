@@ -124,7 +124,7 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
           content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: im.data } });
         }
         content.push({ type: 'text', text: `Round ${n} of ${rounds}. ` +
-          `${unsubmitted ? 'Finish the draft' : 'Fix what the gate named'}, then finish_round.` });
+          `${feedback.ask ?? (unsubmitted ? 'Finish the draft' : 'Fix what the gate named')}, then finish_round.` });
       }
       messages.push({ role: 'user', content });
 

@@ -177,7 +177,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
             'takes no images. Its notes above say what it saw.' });
         }
         parts.push({ type: 'text', text: `Round ${n} of ${rounds}. ` +
-          `${unsubmitted ? 'Finish the draft' : 'Fix what the gate named'}, then finish_round.` });
+          `${feedback.ask ?? (unsubmitted ? 'Finish the draft' : 'Fix what the gate named')}, then finish_round.` });
       }
       messages.push({ role: 'user', content: parts });
 
