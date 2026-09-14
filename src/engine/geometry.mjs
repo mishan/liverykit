@@ -12,6 +12,20 @@ import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blend
 import { cockpitEye } from './visibility.mjs';
 
 /**
+ * Which of a car's two cockpits a mesh belongs to, 'HR' or 'LR', or null for
+ * one that is not in either. Both renderers draw HR and never LR; why is
+ * beside the grouping in `wholeModelGeometry`. Handed out so a question about
+ * what the picture shows — the fitment check's view of the car from above —
+ * leaves out the same meshes.
+ */
+export function cockpitLod(m) {
+  const path = m.path ?? '';
+  if (/(^|\/)COCKPIT_HR(\/|$)/i.test(path)) return 'HR';
+  if (/(^|\/)COCKPIT_LR(\/|$)/i.test(path)) return 'LR';
+  return null;
+}
+
+/**
  * The WHOLE car, grouped by which texture paints each part.
  *
  * The per-role view is the right one while you are editing a surface — you are
@@ -249,14 +263,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // see docs/backlog.md.)
   //
   // `null` for every mesh on a car that ships one cockpit or none, which the
-  // renderers read as "draw this whatever the camera".
-  const cockpitLod = (m) => {
-    const path = m.path ?? '';
-    if (/(^|\/)COCKPIT_HR(\/|$)/i.test(path)) return 'HR';
-    if (/(^|\/)COCKPIT_LR(\/|$)/i.test(path)) return 'LR';
-    return null;
-  };
-
+  // renderers read as "draw this whatever the camera". See `cockpitLod`.
   const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
     && !damageOnly(model.materials?.[m.materialId]?.shader)
     && !motionBlurOnly(m.name);

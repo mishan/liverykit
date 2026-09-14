@@ -22,6 +22,12 @@ export const CONSTRAINTS = {
   groupWith: 'string, the id of another region — this one must be on the same panel as that ' +
     'one, as a team name belongs beside the race number. Checked only where a design declares ' +
     'it: a brief may want the name somewhere else.',
+  stripe: 'string, a name for the stripe — this region is a piece of a stripe that runs along the ' +
+    'car\'s length, and every region given the same name is another piece of the same stripe. Each ' +
+    'piece must run along the car, not across it; neighbouring pieces must line up where they meet, ' +
+    'within 20 mm; and together they must cover the car nose to tail, over the rear wing where there ' +
+    'is one, except where the car has glass, a vent, a grille or an opening. Checked only where a design ' +
+    'declares it: a band across the car is a design choice too.',
 };
 
 
@@ -46,7 +52,7 @@ export function opSetConstraint(design, { id, key, value }) {
       `Known constraints: ${Object.keys(CONSTRAINTS).join(', ')}.`);
   }
   if (value !== null) {
-    const want = key === 'keepClear' ? 'boolean' : key === 'groupWith' ? 'string' : 'number';
+    const want = key === 'keepClear' ? 'boolean' : key === 'groupWith' || key === 'stripe' ? 'string' : 'number';
     if (typeof value !== want) {
       throw new Error(`Constraint "${key}" takes a ${want}, not ${JSON.stringify(value)}.`);
     }
@@ -54,6 +60,11 @@ export function opSetConstraint(design, { id, key, value }) {
     // is not typed. `'team '` was stored as written and named no region.
     if (key === 'groupWith' && (!value.trim() || value !== value.trim() || value === id)) {
       throw new Error(`Constraint "groupWith" names another region's id, exactly; got ${JSON.stringify(value)}.`);
+    }
+    // The same for a stripe's name, which is how its pieces find each other:
+    // 'centre ' is a second stripe of one piece, measured against nothing.
+    if (key === 'stripe' && (!value.trim() || value !== value.trim())) {
+      throw new Error(`Constraint "stripe" is the stripe's name, shared exactly by every piece of it; got ${JSON.stringify(value)}.`);
     }
     if ((key === 'minOnCar' || key === 'minVisible') && (value < 0 || value > 1)) {
       throw new Error(`Constraint "${key}" is a fraction between 0 and 1; got ${value}.`);

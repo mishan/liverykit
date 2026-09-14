@@ -48,14 +48,14 @@ import { resolveTreatments } from '../registry.mjs';
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
-import { fitment } from '../fitment.mjs';
+import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
-import { findSpace, largestSpace, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayout, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -1525,9 +1525,46 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         const cellMm = num(q.cellMm, undefined) || undefined;
         const largest = q.largest === true || q.largest === 'true';
         const widthMm = num(q.widthMm, undefined);
-        const ask = largest
-          ? { largest: true, aspect: num(q.aspect, 1), marginMm: num(q.marginMm, 0) }
-          : { widthMm, heightMm: num(q.heightMm, widthMm), marginMm: num(q.marginMm, 0), count: num(q.count, 5) };
+        // Three questions, and one at a time: a layout with a size or with
+        // `largest` beside it would answer one and quietly ignore the other.
+        const layout = q.layout ?? null;
+        if (layout !== null && (typeof layout !== 'object' || Array.isArray(layout))) {
+          return json(400, { error: `layout is { number, name }, the texts to lay out; got ${JSON.stringify(layout)}.` });
+        }
+        if (layout && (largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'layout sizes the group itself: ask it without largest, widthMm or heightMm.' });
+        }
+        // A stripe runs the length of the car, not across this panel: the
+        // panel only says which sheet it is painted on. It is its own
+        // question for the same reason a layout is.
+        const stripe = q.stripe ?? null;
+        if (stripe !== null && (typeof stripe !== 'object' || Array.isArray(stripe))) {
+          return json(400, { error: `stripe is { widthMm, offsetMm, name }, the band to lay along the car; got ${JSON.stringify(stripe)}.` });
+        }
+        // heightMm too: sent alone it names no question of its own, and a
+        // stripe beside it answered as though it had never been asked.
+        if (stripe && (layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'stripe lays a band along the whole car, as wide as stripe.widthMm: ' +
+            'ask it without layout, largest, widthMm or heightMm.' });
+        }
+        if (stripe) {
+          const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
+          // Keyed on what the design hides and paints too: that decides what
+          // stands over the band, so the same ask can have two answers.
+          const design = workingDesign ?? livery;
+          const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
+          try {
+            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
+            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          } catch (e) {
+            return json(400, { error: e.message });
+          }
+        }
+        const ask = layout
+          ? { layout: { number: layout.number, name: layout.name }, marginMm: num(q.marginMm, 30) }
+          : largest
+            ? { largest: true, aspect: num(q.aspect, 1), marginMm: num(q.marginMm, 0) }
+            : { widthMm, heightMm: num(q.heightMm, widthMm), marginMm: num(q.marginMm, 0), count: num(q.count, 5) };
         const key = JSON.stringify([where.role, q.panel, cellMm, ask]);
         try {
           // A hit is re-inserted like a miss, so the stalest entry is the one
@@ -1540,9 +1577,11 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
             const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
             const grid = remember(grids, gridKey, grids.get(gridKey) ?? cleanGrid({ profile, model: m,
               prepared: spacePrepared, role: where.role, panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
-            remember(spaces, key, largest
-              ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
-              : findSpace({ grid, model: m, prepared: spacePrepared, ...ask }), 256);
+            remember(spaces, key, layout
+              ? groupLayout({ grid, profile, model: m, prepared: spacePrepared, ...ask.layout, marginMm: ask.marginMm })
+              : largest
+                ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
+                : findSpace({ grid, model: m, prepared: spacePrepared, ...ask }), 256);
           }
           // Said about THIS request, not cached with the answer: the same
           // question asked with the role spelled out and with it inferred gets

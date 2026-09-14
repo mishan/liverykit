@@ -459,6 +459,55 @@ export function panel(profile, role, name) {
 }
 
 /**
+ * Which way a panel's `at` runs on the car: its x (the texture's u) and its
+ * y (v), each as along the car, across it, or up and down.
+ *
+ * Panels are unwrapped every which way. On the NSX the bonnet, roof and rear
+ * deck run lengthwise in x and the upper nose runs lengthwise in y, and an
+ * agent asked for a Gulf centre stripe wrote [0.4, 0, 0.2, 1] on all of them
+ * — a band ACROSS the car where the livery's best-known element runs along it,
+ * because nothing it could ask said which way was which. Read off the unit
+ * vectors the profile measured: AC models are y-up, and a car's length is z.
+ *
+ * Named only where the measurement says so clearly. Labelled by the largest
+ * component alone, 80 of the NSX's 860 panels ran the same way in x and in y
+ * — right_front_lower of its interior measured u [1, 0, 0] and v [-1, 0, 0]
+ * — and a label sticker at 45 degrees ran "across" by 0.004. The planner is
+ * told to trust this for which way a stripe runs, so an axis within about 8
+ * degrees of a diagonal, or the same as the other, is null, and `unclear`
+ * says why.
+ */
+const CLEAR_BY = 0.2;
+const WAYS = ['across the car', 'up and down', 'along the car'];
+
+export function axesOf(p) {
+  const read = (a) => {
+    if (!Array.isArray(a) || a.length < 3) return { way: null, why: 'was not measured' };
+    const n = Math.hypot(a[0], a[1], a[2]);
+    if (!(n > 0)) return { way: null, why: 'was measured as no direction at all' };
+    const [first, second] = a.slice(0, 3).map((c, i) => ({ way: WAYS[i], share: Math.abs(c) / n }))
+      .sort((m, o) => o.share - m.share);
+    if (first.share - second.share < CLEAR_BY) {
+      return { way: null, why: `runs diagonally: ${first.share.toFixed(2)} ${first.way} and ` +
+        `${second.share.toFixed(2)} ${second.way}` };
+    }
+    return { way: first.way };
+  };
+  if (!Array.isArray(p.uAxis) && !Array.isArray(p.vAxis)) return null;
+  const u = read(p.uAxis), v = read(p.vAxis);
+  const axes = { x: u.way, y: v.way };
+  const unclear = [u.why && `x ${u.why}`, v.why && `y ${v.why}`].filter(Boolean);
+  if (axes.x && axes.x === axes.y) {
+    unclear.push(`x and y were both measured running ${axes.x}, which cannot both be true of one flat panel`);
+    axes.x = axes.y = null;
+  }
+  if (unclear.length) {
+    axes.unclear = `${unclear.join('; ')}. Look at this panel with render_car before running a stripe on it.`;
+  }
+  return axes;
+}
+
+/**
  * Panels on a texture role carrying every one of the given tags.
  *
  * AND, not OR, and deliberately so. `['left', 'mid']` means the left middle of

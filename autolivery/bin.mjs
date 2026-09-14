@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { dirname, join, resolve, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
 import { run, proposeDesign } from './loop.mjs';
@@ -38,6 +38,9 @@ The loop:
                          only onto the working design that run started from
   --out <dir>            renders, trace and result.json (default autolivery/runs/<time>)
   --no-propose           keep the passing design out of the editor's inbox
+  --polish <n>           rounds after a pass spent acting on the critic's advice, when it
+                         gave any (default 1). The pass is kept, and offered instead of a
+                         polish that does not pass the gate
 
 The models:
   --backend <b>          anthropic (default), or openai for any OpenAI-compatible
@@ -89,6 +92,9 @@ const { values, positionals } = parseArgs({
     'advisory-critic': { type: 'boolean', default: false },
     views: { type: 'string', default: 'sheet' },
     looks: { type: 'string', default: '2' },
+    // No default here: one would make --polish typed beside --replay
+    // indistinguishable from none. Applied below instead.
+    polish: { type: 'string' },
     'no-seed': { type: 'boolean', default: false },
     out: { type: 'string' },
     'no-propose': { type: 'boolean', default: false },
@@ -202,11 +208,19 @@ const replaying = Boolean(recording);
 if (replaying && values.rounds !== undefined) {
   fail(`--rounds does not apply to --replay, which runs the ${recording.rounds.length} round(s) the run recorded`);
 }
+// The same for --polish: a replay polishes as its run did, round for round,
+// and `--replay … --polish 0` used to be accepted and then replaced by the
+// recorded rounds.
+if (replaying && values.polish !== undefined) {
+  fail('--polish does not apply to --replay, which judges whatever polish rounds the run recorded');
+}
 const brief = replaying ? (recording.brief ?? '') : positionals.join(' ');
 const rounds = replaying ? recording.rounds.length : Number(values.rounds ?? '6');
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
 if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number, not ${values.looks}`);
+const polish = Number(values.polish ?? '1');
+if (!Number.isInteger(polish) || polish < 0) fail(`--polish must be a whole number, not ${values.polish}`);
 // Refused rather than run. `--views ,` split to nothing, so nothing was
 // rendered, the critic was never asked, and no round could pass a gate that
 // needs its verdict.
@@ -373,7 +387,8 @@ console.log(`planner: ${planner.model}${replaying ? '' : ` (${sides.planner.back
   `critic: ${critic.model} (${sides.critic.backend})` +
   (referee ? ` · second look: ${referee.model} (anthropic)` : refereeMode === 'none' ? ' · no second look' : '') +
   ((!replaying && sides.planner.backend === 'anthropic') || sides.critic.backend === 'anthropic' || referee
-    ? ` · budget $${maxCost.toFixed(2)}` : ' · no paid calls') + '\n');
+    ? ` · budget $${maxCost.toFixed(2)}` : ' · no paid calls'));
+console.log(`every round, as it lands: ${pathToFileURL(join(out, 'index.html')).href}\n`);
 let result;
 try {
   result = await run({
@@ -386,6 +401,9 @@ try {
     views,
     criticGates: !values['advisory-critic'],
     looks,
+    // A replay's rounds after a pass are the polish its run recorded.
+    polish: replaying ? rounds : polish,
+    followRecording: replaying,
     // A replay is a test of the gate, not a design for the inbox.
     propose: !values['no-propose'] && !replaying,
     planner: planner.made,
@@ -413,8 +431,11 @@ const secs = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms 
 const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 const selfHosted = sides.planner.backend === 'openai' || sides.critic.backend === 'openai';
 console.log('');
+const p = result.polish;
 console.log(result.passed
-  ? `passed in round ${result.passedIn} of ${rounds}`
+  ? `passed in round ${result.passedIn} of ${rounds}` + (p
+    ? (p.passed ? `, polishing round ${p.from}'s pass on the critic's advice`
+      : ` (round ${p.round}'s polish was not offered: ${p.why})`) : '')
   : `did not pass in ${result.rounds} round(s): ` +
     `${result.stopped ?? result.history.at(-1)?.failures?.[0] ?? 'the critic did not pass it'}`);
 console.log(`model calls: ${s.llmCalls} · tokens ${k(s.tokensIn)} in / ${k(s.tokensOut)} out · ` +

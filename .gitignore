@@ -28,3 +28,4 @@ content/
 # belongs in version control here — the models and skins are the car makers'.
 cars/*/
 *.zip
+keys.env
