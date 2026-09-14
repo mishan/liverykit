@@ -204,6 +204,41 @@ test('--explain names what the tyres bind, and the swatch it left out and why', 
   assert.match(explain([plain(white), plain(tread)], 'body'), /proposal: white  \(confidence 0\.14, margin over runner-up\)[\s\S]*top two are close/);
 });
 
+test('a generated profile binds every texture the tyres proposal holds', async () => {
+  // propose returning both is not the same as the profile keeping both: the
+  // generator copies the proposal into `bind`, and writing only its first
+  // role there passed every test, since none of them read a multi-role
+  // proposal back out of a generated profile.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const quad = (name, x, materialId) => ({
+    name, materialId, indices: [0, 1, 2, 0, 2, 3],
+    verts: [vert(x, 0, 0, 0, 0), vert(x, 0, 0.6, 1, 0), vert(x, 0.6, 0.6, 1, 1), vert(x, 0.6, 0, 0, 1)],
+  });
+  const dir = await mkdtemp(join(tmpdir(), 'lk-tyres-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [quad('TYRE_TREAD', 0.8, 1), quad('TYRE_SIDE', 0.85, 2)],
+      materials: [
+        { name: 'BodyMat' },
+        { name: 'Tread', shader: 'ksTyres', slots: { txDiffuse: 'tread.dds' } },
+        { name: 'Side', shader: 'ksTyres', slots: { txDiffuse: 'side.dds' } },
+      ],
+      extraTextures: [{ name: 'tread.dds' }, { name: 'side.dds' }],
+    }));
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false, log: () => {} });
+    const files = (profile.bind.tyres?.roles ?? []).map((r) => profile.textures[r].file).sort();
+    assert.deepEqual(files, ['side.dds', 'tread.dds']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('tyres and brakes bind every texture their names say they are, across the fleet', async () => {
   // The same held-out label as the body's, for the terms a car's own shader
   // names: filenames that plainly say tyre or tread, disc or rotor. These terms
