@@ -85,6 +85,8 @@ const doc = {
       wheelIslands: t.wheelIslands,
       sidewalls: t.sidewalls,
       instances: t.instances,
+      ...(typeof t.blur === 'boolean' ? { blur: t.blur } : {}),
+      ...(t.twins ? { twins: t.twins } : {}),
       ...(typeof t.cockpit === 'number' ? { cockpit: t.cockpit } : {}),
       ...(t.uvLayout ? { uvLayout: t.uvLayout } : {}),
     }])),

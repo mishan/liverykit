@@ -28,6 +28,7 @@ import { textureFeatures, proposeAll } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
 import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
 import { measureWheels } from './wheels.mjs';
+import { proposalNotes } from './classify.mjs';
 
 /**
  * A texture the model does not really contain.
@@ -643,6 +644,9 @@ export async function profileFromKn5(path, {
   if (!features.some((f) => typeof f.wheelIslands === 'number')) {
     log('  ! rims were not proposed: no WHEEL_xx node was found, so no island was measured at a wheel.');
   }
+  // What a proposal could not bind, a rim's motion-blur twin with no islands
+  // say, which would otherwise wear the stock texture with nothing said.
+  for (const note of proposalNotes(features)) log(`  ! ${note}`);
 
   // Said once per car, because finding it out used to take an afternoon: a
   // profile that loads, lists sixty textures and offers two panels looks like a

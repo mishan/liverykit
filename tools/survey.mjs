@@ -160,6 +160,7 @@ for (const { id, klass } of todo) {
           cover: f.area, meshes: f.meshes, box: f.box, straddles: f.straddles,
           ...(typeof f.visible === 'number' ? { visible: f.visible } : {}),
           wheelIslands: f.wheelIslands, sidewalls: f.sidewalls, instances: f.instances,
+          blur: f.blur, ...(f.twins ? { twins: f.twins } : {}),
           ...(typeof f.cockpit === 'number' ? { cockpit: f.cockpit } : {}),
           skins: counts.get(t.file.toLowerCase()) ?? 0,
           shaders: f.shaders,

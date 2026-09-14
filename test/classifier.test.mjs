@@ -29,7 +29,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank, explain, propose, proposeAll, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
+import { rank, explain, propose, proposeAll, proposalNotes, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
 import { parseKn5Buffer } from '../src/engine/kn5.mjs';
 import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
 
@@ -449,4 +449,76 @@ test('a texture the cockpit pass did not measure is left out of the interior by 
   const tub = f({ file: 'tub.dds', area: 0.3 });
   assert.deepEqual(rank([cabin, tub], 'interior').map((x) => x.file), ['cabin.dds']);
   assert.match(explain([cabin, tub], 'interior'), /not a candidate: tub\.dds — cockpit visibility was not measured/);
+});
+
+test('a rim and the motion-blur rim it is swapped with are bound together', () => {
+  // AC swaps each wheel's rim for a blurred copy at speed. Binding only the
+  // top pick bound the blur rim alone on 33 fleet cars, the Abarth's
+  // Rim500_BLUR.dds among them, so the wheel wore the stock rim standing
+  // still and the livery only at speed.
+  const f = (o) => ({ role: o.file.replace(/\.\w+$/, ''), area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 16, wheelIslands: 16, sidewalls: 8, instances: 4, blur: false, ...o });
+  const rim = f({ file: 'rim.dds', area: 0.029 });
+  const blur = f({ file: 'rim_blur.dds', blur: true, twins: ['RIM.dds'] });
+  const ao = f({ file: 'rim_ao.dds', area: 0.01 });
+  // A body for --explain, which proposes the terms before the rims first.
+  const skin = f({ file: 'skin.dds', area: 0.5, wheelIslands: 0 });
+  const p = propose([rim, blur, ao], 'rims');
+  assert.deepEqual(p.roles, ['rim_blur', 'rim'], 'the pick, then the rim it is swapped with');
+  assert.equal(p.confidence, 0.67, 'the margin is over the best left unbound, not over its own twin');
+  assert.deepEqual(propose([{ ...rim, area: 0.04 }, blur, ao], 'rims').roles, ['rim', 'rim_blur']);
+  assert.match(explain([skin, rim, blur, ao], 'rims'), /proposal: rim_blur, rim  \(a rim and the motion-blur rim it is swapped with/);
+  // The model names the twin, so an overlay beside a blur rim is not taken for it.
+  assert.deepEqual(propose([{ ...blur, twins: ['other.dds'] }, ao], 'rims').roles, ['rim_blur']);
+
+  // A survey record has no mesh names, so the filename says which is the blur
+  // rim, and it is paired with the best plain candidate.
+  const [recorded] = featuresFromRecord({ skinCount: 0, roles: { rims_2: {
+    file: 'Rim500_BLUR.dds', cover: 0.03, straddles: true, skins: 0, shaders: ['ksPerPixel'], box: null,
+    panels: 16, wheelIslands: 16, sidewalls: 8, instances: 4,
+  } } });
+  assert.deepEqual([recorded.blur, recorded.twins], [true, undefined]);
+  assert.deepEqual(propose([rim, { ...blur, twins: undefined }, ao], 'rims').roles, ['rim_blur', 'rim']);
+
+  // A twin that cannot be bound is said, not dropped: the NSX's blur rim has
+  // no islands.
+  const bare = { ...blur, islands: 0, wheelIslands: 0, instances: 0 };
+  const alone = propose([rim, bare, ao], 'rims');
+  assert.deepEqual(alone.roles, ['rim']);
+  const said = /rim_blur\.dds, the motion-blur twin of rim\.dds, is not bound: it has no islands/;
+  assert.match(alone.notes.join('\n'), said);
+  assert.match(explain([skin, rim, bare, ao], 'rims'), said);
+});
+
+test('the model says which rim a motion-blur rim is swapped with', () => {
+  // By the node above each, as AC swaps them: see blurTwins.
+  const tri = (name, materialId) => ({
+    name, materialId, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, 1.2, 0.1, 0.1), vert(0.8, 0.5, 1.2, 0.9, 0.1), vert(0.8, 0.5, 1.6, 0.9, 0.9)],
+  });
+  const model = parseKn5Buffer(carKn5({
+    wrapped: [
+      { name: 'RIM_LF', meshes: [tri('EXT_RIM_LF', 1)] },
+      { name: 'RIM_BLUR_LF', meshes: [tri('EXT_RIM_BLUR_LF', 2)] },
+    ],
+    materials: [{ name: 'BodyMat' }, { name: 'Rim', slots: { txDiffuse: 'rim.dds' } }, { name: 'RimBlur', slots: { txDiffuse: 'rim_blur.dds' } }],
+    extraTextures: [{ name: 'rim.dds' }, { name: 'rim_blur.dds' }],
+  }));
+  const by = Object.fromEntries(textureFeatures(model, { roles: { body: 'body.dds', rim: 'rim.dds', rimBlur: 'rim_blur.dds' } })
+    .map((x) => [x.role, x]));
+  assert.equal(by.rim.blur, false);
+  assert.equal(by.rimBlur.blur, true);
+  assert.deepEqual(by.rimBlur.twins, ['rim.dds']);
+});
+
+test('no blur rim is bound without the rim it is swapped with, across the fleet', async () => {
+  // Or, on the two cars where no plain rim is a candidate at all, without
+  // the generator saying so by name.
+  const unsaid = [];
+  for (const car of await fleet()) {
+    const bound = (proposeAll(car.features).rims?.roles ?? []).map((r) => car.features.find((f) => f.role === r));
+    if (!bound.some((f) => f.blur) || bound.some((f) => !f.blur)) continue;
+    const said = proposalNotes(car.features).some((n) => bound.some((f) => n.includes(f.file)));
+    if (!said) unsaid.push(`${car.id}: ${bound.map((f) => f.file).join(', ')}`);
+  }
+  assert.deepEqual(unsaid, []);
 });
