@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights, stripePanels, stripeAt } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, drawnBy } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -363,8 +363,7 @@ const GROUP_ASPECTS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.85, 1];
  * letters, and the disc is tested against the letters rather than against an
  * estimate that cost the number a tenth of its size.
  */
-const TRACKING = 0.08;
-const ADVANCE = 0.62 + TRACKING;
+const ADVANCE = TEXT_ADVANCE + TEXT_TRACKING;
 
 /**
  * A name's font size over its line's height. The treatment's 0.7 leaves the
@@ -517,21 +516,26 @@ export function groupLayout({
   // either is tried again with more air inside the rim, then given up, and
   // what failed it is kept for the answer: none passing is not "nothing fits".
   const rejected = [];
+  // The layout as a design of its own, for fitment to measure. `held` is what
+  // the roundel declares, when the check is to be the planner's.
+  const idsOf = (regions) => ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
+  const asDesign = (regions, held = null) => ({ name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
+    identity: { number, team: name },
+    paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc', ...(held ? { constraints: held } : {}) },
+      { id: 'number', ...regions.number, color: 'ink' },
+      ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } });
+  // Contrast and mirroring are about the design this goes into, which
+  // chooses the colours and paints the other side; neither is the layout's.
+  const wrongIn = (findings, ids, also = []) => findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
+    && !['low-contrast', 'unmirrored', ...also].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
   const measure = (o) => {
     for (const inside of INSIDE) {
       const d = divide({ W: o.W, H: o.H, number, lines: o.lines, inside, ah, av, ax });
       if (!d) return null;
       const regions = regionsFor(o, d);
-      const ids = ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
-      const design = { name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
-        identity: { number, team: name },
-        paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc' },
-          { id: 'number', ...regions.number, color: 'ink' },
-          ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } };
-      // Contrast and mirroring are about the design this goes into, which
-      // chooses the colours and paints the other side; neither is the layout's.
-      const wrong = fitment(design, profile).findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
-        && !['low-contrast', 'unmirrored', 'too-small'].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
+      const ids = idsOf(regions);
+      const design = asDesign(regions);
+      const wrong = wrongIn(fitment(design, profile).findings, ids, ['too-small']);
       if (wrong.length) {
         rejected.push(`${wrong[0].kind}: ${wrong[0].why}`);
         continue;
@@ -548,15 +552,42 @@ export function groupLayout({
   };
   const measured = options.map(measure).filter(Boolean)
     .sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
-  let chosen = measured[0] ?? null;
+  // Held to what the planner is told to declare, with the car. The sweep
+  // calls a spot clean at 98% of it on the car and seen, and the prompt has
+  // the roundel declare minOnCar 1, minVisible 1 and the layout's margin, so
+  // a layout measured without the car could be handed out and then fail
+  // check_fitment the moment the planner used it. Asked of the candidates a
+  // layout could be, best first, and only once each.
+  const heldOnCar = new Map();
+  const holds = (m) => {
+    if (!heldOnCar.has(m)) {
+      const held = { minOnCar: 1, minVisible: 1, minMargin: m.o.space.marginMm };
+      // The letter floors are the layout's own business, said in `clears`
+      // and the note: a layout that misses them is still offered as the best
+      // there is.
+      const wrong = wrongIn(fitment(asDesign(m.regions, held), profile, null, { model }).findings, idsOf(m.regions),
+        ['too-small']);
+      if (wrong.length) rejected.push(`with the car and the roundel's constraints, ${wrong[0].kind}: ${wrong[0].why}`);
+      heldOnCar.set(m, !wrong.length);
+    }
+    return heldOnCar.get(m);
+  };
+  const best = (pick) => measured.find((m) => pick(m) && holds(m)) ?? null;
+  let chosen = best(() => true);
   // One line where it costs little. A name split over two lines reads, but a
   // person looking at run 20 did not like it, and a number that is a tenth
   // smaller is still well over its floor when the best one was. Nor is a
   // number already the size of the hand-laid door's worth a second line.
-  const oneLine = measured.find((m) => m.o.lines.length === 1 && m.clears);
+  const oneLine = best((m) => m.o.lines.length === 1 && m.clears);
   if (chosen && chosen.o.lines.length > 1 && oneLine
     && (oneLine.numberMm >= 0.9 * chosen.numberMm || oneLine.numberMm >= AIM.number)) chosen = oneLine;
-  const other = chosen && measured.find((m) => m.o.lines.length !== chosen.o.lines.length);
+  const other = chosen && best((m) => m.o.lines.length !== chosen.o.lines.length);
+  // One sheet, when the surface paints several. The layout is measured on
+  // this texture, and a design's `surfaces.<term>` paints every texture the
+  // term binds: where another has a panel of the same name laid out
+  // differently, the same regions land there at another size, or nowhere.
+  const alsoOn = [...new Set(Object.values(profile.bind ?? {}).filter((b) => (b.roles ?? []).includes(g.role))
+    .flatMap((b) => b.roles).filter((r) => r !== g.role && profile.panels?.[r]?.[g.name]))];
 
   const said = (m) => ({
     aspect: m.o.aspect,
@@ -573,6 +604,10 @@ export function groupLayout({
     textRotation: turn,
     layout: chosen ? said(chosen) : null,
     alternative: other ? said(other) : null,
+    ...(alsoOn.length ? {
+      sheet: `The surface that paints ${g.role} also paints ${alsoOn.join(' and ')}, which has a panel called ` +
+        `${g.name} too. Put these regions on paint.${g.role}, so they land on this sheet alone, where they were measured.`,
+    } : {}),
     ...(!chosen ? {
       note: options.length
         ? `Every layout tried on ${g.name} failed fitment, the first with ${rejected[0] ?? 'nothing said'}.`
@@ -601,8 +636,12 @@ export function groupLayout({
  * own stripe checks before it is given, and says what they found, if anything:
  * a layout that cannot pass them is not handed out as though it did. A panel
  * the band crosses that gets no piece is under `skipped`, with why.
+ *
+ * `design` is the one the stripe is for, where there is one: what it hides
+ * and paints decides what the picture draws over the band, and a layout read
+ * off a car with a hidden part still standing on it lays no piece under it.
  */
-export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre' }) {
+export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre', design = null }) {
   if (!(Number.isFinite(widthMm) && widthMm > 0)) {
     throw new Error(`find_space's stripe needs widthMm, the stripe's width on the car in mm, above zero; got ${JSON.stringify(widthMm)}.`);
   }
@@ -615,10 +654,12 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
   const across = [offsetMm - widthMm / 2, offsetMm + widthMm / 2];
   const pieces = [];
   const skipped = [];
-  for (const c of stripePanels(model, profile, role, across)) {
+  const { hide, painted } = drawnBy(profile, design);
+  const paints = [...new Set([...painted, role])];
+  for (const c of stripePanels(model, profile, role, across, { hide, painted: paints })) {
     if (c.measured === false) {
       skipped.push({ panel: c.panel, carriesMm: c.carriesMm,
-        why: `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
+        why: c.why ?? `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
           `${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm one way: too little to fit a piece to or ` +
           'to tell a gap by. Check it in a picture of the car, and add a piece by hand if the stripe needs one there.' });
       continue;
@@ -628,9 +669,12 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     else skipped.push({ panel: c.panel, why: got.why });
   }
   const regions = pieces.map((p) => ({ id: p.id, treatment: 'stripe', panel: p.panel, at: p.at, constraints: { stripe: name } }));
+  // Checked on the car the layout was read off: the design's hides, and its
+  // other sheets painted with nothing, so the check draws what the layout saw.
   const findings = regions.length
-    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {},
-      paint: { [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
+    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+      paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])),
+        [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
       .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`)
     : [];
   return {

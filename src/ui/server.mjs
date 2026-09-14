@@ -48,7 +48,7 @@ import { resolveTreatments } from '../registry.mjs';
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
-import { fitment } from '../fitment.mjs';
+import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
@@ -1549,9 +1549,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         }
         if (stripe) {
           const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
-          const key = JSON.stringify(['stripe', where.role, ask]);
+          // Keyed on what the design hides and paints too: that decides what
+          // stands over the band, so the same ask can have two answers.
+          const design = workingDesign ?? livery;
+          const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
           try {
-            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask }), 256);
+            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
             return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });

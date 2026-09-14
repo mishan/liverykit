@@ -332,6 +332,27 @@ test('a replay judges a recorded polish round even when today\'s critic gives th
     assert.equal(followed.rounds, 2, 'the recorded polish round is judged');
     assert.deepEqual(followed.polish, { round: 2, passed: true, from: 1 });
     assert.equal((await replay(false)).rounds, 1, 'a live run with no advice still stops at the pass');
+
+    // A recorded polish today's editor refuses is the replay failing. It was
+    // caught as a polish that could not be finished, round 1's pass was put
+    // back, and the replay reported passed without judging the polish at all.
+    const refusedOut = join(ed.dir, 'replay-refused');
+    await assert.rejects(run({ brief: 'number 85', mcp: ed.mcp, critic,
+      planner: createReplayPlanner({ rounds: [{ draft: number(700), summary: 'a number' },
+        { draft: { design: [{ op: 'no-such-op' }], fit: [] }, summary: 'from an older editor' }] }),
+      trace: await createTrace({ dir: refusedOut }), out: refusedOut, rounds: 2, polish: 2, followRecording: true,
+      propose: false, views: ['left'], shot: { width: 200, height: 150 } }),
+    /round 2: today's editor refuses the recorded draft_design.*no-such-op/);
+
+    // A replay polishes as its run did, so --polish beside it is refused like
+    // --rounds. It used to be accepted and replaced by the recorded rounds.
+    const recorded = join(ed.dir, 'recorded');
+    await mkdir(recorded);
+    await writeFile(join(recorded, 'result.json'), JSON.stringify({ brief: 'b', passed: false, history: [
+      { draft: number(700), summary: 'a number' }] }));
+    const polished = await cli('bin.mjs', '--replay', recorded, '--polish', '0', '--editor', 'http://127.0.0.1:1/');
+    assert.equal(polished.code, 1);
+    assert.match(polished.stderr, /--polish does not apply to --replay/);
   } finally {
     await ed.stop();
   }
