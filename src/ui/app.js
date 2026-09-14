@@ -978,14 +978,23 @@ async function addRegion(treatment) {
  * a place on a car in the way a person means it — "left flank", "centre nose".
  * Anything else the panel carries is offered in the inspector and left unticked,
  * because the editor should not be inventing constraints nobody asked for.
+ *
+ * The section the panel is IN, which is not every section it has. A panel is
+ * tagged with every section and level its extent reaches, so freeing the
+ * Abarth's rear quarter, regenerated, wrote all five sections and both levels:
+ * an AND that matches a panel running the whole car and nothing on most cars.
+ * The server says which of a panel's tags it only reaches (`reachOnly`), and
+ * those are left for the inspector like the rest.
  */
 const SIDE = new Set(['left', 'right', 'centre', 'shared']);
 const SECTION = new Set(['nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']);
 
 function portableTags(panelName) {
-  const has = state.surface?.panels?.find((p) => p.name === panelName)?.tags ?? [];
+  const panel = state.surface?.panels?.find((p) => p.name === panelName);
+  const has = panel?.tags ?? [];
+  const reached = new Set(panel?.reachOnly ?? []);
   const side = has.filter((t) => SIDE.has(t));
-  const section = has.filter((t) => SECTION.has(t));
+  const section = has.filter((t) => SECTION.has(t) && !reached.has(t));
   // A panel with no side and no section has nothing portable to say about
   // itself, and inventing a selection from whatever else it carries would be
   // worse than admitting that. The caller falls back to the panel name.

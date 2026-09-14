@@ -66,6 +66,26 @@ test('profile rejects panels on an unknown texture role', () => {
   }), /unknown texture role/);
 });
 
+test('profile rejects a panel extent that is not a box', () => {
+  // The tagger reads section and level off `extent3d` where there is one, and
+  // falls back to the centroid where there is not. A malformed one used to
+  // count as absent, so a hand edit that swapped two corners retagged the
+  // panel by its centroid and said nothing.
+  const car = (extent3d) => ({
+    id: 'x',
+    textures: { body: { file: 'a.dds', width: 64, height: 64 } },
+    panels: { body: { p: { rect: [0, 0, 1, 1], centroid3d: [0, 0, 0], extent3d } } },
+  });
+  assert.doesNotThrow(() => validateProfile(car([[0, 0, -1], [1, 1, 1]])));
+  assert.doesNotThrow(() => validateProfile(car([[0, 0, 0], [0, 0, 0]])), 'a flat box is still a box');
+  assert.throws(() => validateProfile(car([[0, 0, -1]])), /body\.p\.extent3d must be \[\[x0, y0, z0\], \[x1, y1, z1\]\]/);
+  assert.throws(() => validateProfile(car([[0, 0], [1, 1]])), /body\.p\.extent3d must be/);
+  assert.throws(() => validateProfile(car([[0, 0, -1], [1, null, 1]])), /body\.p\.extent3d must be numbers/);
+  assert.throws(() => validateProfile(car([[0, 0, -1], [1, Infinity, 1]])), /body\.p\.extent3d must be numbers/);
+  assert.throws(() => validateProfile(car([[0, 0, 1], [1, 1, -1]])), /body\.p\.extent3d has its corners the wrong way round/);
+  assert.throws(() => validateProfile(car('box')), /body\.p\.extent3d must be/);
+});
+
 test('panel-relative coordinates resolve against the panel rect', () => {
   const whole = resolveRect(profile, 'body', { panel: 'flank' });
   assert.deepEqual(
@@ -905,6 +925,112 @@ test('a panel with no measured centroid gets the tags that need no geometry', as
     p: { rect: [0, 0, 1, 1], visible: 0.8, mirrorOf: 'q' },
   })).body;
   assert.deepEqual(t.p, ['visible', 'mirrored']);
+});
+
+test('a panel is tagged with every section and level its extent reaches', async () => {
+  // A centroid is where an island's vertices are densest, which is the
+  // unwrapper's business. A door running from the sill to the window line was
+  // `lower` on three fleet cars because its centroid sat just below half
+  // height, and a design asking for the upper middle of the flank found nothing.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    // Two centroids that fix the frame: length from z = -2 to 2, height 0 to 1.
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: [0, 1, 2] },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: [0, 0, -2] },
+    // Reaches 0.2 to 0.8 of the length and 0.2 to 1.2 of the height, with its
+    // centroid at 0.625 and exactly half height: `front` and `lower` by centroid.
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0.5], extent3d: [[1, 0.2, -1.2], [1, 1.2, 1.2]] },
+    // Reaches 0.30 to 0.40: a fifth of it in `mid`, which is clipping the band,
+    // not being in the middle of the car. The 906's rear quarters do this.
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: [1, 0.2, -0.6], extent3d: [[1, 0.1, -0.8], [1, 0.3, -0.4]] },
+  })).body;
+  assert.deepEqual(t.flank, ['left', 'front', 'mid', 'rear', 'upper', 'lower']);
+  assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
+});
+
+test('a panel\'s reach is read the same way round on a car facing -Z', async () => {
+  // The same car as above, mirrored front to back, with the model saying so.
+  // An extent is stored as its min and max corners, so on a car facing -Z the
+  // corner nearer the nose is the first one; reading it the +Z way round would
+  // give the flank the sections behind it and the clip the ones in front.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const flip = ([x, y, z]) => [x, y, -z];
+  const box = ([a, b]) => [[a[0], a[1], -b[2]], [b[0], b[1], -a[2]]];
+  const t = computeTags(tagCar({ left: '+X', front: '-Z' }, {
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: flip([0, 1, 2]) },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: flip([0, 0, -2]) },
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: flip([1, 0.5, 0.5]), extent3d: box([[1, 0.2, -1.2], [1, 1.2, 1.2]]) },
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: flip([1, 0.2, -0.6]), extent3d: box([[1, 0.1, -0.8], [1, 0.3, -0.4]]) },
+  })).body;
+  assert.deepEqual(t.flank, ['left', 'front', 'mid', 'rear', 'upper', 'lower']);
+  assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
+});
+
+test('what a panel reaches only by its extent is told apart from where its centroid is', async () => {
+  // Tags only grow, so the list alone cannot say which of a panel's sections
+  // is the one it sits in; the flank above carries three and is centred in one.
+  const { computeTags, reachOnly } = await import('../src/engine/tags.mjs');
+  const car = tagCar({ left: '+X', front: '+Z' }, {
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: [0, 1, 2] },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: [0, 0, -2] },
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0.5], extent3d: [[1, 0.2, -1.2], [1, 1.2, 1.2]] },
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: [1, 0.2, -0.6], extent3d: [[1, 0.1, -0.8], [1, 0.3, -0.4]] },
+    plain: { rect: [0.9, 0, 0.05, 0.05], centroid3d: [1, 0.5, 0.5] },
+  });
+  const reach = reachOnly(car).body;
+  assert.deepEqual(reach.flank, ['mid', 'rear', 'upper'], 'centred in the front, low; reaching the rest');
+  assert.deepEqual(reach.clip, [], 'a panel that reaches nothing beyond its centroid');
+  assert.deepEqual(reach.plain, [], 'a panel with no extent reaches nothing');
+  const tags = computeTags(car).body;
+  for (const [name, list] of Object.entries(reach)) {
+    assert.ok(list.every((t) => tags[name].includes(t)), `${name}: reach-only tags are among its tags`);
+  }
+});
+
+test('`limit` takes a panel centred in the section before a bigger one that only reaches it', async () => {
+  // Regenerating the Abarth gave its rear quarter `mid` by reach, and at three
+  // times the door's size it took `[left, mid, visible]` with `limit: 1` from
+  // the door that had been fitted. Reaching is not being there: a panel whose
+  // centroid is in the section comes first, and reach adds candidates after
+  // it, so tagging by extent fills a miss without moving a pick.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const { tagProfile } = await import('../src/engine/tags.mjs');
+  const car = (withDoor) => {
+    const p = tagCar({ left: '+X', front: '+Z' }, {
+      nose: { rect: [0.9, 0.9, 0.05, 0.05], centroid3d: [0, 1, 2] },
+      tail: { rect: [0.9, 0.8, 0.05, 0.05], centroid3d: [0, 0, -2] },
+      ...(withDoor ? { door: { rect: [0, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0], extent3d: [[1, 0.2, -0.4], [1, 0.9, 0.4]] } } : {}),
+      quarter: { rect: [0.3, 0, 0.5, 0.5], centroid3d: [1, 0.6, -1.2], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] },
+    });
+    tagProfile(p);
+    return p;
+  };
+  assert.ok(car(true).panels.body.quarter.tags.includes('mid'), 'the quarter does reach `mid`');
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left', 'mid'], { limit: 1 }), ['door']);
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left', 'mid'], { limit: 2 }), ['door', 'quarter']);
+  assert.deepEqual(panelsWithTags(car(false), 'body', ['left', 'mid'], { limit: 1 }), ['quarter'],
+    'with nothing centred there, reaching is enough: the miss extents exist to fill');
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left'], { limit: 1 }), ['quarter'],
+    'a selection naming no section is still biggest first');
+});
+
+test('a generated profile records where each panel reaches, and a full-length flank is every section', async () => {
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-extent-'));
+  const file = join(dir, 'car.kn5');
+  await writeFile(file, carKn5());
+  const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+  const flank = Object.values(profile.panels)[0].left_mid;
+  // The fixture's left face runs the car's whole length and height.
+  assert.deepEqual(flank.extent3d, [[0.95, 0, -1.85], [0.95, 1.5, 1.85]]);
+  for (const t of ['nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']) {
+    assert.ok(flank.tags.includes(t), `a flank the length of the car is ${t}: ${flank.tags}`);
+  }
 });
 
 test('selecting by tags is AND, and matching nothing is reported', async () => {
