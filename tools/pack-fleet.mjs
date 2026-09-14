@@ -23,7 +23,7 @@ const argv = process.argv.slice(2);
 const at = argv.indexOf('--out');
 const outPath = at >= 0 ? argv[at + 1]
   : fileURLToPath(new URL('../test/fixtures/fleet-features.json.gz', import.meta.url));
-const inPath = argv.find((a, i) => !a.startsWith('--') && i !== at + 1);
+const inPath = argv.find((a, i) => !a.startsWith('--') && (at < 0 || i !== at + 1));
 if (!inPath) {
   console.error('usage: node tools/pack-fleet.mjs <survey.json> [--out fleet-features.json.gz]');
   process.exit(2);
