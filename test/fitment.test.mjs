@@ -1260,6 +1260,18 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
     text: '{number}' }]), identity: { number: '85' } }, { ...twoSheets, bind: { body: { roles: [sheet], source: 'human' } } }).n.mm;
   assert.equal(both.n.mm, Math.min(one('body'), one('rear')), 'the smaller of the two sheets\' sizes');
   assert.ok(one('rear') < one('body'));
+  // Laid out on one of them, the layout says the regions belong on that sheet alone.
+  const onBody = lay(twoSheets);
+  assert.match(onBody.sheet ?? '', /also paints rear.*paint\.body/, JSON.stringify(onBody.sheet));
+  assert.equal(big.sheet, undefined, 'and says nothing where the surface paints one sheet');
+
+  // What comes back passes check_fitment with the car loaded and the
+  // constraints the planner is told to give the roundel.
+  const held = { ...asDesign(big.layout) };
+  held.surfaces.body.regions[0].constraints = { minOnCar: 1, minVisible: 1, minMargin: big.layout.marginMm };
+  const onCar = fitment(held, profile, null, { model }).findings
+    .filter((f) => f.severity === 'high' || f.severity === 'fatal').filter((f) => f.kind !== 'low-contrast');
+  assert.deepEqual(onCar, [], JSON.stringify(onCar));
 
   assert.throws(() => lay(profile, { number: '' }), /layout needs number/);
   assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
@@ -1656,7 +1668,7 @@ function carOf(quads, materials = [{ slots: { txDiffuse: 'b.dds' } }, { slots: {
   const N = 8, stride = 32, world = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const chunks = [], meshes = [];
   let at = 0;
-  for (const { name, corners: [c0, c1, c2, c3], uv: [ux, uy, uw, uh], normal, materialId = 0 } of quads) {
+  for (const { name, path, corners: [c0, c1, c2, c3], uv: [ux, uy, uw, uh], normal, materialId = 0 } of quads) {
     const n = (N + 1) ** 2;
     const verts = Buffer.alloc(n * stride);
     for (let j = 0; j <= N; j++) {
@@ -1678,7 +1690,7 @@ function carOf(quads, materials = [{ slots: { txDiffuse: 'b.dds' } }, { slots: {
     }
     const ib = Buffer.alloc(idx.length * 2);
     idx.forEach((v, k) => ib.writeUInt16LE(v, k * 2));
-    meshes.push({ name, materialId, vertexStart: at, vertexCount: n, stride, world, indexStart: at + verts.length, indexCount: idx.length });
+    meshes.push({ name, ...(path ? { path } : {}), materialId, vertexStart: at, vertexCount: n, stride, world, indexStart: at + verts.length, indexCount: idx.length });
     chunks.push(verts, ib);
     at += verts.length + ib.length;
   }
@@ -1877,9 +1889,10 @@ test('a panel is measured on its own mesh, not on another island laid out inside
   // a straight line. Here the roof is the left half of its panel's box, and a
   // part under the bonnet, on the same sheet and running the other way
   // across the car, fills the right half.
+  const ROOF = { name: 'ROOF', uv: [0.1, 0.1, 0.4, 0.4], normal: [0, 1, 0],
+    corners: [[-0.5, 1.2, 1], [-0.5, 1.2, -1], [0.5, 1.2, -1], [0.5, 1.2, 1]] };
   const model = carOf([
-    { name: 'ROOF', uv: [0.1, 0.1, 0.4, 0.4], normal: [0, 1, 0],
-      corners: [[-0.5, 1.2, 1], [-0.5, 1.2, -1], [0.5, 1.2, -1], [0.5, 1.2, 1]] },
+    ROOF,
     { name: 'UNDER', uv: [0.55, 0.1, 0.3, 0.4], normal: [0, 1, 0],
       corners: [[0.3, 0.5, 3], [0.3, 0.5, 2.5], [-0.3, 0.5, 2.5], [-0.3, 0.5, 3]] },
   ]);
@@ -1894,10 +1907,29 @@ test('a panel is measured on its own mesh, not on another island laid out inside
   const on = panelOnCar(model, car(roof), 'body', 'roof');
   assert.ok(Math.abs(on.behindNose[0] - 2000) <= 10 && Math.abs(on.across[0] + 500) <= 10, JSON.stringify(on));
 
-  // Without the mesh the profile records, the part under the bonnet is
-  // measured as roof, and the answer is nowhere near a straight line.
+  // Without the mesh the profile records, or naming one the model no longer
+  // has, this fell back to every mesh of the sheet: the part under the bonnet
+  // was measured as roof, and the answer, nowhere near a straight line, came
+  // back as precisely as the right one. Now it is not measured, and says why,
+  // in the mapping, in the layout's `stripeAt` and in the check.
   const { source, ...blind } = roof;
-  assert.ok(stripeAt(model, car(blind), 'body', 'roof', { across: [-100, 100] }).error > 50);
+  for (const [panel, why] of [[blind, /does not say which mesh it came from/],
+    [{ ...roof, source: { mesh: 'ROOF_OLD', vertices: 81 } }, /says it came from ROOF_OLD, which is not a mesh wearing b\.dds/]]) {
+    const at = stripeAt(model, car(panel), 'body', 'roof', { across: [-100, 100] });
+    assert.equal(at.at, null, JSON.stringify(at));
+    assert.match(at.why, why);
+    assert.match(at.why, /ROOF, UNDER/);
+    assert.match(panelOnCar(model, car(panel), 'body', 'roof').why, why);
+    const off = fitment(design([piece('a', 'roof', [0, 0.4, 1, 0.2])]), car(panel), null, { model }).findings
+      .filter((f) => f.kind === 'stripe-offset');
+    assert.deepEqual(off.map((f) => [f.severity, f.measured, f.ids]), [['low', false, ['a']]], JSON.stringify(off));
+    assert.match(off[0].why, why);
+  }
+
+  // Where only one mesh of the sheet lays texels inside the outline, that
+  // mesh is the panel's, recorded or not.
+  const alone = stripeAt(carOf([ROOF]), car(blind), 'body', 'roof', { across: [-100, 100] });
+  assert.ok(alone.at.every((v, i) => Math.abs(v - [0, 0.4, 1, 0.2][i]) <= 0.01) && alone.error <= 5, JSON.stringify(alone));
 });
 
 test('a panel the band only clips is left out of a stripe\'s layout by name, and said of by the check', async () => {
@@ -2011,6 +2043,73 @@ test('glass that reuses the body\'s diffuse file is not bodywork a stripe must c
   const solid = screen({ shader: 'ksPerPixelReflection', alphaBlendMode: 0 });
   assert.ok(stripeLayout({ profile: solid.profile, model: solid.model, role: 'body', widthMm: 300 }).regions
     .some((r) => r.panel === 'screen'));
+});
+
+test('a panel in a stripe\'s band with no measured visibility is said to be unmeasured, not left out', async () => {
+  // A panel whose profile has no `visible` was filtered out before the band
+  // was looked at: the layout laid no piece on it and listed it under nothing,
+  // and the check never asked for one, so a stripe with a hole in it read as
+  // a complete one.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const { visible, ...bridge } = stripedProfile.panels.body.bridge;
+  const blind = { ...stripedProfile, panels: { body: { ...stripedProfile.panels.body, bridge } } };
+  const got = stripeLayout({ profile: blind, model: stripedModel, role: 'body', widthMm: 300 });
+  assert.deepEqual(got.regions.map((r) => r.panel), ['bonnet', 'roof', 'hatch', 'deck', 'wing'], JSON.stringify(got));
+  const skipped = (got.skipped ?? []).filter((s) => s.panel === 'bridge');
+  assert.equal(skipped.length, 1, JSON.stringify(got));
+  assert.match(skipped[0].why, /bridge has no measured visibility.*regenerate the profile/);
+
+  const stripeOnly = (regions) => fitment(design(regions), blind, null, { model: stripedModel }).findings
+    .filter((f) => f.kind.startsWith('stripe-'));
+  const said = stripeOnly(got.regions).filter((f) => f.panel === 'bridge');
+  assert.deepEqual(said.map((f) => [f.kind, f.severity, f.measured]), [['stripe-gap', 'low', false]], JSON.stringify(said));
+  assert.match(said[0].why, /bridge lies inside the stripe "centre" from \d+ to \d+ mm behind the nose.*no measured visibility/);
+  assert.ok(got.findings.some((f) => /bridge/.test(f)), 'and the layout hands on what the check said');
+
+  // Painted, it is covered, and there is nothing to say.
+  assert.deepEqual(stripeOnly([...got.regions, piece('centre-bridge', 'bridge', [0, 0.40625, 1, 0.1875])]), []);
+});
+
+test('the car a stripe is held to is the car the picture draws', async () => {
+  // The view from above was built from every mesh that can stand in front of
+  // paint, which is not what the whole-car picture draws: the interior the
+  // external cameras use, COCKPIT_LR, which neither renderer draws; a blended
+  // part with nothing to draw it with; a part the design hides. Standing over
+  // the bridge, each took the bridge's place as the surface seen from above,
+  // so the layout laid no piece on it and the check asked for none, while the
+  // picture showed the bridge bare.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const over = ({ path, material = {} } = {}) => carOf([
+    quadOf(striped[0], 2.0, 1.5), quadOf(striped[0], 1.3, 0.8),
+    ...striped.slice(1).map((q) => quadOf(q)),
+    { name: 'GLASS', materialId: 1, uv: [0.5, 0.5, 0.2, 0.2], normal: [0, 0.8, 0.6],
+      corners: [[-0.8, 1.0, 0.8], [-0.8, 1.3, 0.4], [0.8, 1.3, 0.4], [0.8, 1.0, 0.8]] },
+    { name: 'OVER', path, materialId: 2, uv: [0.1, 0.1, 0.5, 0.5], normal: [0, 1, 0],
+      corners: [[-0.3, 1.45, -0.6], [-0.3, 1.45, -1.0], [0.3, 1.45, -1.0], [0.3, 1.45, -0.6]] },
+  ], [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }, { slots: { txDiffuse: 'over.dds' }, ...material }]);
+  const profile = { ...stripedProfile, textures: { ...stripedProfile.textures, over: { file: 'over.dds', width: 64, height: 64 } } };
+  const all = ['bonnet', 'roof', 'hatch', 'bridge', 'deck', 'wing'];
+  const gapsOf = (model, regions, extra) => fitment({ ...design(regions), ...extra }, profile, null, { model }).findings
+    .filter((f) => f.kind === 'stripe-gap');
+
+  for (const [what, model, extra] of [
+    ['the interior the external cameras use', over({ path: 'CAR/COCKPIT_LR/OVER' }), {}],
+    ['a blended part with no sheet to draw', over({ material: { shader: 'ksPerPixel', alphaBlendMode: 1 } }), {}],
+    ['a part the design hides', over(), { hide: ['over'] }],
+  ]) {
+    const laid = stripeLayout({ profile, model, role: 'body', widthMm: 300, design: { ...design([]), ...extra } });
+    assert.deepEqual(laid.regions.map((r) => r.panel), all, `${what}: ${JSON.stringify(laid)}`);
+    assert.deepEqual(laid.findings, [], `${what}: ${JSON.stringify(laid.findings)}`);
+    const gaps = gapsOf(model, laid.regions.filter((r) => r.panel !== 'bridge'), extra);
+    assert.deepEqual(gaps.map((f) => [f.severity, f.panel]), [['high', 'bridge']], `${what}: ${JSON.stringify(gaps)}`);
+  }
+
+  // A part the picture does draw still stands over the bridge, and the
+  // stripe is interrupted there as it is by the glass: no piece, no gap.
+  const drawn = over();
+  const laid = stripeLayout({ profile, model: drawn, role: 'body', widthMm: 300 });
+  assert.deepEqual(laid.regions.map((r) => r.panel), all.filter((p) => p !== 'bridge'), JSON.stringify(laid));
+  assert.deepEqual(gapsOf(drawn, laid.regions, {}), []);
 });
 
 test('a stripe without the model says which of its checks did not run', async () => {
