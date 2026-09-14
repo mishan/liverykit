@@ -228,7 +228,9 @@ async function checkAgainst(car) {
 
   if (r.fatal) { el.innerHTML = `<div class="note">! ${esc(r.fatal)}</div>`; return; }
 
-  const missing = r.regions.filter((x) => x.status === 'missing');
+  // A region on a tiled material lands nowhere in particular, which to the
+  // person reading this is the same news as landing nowhere: go and change it.
+  const missing = r.regions.filter((x) => x.status === 'missing' || x.status === 'unplaceable');
   const absolute = r.regions.filter((x) => x.status === 'absolute');
   const matched = r.regions.filter((x) => x.status === 'matched');
   const absent = (r.surfaces ?? []).filter((s) => s.status === 'absent');

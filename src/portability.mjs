@@ -17,7 +17,7 @@
 // clean here is one that the build will genuinely paint.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, panel as findPanel } from './profile.mjs';
+import { resolveTargets, expandRegions, placementRefusal, panel as findPanel } from './profile.mjs';
 
 /**
  * How a region says where it goes, which is the whole subject.
@@ -42,6 +42,8 @@ function placementKind(region) {
  *   'missing'  — its rule found nothing here; this is the portability failure
  *   'absolute' — placed by coordinate, so it lands SOMEWHERE on every car and
  *                nothing can say whether that somewhere is the right one
+ *   'unplaceable' — placed on a texture that is a tiled material, where no
+ *                placement means anything; `why` names the file
  *
  * The third is deliberately not called a pass. An absolute rectangle always
  * resolves, which is exactly why it is the placement most likely to be quietly
@@ -90,6 +92,15 @@ export function portability(design, profile) {
     for (const [i, region] of list.entries()) {
       const kind = placementKind(region);
       const key = region.id ?? `${t.from}#${i}`;
+      const refused = placementRefusal(profile, t.role, region);
+      if (refused) {
+        regions.push({
+          id: key, from: t.from, role: t.role, kind,
+          ...(kind === 'tags' ? { tags: region.tags } : {}),
+          status: 'unplaceable', panels: [], why: refused,
+        });
+        continue;
+      }
       const landed = expanded.regions.filter((r) => r === region || sameRegion(r, region));
 
       if (kind === 'absolute') {

@@ -122,7 +122,7 @@ export function summarise(records) {
       const key = `${g.from} [${g.tags.join(', ')}]`;
       const seen = mine.get(key) ?? { matched: false, blocking: new Set() };
       if (g.status === 'matched') seen.matched = true;
-      else seen.blocking.add(blockedBy(g.nearMiss));
+      else seen.blocking.add(g.status === 'unplaceable' ? 'a tiled material' : blockedBy(g.nearMiss));
       mine.set(key, seen);
     }
     for (const [key, seen] of mine) {
@@ -159,8 +159,13 @@ export function summarise(records) {
     lines.push(`proposed ${term} on ${cs.length} of ${n}, mean confidence ${mean(cs).toFixed(2)}`);
   }
 
-  // The tiled-material cars were found as the ones with almost no panels. Until
-  // the profile says `uvLayout`, this is still how to find them.
+  // The tiled-material cars were first found as the ones with almost no panels.
+  // A profile that says `uvLayout` names them outright; one that predates it
+  // leaves only the panel count to go on, so both are printed.
+  if (ok.some((r) => r.bindings?.body?.uvLayout)) {
+    const tiled = ok.filter((r) => r.bindings?.body?.uvLayout === 'tiled');
+    lines.push(`body on a tiled material: ${tiled.length}` + (tiled.length ? ` (${listIds(tiled.map((r) => r.id))})` : ''));
+  }
   const fewest = [...ok].sort((a, b) => a.panels - b.panels).slice(0, 3);
   lines.push(`fewest panels: ${fewest.map((r) => `${r.id} ${r.panels} from ${r.textures} textures`).join('; ')}`);
   return lines;
