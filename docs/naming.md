@@ -14,14 +14,17 @@ the same as "trustworthy without looking".
 
 ## What the fleet says
 
-235 cars profiled straight from their models: 8,569 textures, 93,494 UV islands,
-3,568 stock skins read for cross-reference. Reproduce with
-`node tools/survey.mjs cars --all` (resumable; add `--visibility` for the slow,
-decisive half).
+The first full survey profiled 235 cars straight from their models: 8,569
+textures, 93,494 UV islands, 3,568 stock skins read for cross-reference. The
+fleet fixture has since been regenerated from a fresh survey of 252 cars (see
+the plan's step 0), and the accuracy figures below are measured on that one;
+the totals in this section are the first survey's, and have not been counted
+again. Reproduce with `node tools/survey.mjs cars --all` (resumable; add
+`--visibility` for the slow, decisive half).
 
-Names are not a shared vocabulary and never were. The generated role names come
-to **1,912 distinct names across 235 cars, 1,082 of them appearing on exactly one
-car**. A role called `body` exists on 86 of 235. Ninety cars have no mesh named in
+Names are not a shared vocabulary and never were. The generated role names in
+that first survey came to **1,912 distinct names across 235 cars, 1,082 of them
+appearing on exactly one car**. A role called `body` exists on 86 of 235. Ninety cars have no mesh named in
 a way that reveals which end is the front. Only sixteen names appear on more than
 half the fleet, and they are the incidental ones — `rims`, `glass`, `interior`,
 `crew`, `mirror`, `belts`, `tyres`, plus numbered variants. Not one of them is the
