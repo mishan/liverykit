@@ -17,7 +17,7 @@
 // clean here is one that the build will genuinely paint.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, placementRefusal, panel as findPanel } from './profile.mjs';
+import { resolveTargets, expandRegions, placementRefusal, missExplanation, panel as findPanel } from './profile.mjs';
 
 /**
  * How a region says where it goes, which is the whole subject.
@@ -44,6 +44,8 @@ function placementKind(region) {
  *                nothing can say whether that somewhere is the right one
  *   'unplaceable' — placed on a texture that is a tiled material, where no
  *                placement means anything; `why` names the file
+ *   'optional' — a tag selection that found nothing, which the design marked
+ *                as allowed to: listed, so the report is complete, not a miss
  *
  * The third is deliberately not called a pass. An absolute rectangle always
  * resolves, which is exactly why it is the placement most likely to be quietly
@@ -99,6 +101,7 @@ export function portability(design, profile) {
         regions.push({
           id: key, from: t.from, role: t.role, kind,
           ...(kind === 'tags' ? { tags: region.tags } : {}),
+          ...(region.optional ? { optional: true } : {}),
           status: 'unplaceable', panels: [], why: refused,
         });
         continue;
@@ -128,16 +131,24 @@ export function portability(design, profile) {
       const panels = landed.map((r) => r.panel);
       // The role and the tags travel with the answer, so a caller asking why a
       // selection missed can ask the profile about that texture, not every one
-      // the surface binds.
+      // the surface binds. A miss the design marked `optional` is listed as
+      // such, not as `missing`: it is part of what the design does on this
+      // car, and this report is where a person looks to see all of that.
+      // `optional` rides on the region matched or not, so a fleet summary can
+      // keep it apart from a required region with the same tags.
+      const miss = region.optional ? 'optional' : 'missing';
       regions.push({
         id: key,
         from: t.from,
         role: t.role,
         kind,
         tags: region.tags,
-        status: panels.length ? 'matched' : 'missing',
+        ...(region.optional ? { optional: true } : {}),
+        status: panels.length ? 'matched' : miss,
         panels,
-        why: panels.length ? undefined : `no panel here is tagged [${(region.tags ?? []).join(', ')}]`,
+        why: panels.length ? undefined
+          : `no panel here is tagged [${(region.tags ?? []).join(', ')}]` +
+            (region.optional ? ', which the design marks as optional' : `. ${missExplanation(profile, t.role, region.tags ?? [])}`),
       });
     }
   }

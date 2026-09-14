@@ -287,9 +287,11 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       }
       // An explicit panel replaces the tag selection outright. Leaving the tags
       // in place would trip the "both panel and tags" guard, and keeping both
-      // meanings would be ambiguous anyway.
+      // meanings would be ambiguous anyway. `optional` goes with them: it says a
+      // tag selection may find nothing, and there is no selection any more.
       delete next.tags;
       delete next.limit;
+      delete next.optional;
     }
 
     out.push(next);
@@ -359,6 +361,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       delete clone.tags;
       delete clone.limit;
       delete clone.once;
+      delete clone.optional;
       for (const k of ['panel', 'at', 'rotate', 'scale', 'safe']) {
         if (m[k] !== undefined) clone[k] = m[k];
       }

@@ -250,7 +250,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // inflates the number and buries the signal that actually matters.
   if (notes.length) {
     const missing = notes.filter(isMissingNote);
-    const warnings = notes.filter((n) => !isMissingNote(n));
+    // An `optional` region that found nothing is not news: its design said, in
+    // the file, that it may miss. The portability report still lists it.
+    const warnings = notes.filter((n) => !isMissingNote(n) && n.status !== 'optional');
     log('');
     log(`  ${targets.length} surface(s) painted` +
         (missing.length ? `; ${missing.length} asked for and not painted:` : '.'));

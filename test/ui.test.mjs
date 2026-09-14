@@ -2787,6 +2787,25 @@ test('a design that says which car it is for gets exact placements', async () =>
   assert.equal(portable.panel, undefined);
 });
 
+test('the notes panel does not list a miss the design marked optional as a problem', async () => {
+  // The build hides these and the "On another car" panel counts them as
+  // expected, but the notes panel printed each with a "!", so on the NSX the
+  // portable design's piping read as something to go and fix.
+  const profile = await loadProfile(new URL('../cars/ac_friends_honda_nsx_gt3_evo.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles.find((r) =>
+    renderSurface({ livery, profile, fit: null, role: r }).notes.some((n) => n.status === 'optional'));
+  assert.ok(role, 'the NSX has a body texture where the optional piping finds nothing');
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  render.notes.push({ status: 'no-match', text: 'no panel tagged [left, body]' });
+
+  const { dom } = await runApp({ state, render });
+  const shown = dom.querySelector('#notes').innerHTML;
+  assert.doesNotMatch(shown, /marks as optional/);
+  assert.match(shown, /! no panel tagged \[left, body\]/, 'a real miss is still listed');
+});
+
 test('the other-car check reports misses by name, and does not call absolutes fine', async () => {
   // The panel exists to answer a question you cannot ask by looking: does this
   // design travel. So the shape of the answer matters — a count says there is a

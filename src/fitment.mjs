@@ -128,10 +128,12 @@ const BLEED_IS_FINE_BELOW = 0.15;
  *
  * Not `drop`. It was listed here because the editor offers it, but only a fit
  * reads it, so `drop: true` on a design region removed nothing and passed.
+ * `optional` is, because the expander reads it: missing from this list, it made
+ * the shipped portable design's piping a high finding on every car.
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'limit', 'constraints', '__key',
+  'span', 'once', 'limit', 'optional', 'constraints', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */
