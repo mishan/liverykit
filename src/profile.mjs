@@ -22,6 +22,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { VOCABULARY } from './engine/classify.mjs';
+import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
 export async function loadProfile(path) {
@@ -74,10 +75,25 @@ export function validateProfile(p, source = '<inline>') {
     for (const [name, panel] of Object.entries(panels)) {
       checkRect(panel.rect, `${role}.${name}.rect`, err);
       if (panel.safe) checkRect(panel.safe, `${role}.${name}.safe`, err);
+      if (panel.extent3d !== undefined) checkBox(panel.extent3d, `${role}.${name}.extent3d`, err);
     }
   }
 
   return p;
+}
+
+// Checked here rather than left to the tagger, which reads a panel with no
+// usable extent by its centroid alone. That is right for a profile generated
+// before extents were recorded and wrong for one whose extent is broken: the
+// panel quietly loses every section it reaches, and nothing says why.
+function checkBox(e, what, err) {
+  const corner = (q) => Array.isArray(q) && q.length === 3;
+  if (!Array.isArray(e) || e.length !== 2 || !e.every(corner)) err(`${what} must be [[x0, y0, z0], [x1, y1, z1]]`);
+  const shown = `[${e.map((q) => `[${q}]`).join(', ')}]`;
+  if (e.flat().some((n) => typeof n !== 'number' || !Number.isFinite(n))) err(`${what} must be numbers, got ${shown}`);
+  if (e[0].some((n, i) => n > e[1][i])) {
+    err(`${what} has its corners the wrong way round: the first is the minimum, got ${shown}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -449,12 +465,22 @@ export function panelsWithTags(profile, role, tags, { limit = Infinity } = {}) {
   // wants every panel it matches; a piece of text wants one, and wants it to be
   // the panel with room for it. Sorted by rectangle area, with the name as a
   // tiebreak so the choice does not depend on object key order.
+  //
+  // But a panel CENTRED where the selection asks comes before any panel that
+  // only reaches there. Tagging by extent gave the Abarth's rear quarter `mid`,
+  // and at three times the door's size it took `[left, mid, visible]` from the
+  // door the car's fit had placed a name on, while the fit read perfectly well.
+  // Ranked this way, reach fills a selection that found nothing or has room to
+  // spare and displaces nothing. Leaving reach out of `limit` altogether was
+  // the alternative, and would have kept the misses extents were added to fill.
+  const reach = reachOnly(profile)[role] ?? {};
+  const reached = (n) => (tags.some((t) => (reach[n] ?? []).includes(t)) ? 1 : 0);
   const area = (n) => {
     const r = panels[n].rect ?? [0, 0, 0, 0];
     return r[2] * r[3];
   };
   return [...distinct]
-    .sort((a, b) => area(b) - area(a) || a.localeCompare(b))
+    .sort((a, b) => reached(a) - reached(b) || area(b) - area(a) || a.localeCompare(b))
     .slice(0, limit);
 }
 

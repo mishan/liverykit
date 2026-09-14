@@ -53,6 +53,7 @@ import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.m
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
+import { reachOnly } from '../engine/tags.mjs';
 import { findSpace, largestSpace, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
@@ -373,6 +374,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
 
   // Only surfaces that resolved to a texture on THIS car can be edited. A term
   // the car does not have has nothing to drag.
+  const reach = reachOnly(profile);
   const surfaces = [];
   for (const t of targets) {
     if (!t.primary) continue;                       // one entry per term, not per texture
@@ -388,6 +390,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         name,
         rect: p.rect,
         tags: p.tags ?? [],
+        // The sections and levels this panel only reaches, which the tag list
+        // cannot say. Sent rather than worked out in the browser, which has
+        // neither the car's frame nor tags.mjs; the editor frees a region onto
+        // the section its panel is in, not every one it touches.
+        reachOnly: reach[t.role]?.[name] ?? [],
         instances: p.instances,
         anisotropy: p.anisotropy ?? 1,
         visible: p.visible,
