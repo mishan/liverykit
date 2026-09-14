@@ -112,6 +112,19 @@ test('the summary refuses a sweep it cannot find, rather than printing an empty 
   await assert.rejects(sweep('neon-grid-any', '--out', empty, '--summary', '--fresh'), /--summary.*--fresh/);
 }));
 
+test('the sweep refuses a --limit it cannot read, rather than sweeping a different number of cars', () => inTmp(async (dir) => {
+  // `nope` became no limit at all, and -1 swept every car but the last.
+  const out = join(dir, 'sweep.json');
+  for (const bad of ['nope', '-1', '0', '1.5']) {
+    await assert.rejects(sweep('neon-grid-any', '--out', out, '--limit', bad), /--limit wants a whole number, 1 or more/, bad);
+  }
+  // And a valued flag with nothing after it is not quietly its default.
+  await assert.rejects(sweep('neon-grid-any', '--out', out, '--limit'), /--limit wants a value/);
+  await assert.rejects(sweep('neon-grid-any', '--limit', '1', '--out'), /--out wants a value/);
+  const { stdout } = await sweep('neon-grid-any', '--out', out, '--limit', '1');
+  assert.match(stdout, /3 planned, 0 already done, 1 this pass/);
+}));
+
 test('the summary counts a rule as missed only where it landed nowhere', () => {
   const car = (id, body, regions) => ({
     id, from: 'kn5', textures: 30, panels: 40,

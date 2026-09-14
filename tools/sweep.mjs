@@ -42,9 +42,14 @@ const REPO_CARS = fileURLToPath(new URL('../cars/', import.meta.url));
 
 const argv = process.argv.slice(2);
 const VALUED = new Set(['--cars', '--every', '--profiles', '--out', '--limit']);
+// A valued flag with nothing after it used to fall back to its default, so
+// `--out` at the end of a line wrote to sweep.json and `--limit` there swept
+// everything.
 const flag = (name, fallback) => {
   const i = argv.indexOf(name);
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
+  if (i < 0) return fallback;
+  if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`${name} wants a value`);
+  return argv[i + 1];
 };
 const bare = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
 const [liveryArg, ...explicit] = bare;
@@ -57,11 +62,15 @@ if (!liveryArg) {
 const outPath = flag('--out', 'sweep.json');
 const carsDir = flag('--cars', null);
 const every = Number(flag('--every', '11'));
-const limit = Number(flag('--limit', '0')) || Infinity;
+const limit = Number(flag('--limit', 'Infinity'));
 const profilesDir = argv.includes('--no-profiles') ? null : flag('--profiles', REPO_CARS);
 const visibility = !argv.includes('--no-visibility');
 
 if (!Number.isInteger(every) || every < 1) throw new Error(`--every wants a whole number, 1 or more; got ${flag('--every')}`);
+// `nope` read as no limit at all, and -1 as "all but the last" by way of slice.
+if (limit !== Infinity && (!Number.isInteger(limit) || limit < 1)) {
+  throw new Error(`--limit wants a whole number, 1 or more; got ${flag('--limit')}`);
+}
 // Named rather than ignored: ids with nowhere to find their models would
 // sweep nothing and report a clean run of zero cars.
 if (explicit.length && !carsDir) throw new Error(`car ids (${explicit.join(', ')}) need --cars to say where their models are`);
