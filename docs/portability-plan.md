@@ -313,9 +313,9 @@ happens in `computeTags`:
   in it. A GT3 flank is one island from the A-pillar to the rear arch; its
   centroid lands wherever the unwrapper's vertex density puts it, and on the
   NSX only 10 of 72 body panels are `mid` at all. `upper` and `lower` split at
-  half the car's height the same way. The island's `box3d` is computed in
-  `findIslands` and never written to the profile, so the tagger, which reads
-  only the profile by design, has nothing else to go on.
+  half the car's height the same way. The island's `box3d` was computed in
+  `findIslands` and not written to the profile, so the tagger, which reads
+  only the profile by design, had nothing else to go on.
 - **`visible` is a threshold at 0.5.** A low, wide car whose flank curls under
   can score 0.45 and lose the tag while being the most visible thing on the
   car. The number is a fraction of sampled viewpoints, which is not the same
@@ -336,7 +336,10 @@ happens in `computeTags`:
   thresholds taken from the doors that missed and the panels that must not
   claim `mid` (see `tags.mjs`), and it keeps its centroid's tags too. A panel
   spanning 0.20 to 0.80 of the car's length is `front`, `mid` and `rear`; a
-  design asking for `mid` gets it. The centroid stays for `left`, `right` and `centre`, where it is the
+  design asking for `mid` gets it. Where a selection keeps only its biggest
+  matches (`limit`), a panel whose centroid is in the section comes before one
+  that only reaches it, so reach fills a selection without moving a pick that
+  was already made. The centroid stays for `left`, `right` and `centre`, where it is the
   right measure, since a flank does not straddle the centreline and a bonnet
   does. `extent3d` comes from the model, so `tagProfile` on an existing
   profile cannot invent it: a panel without it keeps its centroid tags, the way
@@ -350,14 +353,20 @@ happens in `computeTags`:
   would not. CI builds `neon-grid-any` on the RSS and the Abarth and compares
   the output filenames; artwork can move to another panel and the check still
   passes. The fits are where it matters. `neon-grid-any@abarth500.json`
-  overrides `team-left` with an `at` and no `panel`, so that placement rides on
-  whichever panel `[left, mid, visible]` with `limit: 1` picks, and a retag
-  that picks a different one moves the name somewhere nobody chose while the
-  fit still reads perfectly well — the failure the note on `at` in `AGENTS.md`
-  describes. So step 4 lands with a test over the three shipped profiles and
-  both fits that records which panel every tag-selected region resolves to,
-  written before the tagging changes. Where a pick changes, the fit gets an
-  explicit `panel` or is re-fitted by eye; it is never left to drift.
+  overrode `team-left` with an `at` and no `panel`, so that placement rode on
+  whichever panel `[left, mid, visible]` with `limit: 1` picked, and a retag
+  that picked a different one would move the name somewhere nobody chose while
+  the fit still read perfectly well — the failure the note on `at` in
+  `AGENTS.md` describes. So step 4 lands with a test over the three shipped
+  profiles and both fits that records which panel every tag-selected region
+  resolves to, written before the tagging changes. Where a pick changes, the
+  fit gets an explicit `panel` or is re-fitted by eye; it is never left to
+  drift. That test could not see the change it guards, because no shipped
+  profile carries `extent3d` until it is regenerated, and regenerating the
+  Abarth did move `team-left` and `team-right` to the rear quarters. So the
+  shipped fits now name the panel of every placement on a `limit` selection, a
+  test requires that of every fit, and `limit` ranks a panel centred in the
+  section before one that only reaches it.
 - **Give every miss its near-miss explanation.** The sweep already records
   one for each `no-match`, from `nearMiss` in `src/profile.mjs`: how many
   panels carry each tag alone, how many match with each tag dropped, and which
