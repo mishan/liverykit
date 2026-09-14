@@ -28,15 +28,15 @@
 //   visible    ray-cast trackside visibility. The decisive one, and the
 //              expensive one.
 //
-// MEASURED ACCURACY. Scored against a held-out label — the 175 fleet cars whose
+// MEASURED ACCURACY. Scored against a held-out label — the 193 fleet cars whose
 // filename is unambiguous, which this code never sees — the first four signals
-// pick the right body on 158/175 (90%). The failures are a coherent group:
+// pick the right body on 173/193 (90%). The failures are a coherent group:
 // interior occlusion maps, engine bays and undertrays, all large, all symmetric,
-// all invisible. Adding visibility takes it to 172/175 (98.3%), and two of the
-// three remaining misses are the LABEL being wrong: on the Evora GTE this picks
-// Carpaint_D, which all seven stock skins override and which is 80% visible,
-// over a labelled Skin_soft that no skin overrides and that is 0.2% visible.
-// Counted properly, 174/175.
+// all invisible. Adding visibility takes it to 189/193 (97.9%), and two of the
+// four remaining misses are the LABEL being wrong: on the Evora GTE and its
+// carbon variant this picks Carpaint_D, which every stock skin overrides and
+// which is 79% visible, over a labelled Skin_soft that no skin overrides and
+// that is 0.1% visible. Counted properly, 191/193.
 //
 // Re-measure with `node tools/survey.mjs cars --all --visibility` after any
 // change to the weights. That number is the thing to defend.
@@ -144,6 +144,34 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
     });
   }
   return out;
+}
+
+/**
+ * Classifier features from a recorded survey car rather than from a model.
+ *
+ * Two readers rebuild features from records — tools/evaluate.mjs from the
+ * survey's raw output, test/classifier.test.mjs from the packed fixture — and
+ * each used to map the fields by hand. A field the classifier gains then has to
+ * be remembered in both, and forgetting it in either means the accuracy figure
+ * is measured on a classifier that does not ship. So there is one mapping, here,
+ * beside the function whose output it has to match.
+ *
+ * Shader names come either inline (`shaders`, the survey) or interned (`sh`,
+ * indices into the fixture's `shaders` table). `panels`, the survey's island
+ * count, becomes `islands`.
+ */
+export function featuresFromRecord(car, { shaderNames = [] } = {}) {
+  return Object.entries(car.roles).map(([role, t]) => ({
+    role,
+    file: t.file,
+    area: t.cover,
+    straddles: t.straddles,
+    box: t.box,
+    skinFraction: car.skinCount ? t.skins / car.skinCount : 0,
+    shaders: t.shaders ?? t.sh.map((i) => shaderNames[i]),
+    ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
+    ...(typeof t.panels === 'number' ? { islands: t.panels } : {}),
+  }));
 }
 
 /**

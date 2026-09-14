@@ -14,14 +14,17 @@ the same as "trustworthy without looking".
 
 ## What the fleet says
 
-235 cars profiled straight from their models: 8,569 textures, 93,494 UV islands,
-3,568 stock skins read for cross-reference. Reproduce with
-`node tools/survey.mjs cars --all` (resumable; add `--visibility` for the slow,
-decisive half).
+The first full survey profiled 235 cars straight from their models: 8,569
+textures, 93,494 UV islands, 3,568 stock skins read for cross-reference. The
+fleet fixture has since been regenerated from a fresh survey of 252 cars (see
+the plan's step 0), and the accuracy figures below are measured on that one;
+the totals in this section are the first survey's, and have not been counted
+again. Reproduce with `node tools/survey.mjs cars --all` (resumable; add
+`--visibility` for the slow, decisive half).
 
-Names are not a shared vocabulary and never were. The generated role names come
-to **1,912 distinct names across 235 cars, 1,082 of them appearing on exactly one
-car**. A role called `body` exists on 86 of 235. Ninety cars have no mesh named in
+Names are not a shared vocabulary and never were. The generated role names in
+that first survey came to **1,912 distinct names across 235 cars, 1,082 of them
+appearing on exactly one car**. A role called `body` exists on 86 of 235. Ninety cars have no mesh named in
 a way that reveals which end is the front. Only sixteen names appear on more than
 half the fleet, and they are the incidental ones — `rims`, `glass`, `interior`,
 `crew`, `mirror`, `belts`, `tyres`, plus numbered variants. Not one of them is the
@@ -50,18 +53,22 @@ that this surface is meant to vary per livery.
 *The material shader*, since `ksPerPixelMultiMap_damage_dirt` is a body panel in
 all but name, and `ksTyres` and `ksBrakeDisc` are disqualifying.
 
-Scored together against a held-out label — the 175 cars where the *filename* is
-unambiguous, which the classifier never sees — this picks the right body surface
-on **158/175, 90%**. The failures are a coherent group: interior occlusion maps,
-engine bays and undertrays, all of them large, symmetric, and invisible.
+Scored together against a held-out label — the cars where the *filename* is
+unambiguous, which the classifier never sees; 193 of them in the fleet as
+surveyed on 2026-09-13 — this picks the right body surface on **173/193, 90%**.
+The failures are a coherent group: interior occlusion maps, engine bays and
+undertrays, all of them large, symmetric, and invisible.
 
-Adding ray-cast trackside visibility as a fifth term takes it to **172/175,
-98.3%**, and two of the three remaining "failures" are the label being wrong
-rather than the classifier. On the Evora GTE the classifier picks `Carpaint_D.dds`
-— overridden by all seven stock skins, 80% visible — over the labelled
-`Skin_soft.dds`, which no skin overrides and which is 0.2% visible. Counting those
-correctly, it is **174/175**. The single genuine miss is a drift mod with PNG
-textures where visibility didn't run.
+Adding ray-cast trackside visibility as a fifth term takes it to **189/193,
+97.9%**, and two of the four remaining "failures" are the label being wrong
+rather than the classifier. On the Evora GTE and its carbon variant the
+classifier picks `Carpaint_D.dds` — overridden by every stock skin, seven on
+the GTE and one on the carbon, and 79% visible — over the labelled
+`Skin_soft.dds`, which no skin overrides and which is 0.1% visible. Counting those correctly, it is **191/193**. The two genuine
+misses are `mclaren_mp412c_gt3`, which picks a texture no island lives on, and
+`tando_buddies_180sx`, a drift mod whose paint is a tiled material; both are
+planned in [portability-plan.md](portability-plan.md). The first measurement,
+on 175 labelled cars, gave 158, 172 and 174.
 
 Visibility costs about four seconds per car. It is worth every one of them, and it
 already exists in `src/engine/visibility.mjs`.
@@ -252,8 +259,8 @@ markers for multi-part textures.
 **Five — regression.** *(done — `test/classifier.test.mjs` scores the classifier
 over a committed fixture of fleet measurements on every commit, and CI builds
 the portable livery on both cars.)* `tools/survey.mjs` becomes the harness: run the classifier
-over all 235 cars and assert the accuracy figure doesn't drop. That number is the
-thing to defend, and right now it is 174/175 on the labelled subset.
+over all 252 cars and assert the accuracy figure doesn't drop. That number is the
+thing to defend, and right now it is 191/193 on the labelled subset.
 
 ## Known gaps, recorded so they don't get rediscovered
 

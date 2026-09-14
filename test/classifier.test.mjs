@@ -8,16 +8,17 @@
 //
 // So this scores it against a HELD-OUT LABEL — the cars whose filename is
 // unambiguous, which the classifier never sees — over a fixture of measurements
-// taken from a 235-car fleet sweep.
+// taken from a survey of all 252 cars in the fleet.
 //
 // THE FIXTURE CONTAINS NO GAME ASSETS. It is areas, bounding boxes, shader
 // names, filenames and skin-override counts: numbers about cars, of the same
 // kind as the profiles already in cars/. Regenerate it with
 //
 //   node tools/survey.mjs <carsDir> --all --visibility --out fleet.json
+//   node tools/pack-fleet.mjs fleet.json
 //
-// and the packing script in the commit that introduced it. Nobody without a game
-// install can rebuild it, which is exactly why it is committed.
+// Nobody without a game install can rebuild it, which is exactly why it is
+// committed.
 //
 // The floor is deliberately a few points below the measured figure. Pinning the
 // exact number would make every legitimate improvement a test failure; pinning
@@ -28,13 +29,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank } from '../src/engine/classify.mjs';
+import { rank, featuresFromRecord } from '../src/engine/classify.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
 
-// Measured at 172/175 when the fixture was taken, of which two disagreements are
-// the label being wrong rather than the classifier. See docs/naming.md.
+// Measured at 189/193 when the fixture was last taken, on 2026-09-13. Two of the
+// disagreements are the label being wrong rather than the classifier (the Evora
+// GTE and its carbon variant; see docs/naming.md). The other two are real:
+// mclaren_mp412c_gt3 picks a texture with no islands on it and
+// tando_buddies_180sx is a tiled material, which are steps 2 and 1 of
+// docs/portability-plan.md.
 const FLOOR = 0.95;
 
 async function fleet() {
@@ -42,12 +47,7 @@ async function fleet() {
   const doc = JSON.parse(raw.toString('utf8'));
   return doc.cars.map((car) => ({
     id: car.id,
-    features: Object.entries(car.roles).map(([role, t]) => ({
-      role, file: t.file, area: t.cover, straddles: t.straddles, box: t.box,
-      skinFraction: car.skinCount ? t.skins / car.skinCount : 0,
-      shaders: t.sh.map((i) => doc.shaders[i]),
-      ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
-    })),
+    features: featuresFromRecord(car, { shaderNames: doc.shaders }),
   }));
 }
 

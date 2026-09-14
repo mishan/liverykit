@@ -34,8 +34,9 @@
 // fleet can be swept in several passes.
 // ---------------------------------------------------------------------------
 
-import { readdir, stat, writeFile, readFile } from 'node:fs/promises';
+import { readdir, writeFile, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
+import { bestKn5 } from './fleet.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
 import { countSkinOverrides } from '../src/engine/scan.mjs';
@@ -58,30 +59,6 @@ const SAMPLE = {
             'ks_bmw_m235i_racing', 'ks_audi_tt_cup'],
   outlier: ['ktm_xbow_r', 'ford_transit', 'ft_morgan_3_wheeler', 'rt_bacmono', 'lotus_2_eleven'],
 };
-
-/**
- * The highest-detail model in a car folder.
- *
- * collider.kn5 is a physics hull with no textures worth reading, and LOD B/C/D
- * are decimated copies whose UV islands are NOT the ones a skin is authored
- * against. Some cars call the full model `<id>.kn5` and others `<id>_lod_a.kn5`,
- * so both spellings have to be accepted.
- */
-async function bestKn5(dir) {
-  let files;
-  try {
-    files = (await readdir(dir)).filter((f) => /\.kn5$/i.test(f));
-  } catch {
-    return null;
-  }
-  const candidates = files.filter((f) => !/^collider\.kn5$/i.test(f) && !/_lod_[bcd]\.kn5$/i.test(f));
-  if (!candidates.length) return null;
-  const sized = await Promise.all(candidates.map(async (f) => {
-    const p = join(dir, f);
-    return { path: p, bytes: (await stat(p)).size };
-  }));
-  return sized.sort((a, b) => b.bytes - a.bytes)[0].path;
-}
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
