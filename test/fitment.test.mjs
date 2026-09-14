@@ -1242,6 +1242,20 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
   const tiny = lay(withPanel({ metresPerUv: [0.5, 0.5] }), { cellMm: 20 });
   assert.match(tiny.note ?? '', /check_fitment wants at least 140 and 45/, JSON.stringify(tiny));
 
+  // One surface on two sheets letters one region twice, at two sizes: the
+  // smaller is the one that counts, and both sheets are named.
+  const twoSheets = { ...profile,
+    textures: { ...profile.textures, rear: { file: 'r.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body', 'rear'], source: 'human' } },
+    panels: { body: { L: profile.panels.body.L }, rear: { L: { ...profile.panels.body.L, metresPerUv: [2, 2] } } } };
+  const both = letterHeights({ ...design([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.3],
+    text: '{number}' }]), identity: { number: '85' } }, twoSheets);
+  assert.deepEqual(both.n.roles, ['body', 'rear']);
+  const one = (sheet) => letterHeights({ ...design([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.3],
+    text: '{number}' }]), identity: { number: '85' } }, { ...twoSheets, bind: { body: { roles: [sheet], source: 'human' } } }).n.mm;
+  assert.equal(both.n.mm, Math.min(one('body'), one('rear')), 'the smaller of the two sheets\' sizes');
+  assert.ok(one('rear') < one('body'));
+
   assert.throws(() => lay(profile, { number: '' }), /layout needs number/);
   assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
 });
@@ -1576,7 +1590,7 @@ test('contrast is measured whatever the palette calls a colour, and on the backg
 // bonnet and 0.25 of the 1.2 m roof.
 // ---------------------------------------------------------------------------
 
-function carOf(quads) {
+function carOf(quads, materials = [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }]) {
   const N = 8, stride = 32, world = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const chunks = [], meshes = [];
   let at = 0;
@@ -1606,7 +1620,7 @@ function carOf(quads) {
     chunks.push(verts, ib);
     at += verts.length + ib.length;
   }
-  return { buf: Buffer.concat(chunks), materials: [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }], meshes };
+  return { buf: Buffer.concat(chunks), materials, meshes };
 }
 
 // Each panel from its front edge back (x of "at") and from the car's right to
@@ -1822,6 +1836,119 @@ test('a panel is measured on its own mesh, not on another island laid out inside
   // measured as roof, and the answer is nowhere near a straight line.
   const { source, ...blind } = roof;
   assert.ok(stripeAt(model, car(blind), 'body', 'roof', { across: [-100, 100] }).error > 50);
+});
+
+test('a panel the band only clips is left out of a stripe\'s layout by name, and said of by the check', async () => {
+  // A band from 260 mm right to 60 mm left crosses 20 mm of the hatch, one
+  // cell of the grid: too little to fit a piece to, and it was dropped from
+  // the layout without a word, while the check passed over it just as quietly.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const got = stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 320, offsetMm: -100 });
+  assert.ok(!got.regions.some((r) => r.panel === 'hatch'), JSON.stringify(got.regions));
+  const hatch = (got.skipped ?? []).filter((s) => s.panel === 'hatch');
+  assert.equal(hatch.length, 1, JSON.stringify(got));
+  assert.equal(hatch[0].carriesMm, 20);
+  assert.match(hatch[0].why, /covers at most 20 mm of hatch across the car and \d+ mm along it.*add a piece by hand/);
+
+  const said = stripeFindings(got.regions, { model: stripedModel }).filter((f) => f.panel === 'hatch');
+  assert.deepEqual(said.map((f) => [f.kind, f.severity, f.measured]), [['stripe-gap', 'low', false]], JSON.stringify(said));
+  assert.match(said[0].why, /hatch lies inside the stripe "centre" .* carries only 20 mm of the band's \d+ mm width there.*could not be measured/);
+  assert.deepEqual(got.findings.filter((f) => /hatch/.test(f)).length, 1, 'and the layout hands on what the check said');
+});
+
+test('a stripe piece whose panel cannot say which way it runs is a low unmeasured finding, not only a note', () => {
+  const on = (name, change) => ({ ...stripedProfile, panels: { body: { ...stripedProfile.panels.body,
+    [name]: change({ ...stripedProfile.panels.body[name] }) } } });
+  const across = [piece('stripe-front', 'bonnet', [0.4, 0, 0.2, 1])];
+  const directions = (profile) => fitment(design(across), profile);
+
+  // No axes, or no scale: named in notChecked and unsupported as before, and
+  // now a finding, like the panel next to it whose axes are unclear.
+  for (const [profile, why] of [
+    [on('bonnet', ({ uAxis, vAxis, ...q }) => q), /its panel bonnet has no measured axes/],
+    [on('bonnet', ({ metresPerUv, ...q }) => q), /could not be checked: /],
+  ]) {
+    const r = directions(profile);
+    const found = r.findings.filter((f) => f.kind === 'stripe-across');
+    assert.deepEqual(found.map((f) => [f.severity, f.measured, f.panel, f.ids]), [['low', false, 'bonnet', ['stripe-front']]],
+      JSON.stringify(r.findings));
+    assert.match(found[0].why, why);
+    assert.ok(r.unsupported.some((u) => u.check === 'stripe-across'), JSON.stringify(r.unsupported));
+    assert.ok(r.notChecked.some((c) => /^stripe-across for stripe-front/.test(c)), JSON.stringify(r.notChecked));
+  }
+
+  // One axis clear and the other diagonal, across the car and up it
+  // equally: y is unclear, so that x runs along the car decides nothing, and
+  // this piece was failed as running across the car.
+  const diagonal = directions(on('bonnet', (q) => ({ ...q, vAxis: [0.7, 0.7, 0] }))).findings
+    .filter((f) => f.kind === 'stripe-across');
+  assert.deepEqual(diagonal.map((f) => [f.severity, f.measured]), [['low', false]], JSON.stringify(diagonal));
+  assert.match(diagonal[0].why, /does not name both of bonnet's axes .*y runs diagonally/);
+});
+
+test('a gap in a stripe over two sheets names the sheet the gap is on', () => {
+  // A formula car's body binds body and bodyRear. Here the car behind the
+  // roof, and the hatch set into the roof, are on a second sheet, and the
+  // stripe leaves the bridge bare: the finding named the front sheet, the one
+  // the stripe's first piece is on.
+  const rear = new Set(['bridge', 'deck', 'wing', 'hatch']);
+  const model = carOf([
+    quadOf(striped[0], 2.0, 1.5), quadOf(striped[0], 1.3, 0.8),
+    ...striped.slice(1).map((q) => ({ ...quadOf(q), materialId: rear.has(q.name) ? 2 : 0 })),
+    { name: 'GLASS', materialId: 1, uv: [0.5, 0.5, 0.2, 0.2], normal: [0, 0.8, 0.6],
+      corners: [[-0.8, 1.0, 0.8], [-0.8, 1.3, 0.4], [0.8, 1.3, 0.4], [0.8, 1.0, 0.8]] },
+  ], [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }, { slots: { txDiffuse: 'r.dds' } }]);
+  const byRole = (keep) => Object.fromEntries(Object.entries(stripedProfile.panels.body).filter(([n]) => keep(n)));
+  const two = { ...stripedProfile, id: 'two',
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 }, bodyRear: { file: 'r.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+    panels: { body: byRole((n) => !rear.has(n)), bodyRear: byRole((n) => rear.has(n)) } };
+  const regions = [piece('stripe-front', 'bonnet', [0, 0.40625, 1, 0.1875]), piece('stripe-roof', 'roof', [0, 0.375, 1, 0.25]),
+    piece('stripe-hatch', 'hatch', [0, 0, 1, 0.275]), piece('stripe-deck', 'deck', [0, 0.40625, 1, 0.1875]),
+    piece('stripe-wing', 'wing', [0, 0.39286, 1, 0.21429])];
+  const gaps = fitment(design(regions), two, null, { model }).findings.filter((f) => f.kind === 'stripe-gap');
+  assert.deepEqual(gaps.map((f) => [f.severity, f.panel, f.role, f.surface]), [['high', 'bridge', 'bodyRear', 'surfaces.body']],
+    JSON.stringify(gaps));
+
+  // And a notch: the hatch left out, on the rear sheet, inside the roof's
+  // stretch of the stripe on the front one.
+  const notch = fitment(design(regions.filter((r) => r.id !== 'stripe-hatch')), two, null, { model }).findings
+    .filter((f) => f.kind === 'stripe-gap' && f.panel === 'hatch');
+  assert.deepEqual(notch.map((f) => [f.severity, f.role]), [['high', 'bodyRear']], JSON.stringify(notch));
+});
+
+test('glass that reuses the body\'s diffuse file is not bodywork a stripe must cover', async () => {
+  // The contract is that glass is not required, and a windscreen that wears
+  // the body's own diffuse file, with an island of its own that the profile
+  // maps as a panel, was taken for bodywork by its filename alone: the layout
+  // laid a piece of the stripe on it and the check asked for one.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const screen = (material) => {
+    const model = carOf([
+      quadOf(striped[0], 2.0, 1.5), quadOf(striped[0], 1.3, 0.8),
+      ...striped.slice(1).map((q) => quadOf(q)),
+      { name: 'GLASS', materialId: 1, uv: [0.7, 0.5, 0.2, 0.2], normal: [0, 0.8, 0.6],
+        corners: [[-0.8, 1.0, 0.8], [-0.8, 1.3, 0.4], [0.8, 1.3, 0.4], [0.8, 1.0, 0.8]] },
+    ], [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'b.dds' }, ...material }]);
+    const profile = { ...stripedProfile, panels: { body: { ...stripedProfile.panels.body,
+      screen: { rect: [0.7, 0.5, 0.2, 0.2], anisotropy: 1, metresPerUv: [2.5, 8], visible: 0.9, tags: ['centre'],
+        uAxis: [0, 0.6, -0.8], vAxis: [1, 0, 0], outline: [[0.7, 0.5], [0.9, 0.5], [0.9, 0.7], [0.7, 0.7]] } } } };
+    return { model, profile };
+  };
+
+  const glass = screen({ shader: 'ksWindscreen', alphaBlendMode: 1 });
+  const laid = stripeLayout({ profile: glass.profile, model: glass.model, role: 'body', widthMm: 300 });
+  assert.deepEqual(laid.regions.map((r) => r.panel), ['bonnet', 'roof', 'hatch', 'bridge', 'deck', 'wing'], JSON.stringify(laid));
+  assert.deepEqual(laid.findings, []);
+  const regions = laid.regions.map((r) => ({ ...r, color: 'orange' }));
+  assert.deepEqual(fitment(design(regions), glass.profile, null, { model: glass.model }).findings
+    .filter((f) => f.kind.startsWith('stripe-')), []);
+
+  // Told as the renderer tells it: a shiny solid on a reflective shader that
+  // the model draws opaque is bodywork, and a stripe crosses it.
+  const solid = screen({ shader: 'ksPerPixelReflection', alphaBlendMode: 0 });
+  assert.ok(stripeLayout({ profile: solid.profile, model: solid.model, role: 'body', widthMm: 300 }).regions
+    .some((r) => r.panel === 'screen'));
 });
 
 test('a stripe without the model says which of its checks did not run', async () => {
