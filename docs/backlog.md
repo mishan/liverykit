@@ -230,8 +230,17 @@ repeated twelve times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than twelve.
 
-The second half is in: `--explain --all` and the editor's Bindings panel,
-described in the portability plan's step 5. Whether a fresh car really goes
+Both halves are in, as the portability plan's step 5.
+
+- **The scorers:** `rims` and `interior` are now proposed on every car in
+  the sweep. They land on a labelled texture on 91% and 74% of the fleet
+  (`docs/naming.md`), and the sweep's cars arrive with a mean of 4.0 of the
+  design's 14 surfaces bound, where it was 2.0.
+- **The one-pass confirmation:** `--explain --all` and the editor's Bindings
+  panel.
+
+The rest of the twelve are bound by hand. The driver kit is next, to be
+proposed from AC's own filenames. Whether a fresh car really goes
 from unbound to confirmed in one sitting is for a person to time. Nothing here
 can.
 

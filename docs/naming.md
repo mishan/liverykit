@@ -73,6 +73,32 @@ the paint nine stock skins override, so it may well be the label again.
 counting islands; see step 2 of [portability-plan.md](portability-plan.md).
 The first measurement, on 175 labelled cars, gave 158, 172 and 174.
 
+`rims` and `interior` are scored too, since step 5 of the portability plan, and
+measured the same way. Their labels are filenames that say `rim` or `wheel`,
+and `interior` or `cockpit`. Right is the binding landing on any labelled
+texture. A rim is bound with the motion-blur rim it is swapped with, since
+binding only one left the wheel stock either standing still or at speed, and a
+pick that lands only through its twin is counted apart.
+
+- **`rims`: 228/246, 92.7% (225 for the pick alone).** A texture counts when all of its islands sit at a
+  wheel centre and no tyre or disc shader draws it, and four copies sharing one
+  rectangle is the confirming sign. On 9 of the 246 cars no labelled texture
+  has an island at a wheel at all, so no measurement could pick it; counting
+  only the other 237, it is 228. Most of the rest are an ambient-occlusion
+  overlay drawn on the rim's own meshes, which ties it on every measurement.
+- **`interior`: 125/168, 74%.** Area, times cockpit visibility, times what
+  trackside visibility leaves. A texture an earlier term has bound is not a
+  candidate: on three open-wheelers the body skin, seen from an open cockpit,
+  was proposed as the interior too, and a design painting both then refused to
+  build. Cockpit visibility needs a steering wheel to
+  stand behind, and without one there is no interior proposal. The misses are
+  mostly the cockpit's occlusion overlay, `INT_OCC` and its kind, which share
+  the cabin's meshes. The label also gives out on 84 cars, more than for any
+  other term, because a cabin is named for its parts as often as for itself.
+
+Neither is in `VALIDATED`, the set whose proposals `--explain` does not call a
+hint: both are well short of the 95% the body is held to.
+
 Visibility costs about four seconds per car. It is worth every one of them, and it
 already exists in `src/engine/visibility.mjs`.
 

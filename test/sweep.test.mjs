@@ -350,9 +350,10 @@ const surveyCar = {
   id: 'x', skinCount: 4,
   roles: {
     body: { file: 'b.dds', w: 2048, h: 2048, panels: 12, cover: 0.4, meshes: 3, box: [0, 1, 0, 1, 0, 1],
-      straddles: true, visible: 0.7, skins: 2, shaders: ['ksPerPixelMultiMap_damage_dirt'] },
+      straddles: true, visible: 0.7, cockpit: 0.05, wheelIslands: 0, sidewalls: 0, instances: 2,
+      skins: 2, shaders: ['ksPerPixelMultiMap_damage_dirt'] },
     trim: { file: 't.dds', w: 256, h: 256, panels: 0, cover: 0.01, meshes: 1, box: [0, 1, 0, 1, 0, 1],
-      straddles: false, skins: 0, shaders: ['ksPerPixel'] },
+      straddles: false, wheelIslands: 0, sidewalls: 0, instances: 0, skins: 0, shaders: ['ksPerPixel'] },
   },
 };
 
@@ -360,8 +361,10 @@ test('one reader turns survey and fixture records into the same features', () =>
   const packed = {
     id: 'x', skinCount: 4,
     roles: {
-      body: { file: 'b.dds', cover: 0.4, straddles: true, skins: 2, sh: [1], box: [0, 1, 0, 1, 0, 1], visible: 0.7, panels: 12 },
-      trim: { file: 't.dds', cover: 0.01, straddles: false, skins: 0, sh: [0], box: [0, 1, 0, 1, 0, 1], panels: 0 },
+      body: { file: 'b.dds', cover: 0.4, straddles: true, skins: 2, sh: [1], box: [0, 1, 0, 1, 0, 1], visible: 0.7, panels: 12,
+        wheelIslands: 0, sidewalls: 0, instances: 2, cockpit: 0.05 },
+      trim: { file: 't.dds', cover: 0.01, straddles: false, skins: 0, sh: [0], box: [0, 1, 0, 1, 0, 1], panels: 0,
+        wheelIslands: 0, sidewalls: 0, instances: 0 },
     },
   };
   const fromSurvey = featuresFromRecord(surveyCar);
@@ -369,6 +372,9 @@ test('one reader turns survey and fixture records into the same features', () =>
   assert.equal(fromSurvey[0].islands, 12);
   assert.equal(fromSurvey[1].islands, 0);
   assert.equal(fromSurvey[0].skinFraction, 0.5);
+  // The rims and interior evidence, which the scorers read by these names.
+  assert.deepEqual([fromSurvey[0].wheelIslands, fromSurvey[0].instances, fromSurvey[0].cockpit], [0, 2, 0.05]);
+  assert.equal(fromSurvey[1].cockpit, undefined, 'a texture nobody measured from the cockpit says nothing');
 });
 
 test('the packer keeps what the classifier reads, and refuses a survey without island counts', () => inTmp(async (dir) => {
@@ -384,6 +390,11 @@ test('the packer keeps what the classifier reads, and refuses a survey without i
   delete old.roles.trim.panels;
   await writeFile(survey, JSON.stringify([old]));
   await assert.rejects(run(process.execPath, [tool('pack-fleet.mjs'), survey, '--out', out]), /no island count/);
+
+  const noWheels = structuredClone(surveyCar);
+  delete noWheels.roles.body.wheelIslands;
+  await writeFile(survey, JSON.stringify([noWheels]));
+  await assert.rejects(run(process.execPath, [tool('pack-fleet.mjs'), survey, '--out', out]), /no wheel-island count/);
 }));
 
 test('the sweep runs on the shipped profiles with no model on the machine', () => inTmp(async (dir) => {

@@ -193,6 +193,10 @@ test('the Bindings panel offers Confirm on a proposal and sends the roles it sho
 
   const list = () => dom.querySelector('#bindings').innerHTML;
   assert.match(list(), /data-confirm="brakes"/, 'the Abarth\'s brakes are a proposal');
+  // Every scorer but the body's has a figure on held-out labels and is not
+  // in VALIDATED; "unmeasured" said the first half of that wrong.
+  assert.match(list(), /evil&quot;\.dds · proposed, [\d.]+, measured, not validated/);
+  assert.doesNotMatch(list(), /unmeasured rule/);
   assert.doesNotMatch(list(), /data-confirm="body"/, 'its body is already confirmed');
   assert.match(list(), /not bound: [^<]*helmet/, 'and the terms nobody bound are named');
   assert.match(list(), /evil&quot;\.dds/, 'a filename is escaped like everywhere else');

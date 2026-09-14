@@ -24,10 +24,13 @@
 // Run this after ANY change to the weights in classify.mjs. The number is the
 // thing to defend; a refactor that quietly costs five points is a regression
 // that no unit test will catch.
+//
+// Every term but the body is scored on what proposeAll binds, which is what
+// the generator writes: a role an earlier term holds is not a later term's.
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
-import { rank, propose, featuresFromRecord } from '../src/engine/classify.mjs';
+import { rank, proposeAll, featuresFromRecord } from '../src/engine/classify.mjs';
 
 // Deliberately conservative: only cars where the filename is unambiguous get a
 // label, so a wrong label is rare even though the rule is crude.
@@ -99,13 +102,81 @@ for (const floor of [0.05, 0.1, 0.2]) {
     `${under.filter((r) => !r.right).length} it does not`);
 }
 
+// Terms a car may draw from several textures that are all rightly called by
+// the name, a rim face and its motion-blur twin, or a cockpit split across two
+// sheets. Right is the proposal landing on one of them. `pick` is kept apart
+// from TERM_LABELS because "bind every labelled texture" would mark the rims
+// scorer wrong on every car that ships a blur rim.
+// The interior label is the cabin's main sheet, named as such. `int_` alone
+// also names the decals, the windscreen, the nets and the pedals, up to eleven
+// textures on one car, and landing on any one of those would say nothing. The
+// rims label leaves out metal_detail_rim.dds, a shared metal sheet on 21 cars
+// that only carries the word.
+const PICK_LABELS = {
+  rims: { looks: /rim|wheel|cerchi|felg/i, not: /_nm|normal|_map|glow|_ao|steer|logo|tyre|tire|bolt|nut|disc|brake|cal|lod|detail/i },
+  interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
+};
+// Two things "lands on a labelled texture" cannot see, so they are reported
+// beside it and not folded into it. A binding can hold another term's
+// texture: the interior held the body skin on three open-wheelers until a
+// role was left to one term. And a rim is bound with its motion-blur twin, so
+// a wrong pick can land on the label through its twin alone, and a blur rim
+// bound with no plain rim paints the wheel only at speed; both are counted.
+const heldAs = (f, term) => {
+  const as = [
+    ...(LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles ? ['body'] : []),
+    ...Object.entries({ ...TERM_LABELS, ...PICK_LABELS })
+      .filter(([, l]) => l.looks.test(f.file) && !l.not.test(f.file)).map(([t]) => t),
+  ];
+  return as.includes(term) ? [] : as;
+};
+for (const [term, { looks, not }] of Object.entries(PICK_LABELS)) {
+  let right = 0, n = 0, none = 0, viaTwin = 0;
+  const misses = [];
+  const over = [];
+  const kinds = { pair: 0, plain: 0, blur: 0 };
+  for (const car of fleet) {
+    const features = featuresFromRecord(car);
+    const p = proposeAll(features)[term];
+    const boundTo = (p?.roles ?? []).map((r) => features.find((f) => f.role === r));
+    for (const f of boundTo) {
+      const as = heldAs(f, term);
+      if (as.length) over.push({ id: car.id, file: f.file, as: as.join(', ') });
+    }
+    if (term === 'rims' && boundTo.length) {
+      const blur = boundTo.some((f) => f.blur), plain = boundTo.some((f) => !f.blur);
+      kinds[blur && plain ? 'pair' : blur ? 'blur' : 'plain']++;
+    }
+    const labels = features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
+    if (!labels.length) continue;
+    n++;
+    if (!p) { none++; misses.push({ id: car.id, bound: '(nothing)', label: labels.join(', ') }); continue; }
+    const bound = boundTo.map((f) => f.file);
+    if (bound.some((b) => labels.includes(b))) {
+      right++;
+      if (!labels.includes(bound[0])) viaTwin++;
+    } else misses.push({ id: car.id, bound: bound.join(', '), label: labels.join(', ') });
+  }
+  console.log(`\n  ${term}: ${right}/${n} land on a labelled texture (${none} proposed nothing)`);
+  if (viaTwin) console.log(`  ${term}: ${viaTwin} of those only through a motion-blur twin bound beside an unlabelled pick`);
+  for (const m of misses.slice(0, 12)) console.log(`    ${m.id.padEnd(34)} bound ${m.bound.slice(0, 38).padEnd(40)} label ${m.label}`);
+  if (misses.length > 12) console.log(`    and ${misses.length - 12} more`);
+  if (term === 'rims') {
+    console.log(`  rims: a rim and its blur twin on ${kinds.pair} cars, a plain texture alone on ${kinds.plain}, ` +
+      `a blur rim alone on ${kinds.blur}`);
+  }
+  console.log(`  ${term}: ${over.length} bound texture(s) labelled as another term (not counted against the figure above)`);
+  for (const o of over.slice(0, 8)) console.log(`    ${o.id.padEnd(34)} ${o.file}  (labelled ${o.as})`);
+  if (over.length > 8) console.log(`    and ${over.length - 8} more`);
+}
+
 for (const [term, { looks, not }] of Object.entries(TERM_LABELS)) {
   let right = 0, n = 0;
   const misses = [];
   const over = [];
   for (const car of fleet) {
     const features = featuresFromRecord(car);
-    const p = propose(features, term);
+    const p = proposeAll(features)[term];
     const boundTo = (p?.roles ?? []).map((r) => features.find((f) => f.role === r));
     for (const f of boundTo) {
       const as = labelledAs(f);
