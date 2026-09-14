@@ -49,6 +49,7 @@
 
 import { meshesUsingTexture, triangles, vertex } from './kn5.mjs';
 import { rectGroups } from './tags.mjs';
+import { wheelCentres } from './wheels.mjs';
 
 /** Terms whose scoring has been measured against the fleet. */
 export const VALIDATED = new Set(['body']);
@@ -114,6 +115,12 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
     }
   }
 
+  // Whether the wheels were measured at all. measureWheels marks nothing on a
+  // model whose WHEEL_xx nodes it cannot find, and counting what it marked
+  // then gave every texture zero wheel islands: a measurement never taken,
+  // read by the rims scorer and by --explain as one that found no rim.
+  const wheelsMeasured = wheelCentres(model).length > 0;
+
   const out = [];
   for (const [role, tex] of Object.entries(roles)) {
     const file = typeof tex === 'string' ? tex : tex.file;
@@ -163,8 +170,10 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       // Rims are told apart from tyres and discs by these, since a rim has no
       // shader of its own to be gated on.
       ...(panels ? {
-        wheelIslands: ps.filter((p) => p.wheel).length,
-        sidewalls: ps.filter((p) => p.wheel?.part === 'sidewall').length,
+        ...(wheelsMeasured ? {
+          wheelIslands: ps.filter((p) => p.wheel).length,
+          sidewalls: ps.filter((p) => p.wheel?.part === 'sidewall').length,
+        } : {}),
         instances: Math.max(0, ...[...rectGroups(panels[role] ?? {}).values()].map((g) => g.length)),
       } : {}),
       ...(seen.length ? { cockpit: r3(seen.reduce((a, b) => a + b, 0) / seen.length) } : {}),
@@ -247,6 +256,8 @@ export const VOCABULARY = {
   // overlay on the same meshes, which no measurement here tells apart.
   rims: {
     describes: 'Wheel faces. Usually one texture shared by all four.',
+    // Not measured is not zero islands at a wheel: see textureFeatures.
+    excludes: (f) => (typeof f.wheelIslands === 'number' ? null : 'wheel positions were not measured'),
     score: (f) => {
       if (!f.islands || !f.wheelIslands) return 0;
       if (f.shaders.some((s) => /ksTyres|ksBrakeDisc/i.test(s))) return 0;
@@ -264,11 +275,15 @@ export const VOCABULARY = {
   // cabin's meshes and so its area.
   interior: {
     describes: 'Cabin surfaces — tub, dash, trim.',
+    excludes: (f) => (typeof f.cockpit === 'number' ? null : 'cockpit visibility was not measured'),
     score: (f) => {
-      if (!f.islands || typeof f.cockpit !== 'number' || !f.cockpit) return 0;
+      if (!f.islands) return 0;
       if (f.shaders.some((s) => /ksTyres|ksBrakeDisc/i.test(s))) return 0;
       if ((f.wheelIslands ?? 0) / f.islands >= 0.2) return 0;
-      return f.area * f.cockpit * (1 - (f.visible ?? 0));
+      // Trackside visibility left out where it was not measured, as scoreBody
+      // leaves it out, rather than read as "never seen from the track". The
+      // number is the same; the claim is not.
+      return f.area * f.cockpit * (typeof f.visible === 'number' ? 1 - f.visible : 1);
     },
   },
 
@@ -389,8 +404,15 @@ export function rank(features, term = 'body') {
     );
   }
 
-  const scored = features
-    .map((f) => ({ ...f, score: spec.score(f) }))
+  // A term's `excludes` names what leaves a texture out before it is scored:
+  // evidence that was not measured, which is not the same as a zero.
+  const all = features.map((f) => ({ ...f, score: spec.excludes?.(f) ? 0 : spec.score(f) }));
+  // A score that is not a number is a scorer reading a measurement nobody
+  // took. The filter below would drop it as quietly as a zero, which is how
+  // the interior's guard against exactly that came to have no test.
+  const bad = all.find((f) => !Number.isFinite(f.score));
+  if (bad) throw new Error(`The ${term} score for ${bad.file} is ${bad.score}: something it reads was not measured.`);
+  const scored = all
     .filter((f) => f.score > 0)
     .sort((a, b) => b.score - a.score);
 
@@ -495,25 +517,34 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   if (!VALIDATED.has(term)) {
     lines.push('  ! This term\'s scoring has NOT been measured against the fleet. Treat it as a hint.');
   }
+  // Said before anything else, because without it the term has no candidates
+  // at all, and "no candidate" would otherwise read as "no cabin" or "no rims".
+  const unmeasured = {
+    interior: !features.some((f) => typeof f.cockpit === 'number') && [
+      '  ! Cockpit visibility was not measured: no steering wheel was found to stand',
+      '    behind, or visibility was skipped. The interior is not scored without it.'],
+    rims: !features.some((f) => typeof f.wheelIslands === 'number') && [
+      '  ! Wheel positions were not measured: no WHEEL_xx node was found in the model,',
+      '    so no island was marked as a wheel part. Rims are not scored without them.'],
+  }[term];
+  if (unmeasured) lines.push(...unmeasured);
   // Named, because a large, visible, symmetric texture missing from the table
-  // reads as the classifier overlooking it, not as a decision it made.
-  const notCandidates = term === 'body'
-    ? features.filter((f) => excludedWhy(f) && f.area >= 0.02).sort((a, b) => b.area - a.area).slice(0, 3)
+  // reads as the classifier overlooking it, not as a decision it made. Not one
+  // by one where the line above has said it of the whole car.
+  const why = term === 'body' ? excludedWhy : spec.excludes;
+  const notCandidates = why && !unmeasured
+    ? features.filter((f) => why(f) && f.area >= 0.02).sort((a, b) => b.area - a.area).slice(0, 3)
     : [];
   const sayExcluded = () => {
     for (const f of notCandidates) {
-      lines.push(`  not a candidate: ${f.file} — ${excludedWhy(f)}, ${pct(f.area).trim()} of the car's area`);
+      lines.push(`  not a candidate: ${f.file} — ${why(f)}, ${pct(f.area).trim()} of the car's area`);
     }
   };
-  // Said before anything else, because without it the interior has no
-  // candidates at all, and "no candidate" would otherwise read as "no cabin".
-  if (term === 'interior' && !features.some((f) => typeof f.cockpit === 'number')) {
-    lines.push('  ! Cockpit visibility was not measured: no steering wheel was found to stand');
-    lines.push('    behind, or visibility was skipped. The interior is not scored without it.');
-  }
   if (!ranked.length) {
-    lines.push('  No candidate scored above zero. This car may genuinely lack the surface;');
-    lines.push('  bind it to an empty "roles" array in the profile to say so explicitly.');
+    if (!unmeasured) {
+      lines.push('  No candidate scored above zero. This car may genuinely lack the surface;');
+      lines.push('  bind it to an empty "roles" array in the profile to say so explicitly.');
+    }
     sayExcluded();
     return lines.join('\n');
   }
@@ -522,7 +553,7 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   // The evidence each scorer reads beyond the common columns, so the table
   // shows what decided the ranking and not only what decides the body's.
   const extra = {
-    rims: { head: '  whl  inst', cell: (f) => '  ' + (f.islands ? pct((f.wheelIslands ?? 0) / f.islands) : '   ?') + '  ' + String(f.instances ?? '?').padStart(4) },
+    rims: { head: '  whl  inst', cell: (f) => '  ' + (f.islands && typeof f.wheelIslands === 'number' ? pct(f.wheelIslands / f.islands) : '   ?') + '  ' + String(f.instances ?? '?').padStart(4) },
     interior: { head: '  ckpt', cell: (f) => '  ' + (typeof f.cockpit === 'number' ? pct(f.cockpit) : '   ?') },
   }[term];
   lines.push('  ' + 'role'.padEnd(24) + 'file'.padEnd(30) +
