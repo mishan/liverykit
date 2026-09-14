@@ -10,6 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { request } from 'node:http';
 import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,6 +50,23 @@ async function editor({ withPath = true } = {}) {
     server.close(ok);
   });
   return { dir, profilePath, text, at, confirm, stop };
+}
+
+/**
+ * A request carrying headers fetch will not let a caller choose, Host among
+ * them: what a page on a rebound name sends is exactly what needs testing.
+ */
+function raw(at, { method = 'GET', path, headers = {}, body = '' }) {
+  const { port } = new URL(at);
+  return new Promise((ok, no) => {
+    const req = request({ host: '127.0.0.1', port, method, path, headers }, (res) => {
+      let text = '';
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => ok({ status: res.statusCode, text }));
+    });
+    req.on('error', no);
+    req.end(body);
+  });
 }
 
 test('the one-pass bind block is the block the generator writes', async () => {
@@ -109,6 +127,70 @@ test('a confirmation from anywhere but the editor\'s page is refused', async () 
     assert.equal((await e.confirm(sent, null)).status, 403);
     assert.equal((await e.confirm(sent, 'http://example.com')).status, 403);
     assert.equal(await readFile(e.profilePath, 'utf8'), e.text, 'and the file is untouched');
+  } finally {
+    await e.stop();
+  }
+});
+
+test('a page on another name that resolves here is refused, on every route', async () => {
+  // DNS rebinding. A page on evil.example whose name is re-pointed at
+  // 127.0.0.1 sends its own name as Host and as Origin, and the two agreed,
+  // which is all Confirm used to check. It could read the roles it needed
+  // from /api/bindings first, and text/plain needs no preflight.
+  const e = await editor();
+  try {
+    const { port } = new URL(e.at);
+    const evil = `evil.example:${port}`;
+    const read = await raw(e.at, { path: '/api/bindings', headers: { host: evil } });
+    assert.equal(read.status, 403, read.text);
+    assert.match(JSON.parse(read.text).error, /evil\.example/);
+    for (const type of ['text/plain', 'application/json']) {
+      const res = await raw(e.at, {
+        method: 'POST', path: '/api/bindings/confirm',
+        headers: { host: evil, origin: `http://${evil}`, 'content-type': type },
+        body: JSON.stringify({ term: 'brakes', roles: ['rims_3'] }),
+      });
+      assert.equal(res.status, 403, `${type}: ${res.text}`);
+    }
+    assert.equal(await readFile(e.profilePath, 'utf8'), e.text, 'and the file is untouched');
+
+    // Both of this server's own names are this server.
+    const local = await raw(e.at, { path: '/api/bindings', headers: { host: `localhost:${port}` } });
+    assert.equal(local.status, 200, local.text);
+  } finally {
+    await e.stop();
+  }
+});
+
+test('a confirmation that is not sent as JSON is refused', async () => {
+  // A cross-origin text/plain POST goes out with no preflight, so a route that
+  // parses it anyway can be reached by a page that could never send JSON.
+  const e = await editor();
+  try {
+    const res = await fetch(`${e.at}/api/bindings/confirm`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', origin: e.at },
+      body: JSON.stringify({ term: 'brakes', roles: ['rims_3'] }),
+    });
+    assert.equal(res.status, 415);
+    assert.match((await res.json()).error, /application\/json/);
+    assert.equal(await readFile(e.profilePath, 'utf8'), e.text);
+  } finally {
+    await e.stop();
+  }
+});
+
+test('the editor opened as localhost can confirm', async () => {
+  const e = await editor();
+  try {
+    const { port } = new URL(e.at);
+    const res = await raw(e.at, {
+      method: 'POST', path: '/api/bindings/confirm',
+      headers: { host: `localhost:${port}`, origin: `http://localhost:${port}`, 'content-type': 'application/json; charset=utf-8' },
+      body: JSON.stringify({ term: 'brakes', roles: ['rims_3'] }),
+    });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(JSON.parse(await readFile(e.profilePath, 'utf8')).bind.brakes.source, 'human');
   } finally {
     await e.stop();
   }

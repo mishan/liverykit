@@ -1075,6 +1075,20 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     try {
       const url = new URL(req.url, 'http://localhost');
 
+      // Only this server's own names. Listening on 127.0.0.1 keeps other
+      // machines out and not other web pages: a page on evil.example whose
+      // name is re-pointed at 127.0.0.1 after it loads is same-origin with
+      // itself, so it could read /api/bindings and post to every route here.
+      // Host is the one header it cannot make say 127.0.0.1 or localhost.
+      // Checked once, for every route, rather than on the ones that write:
+      // reading the bindings is what told such a page the roles Confirm wants.
+      const bound = server.address().port;
+      const host = String(req.headers.host ?? '').toLowerCase();
+      if (host !== `127.0.0.1:${bound}` && host !== `localhost:${bound}`) {
+        return json(403, { error: `This editor answers to 127.0.0.1:${bound} and localhost:${bound}, ` +
+          `not to "${host}", which is some other name pointing at this machine.` });
+      }
+
       // A fingerprint of the files actually on disk. Four rounds of this editor
       // were spent unable to tell whether the browser was running the code I had
       // just written, a cached copy, or a server started before the change. The
@@ -1127,17 +1141,25 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // proposal would then be one string away from the same write.
       //
       // The Origin check keeps it to this editor's own page. A browser sets
-      // Origin itself on a POST, so another site cannot pass as this one, and
-      // the MCP client and a stray script send none. A local process willing
-      // to forge the header could get past it. That process can also write
-      // the file directly, so it is no worse off; the point is that nothing
-      // reaches this route by accident.
+      // Origin itself on a POST and a page cannot change it, and the MCP
+      // client and a stray script send none. It is compared with this
+      // server's own two names and not with Host: a page on a rebound name
+      // sends that name in both, and they agreed with each other, which is
+      // how one wrote "human" before the Host check above existed. JSON only,
+      // because a text/plain POST is the kind another origin can send without
+      // asking first. A local process willing to forge the headers could get
+      // past all of it. That process can also write the file directly, so it
+      // is no worse off; the point is that nothing reaches this route by
+      // accident, and no web page reaches it at all.
       if (req.method === 'POST' && url.pathname === '/api/bindings/confirm') {
         if (!profilePath) {
           return json(409, { error: 'This editor was not given the profile\'s file, so there is nowhere to write a confirmation.' });
         }
-        if (req.headers.origin !== `http://${req.headers.host}`) {
+        if (req.headers.origin !== `http://127.0.0.1:${bound}` && req.headers.origin !== `http://localhost:${bound}`) {
           return json(403, { error: 'A binding is confirmed from the editor\'s Bindings panel, by a person, and nowhere else.' });
+        }
+        if ((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
+          return json(415, { error: 'A confirmation is sent as application/json, which is what the Bindings panel sends.' });
         }
         const asked = await body();
         const done = confirming.then(async () => {
