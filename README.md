@@ -569,6 +569,9 @@ and several other things:
 | `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimetres at the car's real scale |
 | `ungrouped` | a region that declared `groupWith` is not on the same panel as the region it names |
+| `stripe-across` | a piece of a declared `stripe` runs across the car on its panel: its long side is the axis find_panels names as across the car |
+| `stripe-offset` | two pieces of one declared `stripe` do not line up where they meet: an edge steps more than 20 mm on the car |
+| `stripe-gap` | a declared `stripe` does not cover the car nose to tail: a stretch of paintable bodywork, seen from above (or from the side, for a flank stripe), is bare — over a rear wing too. Glass, grilles, openings and sheets the design does not paint are not counted |
 | `too-small` | a race number's capitals under 140 mm tall on the car, or a team or driver name's under 45 mm, measured on the letters after the text is shrunk to fit its box |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
@@ -633,7 +636,14 @@ side, the box must still be on the car and visible. `groupWith` names another re
 this one must share a panel with, as a team name belongs beside the race number,
 and they are reported as `ungrouped` when they part. Unlike the floors it is never
 assumed: a brief may want the name on the roof, so it applies only where the design
-declares it. A misspelled constraint is refused rather than ignored: it would otherwise
+declares it. `stripe` names a stripe along the car that the region is a piece of, and
+every region given the same name is another piece of it. Each piece must run along the
+car on its panel (`stripe-across`), and where one piece meets the next, measured on the
+model, their edges must agree within 20 mm (`stripe-offset`). Together the pieces must
+cover the car nose to tail, and over the top of a rear wing, which seen from above is the
+surface over the deck: a stretch of paintable bodywork left bare is a `stripe-gap`. A gap
+is fine where the car has glass, a vent or a grille, since paint does not go on a hole.
+It is never assumed either: a band across the bonnet is a design too. A misspelled constraint is refused rather than ignored: it would otherwise
 read as a rule in force and enforce nothing.
 
 ### Surfaces the car should not draw

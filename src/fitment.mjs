@@ -22,13 +22,13 @@
 // the editor, the MCP and a test all read the same ones.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, spanPlacements, panel as panelOf, panelName } from './profile.mjs';
+import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, metresAcross, spanPlacements, panel as panelOf, panelName, axesOf } from './profile.mjs';
 import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
-import { occupancyFor, rectVisibility, carOccluders } from './engine/visibility.mjs';
+import { occupancyFor, rectVisibility, carOccluders, sampleRects } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
-import { meshesUsingTexture, vertex } from './engine/kn5.mjs';
+import { meshesUsingTexture, vertex, triangles } from './engine/kn5.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
 // From the editor's op module, because the BROWSER needs this list too — to
@@ -217,6 +217,13 @@ function constraintsOf(region, id, t, say) {
     } else if (k === 'groupWith') {
       if (typeof v !== 'string' || !v.trim()) { bad(k, 'must be the id of another region.'); continue; }
       if (v === region.id) { bad(k, 'names this region itself.'); continue; }
+    } else if (k === 'stripe') {
+      // A name, not `true`: the name is what makes three regions on three
+      // panels one stripe, and a piece measured against no neighbours would
+      // pass a check that never looked at where the pieces meet.
+      if (typeof v !== 'string' || !v.trim() || v !== v.trim()) {
+        bad(k, 'must be the stripe\'s name, shared exactly by every piece of it, e.g. "centre".'); continue;
+      }
     } else if (typeof v !== 'number' || !Number.isFinite(v)) {
       bad(k, 'must be a number.'); continue;
     } else if ((k === 'minOnCar' || k === 'minVisible') && (v < 0 || v > 1)) {
@@ -261,6 +268,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
   const failed = [];
   let wantsMargin = false;
+  let wantsStripe = false;
   // A check that could not measure one region, by name. It used to skip the
   // region and stay in `checked`, so a name nobody measured read exactly
   // like one that passed.
@@ -313,6 +321,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // reported rather than quietly enforcing nothing.
     for (const p of placed) p.constraints = constraintsOf(p.region, p.id, t, sayHere);
     if (placed.some((p) => typeof p.constraints.minMargin === 'number')) wantsMargin = true;
+    if (placed.some((p) => typeof p.constraints.stripe === 'string')) wantsStripe = true;
     all.push({ t, placed });
 
     const size = texSize(profile, t.role);
@@ -330,14 +339,16 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
 
   // Across surfaces rather than within one, so these cannot live in the loop above.
   grouped(all, design, fit, profile, say);
+  stripes(all, profile, seen, say, skip);
   if (model) stacked(model, profile, targets, say, { design });
 
   return {
     car: profile.id,
     name: profile.name || profile.id,
-    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !['unseen', 'off-mesh', 'unpainted-twin', 'margin'].includes(c)),
+    checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !NEEDS_MODEL.includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : [])]), ...unmeasured],
+    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
+      ...(wantsStripe ? ['stripe-offset', 'stripe-gap'] : [])]), ...unmeasured],
     // The entries of notChecked that nothing in a design can make run, each
     // with the entry it explains. Still in notChecked, so nothing that reads
     // only that stops seeing them.
@@ -391,7 +402,10 @@ function preparedFor(model, profile) {
 }
 
 const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'ungrouped', 'unmirrored',
-  'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin'];
+  'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
+
+/** The checks that stand on the car's geometry, and do not run without its model. */
+const NEEDS_MODEL = ['unseen', 'off-mesh', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -1381,6 +1395,567 @@ function grouped(all, design, fit, profile, say) {
       });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// A stripe along the car, checked as one line of paint rather than as the
+// rectangles it is drawn with.
+//
+// A Gulf centre stripe went wrong twice, and both times only the critic
+// noticed, from a picture. Run 19 wrote [0.4, 0, 0.2, 1] on a bonnet, a roof
+// and an engine cover whose x runs along the car, and painted three bands
+// ACROSS it. Run 20's first round drew the same fractions on six panels of
+// different widths, and the stripe came out as rectangles that did not meet.
+// Both are geometry: the profile says which way each panel runs, and the model
+// says where every piece of paint lands.
+//
+// Only where the design says `stripe`. Which regions make one stripe along the
+// car cannot be read off their ids or their treatment — a band across the
+// bonnet is a design choice too, and a guess would be this checker's taste
+// standing in for the design's, as it would be for `groupWith`.
+// ---------------------------------------------------------------------------
+
+/**
+ * How far one piece's edge may step from the last one's where they meet.
+ *
+ * Measured on the NSX. Run 20's final draft, nose to tail in seven pieces,
+ * meets within 8 mm at every join and reads as one stripe; its first round,
+ * which read as offset rectangles, was out by 63 to 236 mm, and run 21's
+ * stripe, which the critic called offset round the roof, by 60 to 295. The
+ * measurement's own error is a few millimetres — samples every 8 mm, so an
+ * edge is found to within 4 — which 20 mm is well clear of, and it is under
+ * the step anybody would see from trackside.
+ */
+const STRIPE_STEP_MM = 20;
+
+/**
+ * How long a stretch of bare bodywork may be before it is a gap in the stripe.
+ * Two islands meeting at a seam leave nothing and a shut line a few
+ * millimetres, but the car is looked at through a 20 mm grid, so one cell of
+ * it is the measurement's own edge and two are a gap.
+ */
+const STRIPE_GAP_MM = 30;
+
+/**
+ * How much of each piece's end is its end. Not one row of samples: a shut line
+ * crossing the stripe on a curve, as the bonnet's does at the windscreen,
+ * cuts the corners of the piece off at different lengths, and the width that
+ * meets the next piece is the width over the last few centimetres.
+ */
+const STRIPE_END_MM = 60;
+
+const STRIPE_SAMPLE_MM = 8;
+
+function stripes(all, profile, seen, say, skip) {
+  const byName = new Map();
+  for (const { t, placed } of all) {
+    for (const p of placed) {
+      const s = p.constraints?.stripe;
+      if (typeof s !== 'string') continue;
+      if (!byName.has(s)) byName.set(s, []);
+      byName.get(s).push({ t, p });
+    }
+  }
+  for (const [stripe, pieces] of byName) {
+    for (const piece of pieces) stripeDirection(piece, stripe, say, skip);
+  }
+  // Without the model the joins are named in `notChecked` by the caller.
+  if (seen && byName.size) stripeJoins(byName, profile, seen, say);
+}
+
+/**
+ * A piece of a stripe along the car whose long side runs across it: run 19.
+ *
+ * Asked of the PANEL'S AXES as find_panels reports them, not re-derived here,
+ * because that is what the planner was told to write its stripe by — so a
+ * finding and the tool it is sent back to cannot disagree about which way the
+ * bonnet runs. Of a panel's two axes, the one running across the car must be
+ * the piece's short side; where neither is named across, the one running
+ * along is its long side, which is the case on a flank, whose other axis is
+ * up and down. The long side is in millimetres, not fractions: a stripe that
+ * is 20% of a panel's length is still the long side if the panel is five times
+ * longer than it is wide.
+ *
+ * A piece that covers its panel end to end along the car is left alone,
+ * whatever its shape: a stripe crossing a panel shorter than the stripe is
+ * wide is exactly what a stripe does. And no model is needed, so this runs
+ * wherever fitment does.
+ */
+function stripeDirection({ t, p }, stripe, say, skip) {
+  // A piece that arrived through a seam runs whichever way the seam turned
+  // the band, inside a box drawn round a parallelogram. Its home piece says
+  // which way the band runs, and is asked.
+  if (p.spilled) return;
+  const id = name(t, p.id);
+  const pan = p.frac.panel;
+  const where = { kind: 'stripe-across', surface: t.from, role: t.role, panel: p.region.panel, ids: [p.id], stripe };
+  if (!pan) {
+    say({ ...where, severity: 'low', measured: false,
+      why: `${id} is part of the stripe "${stripe}" and names no panel, so which way it runs on the car ` +
+        'could not be measured; check it in a picture of the car.' });
+    return;
+  }
+  const axes = axesOf(pan);
+  const m = metresAcross(p.frac);
+  if (!axes || !m) {
+    // The profile's gap, not the draft's, as a missing scale is for `unreadable`.
+    const why = !axes
+      ? `its panel ${p.region.panel} has no measured axes (uAxis, vAxis); regenerate the profile with --from-kn5`
+      : noScale(p);
+    skip(`stripe-across for ${id}: ${why}`, { check: 'stripe-across', surface: t.from, role: t.role, ids: [p.id], why });
+    return;
+  }
+  const across = axes.x === 'across the car' ? 'x' : axes.y === 'across the car' ? 'y'
+    : axes.x === 'along the car' ? 'y' : axes.y === 'along the car' ? 'x' : null;
+  if (!across) {
+    say({ ...where, severity: 'low', measured: false,
+      why: `${id} is part of the stripe "${stripe}", and which way it runs could not be checked: find_panels ` +
+        `names neither of ${p.region.panel}'s axes as along or across the car ` +
+        `(${axes.unclear ?? `x runs ${axes.x}, y ${axes.y}`}).` });
+    return;
+  }
+  const along = across === 'x' ? 'y' : 'x';
+  const mm = { x: Math.round(m.w * 1000), y: Math.round(m.h * 1000) };
+  if (mm[along] >= mm[across]) return;
+  const r = pan.rect;
+  if ((along === 'x' ? p.frac.w / r[2] : p.frac.h / r[3]) >= 0.9) return;
+  // The same numbers turned a quarter, which is what run 19 meant, offered
+  // only where it would run the panel's whole length.
+  const a = p.region.at;
+  const turned = Array.isArray(a) && a.length === 4 && p.region.span !== true && (across === 'x' ? a[2] : a[3]) >= 0.9
+    ? `, as at [${[a[1], a[0], a[3], a[2]].map(round).join(', ')}] would be` : '';
+  say({
+    ...where, severity: 'high', along: mm[along], across: mm[across],
+    why: `${id} is part of the stripe "${stripe}", which runs along the car, and on ${p.region.panel} it runs ` +
+      `across the car instead: it is ${mm[across]} mm across the car and ${mm[along]} mm along it. ` +
+      `${p.region.panel}'s x runs ${axes.x ?? 'unclear'} and its y ${axes.y ?? 'unclear'} (find_panels' "axes"), ` +
+      `so a stripe along the car is long in ${along} and narrow in ${across}${turned}.`,
+  });
+}
+
+/**
+ * Where one piece of a stripe meets the next, measured on the car: the run 20
+ * mistake. Then whether the pieces together cover the car: `stripeCoverage`.
+ *
+ * Every piece is sampled onto the model and the pieces are put in order from
+ * the front of the car to the back. Two pieces side by side — a roof split
+ * down the middle — are one step of the stripe, not two. Then, where each
+ * piece meets the next, the ends are compared across the stripe: across the
+ * car for one over the top, up and down for one along a flank, whichever
+ * direction lies in the paint and not along the stripe.
+ */
+function stripeJoins(byName, profile, seen, say) {
+  const ax = profile.calibration?.axes ?? {};
+  const F = ax.front === '-Z' ? -1 : 1;
+  const L = ax.left === '-X' ? -1 : 1;
+
+  // Sampled with one walk of each sheet's triangles for every piece on it.
+  const byRole = new Map();
+  for (const pieces of byName.values()) {
+    for (const piece of pieces) {
+      if (!byRole.has(piece.t.role)) byRole.set(piece.t.role, []);
+      byRole.get(piece.t.role).push(piece);
+    }
+  }
+  for (const [role, pieces] of byRole) {
+    let meshes = [];
+    try {
+      meshes = meshesUsingTexture(seen.model, texture(profile, role).file);
+    } catch { /* reported as unresolvable by `unseen` */ }
+    const cells = (uv, per) => Math.max(8, Math.min(200, Math.ceil((uv * per * 1000) / STRIPE_SAMPLE_MM)));
+    // On the piece's own island: its box covers whatever else the unwrap put
+    // beside it, which is paint, but not this stripe's.
+    const asks = pieces.map(({ p }) => {
+      const f = p.frac, per = f.panel?.metresPerUv;
+      const scaled = per?.[0] > 0 && per?.[1] > 0;
+      return { rect: [f.x, f.y, f.w, f.h], nu: scaled ? cells(f.w, per[0]) : 40, nv: scaled ? cells(f.h, per[1]) : 40,
+        poly: f.poly ?? null, within: f.panel?.outline ?? null };
+    });
+    const got = meshes.length ? sampleRects(seen.model, meshes, asks) : asks.map(() => ({ points: [] }));
+    pieces.forEach((piece, i) => {
+      piece.points = got[i].points;
+      for (const q of piece.points) q.piece = piece;
+    });
+  }
+
+  for (const [stripe, pieces] of byName) {
+    const onCar = [];
+    for (const piece of pieces) {
+      if (piece.points.length >= 3) {
+        onCar.push({ ...piece, ...meanOf(piece.points) });
+        continue;
+      }
+      // off-mesh says where it went; this says what that cost the stripe.
+      say({ kind: 'stripe-offset', severity: 'low', measured: false, surface: piece.t.from, role: piece.t.role,
+        panel: piece.p.region.panel, ids: [piece.p.id], stripe,
+        why: `${name(piece.t, piece.p.id)} is part of the stripe "${stripe}" and lands on no geometry, so whether ` +
+          'it lines up with the rest of the stripe could not be measured.' });
+    }
+
+    const steps = [];
+    for (const piece of onCar.sort((a, b) => (b.c[2] - a.c[2]) * F)) {
+      const last = steps.at(-1);
+      const d = last && [0, 1, 2].map((k) => piece.c[k] - last.c[k]);
+      if (d && Math.abs(d[0]) > Math.abs(d[1]) && Math.abs(d[0]) > Math.abs(d[2])) {
+        last.pieces.push(piece);
+        last.points = last.points.concat(piece.points);
+        Object.assign(last, meanOf(last.points));
+        continue;
+      }
+      steps.push({ pieces: [piece], points: piece.points, c: piece.c, n: piece.n });
+    }
+    for (let i = 0; i + 1 < steps.length; i++) {
+      stripeJoin(steps[i], steps[i + 1], { stripe, say, F, L });
+    }
+    if (onCar.length) stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L });
+  }
+}
+
+/** Where a set of surface points is, and which way it faces, on average. */
+function meanOf(points) {
+  const c = [0, 0, 0], n = [0, 0, 0];
+  for (const q of points) {
+    c[0] += q.x; c[1] += q.y; c[2] += q.z;
+    n[0] += q.nx; n[1] += q.ny; n[2] += q.nz;
+  }
+  const nl = Math.hypot(...n) || 1;
+  return { c: c.map((v) => v / points.length), n: n.map((v) => v / nl) };
+}
+
+function stripeJoin(A, B, { stripe, say, F, L }) {
+  const dl = Math.hypot(B.c[0] - A.c[0], B.c[1] - A.c[1], B.c[2] - A.c[2]) || 1;
+  const d = [0, 1, 2].map((k) => (B.c[k] - A.c[k]) / dl);
+  const nl = Math.hypot(A.n[0] + B.n[0], A.n[1] + B.n[1], A.n[2] + B.n[2]) || 1;
+  const n = [0, 1, 2].map((k) => (A.n[k] + B.n[k]) / nl);
+  // Across the stripe: the car's own axis that lies least along the stripe
+  // and least out of the paint. Across the car over a roof, up and down on a
+  // flank, and across the car again down the face of the nose.
+  const k = [1, 2].reduce((best, i) => (Math.abs(d[i]) + Math.abs(n[i]) < Math.abs(d[best]) + Math.abs(n[best]) ? i : best), 0);
+  const s = (q) => q.x * d[0] + q.y * d[1] + q.z * d[2];
+  const lat = (q) => (k === 0 ? q.x * L : k === 1 ? q.y : q.z * F);
+
+  let sA = -Infinity, sB = Infinity;
+  for (const q of A.points) sA = Math.max(sA, s(q));
+  for (const q of B.points) sB = Math.min(sB, s(q));
+  const end = STRIPE_END_MM / 1000;
+  const bandA = A.points.filter((q) => s(q) >= sA - end);
+  const bandB = B.points.filter((q) => s(q) <= sB + end);
+  const span = (band) => band.reduce(([lo, hi], q) => [Math.min(lo, lat(q)), Math.max(hi, lat(q))], [Infinity, -Infinity]);
+  const [loA, hiA] = span(bandA), [loB, hiB] = span(bandB);
+  const at = (band) => [...new Set(band.map((q) => q.piece))];
+  const endA = at(bandA), endB = at(bandB);
+  const idsOf = (list) => list.map(({ t, p }) => name(t, p.id));
+  const panelsOf = (list) => [...new Set(list.map(({ p }) => p.region.panel ?? 'the whole sheet'))].join(' and ');
+  const ids = [...new Set([...endA, ...endB].map(({ p }) => p.id))];
+  const who = (list) => idsOf(list).join(' and ');
+  const mm = (v) => Math.round(v * 1000);
+
+  const words = [
+    { hi: 'left edge', lo: 'right edge', more: 'further left', less: 'further right',
+      at: (v) => (Math.abs(v) < 0.0005 ? 'the centreline' : `${Math.abs(mm(v))} mm ${v > 0 ? 'left' : 'right'} of the centreline`) },
+    { hi: 'top edge', lo: 'bottom edge', more: 'higher', less: 'lower', at: (v) => `${mm(v)} mm up` },
+    { hi: 'front edge', lo: 'rear edge', more: 'further forward', less: 'further back', at: (v) => `${mm(v)} mm along` },
+  ][k];
+  const dHi = hiB - hiA, dLo = loB - loA;
+  const worst = Math.max(Math.abs(dHi), Math.abs(dLo)) * 1000;
+  if (worst > STRIPE_STEP_MM) {
+    const step = (dv, edge) => `${edge} ${Math.abs(mm(dv))} mm ${dv > 0 ? words.more : words.less}`;
+    say({
+      kind: 'stripe-offset', severity: 'high', surface: endB[0].t.from, role: endB[0].t.role,
+      panel: endB[0].p.region.panel, ids, stripe, mm: Math.round(worst),
+      why: `${who(endA)} and ${who(endB)} are pieces of the stripe "${stripe}" and do not line up where they meet: ` +
+        `${who(endA)} ends ${mm(hiA - loA)} mm wide on ${panelsOf(endA)}, from ${words.at(loA)} to ${words.at(hiA)}, and ` +
+        `${who(endB)} begins ${mm(hiB - loB)} mm wide on ${panelsOf(endB)}, with its ${step(dHi, words.hi)} and its ` +
+        `${step(dLo, words.lo)}. Where two pieces of one stripe meet their edges must agree within ${STRIPE_STEP_MM} mm, ` +
+        'or the stripe reads as offset rectangles: size and place them to the same line on the car.',
+    });
+  }
+}
+
+/**
+ * Whether the pieces of a stripe along the car, together, cover the car nose
+ * to tail — over the rear wing too, where the car has one — apart from where
+ * there is nothing to paint.
+ *
+ * A stripe along the car runs its whole length: a Gulf centre stripe that
+ * stops at the engine cover, or passes under the wing instead of over it, is
+ * not the livery. And a stripe is interrupted wherever the car has glass, a
+ * vent or a grille, because paint does not go on a hole: the local critic
+ * failed run 20 for exactly that, and it is the distinction this has to draw.
+ *
+ * So it is asked of the car as the stripe is seen, from above for one over the
+ * top and from the side for one along a flank: across the stripe's width, what
+ * is the surface nearest the eye, all the way from the front of the car to the
+ * back. Where that surface is a panel of the stripe's own sheet that the world
+ * sees, it is bodywork this design paints, and the stripe must be on it —
+ * which is read off the texture, not guessed: the surface's own place on the
+ * sheet is inside one of the stripe's pieces or it is not. Where the nearest
+ * surface is glass, a grille, anything on a sheet the design does not paint,
+ * or nothing at all, the gap is the car's. A rear wing needs no name: seen from
+ * above it is the surface over the deck, and a stripe on the deck beneath it
+ * is not on the wing.
+ *
+ * The stretch the pieces must cover is the stripe's own width, taken as the
+ * middle one of its pieces' widths so that one piece drawn wrong — which
+ * `stripe-offset` reports — does not move the band the rest are held to.
+ */
+function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
+  const model = seen.model;
+  const ids = [...new Set(pieces.map(({ p }) => p.id))];
+  const first = onCar[0];
+  let points = [];
+  for (const piece of onCar) points = points.concat(piece.points);
+  const { n } = meanOf(points);
+  const axis = [1, 2].reduce((b, i) => (Math.abs(n[i]) > Math.abs(n[b]) ? i : b), 0);
+  const unmeasured = (why) => say({ kind: 'stripe-gap', severity: 'low', measured: false, surface: first.t.from,
+    role: first.t.role, ids, stripe, why: `Whether the stripe "${stripe}" runs nose to tail could not be measured: ${why}; ` +
+      'check it in a picture of the car.' });
+  if (axis === 2) {
+    unmeasured('its paint faces the front or the back of the car more than it faces up or out to a side, ' +
+      'so there is no one view of the car it runs the length of');
+    return;
+  }
+  const sign = n[axis] >= 0 ? 1 : -1;
+  const env = envelope(model, profile, axis, sign);
+  const across = env.across;
+
+  const median = (xs) => {
+    const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+  const extents = onCar.map((piece) => piece.points.reduce(([lo, hi], q) => {
+    const v = across === 0 ? q.x : q.y;
+    return [Math.min(lo, v), Math.max(hi, v)];
+  }, [Infinity, -Infinity]));
+  const lo = median(extents.map((e) => e[0])), hi = median(extents.map((e) => e[1]));
+  const cols = [];
+  for (let i = 0; i < env.cols; i++) {
+    const c = env.c0 + (i + 0.5) * ENVELOPE_CELL;
+    if (c >= lo && c <= hi) cols.push(i);
+  }
+  if (!cols.length) {
+    unmeasured(`it is narrower than the ${ENVELOPE_CELL * 1000} mm grid the car is looked at through`);
+    return;
+  }
+
+  // Per sheet: the panels on it that the world sees, and the stripe's paint.
+  const sheets = new Map();
+  for (const piece of pieces) {
+    let file;
+    try {
+      file = texture(profile, piece.t.role).file.toLowerCase();
+    } catch { continue; }
+    if (!sheets.has(file)) {
+      sheets.set(file, {
+        role: piece.t.role,
+        panels: Object.entries(profile.panels?.[piece.t.role] ?? {})
+          .filter(([, q]) => Array.isArray(q.rect) && typeof q.visible === 'number' && q.visible >= BARELY_SEEN)
+          .map(([panel, q]) => ({ panel, visible: q.visible, rect: q.rect,
+            outline: Array.isArray(q.outline) && q.outline.length >= 3 ? q.outline : null })),
+        paint: [],
+      });
+    }
+    const poly = shapeOf(piece.p.frac);
+    sheets.get(file).paint.push({ piece, poly, box: [Math.min(...poly.map((q) => q[0])), Math.min(...poly.map((q) => q[1])),
+      Math.max(...poly.map((q) => q[0])), Math.max(...poly.map((q) => q[1]))] });
+  }
+  const within = ([x, y, w, h], u, v) => u >= x && u <= x + w && v >= y && v <= y + h;
+  const fileOf = (m) => (model.materials?.[model.meshes[m].materialId]?.slots?.txDiffuse ?? '').toLowerCase();
+
+  // Front to back, a row of cells at a time across the stripe's width.
+  const order = [...Array(env.rows).keys()];
+  if (F > 0) order.reverse();
+  const rows = order.map((j) => {
+    const row = { j, any: false, req: 0, cov: 0, on: new Map(), h: 0, by: null };
+    for (const i of cols) {
+      const k = j * env.cols + i, m = env.M[k];
+      if (m < 0) continue;
+      row.any = true;
+      const sheet = sheets.get(fileOf(m));
+      if (!sheet) continue;
+      const u = env.U[k], v = env.V[k];
+      const pan = sheet.panels.find(({ rect, outline }) => within(rect, u, v) && (!outline || inPoly(outline, [u, v])));
+      if (!pan) continue;
+      row.req++;
+      row.h += env.H[k];
+      row.on.set(pan, (row.on.get(pan) ?? 0) + 1);
+      const hit = sheet.paint.find(({ box, poly }) => u >= box[0] && u <= box[2] && v >= box[1] && v <= box[3] && inPoly(poly, [u, v]));
+      if (hit) {
+        row.cov++;
+        row.by ??= hit.piece;
+      }
+    }
+    if (row.req) row.h /= row.req;
+    return row;
+  });
+  const nose = rows.findIndex((r) => r.any);
+  if (nose < 0) return;
+  // Present where a quarter of the paintable width carries it: how wide it
+  // is there is `stripe-offset`'s business, and a stripe drawn too narrow on
+  // one panel is not missing from it.
+  const painted = (r) => r.req > 0 && r.cov * 4 >= r.req;
+  const unpainted = (r) => r.req * 2 >= cols.length && !painted(r);
+
+  const mmBehind = (index) => Math.round((index - nose) * ENVELOPE_CELL * 1000);
+  const seenFrom = axis === 1 ? 'seen from above' : `seen from the car's ${n[0] * L > 0 ? 'left' : 'right'}`;
+  const idOf = (row) => name(row.by.t, row.by.p.id);
+  for (let a = 0; a < rows.length; a++) {
+    if (!unpainted(rows[a])) continue;
+    const runStart = a;
+    while (a + 1 < rows.length && unpainted(rows[a + 1])) a++;
+    let ai = runStart - 1, bi = a + 1;
+    while (ai >= 0 && !painted(rows[ai])) ai--;
+    while (bi < rows.length && !painted(rows[bi])) bi++;
+    const ahead = ai >= 0 ? rows[ai] : null, behind = bi < rows.length ? rows[bi] : null;
+    const where = ahead && behind
+      ? (ahead.by === behind.by ? ` in the middle of ${idOf(ahead)}` : ` between ${idOf(ahead)} and ${idOf(behind)}`)
+      : ahead ? ` behind ${idOf(ahead)}` : behind ? ` ahead of ${idOf(behind)}` : '';
+
+    for (const [s, e] of bodyworkIn(rows, runStart, a, ahead ? ai : -1, behind ? bi : -1)) {
+      const run = rows.slice(s, e + 1);
+      const from = mmBehind(s), to = mmBehind(e + 1), length = to - from;
+      if (length <= STRIPE_GAP_MM) continue;
+      const count = new Map();
+      for (const r of run) for (const [pan, c] of r.on) count.set(pan, (count.get(pan) ?? 0) + c);
+      const on = [...count.entries()].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([pan]) => pan);
+      // Standing proud of the stripe ahead of it, as a wing does: said,
+      // because a planner looking at the deck beneath it will think it is
+      // covered.
+      const h = run.reduce((sum, r) => sum + r.h, 0) / run.length;
+      const raised = ahead && h - ahead.h > 0.08
+        ? ` It stands ${Math.round((h - ahead.h) * 1000)} mm above the stripe ahead of it, as a rear wing does, and the ` +
+          'stripe runs over its top as well: paint on the bodywork beneath it does not count.'
+        : '';
+      say({
+        kind: 'stripe-gap', severity: 'high', surface: first.t.from, role: first.t.role, panel: on[0].panel, ids, stripe,
+        from, to, mm: length,
+        why: `The stripe "${stripe}" leaves ${length} mm of the car bare ${seenFrom}, from ${from} to ${to} mm behind the ` +
+          `nose${where}: that stretch is ${on.map((q) => `${q.panel} (${Math.round(q.visible * 100)}% visible)`).join(', ')}, ` +
+          'bodywork this design paints and the world sees, not glass or an opening. A stripe along the car runs nose to ' +
+          `tail: add a piece on ${on[0].panel} with constraints { stripe: "${stripe}" }, lined up with the rest.${raised}`,
+      });
+    }
+  }
+}
+
+/**
+ * How far below the stripe a surface may be seen and still be the car's skin
+ * rather than something seen through a hole in it.
+ *
+ * The NSX's bonnet has a vent behind the radiator, and seen from above the
+ * nearest surface through it is the duct beneath, on the body's own sheet and
+ * 79% visible — so the first version of this check told run 20 to paint a
+ * stripe down a vent, which is the mistake the critic made in the same run.
+ * The duct's floor is 440 mm below the bonnet. Bodywork a stripe crosses
+ * between two of its pieces bends away from a straight line between them by
+ * far less than 100 mm, and a hole goes far deeper.
+ */
+const OPENING_DEPTH = 0.1;
+
+/**
+ * The stretches of a bare run of rows, [first, last], that are bodywork and
+ * not a view into an opening; `ahead` and `behind` are the painted rows either
+ * side of it, or -1 at an end of the stripe.
+ *
+ * A row is looking into an opening when its nearest surface is more than
+ * OPENING_DEPTH below a straight line between the stripe on either side. And
+ * when the stripe's own piece is painted on both sides, the whole run is one
+ * hole in that piece's panel as soon as any of it is that deep: the second
+ * version measured the NSX's vent row by row, and the duct's rear wall, which
+ * climbs back up to meet the bonnet, came out as 140 mm of bodywork to paint.
+ * The stripe is drawn right across that hole already; the panel is what has
+ * none there. Between two different pieces, only the deep rows are left out,
+ * so bare bodywork beside a vent is still bare.
+ *
+ * Never at an end. The bodywork falls away down the nose and the tail, which
+ * is no hole, and a stripe that stops short there has stopped short.
+ */
+function bodyworkIn(rows, start, end, ahead, behind) {
+  if (ahead < 0 || behind < 0) return [[start, end]];
+  const line = (i) => rows[ahead].h + ((i - ahead) / (behind - ahead)) * (rows[behind].h - rows[ahead].h);
+  const deep = (i) => rows[i].h < line(i) - OPENING_DEPTH;
+  let any = false;
+  for (let i = start; i <= end; i++) if (deep(i)) any = true;
+  if (!any) return [[start, end]];
+  if (rows[ahead].by === rows[behind].by) return [];
+  const out = [];
+  let from = -1;
+  for (let i = start; i <= end + 1; i++) {
+    const body = i <= end && !deep(i);
+    if (body && from < 0) from = i;
+    if (!body && from >= 0) { out.push([from, i - 1]); from = -1; }
+  }
+  return out;
+}
+
+/**
+ * The car as seen from one side, a 20 mm cell at a time: for each cell, the
+ * surface nearest the eye — which mesh, how near, and where on its sheet.
+ *
+ * From above (`axis` 1) the cells run along the car and across it; from a
+ * side (`axis` 0, `sign` the side) along the car and up it. Every mesh the car
+ * shows is drawn, glass and grilles included, because what is in front of the
+ * bodywork is the whole question. It depends on the car and nothing in the
+ * design, so it is built once a model and view and kept with the model, like
+ * the occupancy grid: on the NSX that is 610,000 triangles, once.
+ */
+const ENVELOPE_CELL = 0.02;
+const envelopeCache = new WeakMap();
+function envelope(model, profile, axis, sign) {
+  const key = `${JSON.stringify(Object.keys(profile?.hiddenByCar?.meshes ?? {}).sort())}|${axis}|${sign}`;
+  let byKey = envelopeCache.get(model);
+  if (!byKey) envelopeCache.set(model, (byKey = new Map()));
+  if (byKey.has(key)) return byKey.get(key);
+
+  const across = axis === 1 ? 0 : 1;
+  const meshes = carOccluders(model, profile);
+  const at = (p) => [p.z, across === 0 ? p.x : p.y, (axis === 1 ? p.y : p.x) * sign];
+  let r0 = Infinity, r1 = -Infinity, c0 = Infinity, c1 = -Infinity;
+  for (const mesh of meshes) {
+    for (let i = 0; i < mesh.vertexCount; i++) {
+      const [r, c] = at(vertex(model, mesh, i));
+      if (r < r0) r0 = r; if (r > r1) r1 = r;
+      if (c < c0) c0 = c; if (c > c1) c1 = c;
+    }
+  }
+  const rows = Number.isFinite(r0) ? Math.max(1, Math.ceil((r1 - r0) / ENVELOPE_CELL)) : 0;
+  const cols = Number.isFinite(c0) ? Math.max(1, Math.ceil((c1 - c0) / ENVELOPE_CELL)) : 0;
+  const H = new Float64Array(rows * cols).fill(-Infinity);
+  const M = new Int32Array(rows * cols).fill(-1);
+  const U = new Float32Array(rows * cols), V = new Float32Array(rows * cols);
+  for (const mesh of meshes) {
+    const own = model.meshes.indexOf(mesh);
+    for (const [ia, ib, ic] of triangles(model, mesh)) {
+      const A = vertex(model, mesh, ia), B = vertex(model, mesh, ib), C = vertex(model, mesh, ic);
+      const [ar, ac, ah] = at(A), [br, bc, bh] = at(B), [cr, cc, ch] = at(C);
+      const det = (br - ar) * (cc - ac) - (cr - ar) * (bc - ac);
+      if (Math.abs(det) < 1e-14) continue;              // edge-on to the eye: covers nothing
+      const j0 = Math.max(0, Math.ceil((Math.min(ar, br, cr) - r0) / ENVELOPE_CELL - 0.5));
+      const j1 = Math.min(rows - 1, Math.floor((Math.max(ar, br, cr) - r0) / ENVELOPE_CELL - 0.5));
+      const i0 = Math.max(0, Math.ceil((Math.min(ac, bc, cc) - c0) / ENVELOPE_CELL - 0.5));
+      const i1 = Math.min(cols - 1, Math.floor((Math.max(ac, bc, cc) - c0) / ENVELOPE_CELL - 0.5));
+      for (let j = j0; j <= j1; j++) {
+        const r = r0 + (j + 0.5) * ENVELOPE_CELL;
+        for (let i = i0; i <= i1; i++) {
+          const c = c0 + (i + 0.5) * ENVELOPE_CELL;
+          const b1 = ((r - ar) * (cc - ac) - (cr - ar) * (c - ac)) / det;
+          const b2 = ((br - ar) * (c - ac) - (r - ar) * (bc - ac)) / det;
+          const b0 = 1 - b1 - b2;
+          if (b0 < 0 || b1 < 0 || b2 < 0) continue;
+          const h = ah * b0 + bh * b1 + ch * b2;
+          const k = j * cols + i;
+          if (h <= H[k]) continue;
+          H[k] = h;
+          M[k] = own;
+          U[k] = A.u * b0 + B.u * b1 + C.u * b2;
+          V[k] = A.v * b0 + B.v * b1 + C.v * b2;
+        }
+      }
+    }
+  }
+  const out = { across, r0, c0, rows, cols, H, M, U, V };
+  byKey.set(key, out);
+  return out;
 }
 
 /**
