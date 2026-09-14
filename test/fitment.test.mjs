@@ -1202,6 +1202,8 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
   assert.ok(big.layout, JSON.stringify(big));
   assert.equal(big.note, undefined);
   assert.equal(big.layout.lines, 1, 'one line where one line costs the number nothing');
+  assert.deepEqual([big.layout.regions.number.weight, big.layout.regions.name[0].weight], [900, 800],
+    'heavy letters: a name left at the default weight was called thin by run 22\'s critic');
   assert.ok(big.layout.lettersMm.number >= 140 && big.layout.lettersMm.name >= 45, JSON.stringify(big.layout.lettersMm));
   assert.deepEqual(clean(profile, big.layout), [], 'fitment finds nothing wrong with it as returned');
   // What it says the letters measure is what check_fitment's arithmetic says.

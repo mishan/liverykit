@@ -503,10 +503,12 @@ export function groupLayout({
     const h = d.numberEm / NUMBER_SCALE / av, w = number.length * d.numberEm * ADVANCE * ax * SPARE / ah;
     return {
       roundel: { treatment: 'ring', panel: g.name, at: at([(o.W - Dw) / 2, top, Dw, Dh]), radius: 0.25, width: 0.5 },
+      // Heavy, because weight is legibility at distance: run 22's critic called
+      // a name the planner left at the default "thin" and likely to blur.
       number: { treatment: 'text', panel: g.name, at: at([(o.W - w) / 2, top + Dh / 2 - h / 2, w, h]),
-        text: number, scale: NUMBER_SCALE, rotate: 'auto' },
+        text: number, scale: NUMBER_SCALE, weight: 900, rotate: 'auto' },
       name: o.lines.map((text, i) => ({ treatment: 'text', panel: g.name,
-        at: at([0, top + Dh + d.gap + i * d.line, o.W, d.line]), text, scale: NAME_SCALE, rotate: 'auto' })),
+        at: at([0, top + Dh + d.gap + i * d.line, o.W, d.line]), text, scale: NAME_SCALE, weight: 800, rotate: 'auto' })),
     };
   };
 
