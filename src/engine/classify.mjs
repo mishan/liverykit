@@ -427,6 +427,14 @@ export function rank(features, term = 'body') {
       `Unknown vocabulary term "${term}". Known terms: ${Object.keys(VOCABULARY).join(', ')}.`
     );
   }
+  // The kit is not ranked either, but it is proposed, by name. Telling a
+  // person to bind it by hand stopped being true once --skins named it.
+  if (Object.hasOwn(DRIVER_KIT, term)) {
+    throw new Error(
+      `Vocabulary term "${term}" is not ranked: it is named from the skins folder by AC's exact filenames ` +
+      `(${DRIVER_KIT[term].join(', ')}), so pass --skins <car>/skins.`
+    );
+  }
   // Distinct from "no such term": this one is real, it just has no measurement
   // behind it yet, and inventing one would be worse than saying so.
   if (!spec.score) {
@@ -651,6 +659,7 @@ const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
  * without them.
  */
 export function explain(features, term = 'body', { limit = 8 } = {}) {
+  if (Object.hasOwn(DRIVER_KIT, term)) return explainKit(features, term);
   const ranked = rank(features, term);
   const spec = VOCABULARY[term];
   const lines = [];
@@ -751,6 +760,27 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
     lines.push('  ! Visibility was not computed. It is the signal that separates bodywork');
     lines.push('    from engine bays and interior occlusion maps — 90% accurate without it,');
     lines.push('    98% with. Regenerate with visibility enabled before trusting this.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * --explain for a driver-kit term, which is named rather than ranked: what it
+ * looks for, and what on this car it found. Every role in `features` carries
+ * its file, a skin-only one included, so this names what the generator would.
+ */
+function explainKit(features, term) {
+  const named = proposeDriverKit(Object.fromEntries(features.map((f) => [f.role, { file: f.file }])))[term];
+  const lines = [
+    `${term} — ${VOCABULARY[term].describes}`,
+    '  Not ranked: named from the skins folder by AC\'s exact filenames, which --skins scans.',
+    `  It looks for: ${DRIVER_KIT[term].join(', ')}.`,
+  ];
+  if (named) {
+    lines.push(`  named here: ${named.roles.map((r) => `${r} (${features.find((f) => f.role === r).file})`).join(', ')}`);
+  } else {
+    lines.push('  none of this car\'s textures has one of those names. If this was run without');
+    lines.push('  --skins <car>/skins, the skins\' own files were not seen; pass it.');
   }
   return lines.join('\n');
 }

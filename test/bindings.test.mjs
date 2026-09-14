@@ -21,7 +21,7 @@ import { loadProfile, mergeBindings, validateProfile, resolveTargets } from '../
 import { loadLivery } from '../src/livery.mjs';
 import { portability } from '../src/portability.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { proposeAll, propose, proposeDriverKit, featuresFromRecord, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
+import { proposeAll, propose, proposeDriverKit, featuresFromRecord, explain, rank, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
 import { summarise } from '../tools/fleet.mjs';
 import { dimmed } from '../src/ui/view3d.js';
 import { carKn5 } from './fixtures/kn5.mjs';
@@ -461,6 +461,19 @@ test('the driver kit is proposed from AC\'s exact filenames, and nothing looser'
     crew: { roles: ['crew'], source: 'auto', evidence: 'name' },
   });
   assert.deepEqual(proposeDriverKit({}), {}, 'no skins scanned, nothing named');
+});
+
+test('--explain on a kit term says it is named from the skins, and what it looks for', () => {
+  // It threw "cannot be proposed automatically. Bind it by hand", which stopped
+  // being true once the kit was named from --skins.
+  const f = (role, file) => ({ role, file, area: 0, box: null, straddles: false, skinFraction: 0, shaders: [] });
+  const text = explain([f('body', 'b.dds'), f('helmet', 'HELMET_2012.dds')], 'helmet');
+  assert.match(text, /named from the skins folder by AC's exact filenames/);
+  assert.match(text, new RegExp(DRIVER_KIT.helmet.join(', ').replace(/\./g, '\\.')));
+  assert.match(text, /named here: helmet \(HELMET_2012\.dds\)/);
+  assert.doesNotMatch(text, /Bind it by hand/);
+  assert.match(explain([f('body', 'b.dds')], 'crew'), /none of this car's textures[\s\S]*--skins/);
+  assert.throws(() => rank([], 'crew'), /named from the skins folder[\s\S]*ac_crew\.dds/);
 });
 
 test('on the RSS4 the named kit is what a person bound by hand', async () => {
