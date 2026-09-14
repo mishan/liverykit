@@ -17,6 +17,7 @@ import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { resolveTargets } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
+import { fitment } from '../src/fitment.mjs';
 import { renderTexture } from '../src/render.mjs';
 import { resolveTreatments } from '../src/registry.mjs';
 import { isMissingNote } from '../src/build.mjs';
@@ -151,4 +152,26 @@ test('a surface bound to a tiled material is painted with a caveat, and the repo
   assert.match(number.why, /seat\.dds/);
   assert.notEqual(report.regions.find((r) => r.id !== 'number').status, 'unplaceable',
     'an even pattern is not placement');
+});
+
+test('placed artwork a tiled material refuses is a fitment finding, like a selection that missed', async () => {
+  // The build skips it and says so, and the portability report lists it; the
+  // placement check dropped the note and called the design clean, which is
+  // what /api/fitment and check_fitment then told whoever asked.
+  const { profile, seat } = await profileWith({ repeat: 40 });
+  profile.bind = { ...profile.bind, interior: { roles: [seat], source: 'human' } };
+  const design = {
+    name: 'L', packs: ['core'],
+    surfaces: {
+      interior: {
+        regions: [
+          { treatment: 'halftone', color: 'accent' },
+          { id: 'number', treatment: 'text', tags: ['centre'], text: '7' },
+        ],
+      },
+    },
+  };
+  const un = fitment(design, profile).findings.filter((f) => f.kind === 'unmatched');
+  assert.deepEqual(un.map((f) => [f.ids[0], f.severity]), [['number', 'high']], JSON.stringify(un));
+  assert.match(un[0].why, /seat\.dds is a tiled material/);
 });
