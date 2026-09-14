@@ -1242,6 +1242,20 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
   const tiny = lay(withPanel({ metresPerUv: [0.5, 0.5] }), { cellMm: 20 });
   assert.match(tiny.note ?? '', /check_fitment wants at least 140 and 45/, JSON.stringify(tiny));
 
+  // One surface on two sheets letters one region twice, at two sizes: the
+  // smaller is the one that counts, and both sheets are named.
+  const twoSheets = { ...profile,
+    textures: { ...profile.textures, rear: { file: 'r.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body', 'rear'], source: 'human' } },
+    panels: { body: { L: profile.panels.body.L }, rear: { L: { ...profile.panels.body.L, metresPerUv: [2, 2] } } } };
+  const both = letterHeights({ ...design([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.3],
+    text: '{number}' }]), identity: { number: '85' } }, twoSheets);
+  assert.deepEqual(both.n.roles, ['body', 'rear']);
+  const one = (sheet) => letterHeights({ ...design([{ id: 'n', treatment: 'text', panel: 'L', at: [0.2, 0.5, 0.6, 0.3],
+    text: '{number}' }]), identity: { number: '85' } }, { ...twoSheets, bind: { body: { roles: [sheet], source: 'human' } } }).n.mm;
+  assert.equal(both.n.mm, Math.min(one('body'), one('rear')), 'the smaller of the two sheets\' sizes');
+  assert.ok(one('rear') < one('body'));
+
   assert.throws(() => lay(profile, { number: '' }), /layout needs number/);
   assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
 });

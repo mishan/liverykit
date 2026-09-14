@@ -252,7 +252,7 @@ const brief = (f) => Object.fromEntries(
 export async function run({
   brief: theBrief, mcp, planner, critic, trace, out,
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
-  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1,
+  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1, followRecording = false,
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
@@ -535,7 +535,10 @@ export async function run({
     await save({ ...snapshot(), finished: false });
     if (gate.stop) break;
     if (gate.passed) {
-      if (!(polishLeft > 0 && n < rounds && gate.advice.length)) break;
+      // A replay plays the rounds a run recorded, whatever today's critic says
+      // about the pass before them: a recorded polish round went unjudged when
+      // today's verdict happened to come without advice.
+      if (!(polishLeft > 0 && n < rounds && (gate.advice.length || followRecording))) break;
       polishLeft--;
       kept = { round: n, design: [...draft.design], fit: [...draft.fit], summary };
       log(`  round ${n} passed, with advice: one more round to act on it, keeping round ${n}'s draft unless that passes too`);
