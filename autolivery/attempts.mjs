@@ -19,12 +19,17 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
 const list = (title, items) => (items.length
   ? `<h4>${esc(title)}</h4><ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '');
 
-/** A verdict's lists, one line each, in the order the gate reads them. */
-function verdictHtml(title, v) {
+const img = (p, alt) => `<img src="${esc(encodeURI(basename(p)))}" alt="${esc(alt)}">`;
+
+/**
+ * A verdict's lists, one line each, in the order the gate reads them, under
+ * the pictures it was given beyond the round's own.
+ */
+function verdictHtml(title, v, pictures = '') {
   if (!v) return '';
-  if (v.error) return `<h4>${esc(title)}</h4><p class="fail">could not judge: ${esc(v.error)}</p>`;
+  if (v.error) return `<h4>${esc(title)}</h4>${pictures}<p class="fail">could not judge: ${esc(v.error)}</p>`;
   const no = ['reads_at_distance', 'number_legible', 'palette_ok', 'matches_brief'].filter((k) => v[k] === false);
-  return `<h4>${esc(title)}</h4>` +
+  return `<h4>${esc(title)}</h4>${pictures}` +
     list('missing', (v.requirements ?? []).filter((r) => !r.present).map((r) => `${r.asked} (${r.where})`)) +
     list('cut off', (v.cut_off ?? []).map((c) => `${c.what} (${c.where})${c.id ? ` [${c.id}]` : ''}`)) +
     list('will not read', (v.unreadable ?? []).map((u) => `${u.what} (${u.where}; ${u.why})`)) +
@@ -44,7 +49,11 @@ function roundHtml(h, { passedIn }) {
   const gates = ['render', 'fitment', 'critic']
     .map((k) => `<span class="${String(g[k]).startsWith('pass') ? 'pass' : 'fail'}">${k} ${esc(g[k])}</span>`)
     .join(' · ') + (h.secondLook ? ` · second look decided` : '');
-  const pictures = (h.renders ?? []).map((p) => `<img src="${esc(encodeURI(basename(p)))}" alt="round ${h.round}">`).join('');
+  const pictures = (h.renders ?? []).map((p) => img(p, `round ${h.round}`)).join('');
+  // The second look's own pictures, beside its verdict. Only the first look's
+  // were shown, so a verdict on a closer view sat next to the picture the
+  // first look had failed, and read as a judgement of that.
+  const closer = (h.closer ?? []).map((p) => img(p, `round ${h.round}, closer`)).join('');
   const minor = (h.fitment?.minor ?? []).map((f) => `${f.kind}: ${f.why}`);
   return `<section class="${h.passed ? 'passed' : ''}${h.round === passedIn ? ' final' : ''}">${head}` +
     `<p class="gates">${gates}</p>` +
@@ -52,7 +61,7 @@ function roundHtml(h, { passedIn }) {
     pictures +
     list('what failed it', h.failures ?? []) +
     verdictHtml('critic', h.critic) +
-    (h.secondLook ? verdictHtml('second look, closer', h.secondLook) : '') +
+    (h.secondLook ? verdictHtml('second look, closer', h.secondLook, closer) : '') +
     (minor.length ? `<details><summary>${minor.length} low finding(s), which fail nothing</summary>` +
       `<ul>${minor.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></details>` : '') +
     '</section>';
@@ -70,11 +79,22 @@ export function attemptsPage(result, { rounds = null, refresh = 3 } = {}) {
   // round can follow it and the proposal is sent after, and a page that
   // stopped reloading at the pass never showed either.
   const running = !result.finished && !result.stopped;
-  const status = result.passed
-    ? `passed in round ${result.passedIn}` + (running ? ' — the run is still going: a polish round, then the proposal'
-      : result.proposalId ? ' — in the editor\'s inbox, for a person to accept or discard'
-      : result.proposalError ? ` — but the editor refused the proposal: ${result.proposalError}` : '')
-    : result.stopped ? `stopped: ${result.stopped}`
+  // Stopped first, with the pass kept as context. A run that died after a
+  // round passed, in the proposal's MCP call, was written with both, and the
+  // page read "passed in round 1" alone: a pass that never reached the inbox,
+  // shown as though it had.
+  const had = result.passed ? ` (round ${result.passedIn} had passed; ` + (result.proposalId
+    ? `it is in the editor's inbox as proposal ${result.proposalId})`
+    : result.proposalError ? `the editor refused its proposal: ${result.proposalError})`
+      : 'nothing reached the inbox)') : '';
+  // Still going, and no more than that: a polish round follows a pass only
+  // when polish is on and the critic gave advice, and the page promised one
+  // either way.
+  const status = result.stopped ? `stopped: ${result.stopped}${had}`
+    : result.passed
+      ? `passed in round ${result.passedIn}` + (running ? ' — the run is still going'
+        : result.proposalId ? ' — in the editor\'s inbox, for a person to accept or discard'
+        : result.proposalError ? ` — but the editor refused the proposal: ${result.proposalError}` : '')
       : running ? `round ${history.length + 1}${rounds ? ` of ${rounds}` : ''} in progress`
         : `did not pass in ${history.length} round(s)`;
   // Newest first, so the round that just landed is on screen without scrolling.
@@ -93,7 +113,7 @@ ul { margin: .2em 0; padding-left: 1.3em; } details { color: #999; margin-top: .
 </style></head><body>
 <h1>autolivery</h1>
 <p class="brief">${esc(result.brief)}</p>
-<p class="status ${result.passed ? 'pass' : running ? '' : 'fail'}">${esc(status)}</p>
+<p class="status ${result.stopped ? 'fail' : result.passed ? 'pass' : running ? '' : 'fail'}">${esc(status)}</p>
 ${history.slice().reverse().map((h) => roundHtml(h, result)).join('\n')}
 </body></html>
 `;
