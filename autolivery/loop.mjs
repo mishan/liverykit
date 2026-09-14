@@ -250,15 +250,30 @@ const brief = (f) => Object.fromEntries(
   ['kind', 'severity', 'surface', 'panel', 'ids', 'why', 'mm', 'visible', 'coverage']
     .filter((k) => f[k] !== undefined).map((k) => [k, f[k]]));
 
-export async function run({
+/**
+ * A run, and if it throws on the way, its attempts page told so before the
+ * error goes on. A server gone or a model that declined ended the run and
+ * left the page reloading for good, as though it were still running.
+ */
+export async function run(opts) {
+  const hooks = {};
+  try {
+    return await runRounds({ ...opts, hooks });
+  } catch (e) {
+    await hooks.stopped?.(e);
+    throw e;
+  }
+}
+
+async function runRounds({
   brief: theBrief, mcp, planner, critic, trace, out,
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
-  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1,
+  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1, followRecording = false,
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
   // .partial was left passed just as well with no rename at all.
-  write = writeSynced,
+  write = writeSynced, hooks = {},
 }) {
   await mkdir(out, { recursive: true });
   const tools = plannerTools(await mcp.listTools());
@@ -318,6 +333,7 @@ export async function run({
   };
   // Before round 1, so the page can be opened as the run starts.
   await page({ ...snapshot(), finished: false });
+  hooks.stopped = (e) => page({ ...snapshot(), finished: false, stopped: `the run ended: ${e.message}` });
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
@@ -551,7 +567,10 @@ export async function run({
     await save({ ...snapshot(), finished: false });
     if (gate.stop) break;
     if (gate.passed) {
-      if (!(polishLeft > 0 && n < rounds && gate.advice.length)) break;
+      // A replay plays the rounds a run recorded, whatever today's critic says
+      // about the pass before them: a recorded polish round went unjudged when
+      // today's verdict happened to come without advice.
+      if (!(polishLeft > 0 && n < rounds && (gate.advice.length || followRecording))) break;
       polishLeft--;
       kept = { round: n, design: [...draft.design], fit: [...draft.fit], summary };
       log(`  round ${n} passed, with advice: one more round to act on it, keeping round ${n}'s draft unless that passes too`);
