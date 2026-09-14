@@ -210,9 +210,10 @@ function sweepOne(profile) {
       roles,
       source: entry?.source ?? null,
       ...(entry?.confidence !== undefined ? { confidence: entry.confidence } : {}),
-      // The primary texture's panel count. Zero is the backlog's McLaren: a
-      // body bound to a sheet nothing is mapped onto.
-      panels: roles.length ? Object.keys(profile.panels?.[roles[0]] ?? {}).length : 0,
+      // Every bound texture's panels, summed. Zero is the backlog's McLaren: a
+      // body bound to sheets nothing is mapped onto. Counting only the first
+      // said 10 for a body whose other texture carries 44.
+      panels: roles.reduce((s, role) => s + Object.keys(profile.panels?.[role] ?? {}).length, 0),
     };
   }
 

@@ -168,6 +168,26 @@ test('a resumed sweep retries what failed, and refuses records swept another way
   await assert.rejects(sweep(livery, '--cars', cars, '--no-profiles', '--out', kn5Out, 'boxcar'), /visibility off, not on.*--fresh/s);
 }));
 
+/** The shipped Abarth with its body bound to more than one texture. */
+async function twoTextureBody(dir, change = () => {}) {
+  const profiles = join(dir, 'profiles');
+  await mkdir(profiles);
+  const p = JSON.parse(await repoFile('cars/abarth500.json'));
+  p.bind.body = { ...p.bind.body, roles: ['skin', 'skinbase_default'] };
+  change(p);
+  await writeFile(join(profiles, 'abarth500.json'), JSON.stringify(p));
+  return { profiles, p };
+}
+
+test('the body counts the panels on every texture it binds, not only the first', () => inTmp(async (dir) => {
+  const { profiles, p } = await twoTextureBody(dir);
+  const out = join(dir, 'sweep.json');
+  await sweep('neon-grid-any', '--profiles', profiles, '--out', out);
+  const [record] = JSON.parse(await readFile(out, 'utf8'));
+  const count = (role) => Object.keys(p.panels[role]).length;
+  assert.equal(record.bindings.body.panels, count('skin') + count('skinbase_default'));
+}));
+
 test('the summary counts a rule as missed only where it landed nowhere', () => {
   const car = (id, body, regions) => ({
     id, from: 'kn5', textures: 30, panels: 40,
