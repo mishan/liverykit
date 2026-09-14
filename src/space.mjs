@@ -579,7 +579,7 @@ export function groupLayout({
         : `No group of a roundel over a name fits whole on ${g.name} with ${marginMm} mm of clean bodywork all ` +
           'round. Try a smaller margin or another panel.',
     } : !chosen.clears ? {
-      note: `The largest layout on ${g.name} gives the number ${Math.round(chosen.numberMm)} mm capitals and the ` +
+      note: `The best layout on ${g.name} gives the number ${Math.round(chosen.numberMm)} mm capitals and the ` +
         `name ${Math.round(chosen.nameMm)} mm, and check_fitment wants at least ${NUMBER_MM} and ${NAME_MM}. ` +
         'Try a smaller margin, a shorter name, or another panel.',
     } : {}),
