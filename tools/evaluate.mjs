@@ -24,10 +24,13 @@
 // Run this after ANY change to the weights in classify.mjs. The number is the
 // thing to defend; a refactor that quietly costs five points is a regression
 // that no unit test will catch.
+//
+// Every term but the body is scored on what proposeAll binds, which is what
+// the generator writes: a role an earlier term holds is not a later term's.
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
-import { rank, propose, featuresFromRecord } from '../src/engine/classify.mjs';
+import { rank, proposeAll, featuresFromRecord } from '../src/engine/classify.mjs';
 
 // Deliberately conservative: only cars where the filename is unambiguous get a
 // label, so a wrong label is rare even though the rule is crude.
@@ -121,7 +124,7 @@ for (const [term, { looks, not }] of Object.entries(PICK_LABELS)) {
     const labels = features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
     if (!labels.length) continue;
     n++;
-    const p = propose(features, term);
+    const p = proposeAll(features)[term];
     if (!p) { none++; misses.push({ id: car.id, bound: '(nothing)', label: labels.join(', ') }); continue; }
     const bound = p.roles.map((r) => features.find((f) => f.role === r).file);
     if (bound.some((b) => labels.includes(b))) right++;
@@ -138,7 +141,7 @@ for (const [term, { looks, not }] of Object.entries(TERM_LABELS)) {
   const over = [];
   for (const car of fleet) {
     const features = featuresFromRecord(car);
-    const p = propose(features, term);
+    const p = proposeAll(features)[term];
     const boundTo = (p?.roles ?? []).map((r) => features.find((f) => f.role === r));
     for (const f of boundTo) {
       const as = labelledAs(f);
