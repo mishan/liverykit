@@ -124,12 +124,16 @@ It was 11 cars, not one. Eight list a texture under two case spellings — the
 906, the Glickenhaus, the MC12 GT1's `skin_00`, both MX-5s, the 570S's
 `EXT_skin` and both Evoras — and three list one spelling twice. Profiles now
 have one role per file, keyed by the lowercased name wherever the generator
-indexes textures, and keep the model's first spelling; a build writes that
-one, which on Windows overrides every spelling of it. All 11 profiles load, and
+indexes textures, and keep the spelling most of the car's skins use when
+`--skins` is given, and the model's first otherwise, saying which; a build
+writes that one, which on Windows overrides every spelling of it, and on a
+case-sensitive filesystem matches the stock skins it sits beside. All 11 profiles load, and
 the 906 binds its paint at 0.79. Two of them, the 458 GT2 and the MX-5 Cup, had
 a second reason not to load, hidden behind the first: a panel's safe area,
 taken from raw UVs on an island overhanging the sheet, reached off it. It is
-now confined to the panel.
+now confined to the panel. A panel with no readable area left on it is marked
+hidden, with `visible: 0`, and logged, where a missing safe area used to read
+as the whole panel being readable.
 
 ## An unwrap shifted by whole sheets lost every island — fixed
 
