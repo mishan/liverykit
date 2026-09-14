@@ -366,6 +366,11 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
  * layout sizes a number and a name to clear the floors, and a copy of this
  * arithmetic there would drift from the check it has to pass, which is how
  * `inkBox` and `letterSize` once came apart.
+ *
+ * One surface can bind several textures, so one region can be lettered on two
+ * sheets at two sizes. Its entry is then the smaller, the one `too-small`
+ * would fail first, with `roles` naming every sheet: keyed by id alone, the
+ * second sheet's measurement replaced the first's and nothing said so.
  */
 export function letterHeights(design, profile, fit = null) {
   const out = {};
@@ -375,7 +380,17 @@ export function letterHeights(design, profile, fit = null) {
     for (const p of placements(profile, t, t.spec ?? {}, fit)) {
       if (p.region.treatment !== 'text') continue;
       const got = letterSize(p, size, design.identity ?? {});
-      out[p.id] = got.why ? { why: got.why } : { mm: got.mm, shrunk: got.shrunk };
+      const here = got.why ? { why: got.why } : { mm: got.mm, shrunk: got.shrunk };
+      const was = out[p.id];
+      if (!was) {
+        out[p.id] = { ...here, roles: [t.role] };
+        continue;
+      }
+      const roles = [...was.roles, t.role];
+      // Unmeasured on either sheet is unmeasured: a size for one sheet is not
+      // a size for the region.
+      out[p.id] = was.why ? { ...was, roles } : here.why ? { ...here, roles }
+        : { ...(here.mm < was.mm ? here : was), roles };
     }
   }
   return out;

@@ -1396,7 +1396,10 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     // Two questions at once is refused, not half answered.
     const mixed = await ed.mcp.callTool('find_space', { panel: panels[0].panel, largest: true, layout: { number: '8', name: 'G' } });
     assert.ok(mixed.isError);
-    assert.match(mixed.content[0].text, /without largest or widthMm/);
+    assert.match(mixed.content[0].text, /without largest, widthMm or heightMm/);
+    // A height alone is a size too, and was dropped without a word.
+    const tall = await ed.mcp.callTool('find_space', { panel: panels[0].panel, heightMm: 200, layout: { number: '8', name: 'G' } });
+    assert.ok(tall.isError, tall.content[0].text);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);

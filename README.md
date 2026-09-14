@@ -722,7 +722,7 @@ design written for one car will always look better on it.
 
 - **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
 - **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
-- **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, and furthest from any edge — as ranked panel-relative spots with their clearance in mm, measured by the same ray casting as `check_fitment`.
+- **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, and furthest from any edge — as ranked panel-relative spots with their clearance in mm, measured by the same ray casting as `check_fitment`. With `largest` and an `aspect`, the largest shape of that proportion that fits. With `layout: { number, name }`, a race number in a roundel with the name under it, laid out as large as the panel allows and returned as regions ready to use.
 - **`list_treatments`**: Catalogue of all loaded treatment options and schemas.
 - **`list_constraints`**: The constraints a region may declare, and what each enforces.
 - **`read_design`**: Read working design data held in the running editor.
