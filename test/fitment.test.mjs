@@ -1312,6 +1312,16 @@ function design0(l) {
   ]), palette: { ink: '#101014', white: '#ffffff' } };
 }
 
+test('the layout sweeps three different proportions finely, not three variants of one', async () => {
+  const { pickProportions } = await import('../src/space.mjs');
+  const r = (aspect, lines, clears = true) => ({ o: { aspect, lines: Array(lines).fill('x') }, clears });
+  // One proportion ranked three times over (two splits, several heights) ahead of the rest.
+  const ranked = [r(1, 2), r(1, 2), r(1, 1), r(0.75, 2), r(0.6, 2), r(0.5, 1)];
+  assert.deepEqual(pickProportions(ranked), [1, 0.75, 0.6]);
+  // The best one-line layout's proportion joins them when it is another.
+  assert.deepEqual(pickProportions([r(1, 2), r(0.75, 2), r(0.6, 2), r(0.5, 1)]), [1, 0.75, 0.6, 0.5]);
+});
+
 test('the sweep keeps looking past three spots that fail the fine check', async () => {
   // Two fittings 30 mm wide stand proud of a 1600 x 400 mm panel, between the
   // coarse samples, so every cell reads clean. Any 390 mm square that starts
