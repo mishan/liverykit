@@ -2,6 +2,7 @@ import { mkdir, writeFile, rename, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { clip } from './trace.mjs';
 import { ServerGone } from './mcp.mjs';
+import { attemptsPage } from './attempts.mjs';
 
 /**
  * A brief in; a design out that has passed a check it cannot argue with.
@@ -301,7 +302,22 @@ export async function run({
     await write(partial, JSON.stringify(result, null, 2) + '\n');
     await rename(partial, join(out, 'result.json'));
     await syncDir(out);
+    await page(result);
   };
+  // The attempts page, from the same record, beside it. One that could not be
+  // written is said and the run goes on: the page is for watching, and a paid
+  // run lost to a display would be the wrong way round.
+  const page = async (result) => {
+    try {
+      const partial = join(out, 'index.html.partial');
+      await writeFile(partial, attemptsPage(result, { rounds }));
+      await rename(partial, join(out, 'index.html'));
+    } catch (e) {
+      log(`  ! the attempts page was not written: ${e.message}`);
+    }
+  };
+  // Before round 1, so the page can be opened as the run starts.
+  await page({ ...snapshot(), finished: false });
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.

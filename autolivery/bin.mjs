@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import { dirname, join, resolve, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
 import { run, proposeDesign } from './loop.mjs';
@@ -379,7 +379,8 @@ console.log(`planner: ${planner.model}${replaying ? '' : ` (${sides.planner.back
   `critic: ${critic.model} (${sides.critic.backend})` +
   (referee ? ` · second look: ${referee.model} (anthropic)` : refereeMode === 'none' ? ' · no second look' : '') +
   ((!replaying && sides.planner.backend === 'anthropic') || sides.critic.backend === 'anthropic' || referee
-    ? ` · budget $${maxCost.toFixed(2)}` : ' · no paid calls') + '\n');
+    ? ` · budget $${maxCost.toFixed(2)}` : ' · no paid calls'));
+console.log(`every round, as it lands: ${pathToFileURL(join(out, 'index.html')).href}\n`);
 let result;
 try {
   result = await run({
