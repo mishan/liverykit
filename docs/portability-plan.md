@@ -432,7 +432,8 @@ happens in `computeTags`:
   in `src/profile.mjs`.* The sweep already records
   one for each `no-match`, from `nearMiss` in `src/profile.mjs`: how many
   panels carry each tag alone, how many match with each tag dropped, and which
-  tag emptied the selection. That is how the sweep knows it was `mid` and not
+  tag emptied the selection, or every tag tied for it. That is how the sweep
+  knows it was `mid` and not
   `visible`. Put the same line in the `no-match` note text and in the
   portability report, whose `why` today says only that no panel carries the
   tags, because a person hitting this on a car of their own needs the same
@@ -478,7 +479,8 @@ portability report alike: "Dropping `mid` would match 5 (left 14, mid 0, upper
 guessing at the vocabulary needs. And a region may say `optional: true`. Its
 miss is noted under its own status, which the build does not print, fitment
 does not turn into a finding, and the portability report and the editor list
-as expected rather than as `missing`; it must be a boolean, and a fit or the
+as expected rather than as `missing`; it must be a boolean, is refused on a
+region that does not select by tags, and a fit or the
 editor that pins the region to a panel drops it, since there is no selection
 left to miss. The portable example's `[shared, visible]` rule is the first
 user, and on the sweep it now reads "found nothing on 16 of 26, as its design
