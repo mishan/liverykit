@@ -548,6 +548,22 @@ export function createToolHandler(client) {
             },
             required: ['number', 'name'],
           },
+          stripe: {
+            type: 'object',
+            description: 'Instead of a size: lay out a stripe along the car, nose to tail, as a band of the given ' +
+              'width at a given distance from the centreline, and return the regions ready to use: one for every ' +
+              'panel of this sheet the band crosses seen from above (bonnet, roof, a hatch set into it, engine ' +
+              'cover, deck, the top of the rear wing), each with the "at" that puts the band in the same place ' +
+              'on that panel and the stripe constraint that holds the pieces together, and what check_fitment ' +
+              'still finds with them, if anything. Glass, vents and openings get no piece. With this, panel is ' +
+              'any panel of the sheet the stripe is painted on.',
+            properties: {
+              widthMm: { type: 'number', description: 'The stripe\'s width on the car, in mm' },
+              offsetMm: { type: 'number', description: 'Its centre\'s distance from the car\'s centreline, in mm, left positive (default 0)' },
+              name: { type: 'string', description: 'The stripe\'s name, for its ids and its constraint (default "centre")' },
+            },
+            required: ['widthMm'],
+          },
           cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
         },
         required: ['panel'],

@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights, stripePanels, stripeAt } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -582,6 +582,58 @@ export function groupLayout({
       note: `The largest layout on ${g.name} gives the number ${Math.round(chosen.numberMm)} mm capitals and the ` +
         `name ${Math.round(chosen.nameMm)} mm, and check_fitment wants at least ${NUMBER_MM} and ${NAME_MM}. ` +
         'Try a smaller margin, a shorter name, or another panel.',
+    } : {}),
+  };
+}
+
+/**
+ * A stripe along the car, laid out: a region for every panel of one sheet the
+ * band crosses, seen from above and front to back, each with the `at` that
+ * puts the band in the same place on the car, and the `stripe` constraint
+ * that holds the pieces together.
+ *
+ * The planner was working out by hand, panel by panel, what the measurement
+ * already knows, and it went wrong every way it could: run 20's first stripe
+ * used one set of fractions on panels of different widths and came apart
+ * into rectangles, and runs 21 and 22 left out the roof hatch and the rear
+ * wing. `stripePanels` says which panels the band crosses and `stripeAt`
+ * what each one needs, both from the model. The answer is held to fitment's
+ * own stripe checks before it is given, and says what they found, if anything:
+ * a layout that cannot pass them is not handed out as though it did.
+ */
+export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre' }) {
+  if (!(Number.isFinite(widthMm) && widthMm > 0)) {
+    throw new Error(`find_space's stripe needs widthMm, the stripe's width on the car in mm, above zero; got ${JSON.stringify(widthMm)}.`);
+  }
+  if (!Number.isFinite(offsetMm)) {
+    throw new Error(`find_space's stripe takes offsetMm, its centre's distance from the centreline in mm, left positive; got ${JSON.stringify(offsetMm)}.`);
+  }
+  if (typeof name !== 'string' || !name.trim() || name !== name.trim()) {
+    throw new Error(`find_space's stripe takes name, the stripe's name for its ids and its constraint; got ${JSON.stringify(name)}.`);
+  }
+  const across = [offsetMm - widthMm / 2, offsetMm + widthMm / 2];
+  const pieces = [];
+  const skipped = [];
+  for (const c of stripePanels(model, profile, role, across)) {
+    const got = stripeAt(model, profile, role, c.panel, { across });
+    if (got.at) pieces.push({ ...c, id: `${name}-${c.panel}`, at: got.at, errorMm: got.error });
+    else skipped.push({ panel: c.panel, why: got.why });
+  }
+  const regions = pieces.map((p) => ({ id: p.id, treatment: 'stripe', panel: p.panel, at: p.at, constraints: { stripe: name } }));
+  const findings = regions.length
+    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {},
+      paint: { [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
+      .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`)
+    : [];
+  return {
+    role, widthMm, offsetMm, name,
+    regions,
+    pieces: pieces.map((p) => ({ id: p.id, panel: p.panel, behindNoseMm: p.behindNose, carriesMm: p.carriesMm, errorMm: p.errorMm })),
+    ...(skipped.length ? { skipped } : {}),
+    findings,
+    ...(!regions.length ? {
+      note: `A band ${widthMm} mm wide, ${offsetMm} mm from the centreline, crosses no panel of ${role} the world sees ` +
+        'from above. Check the offset, or the sheet the panel named is on.',
     } : {}),
   };
 }

@@ -1524,6 +1524,22 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     assert.ok(mixed.isError);
     assert.match(mixed.content[0].text, /without largest or widthMm/);
 
+    // And a stripe along the car, as regions ready to use, which the planner
+    // is told to take rather than work out: on this car the roof is the only
+    // panel seen from above, across it in x and 1.9 m wide.
+    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ widthMm, offsetMm \} \}/);
+    const roof = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'centre' })).content[0].text).panels
+      .find((p) => p.axes?.y === 'along the car').panel;
+    const laid = await ed.mcp.callTool('find_space', { panel: roof, stripe: { widthMm: 300 } });
+    assert.ok(!laid.isError, laid.content[0].text);
+    const S = JSON.parse(laid.content[0].text);
+    assert.deepEqual(S.regions.map((r) => [r.panel, r.constraints]), [[roof, { stripe: 'centre' }]], JSON.stringify(S));
+    assert.ok(S.regions[0].at.every((v, i) => Math.abs(v - [0.4211, 0, 0.1579, 1][i]) <= 0.01), JSON.stringify(S.regions[0]));
+    assert.deepEqual(S.findings, []);
+    const both = await ed.mcp.callTool('find_space', { panel: roof, widthMm: 300, stripe: { widthMm: 300 } });
+    assert.ok(both.isError);
+    assert.match(both.content[0].text, /without layout, largest or widthMm/);
+
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);
     assert.match(bad.content[0].text, /No panel called "no_such_panel"/);

@@ -876,6 +876,8 @@ test('every tool reads what its schema declares, and declares what it reads', as
     // one call here, so it is sent as absent. It is read either way, and its
     // own reads are tested with it (test/fitment.test.mjs, test/autolivery.test.mjs).
     layout: null,
+    // The same for a stripe, which the server refuses beside a size too.
+    stripe: null,
   };
   const drift = [];
   try {

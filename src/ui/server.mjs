@@ -55,7 +55,7 @@ import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
-import { findSpace, largestSpace, groupLayout, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayout, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -1533,6 +1533,26 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         }
         if (layout && (largest || widthMm !== undefined)) {
           return json(400, { error: 'layout sizes the group itself: ask it without largest or widthMm.' });
+        }
+        // A stripe runs the length of the car, not across this panel: the
+        // panel only says which sheet it is painted on. It is its own
+        // question for the same reason a layout is.
+        const stripe = q.stripe ?? null;
+        if (stripe !== null && (typeof stripe !== 'object' || Array.isArray(stripe))) {
+          return json(400, { error: `stripe is { widthMm, offsetMm, name }, the band to lay along the car; got ${JSON.stringify(stripe)}.` });
+        }
+        if (stripe && (layout || largest || widthMm !== undefined)) {
+          return json(400, { error: 'stripe lays a band along the whole car: ask it without layout, largest or widthMm.' });
+        }
+        if (stripe) {
+          const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
+          const key = JSON.stringify(['stripe', where.role, ask]);
+          try {
+            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask }), 256);
+            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          } catch (e) {
+            return json(400, { error: e.message });
+          }
         }
         const ask = layout
           ? { layout: { number: layout.number, name: layout.name }, marginMm: num(q.marginMm, 30) }

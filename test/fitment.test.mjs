@@ -1620,9 +1620,10 @@ const striped = [
   { name: 'wing', front: -1.65, back: -1.95, y0: 1.4, y1: 1.4, half: 0.7, uv: [0.3, 0.5, 0.075, 0.35] },
   { name: 'duct', front: 1.5, back: 1.4, y0: 0.75, y1: 0.75, half: 0.3, uv: [0.85, 0.02, 0.025, 0.15] },
   { name: 'duct-wall', front: 1.4, back: 1.3, y0: 0.75, y1: 0.99, half: 0.3, uv: [0.9, 0.02, Math.hypot(0.1, 0.24) / 4, 0.15] },
-  // A hatch in the roof, an island of its own set off the centreline as the
-  // NSX's is: from 40 to 440 mm left, so a centred 300 mm stripe crosses 110 mm of it.
-  { name: 'hatch', front: 0.1, back: -0.3, y0: 1.301, y1: 1.301, x0: 0.04, x1: 0.44, uv: [0.5, 0.35, 0.1, 0.1] },
+  // A hatch in the roof, an island of its own set off the centreline and
+  // towards the back of it, as the NSX's is: from 40 to 440 mm left, so a
+  // centred 300 mm stripe crosses 110 mm of it.
+  { name: 'hatch', front: -0.1, back: -0.5, y0: 1.301, y1: 1.301, x0: 0.04, x1: 0.44, uv: [0.5, 0.35, 0.1, 0.1] },
 ];
 const alongOf = (q) => {
   const l = Math.hypot(q.y1 - q.y0, q.back - q.front);
@@ -1716,14 +1717,17 @@ test('a stripe along the car runs nose to tail and over the wing, and is not hel
   // Nor about the vent: the duct, seen through it, is on the body's sheet and
   // visible, 250 mm below the bonnet at its floor and level with it at the
   // top of its rear wall. Run 20 was nearly told to paint down the NSX's.
+  // And the hatch's piece is part of the roof's step of the stripe, lying
+  // within it along the car, not a step of its own compared end to end with
+  // it: that was reported as offset from the roof by the roof's width.
   assert.deepEqual(stripeFindings([front, roof, hatch, bridge, deck, wing], { model: stripedModel }), [],
-    'nose to tail and over the wing, lined up, and nothing said about the windscreen or the vent');
+    'nose to tail and over the wing, lined up, and nothing said about the windscreen, the vent or the hatch');
 
   // The hatch left out: a notch in the stripe, not a stretch of it, named by
-  // where it lies and not by its name. From 1900 to 2300 mm behind the nose.
+  // where it lies and not by its name. From 2100 to 2500 mm behind the nose.
   const notch = gaps([front, roof, bridge, deck, wing]);
   assert.deepEqual(notch.map((f) => [f.severity, f.panel]), [['high', 'hatch']], JSON.stringify(notch));
-  assert.ok(near(notch[0].from, 1900) && near(notch[0].to, 2300) && notch[0].mm >= 80 && notch[0].mm <= 120, JSON.stringify(notch[0]));
+  assert.ok(near(notch[0].from, 2100) && near(notch[0].to, 2500) && notch[0].mm >= 80 && notch[0].mm <= 120, JSON.stringify(notch[0]));
   assert.match(notch[0].why, /hatch lies inside the stripe "centre" from \d+ to \d+ mm behind the nose, carrying \d+ mm of its \d+ mm width there, and the stripe does not paint it: a notch of the base colour in the stripe where it crosses roof/);
 
   // The slope from the roof to the deck left bare, and the wing: each a
@@ -1754,7 +1758,7 @@ test('a panel maps to the car in millimetres, and a band across the car maps bac
   const bonnet = panelOnCar(stripedModel, stripedProfile, 'body', 'bonnet');
   assert.ok(near(bonnet.across, [-800, 800]) && near(bonnet.up, [1000, 1000]) && near(bonnet.behindNose, [0, 1200]), JSON.stringify(bonnet));
   const hatchOnCar = panelOnCar(stripedModel, stripedProfile, 'body', 'hatch', [0, 0, 1, 0.5]);
-  assert.ok(near(hatchOnCar.across, [40, 240]) && near(hatchOnCar.behindNose, [1900, 2300]), JSON.stringify(hatchOnCar));
+  assert.ok(near(hatchOnCar.across, [40, 240]) && near(hatchOnCar.behindNose, [2100, 2500]), JSON.stringify(hatchOnCar));
 
   const band = { across: [-150, 150] };
   for (const [panel, want] of [['bonnet', [0, 0.40625, 1, 0.1875]], ['roof', [0, 0.375, 1, 0.25]],
@@ -1763,6 +1767,61 @@ test('a panel maps to the car in millimetres, and a band across the car maps bac
     assert.ok(near(got.at, want, 0.01) && got.error <= 5, `${panel}: ${JSON.stringify(got)} for ${JSON.stringify(want)}`);
   }
   assert.equal(stripeAt(stripedModel, stripedProfile, 'body', 'hatch', { across: [-400, -200] }).at, null, 'a band that misses the hatch');
+});
+
+test('find_space lays a stripe out along the car: a piece on every panel the band crosses, and none in the vent', async () => {
+  // Run 20's first stripe used one set of fractions on panels of different
+  // widths; runs 21 and 22 left out the roof hatch and the wing. The pieces
+  // come from the same view of the car the coverage check asks about, so the
+  // layout passes it as given.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const got = stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 300 });
+  assert.deepEqual(got.regions.map((r) => r.panel), ['bonnet', 'roof', 'hatch', 'bridge', 'deck', 'wing'], JSON.stringify(got.pieces));
+  const want = { bonnet: [0, 0.40625, 1, 0.1875], roof: [0, 0.375, 1, 0.25], hatch: [0, 0, 1, 0.275],
+    bridge: [0, 0.40625, 1, 0.1875], deck: [0, 0.40625, 1, 0.1875], wing: [0, 0.39286, 1, 0.21429] };
+  for (const r of got.regions) {
+    assert.ok(r.at.every((v, i) => Math.abs(v - want[r.panel][i]) <= 0.01), `${r.panel}: ${JSON.stringify(r.at)}`);
+    assert.deepEqual([r.id, r.treatment, r.constraints], [`centre-${r.panel}`, 'stripe', { stripe: 'centre' }]);
+  }
+  assert.deepEqual(got.findings, [], 'fitment finds nothing wrong with the stripe as returned');
+  assert.deepEqual(stripeFindings(got.regions), [], 'and neither does a design that uses it');
+
+  // Off the centreline, the same band on each panel moves with it: 200 mm
+  // wide at 300 mm left is the hatch's middle half.
+  const off = stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 200, offsetMm: 300, name: 'side' });
+  const onHatch = off.regions.find((r) => r.panel === 'hatch');
+  assert.ok(onHatch.at.every((v, i) => Math.abs(v - [0, 0.4, 1, 0.5][i]) <= 0.01), JSON.stringify(onHatch));
+  assert.equal(onHatch.id, 'side-hatch');
+  assert.throws(() => stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 0 }), /widthMm/);
+});
+
+test('a panel is measured on its own mesh, not on another island laid out inside its outline', () => {
+  // The NSX's roof has the bonnet's and the nose's texels inside its outline,
+  // and measured on every mesh of the sheet its stripe was fitted 425 mm off
+  // a straight line. Here the roof is the left half of its panel's box, and a
+  // part under the bonnet, on the same sheet and running the other way
+  // across the car, fills the right half.
+  const model = carOf([
+    { name: 'ROOF', uv: [0.1, 0.1, 0.4, 0.4], normal: [0, 1, 0],
+      corners: [[-0.5, 1.2, 1], [-0.5, 1.2, -1], [0.5, 1.2, -1], [0.5, 1.2, 1]] },
+    { name: 'UNDER', uv: [0.55, 0.1, 0.3, 0.4], normal: [0, 1, 0],
+      corners: [[0.3, 0.5, 3], [0.3, 0.5, 2.5], [-0.3, 0.5, 2.5], [-0.3, 0.5, 3]] },
+  ]);
+  const roof = { rect: [0.1, 0.1, 0.8, 0.4], anisotropy: 1, metresPerUv: [5, 2.5], visible: 0.9, tags: ['centre'],
+    uAxis: [0, 0, -1], vAxis: [1, 0, 0], outline: [[0.1, 0.1], [0.9, 0.1], [0.9, 0.5], [0.1, 0.5]], source: { mesh: 'ROOF', vertices: 81 } };
+  const car = (panel) => ({ id: 'nested', name: 'Nested', calibration: { axes: { left: '+X', front: '+Z' } },
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } }, bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { roof: panel } } });
+
+  const got = stripeAt(model, car(roof), 'body', 'roof', { across: [-100, 100] });
+  assert.ok(got.at.every((v, i) => Math.abs(v - [0, 0.4, 1, 0.2][i]) <= 0.01) && got.error <= 5, JSON.stringify(got));
+  const on = panelOnCar(model, car(roof), 'body', 'roof');
+  assert.ok(Math.abs(on.behindNose[0] - 2000) <= 10 && Math.abs(on.across[0] + 500) <= 10, JSON.stringify(on));
+
+  // Without the mesh the profile records, the part under the bonnet is
+  // measured as roof, and the answer is nowhere near a straight line.
+  const { source, ...blind } = roof;
+  assert.ok(stripeAt(model, car(blind), 'body', 'roof', { across: [-100, 100] }).error > 50);
 });
 
 test('a stripe without the model says which of its checks did not run', async () => {
