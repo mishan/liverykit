@@ -180,6 +180,28 @@ test('a confirmation that is not sent as JSON is refused', async () => {
   }
 });
 
+test('a request body that is not JSON is the sender\'s mistake, not the server\'s', async () => {
+  // It was a 500, which says the editor broke, and the file was never at risk.
+  const e = await editor();
+  try {
+    const cut = '{"term": "brakes", "roles": [';
+    const res = await fetch(`${e.at}/api/bindings/confirm`, {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: e.at }, body: cut,
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /not JSON/);
+    assert.equal(await readFile(e.profilePath, 'utf8'), e.text);
+
+    // One reader behind every route that takes a body, so one answer.
+    const state = await fetch(`${e.at}/api/state`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: cut,
+    });
+    assert.equal(state.status, 400);
+  } finally {
+    await e.stop();
+  }
+});
+
 test('the editor opened as localhost can confirm', async () => {
   const e = await editor();
   try {
