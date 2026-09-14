@@ -188,6 +188,24 @@ test('the body counts the panels on every texture it binds, not only the first',
   assert.equal(record.bindings.body.panels, count('skin') + count('skinbase_default'));
 }));
 
+test('a body with a tiled texture says so whichever role it is, and the car line counts what it refused', () => inTmp(async (dir) => {
+  // The tiled sheet is the body's second texture, where reading only the
+  // first said nothing about it.
+  const { profiles } = await twoTextureBody(dir, (p) => { p.textures.skinbase_default.uvLayout = 'tiled'; });
+  const out = join(dir, 'sweep.json');
+  const { stdout } = await sweep('neon-grid-any', '--profiles', profiles, '--out', out);
+  const [record] = JSON.parse(await readFile(out, 'utf8'));
+  assert.equal(record.bindings.body.uvLayout, 'tiled');
+  assert.deepEqual(record.bindings.body.uvLayouts, { skinbase_default: 'tiled' });
+
+  // The mp412c's regions were all `unplaceable`, and its line said "0
+  // region(s) missing".
+  const refused = record.regions.filter((g) => g.status === 'unplaceable').length;
+  const missing = record.regions.filter((g) => g.status === 'missing').length;
+  assert.ok(refused > 0);
+  assert.match(stdout, new RegExp(`abarth500 +\\d+ panels, ${refused + missing} region\\(s\\) not placed`));
+}));
+
 /** A car folder holding these files, as an install lays them out. */
 async function carFolder(parent, id, files) {
   const dir = join(parent, id);

@@ -200,6 +200,21 @@ console.log(`${plan.length} planned, ${done.size} already done, ${todo.length} t
 
 // --- the sweep --------------------------------------------------------------
 
+const LAYOUTS = ['unwrapped', 'mixed', 'tiled'];
+
+/**
+ * Every bound texture's `uvLayout`, and the worst of them as `uvLayout`, which
+ * the summary reads. Worst, because a region placed on any tiled texture of a
+ * body is refused, so a body with one is on a tiled material in the sense that
+ * matters. Reading the first role alone said nothing of a tiled second.
+ */
+function layouts(profile, roles) {
+  const each = Object.fromEntries(roles.filter((r) => profile.textures?.[r]?.uvLayout)
+    .map((r) => [r, profile.textures[r].uvLayout]));
+  const worst = Object.values(each).sort((a, b) => LAYOUTS.indexOf(b) - LAYOUTS.indexOf(a))[0];
+  return worst ? { uvLayout: worst, uvLayouts: each } : {};
+}
+
 /** What the design would do on this profile, reduced to statuses and counts. */
 function sweepOne(profile) {
   const report = portability(design, profile);
@@ -215,7 +230,7 @@ function sweepOne(profile) {
       // body bound to sheets nothing is mapped onto. Counting only the first
       // said 10 for a body whose other texture carries 44.
       panels: roles.reduce((s, role) => s + Object.keys(profile.panels?.[role] ?? {}).length, 0),
-      ...(profile.textures?.[roles[0]]?.uvLayout ? { uvLayout: profile.textures[roles[0]].uvLayout } : {}),
+      ...layouts(profile, roles),
     };
   }
 
@@ -269,9 +284,12 @@ for (const item of todo) {
   if (record.error) {
     console.log(`  ${record.id.padEnd(40)} FAILED: ${record.error}`);
   } else {
-    const missed = record.regions.filter((g) => g.status === 'missing').length;
+    // Every region the build would not paint: a selection that found nothing,
+    // and one refused on a tiled texture. Counting only the first, the mp412c,
+    // whose regions were all refused, read "0 region(s) missing".
+    const missed = record.regions.filter((g) => g.status === 'missing' || g.status === 'unplaceable').length;
     const body = record.bindings.body;
-    console.log(`  ${record.id.padEnd(40)} ${record.panels} panels, ${missed} region(s) missing, ` +
+    console.log(`  ${record.id.padEnd(40)} ${record.panels} panels, ${missed} region(s) not placed, ` +
       `body ${body ? `${body.roles.join('+') || '(none)'} ${body.source}${body.confidence !== undefined ? ` ${body.confidence}` : ''}` : 'unbound'}`);
   }
   await writeFile(outPath, JSON.stringify(records, null, 2));   // checkpoint every car
