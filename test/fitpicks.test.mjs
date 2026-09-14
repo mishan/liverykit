@@ -124,11 +124,14 @@ test('a fit that places a region picked by `limit` names the panel it was fitted
   assert.deepEqual(unpinned, [], 'these ride on whichever panel the selection picks today');
 });
 
-test('a pinned fit stays on its panel when a retag changes what `limit` picks', async () => {
+test('a pinned fit stays on its panel whatever `limit` picks', async () => {
   // A door in the middle of the car and a rear quarter three times its size
-  // that reaches forward into `mid`. By centroid only the door is `mid`; by
-  // extent the quarter is too, and `[left, mid]` with `limit: 1` goes to it.
-  const car = (withExtent) => {
+  // that reaches forward into `mid`. Reaching does not displace the door,
+  // whose centroid is there, so tagging by extent moves nothing. A quarter
+  // whose centroid is itself in `mid` — a model regenerated, an island split
+  // differently — is the bigger match and does take the pick, and a pinned fit
+  // is the one that does not go with it.
+  const car = ({ withExtent = true, quarterZ = -1.2 } = {}) => {
     const p = {
       id: 'c', calibration: { axes: { left: '+X', front: '+Z' } },
       textures: { body: { file: 'b.dds', width: 64, height: 64 } },
@@ -137,7 +140,7 @@ test('a pinned fit stays on its panel when a retag changes what `limit` picks', 
         nose: { rect: [0.9, 0.9, 0.05, 0.05], centroid3d: [0, 1, 2] },
         tail: { rect: [0.9, 0.8, 0.05, 0.05], centroid3d: [0, 0, -2] },
         door: { rect: [0, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0], extent3d: [[1, 0.2, -0.4], [1, 0.9, 0.4]] },
-        quarter: { rect: [0.3, 0, 0.5, 0.5], centroid3d: [1, 0.6, -1.2], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] },
+        quarter: { rect: [0.3, 0, 0.5, 0.5], centroid3d: [1, 0.6, quarterZ], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] },
       } },
     };
     if (!withExtent) for (const q of Object.values(p.panels.body)) delete q.extent3d;
@@ -153,17 +156,24 @@ test('a pinned fit stays on its panel when a retag changes what `limit` picks', 
     });
   };
   const where = [0.1, 0.2, 0.5, 0.5];
-  const before = car(false), after = car(true);
+  const cars = {
+    'by centroid': car({ withExtent: false }),
+    'by extent': car(),
+    'with the quarter centred in mid': car({ quarterZ: 0 }),
+  };
 
   const loose = { at: where };
-  assert.equal(place(before, loose)[0].panel, 'door');
-  assert.equal(place(after, loose)[0].panel, 'quarter',
-    'the retag moves an unpinned fit, which is why a fit on a `limit` selection is pinned');
+  assert.equal(place(cars['by centroid'], loose)[0].panel, 'door');
+  assert.equal(place(cars['by extent'], loose)[0].panel, 'door',
+    'a panel that only reaches `mid` does not take the pick from one centred there');
+  assert.equal(place(cars['with the quarter centred in mid'], loose)[0].panel, 'quarter',
+    'a bigger panel centred there does, and takes an unpinned fit with it');
 
+  const door = [0.1 * 0.2, 0.2 * 0.2, 0.5 * 0.2, 0.5 * 0.2];
   for (const pinned of [{ panel: 'door', at: where }, { panel: 'doorLeft', at: where }]) {
-    const door = [0.1 * 0.2, 0.2 * 0.2, 0.5 * 0.2, 0.5 * 0.2];
-    assert.deepEqual(place(before, pinned), [{ panel: 'door', abs: door }]);
-    assert.deepEqual(place(after, pinned), [{ panel: 'door', abs: door }],
-      `pinned as "${pinned.panel}", the same texels of the same panel either way`);
+    for (const [how, profile] of Object.entries(cars)) {
+      assert.deepEqual(place(profile, pinned), [{ panel: 'door', abs: door }],
+        `pinned as "${pinned.panel}" and tagged ${how}: the same texels of the same panel`);
+    }
   }
 });
