@@ -89,14 +89,19 @@ one a car whose body had no usable panels. The first write-up said 10 each,
 "about 40% of cars"; that counted the design's two `[left, visible]` regions,
 the piping and the number, as two misses per car.
 
-What genuinely misses is `mid`. `[left, mid, upper, visible]` matched nothing
-on 7 cars with a right body and `[right, mid, upper, visible]` on 6, and on
-eight of those thirteen misses the tag that emptied the selection was `mid` —
-on `ac_legends_gt_porsche_906`, `ks_mclaren_650_gt3`, `lotus_49`,
-`lotus_exige_240` and `ks_audi_sport_quattro_s1`, only 3 to 13 body panels are
-`mid` at all. That is the centroid tagging: a flank that spans the middle of the
-car is `mid` only if its centroid happens to land there. `left` and `upper`
-emptied the other five, and `visible` none.
+What genuinely missed was the upper middle of the flank. Before the tagger read
+extents, `[left, mid, upper, visible]` matched nothing on 7 cars with a right
+body and `[right, mid, upper, visible]` on 6. The cause was the centroid, and
+mostly for the level rather than the section: on the Exige, the Quattro, the
+650 GT3 and the RX3 a visible door runs along the middle of the car from low
+down to well above its midline, and was tagged `lower`, or not `mid`, because
+its centroid sat just short of the line. Profiles now record each panel's
+`extent3d`, and a panel is tagged with every section and level it reaches
+(see `src/engine/tags.mjs`). Those four cars now match, and the misses are 3
+on the left and 2 on the right. What is left is honest: the 906's visible
+mid-length flank lies wholly below the midline, the Lotus 49 has no visible
+side panel in the middle of the car, and the Morgan 3-Wheeler has two panels
+on its left to choose from. `visible` emptied no selection, before or after.
 
 `[shared, visible]` found nothing on 16, 15 of them cars with a correct body,
 and every one of those because the car has no instanced bodywork. `shared` is a
