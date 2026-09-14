@@ -117,6 +117,22 @@ test('the rims and interior scorers leave out what their evidence rules out', ()
   assert.match(explain([rim], 'rims'), /whl  inst/);
 });
 
+test('rims discount a face drawn fewer than four times, and the interior leaves out a sheet a fifth at the wheels', () => {
+  // Neither rule had a test that failed with it removed.
+  const f = (o) => ({ role: o.file, area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 8, sidewalls: 0, instances: 4, blur: false, ...o });
+  // A sheet per axle is kept, at 0.3, so a larger face drawn twice still
+  // ranks below one drawn four times.
+  const four = f({ file: 'rim.dds' });
+  const two = f({ file: 'rim_front.dds', area: 0.05, instances: 2 });
+  assert.deepEqual(rank([two, four], 'rims').map((x) => x.file), ['rim.dds', 'rim_front.dds']);
+  // A fifth of a texture's islands at a wheel rules it out of the interior,
+  // however much of it the seat sees; a tenth does not.
+  const cabin = f({ file: 'cabin.dds', wheelIslands: 0, cockpit: 0.25, visible: 0.05 });
+  const arch = f({ file: 'arch.dds', area: 0.3, islands: 10, wheelIslands: 2, cockpit: 0.3, visible: 0.1 });
+  assert.deepEqual(rank([arch, cabin], 'interior').map((x) => x.file), ['cabin.dds']);
+  assert.equal(rank([{ ...arch, wheelIslands: 1 }, cabin], 'interior')[0].file, 'arch.dds');
+});
+
 test('the wheel and cockpit evidence is counted from the profile\'s panels', () => {
   // What the rims and interior scorers read. Four wheels drawn from one rim
   // face are four islands on one rectangle, so `instances` is the largest
