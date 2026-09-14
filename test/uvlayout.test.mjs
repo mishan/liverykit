@@ -79,6 +79,37 @@ test('a texture that repeats across its surface is called tiled, and the profile
   assert.doesNotMatch(log, /largest texture spanning the car/);
 });
 
+test('a texture partly unwrapped and partly repeating is mixed, and artwork is placed on it', async () => {
+  // Three cushions mapped once and one repeating 40 times, all wearing the
+  // seat texture, so three quarters of its surface is mapped once. `mixed`
+  // lies between the two thresholds and, unlike `tiled`, refuses nothing; no
+  // case landed in it before, so the thresholds could move and nothing fail.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [
+        { ...cushion({ repeat: 1 }), name: 'SEAT_A' },
+        { ...cushion({ repeat: 1 }), name: 'SEAT_B' },
+        { ...cushion({ repeat: 1 }), name: 'SEAT_C' },
+        { ...cushion({ repeat: 40 }), name: 'SEAT_TILED' },
+      ],
+      materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+      extraTextures: [{ name: 'seat.dds', width: 64, height: 64 }],
+    }));
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false, log: () => {} });
+    const seat = Object.entries(profile.textures).find(([, t]) => t.file === 'seat.dds')?.[0];
+    assert.equal(profile.textures[seat].uvLayout, 'mixed');
+    const inside = profile.textures[seat].uvInside;
+    assert.ok(inside >= 0.5 && inside < 0.9, `inside ${inside}`);
+    const { regions, notes } = expandRegions(profile, seat, [{ treatment: 'fill', at: [0.1, 0.1, 0.3, 0.3] }]);
+    assert.equal(regions.length, 1, 'a rectangle on a mixed texture is placed');
+    assert.equal(notes.filter((n) => n.status === 'unplaceable').length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('an unwrap shifted by a whole sheet is an unwrap, and the profile says where it is', async () => {
   const { profile, log, seat } = await profileWith({ repeat: 1, shift: [0, -1] });
   assert.equal(profile.textures[seat].uvLayout, 'unwrapped',
