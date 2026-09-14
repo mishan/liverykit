@@ -214,7 +214,9 @@ if (values.explain) {
     if (vals.length) visibleByFile.set(profile.textures[role].file, vals.reduce((a, b) => a + b, 0) / vals.length);
   }
 
-  const features = textureFeatures(model, { roles: profile.textures, skinCounts, skinCount, visibleByFile });
+  // The profile's panels too, as the generator passes them, so the ranking
+  // printed here is the one that proposed the binding.
+  const features = textureFeatures(model, { roles: profile.textures, skinCounts, skinCount, visibleByFile, panels: profile.panels });
   console.log(explain(features, values.term));
   console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
   process.exit(0);

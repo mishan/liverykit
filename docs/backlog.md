@@ -47,33 +47,34 @@ placement.
 **The design painted two surfaces on every car**: `body` and `tyres`. What
 follows is why, in the order worth fixing.
 
-## A candidate with no islands is still eligible to be the body
+## A candidate with no islands was eligible to be the body — fixed
 
-Of 26 cars, the body binding was confident (>= 0.7) on 22, shaky on 2, and a
-guess on 2: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04. They
-were 0.11 and 0.19 when first measured; the
-visibility changes of 2026-09-13 narrowed both margins and changed neither
-pick. The mp412c is the instructive one. It bound `body` to a role called `black` that
-has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
-so the design painted a sheet with nothing mapped on it, and every tag
-selection then matched nothing.
+Of 26 cars, the body binding is confident (>= 0.7) on 23, shaky on 2, and a
+guess on 1: `ks_mclaren_650_gt3` at 0.04, whose pick is right and whose margin
+is the next entry's problem. The mp412c was the other guess. It bound `body` to
+a role called `black` that has ZERO panels, on a car whose `interior` has 90
+and whose `rims` have 84 — so the design painted a sheet with nothing mapped on
+it, and every tag selection then matched nothing.
 
 The classifier ranks candidates on surface area, whether they straddle the
 centreline, how many stock skins override them, shader, how much of the car's
-length and height they span, and visibility — never on the name. It does not
-ask whether a candidate has any paintable islands, which is the one piece of
-evidence that would have settled the second of these. A texture no island lives
-on cannot be the thing a livery paints, and that is a measurement already
-sitting in the profile beside the binding. The first McLaren is a different
-case: its pick, `skin`, has 47 panels, and the problem is only that the call
-was close — which is the next entry's.
+length and height they span, and visibility — never on the name — and it now
+also knows how many islands each has, and gives a texture with none a score of
+0. That alone did not fix the mp412c: its paint, `SKIN_00`, had kept 1 panel of
+102, because one strip on its chassis with UVs 1,222 sheets wide carried almost
+all of the texture's UV area and the panel threshold is a share of it. With
+islands spanning more than a sheet left out of that total, `SKIN_00` has 62
+panels, and the mp412c binds it at 0.82. Excluding tiled textures as well, as
+the plan first said, cost two real bodies and was dropped (see the plan's
+step 2).
 
 ## An auto binding the profile calls a guess is painted anyway
 
 `resolveTargets` files an `unconfirmed` note for an `auto` binding and then
-paints it — with the same conviction at 0.19 as at 0.95. On the two cars above
-that means artwork on the wrong sheet, reported in a note nobody reads before
-looking at the car.
+paints it — with the same conviction at 0.04 as at 0.95. On a car whose pick
+is wrong that means artwork on the wrong sheet, reported in a note nobody reads
+before looking at the car; on the 650 GT3, whose pick at 0.04 is right, a floor
+would refuse the right answer, which is the trade the floor has to measure.
 
 There is a threshold below which the honest answer is to paint nothing and say
 which term went unpainted, exactly as an absent surface is handled today. Where
@@ -82,10 +83,10 @@ round number: the same sweep can answer it.
 
 ## Tag selections that match nothing
 
-`[left, visible]` and `[right, visible]` found no panel on 1 of 26 cars each:
-the mp412c, whose body is a tiled material, and whose placed regions are now
-reported as `unplaceable`. Before the shifted-sheet fix below it was 5, every
-one a car whose body had no usable panels. The first write-up said 10 each,
+`[left, visible]` and `[right, visible]` now land on all 26 cars. The last miss
+was the mp412c, whose body was bound to a tiled swatch with no islands until
+the classifier learned to count them; before the shifted-sheet fix below it
+was 5, every one a car whose body had no usable panels. The first write-up said 10 each,
 "about 40% of cars"; that counted the design's two `[left, visible]` regions,
 the piping and the number, as two misses per car.
 
@@ -103,8 +104,8 @@ mid-length flank lies wholly below the midline, the Lotus 49 has no visible
 side panel in the middle of the car, and the Morgan 3-Wheeler has two panels
 on its left to choose from. `visible` emptied no selection, before or after.
 
-`[shared, visible]` found nothing on 16, 15 of them cars with a correct body,
-and every one of those because the car has no instanced bodywork. `shared` is a
+`[shared, visible]` found nothing on 16, every one of them because the car has
+no instanced bodywork. `shared` is a
 tag a portable design should not lean on without saying the miss is expected.
 
 ## A texture listed under two spellings tied with itself — fixed
@@ -165,8 +166,9 @@ the A110, the 300 SEL, the 2002 and the RX3. Every one of those bodies had no
 panels.
 
 **The fix.** `placeOnSheet` in `src/engine/kn5.mjs` moves each island that fits
-wholly on another copy of the sheet back onto the copy in [0, 1], by whole
-sheets, when the model is parsed, and `vertex()` applies the move. Everything
+on another copy of the sheet, within the bleed `SHEET_SPAN` allows (0.025 at
+each edge), back onto the copy in [0, 1], by whole sheets, when the model is
+parsed, and `vertex()` applies the move. Everything
 that reads UVs reads them through `vertex()` — islands, seams, outlines, safe
 areas, wheels, the software renderer, the geometry the editor draws — so they
 all see a moved island in the same place. An island goes to the copy of the
