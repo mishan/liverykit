@@ -21,7 +21,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { VOCABULARY } from './engine/classify.mjs';
+import { VOCABULARY, DRIVER_KIT } from './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -278,9 +278,15 @@ export function resolveTargets(profile, livery) {
       continue;
     }
     if (b.status === 'unbound') {
+      // Not --explain for the driver kit: nothing measures a helmet, so it has
+      // nothing to rank and throws. The four are named from the files a car's
+      // skins carry, which a profile generated without --skins never saw.
       notes.push({
         term, status: 'unbound',
-        text: `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
+        text: Object.hasOwn(DRIVER_KIT, term)
+          ? `${term}: not bound on this car — it is named from the skins folder's filenames, ` +
+            'so regenerate the profile with --skins, or record it under "bind" by hand'
+          : `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
       });
       continue;
     }
