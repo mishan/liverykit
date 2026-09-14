@@ -447,6 +447,33 @@ export function panelsWithTags(profile, role, tags, { limit = Infinity } = {}) {
 }
 
 /**
+ * Why a tag selection matched nothing, as counts.
+ *
+ * "No panel tagged [left, visible]" says the selection failed and not which half
+ * of it did. On a car with 14 left panels and 22 visible ones the answer is that
+ * no left panel is visible, which points at the visibility threshold; on a car
+ * with no left panels at all it points at the side tagging. The two want
+ * different fixes, and guessing between them is how a threshold gets nudged on
+ * a hunch.
+ *
+ * `each` counts the panels carrying each tag alone; `without` counts what
+ * matches once that one tag is dropped. `blocking` is the tag whose removal
+ * recovers the most, or null when dropping any single tag still leaves nothing
+ * — two causes at once, which is worth knowing too.
+ *
+ * Counted by distinct rectangle, the way the selection itself counts, so four
+ * wheels on one rim are one panel here as they are there.
+ */
+export function nearMiss(profile, role, tags) {
+  const count = (ts) => panelsWithTags(profile, role, ts).length;
+  const each = Object.fromEntries(tags.map((t) => [t, count([t])]));
+  const without = Object.fromEntries(tags.map((t) => [t, count(tags.filter((x) => x !== t))]));
+  let blocking = null;
+  for (const t of tags) if (without[t] > (blocking ? without[blocking] : 0)) blocking = t;
+  return { each, without, blocking };
+}
+
+/**
  * Expand a livery's regions against one texture role.
  *
  * A region selecting by `tags` becomes one region per matching panel — the same

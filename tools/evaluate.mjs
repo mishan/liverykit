@@ -20,7 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
-import { rank } from '../src/engine/classify.mjs';
+import { rank, featuresFromRecord } from '../src/engine/classify.mjs';
 
 // Deliberately conservative: only cars where the filename is unambiguous get a
 // label, so a wrong label is rare even though the rule is crude.
@@ -38,12 +38,7 @@ for (const car of fleet) {
     LOOKS_LIKE_BODY.test(t.file) && !DEFINITELY_NOT.test(t.file) && t.cover > 0.03 && t.straddles);
   if (labels.length !== 1) { unlabelled++; continue; }
 
-  const features = Object.entries(car.roles).map(([role, t]) => ({
-    role, file: t.file, area: t.cover, straddles: t.straddles, box: t.box,
-    skinFraction: car.skinCount ? t.skins / car.skinCount : 0,
-    shaders: t.shaders,
-    ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
-  }));
+  const features = featuresFromRecord(car);
   if (!features.some((f) => typeof f.visible === 'number')) noVis++;
 
   const top = rank(features, 'body')[0];

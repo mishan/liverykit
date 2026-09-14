@@ -147,6 +147,34 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
 }
 
 /**
+ * Classifier features from a recorded survey car rather than from a model.
+ *
+ * Two readers rebuild features from records — tools/evaluate.mjs from the
+ * survey's raw output, test/classifier.test.mjs from the packed fixture — and
+ * each used to map the fields by hand. A field the classifier gains then has to
+ * be remembered in both, and forgetting it in either means the accuracy figure
+ * is measured on a classifier that does not ship. So there is one mapping, here,
+ * beside the function whose output it has to match.
+ *
+ * Shader names come either inline (`shaders`, the survey) or interned (`sh`,
+ * indices into the fixture's `shaders` table). `panels`, the survey's island
+ * count, becomes `islands`.
+ */
+export function featuresFromRecord(car, { shaderNames = [] } = {}) {
+  return Object.entries(car.roles).map(([role, t]) => ({
+    role,
+    file: t.file,
+    area: t.cover,
+    straddles: t.straddles,
+    box: t.box,
+    skinFraction: car.skinCount ? t.skins / car.skinCount : 0,
+    shaders: t.shaders ?? t.sh.map((i) => shaderNames[i]),
+    ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
+    ...(typeof t.panels === 'number' ? { islands: t.panels } : {}),
+  }));
+}
+
+/**
  * The livery vocabulary.
  *
  * Each term needs a definition a person can check against a render, because a

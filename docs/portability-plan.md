@@ -40,7 +40,7 @@ to become a script, for the same reason `tools/evaluate.mjs` exists: a number
 nobody can re-run is a number that will be quoted after it has stopped being
 true.
 
-`tools/sweep.mjs <carsDir> <livery> [--sample N] [--out sweep.json]`:
+`tools/sweep.mjs <livery> [--cars <carsDir>] [--every N] [--out sweep.json]`:
 
 - Profiles each car with `profileFromKn5`, no prior, exactly as the sweep did.
 - Runs `resolveTargets`, `expandRegions` and `portability` for the design.
