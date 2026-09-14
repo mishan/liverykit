@@ -996,8 +996,9 @@ function contrast(placed, t, design, say, size) {
       kind: 'low-contrast', severity: 'high', surface: t.from, panel: p.region.panel,
       ids: [p.id], contrast: round(ratio),
       why: `${name(t, p.id)} is ${inkName} on ${underName} (${what}): a contrast of ${ratio.toFixed(1)}:1, and ` +
-        `lettering needs at least ${CONTRAST_FLOOR}:1 to read from trackside. Use a dark colour on a light base, ` +
-        'white on a dark one, or put a band of a contrasting colour behind it.',
+        `lettering needs at least ${CONTRAST_FLOOR}:1 to read from trackside. Use a dark colour on a light base ` +
+        'or white on a dark one. Lettering may sit on a stripe that runs the car\'s whole length, but not on a ' +
+        'patch or band of its own, which reads as amateur.',
     });
   }
 }

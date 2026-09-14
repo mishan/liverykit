@@ -1163,6 +1163,11 @@ test('find_space can sweep sizes and say how big a shape of a given proportion c
   assert.ok(r.sizesTried <= 16);
   const over = findSpace({ grid, model: half, prepared, widthMm: r.largest.widthMm + 100, marginMm: 50, count: 1 });
   assert.deepEqual(over.candidates, [], 'and 100 mm more does not fit');
+  // Started from a guess far under the answer, as a coarse sweep can give, the
+  // fine search is not held to the guess: it finds the same limit.
+  const guessed = largestSpace({ grid, model: half, prepared, aspect: 1, marginMm: 50, near: 100 });
+  assert.ok(Math.abs(guessed.largest.widthMm - r.largest.widthMm) <= 20,
+    `${guessed.largest.widthMm} from a guess of 100, against ${r.largest.widthMm}`);
 
   // The clean half is narrow and tall, so the proportion decides what grows:
   // a tall shape gets the height a square cannot use.

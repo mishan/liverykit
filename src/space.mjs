@@ -319,14 +319,28 @@ export function largestSpace({
   // question measures, and halving from nothing asked a dozen of them where a
   // few either side of the cells' answer find the same limit. The cells can
   // err either way by about a cell, so the search stays open above it.
+  const bound = hi;
+  let capped = null;
   if (near > 0) {
-    hi = Math.min(hi, near * 1.15);
+    capped = Math.min(hi, near * 1.15);
+    hi = capped;
     if (ask(near * 0.85)) lo = near * 0.85;
   }
-  while (hi - lo > precisionMm && sizesTried < 16) {
-    const w = (lo + hi) / 2;
-    if (ask(w)) lo = w;
-    else hi = w;
+  const halve = (limit) => {
+    while (hi - lo > precisionMm && sizesTried < limit) {
+      const w = (lo + hi) / 2;
+      if (ask(w)) lo = w;
+      else hi = w;
+    }
+  };
+  halve(16);
+  // A cell the coarse sweep rejects whole can hide room a finer look finds,
+  // so the cells' answer can be further under the panel's than the cap
+  // allows. A search that found nothing too big under the cap was stopped by
+  // the cap, not by the panel, and goes on up to the panel's own bound.
+  if (capped !== null && hi === capped && capped < bound) {
+    hi = bound;
+    halve(sizesTried + 12);
   }
   return {
     role: g.role,
@@ -671,7 +685,9 @@ export function groupLayout({
         && !['low-contrast', 'unmirrored', 'too-small'].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
       if (wrong.length) {
         rejected.push(`${wrong[0].kind}: ${wrong[0].why}`);
-        continue insides;
+        // Only this variant: a narrower name or an unslid stack is a different
+        // layout, and can pass where this one did not.
+        continue;
       }
       const mm = letterHeights(design, profile);
       if (ids.slice(1).some((id) => mm[id]?.mm === undefined)) {
