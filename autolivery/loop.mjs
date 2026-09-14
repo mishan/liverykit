@@ -276,7 +276,6 @@ async function runRounds({
   write = writeSynced, hooks = {},
 }) {
   await mkdir(out, { recursive: true });
-  const tools = plannerTools(await mcp.listTools());
   const draft = { design: [], fit: [] };
   const sizeFor = (view) => (view === 'sheet' ? sheetShot : shot);
   // What the last gate saw, for the one check that compares two rounds.
@@ -297,6 +296,9 @@ async function runRounds({
   let kept = null;
   let polishLeft = polish;
   let polished = null;
+  // What the proposal came back with, for a page written after it: the save
+  // that follows can still fail, and the design is in the inbox by then.
+  let sent = null;
   const restore = (n, why) => {
     draft.design = [...kept.design];
     draft.fit = [...kept.fit];
@@ -332,8 +334,13 @@ async function runRounds({
     }
   };
   // Before round 1, so the page can be opened as the run starts.
+  // And the hook with it, before the first MCP call. It was set after
+  // listTools, so a server that died answering that left a page with no
+  // terminal state, reloading for a run that was over. Nothing the page is
+  // written from depends on the tools.
   await page({ ...snapshot(), finished: false });
-  hooks.stopped = (e) => page({ ...snapshot(), finished: false, stopped: `the run ended: ${e.message}` });
+  hooks.stopped = (e) => page({ ...snapshot(), ...sent, finished: false, stopped: `the run ended: ${e.message}` });
+  const tools = plannerTools(await mcp.listTools());
 
   // One door for every tool call, planner's and gate's alike, so each is
   // traced the same way and none can skip the trace by coming in sideways.
@@ -486,8 +493,12 @@ async function runRounds({
       said = await planner.round({ n, rounds, brief: theBrief, feedback, tools, call, parent: round, facts });
     } catch (e) {
       // A polish round that cannot finish — the budget spent, the planner
-      // declining — costs the pass nothing. A dead server is still the end.
-      if (!kept || e instanceof ServerGone) throw e;
+      // declining — costs the pass nothing. A dead server is still the end,
+      // and so is any error in a replay: there the planner is the recording,
+      // and its throwing is the replay failing, as when today's editor refuses
+      // a recorded draft. Caught here, a replay put the earlier pass back and
+      // reported passed without ever judging the polish it was asked to.
+      if (!kept || followRecording || e instanceof ServerGone) throw e;
       history.push({ round: n, passed: false, polish: true, gates: { render: 'not run', fitment: 'not run', critic: 'not run' },
         failures: [`round ${n} could not be finished: ${e.message}`] });
       restore(n, `it could not be finished (${clip(e.message, 200)})`);
@@ -725,8 +736,8 @@ async function runRounds({
     // be revised anyway, so it costs no second look — and nor does one whose
     // critic is advisory, since its verdict gates nothing and the look is paid.
     let second = null;
+    const closeImages = [];
     if (criticGates && fitmentPass && !criticPass && verdict && !verdict.error && closer.length) {
-      const closeImages = [];
       const missed = [];
       for (const view of closer) {
         const { r } = await traced(span, 'render_car', { view }, () =>
@@ -788,6 +799,9 @@ async function runRounds({
       critic: verdict,
       ...(second ? { secondLook: second } : {}),
       renders: images.map((i) => i.path),
+      // The second look's pictures, kept apart from the first: the attempts
+      // page showed only `renders`, beside a verdict given on these.
+      ...(closeImages.length ? { closer: closeImages.map((i) => i.path) } : {}),
       // What the planner said it made and what it drafted, as they stood: a
       // replay puts the same design in front of new code without paying a
       // model to draw it again. The final draft alone could replay only the
@@ -844,7 +858,7 @@ async function runRounds({
     const advice = deciding?.error ? [] : (deciding?.notes ?? []);
     // The draft and summary are the planner's own words back; resent every
     // round they would only be paid for again.
-    const { renders, draft: _draft, summary: _summary, ...forPlanner } = record;
+    const { renders, closer: _closer, draft: _draft, summary: _summary, ...forPlanner } = record;
     return {
       passed,
       broke,
@@ -863,8 +877,9 @@ async function runRounds({
   const { passed } = result;
 
   if (passed && propose) {
-    Object.assign(result, await proposeDesign(result, async (args) => (await traced(trace.root, 'propose_design',
-      { design: args.design.length, fit: args.fit.length }, () => mcp.callTool('propose_design', args))).r));
+    sent = await proposeDesign(result, async (args) => (await traced(trace.root, 'propose_design',
+      { design: args.design.length, fit: args.fit.length }, () => mcp.callTool('propose_design', args))).r);
+    Object.assign(result, sent);
     if (result.proposalError) log(`  ✗ propose_design — ${result.proposalError}`);
   }
 
