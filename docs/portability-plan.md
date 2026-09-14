@@ -110,7 +110,10 @@ other two are `mclaren_mp412c_gt3` and `tando_buddies_180sx`, which are steps 2
 and 1 of this plan. It was packed again from a second survey when step 1
 landed, so it carries each texture's `uvLayout` too, and again with the
 shifted-sheet fix, which gives 101 cars new island counts or visibility and
-leaves only 2 without visibility at all. The classifier still scores 189/193.
+leaves only 2 without visibility at all; the classifier still scored 189/193.
+It was packed once more when a texture the model names twice became one role,
+which turns two ambiguous labels into clean ones: 191/195, with the same four
+disagreements.
 
 Three places rebuild classifier features from records instead of from a model:
 `survey.mjs` itself, `tools/evaluate.mjs`, which reads the survey's raw output,
@@ -222,7 +225,7 @@ and `--explain` builds a full profile before it explains.
   the ranking sees why a large, visible, symmetric texture is not on it.
 
 **What it must establish.** Re-run the survey and `tools/evaluate.mjs` with
-islands as an input. The figure to hold is 189/193 as the evaluator counts it on
+islands as an input. The figure to hold is 191/195 as the evaluator counts it on
 the fixture regenerated in step 0; the old fixture measured 172/175.
 `docs/naming.md` quotes the figure after correcting two wrong labels, and that
 number is downstream of this one. It must not fall, and the mp412c must move. Then
