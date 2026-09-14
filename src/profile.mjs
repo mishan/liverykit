@@ -58,7 +58,9 @@ export function validateProfile(p, source = '<inline>') {
   // The profile may reference at most one spelling from each pair — shipping
   // both means the second to extract silently overwrites the first.
   for (const pair of p.caseCollisions ?? []) {
-    const shipped = pair.filter((f) =>
+    // Distinct, because a profile written before the generator learned the
+    // difference may record one name listed twice as a "pair" of itself.
+    const shipped = [...new Set(pair)].filter((f) =>
       Object.values(p.textures).some((t) => t.file === f));
     if (shipped.length > 1) {
       err(`textures include ${shipped.join(' and ')}, which are one file on Windows. Pick one spelling.`);

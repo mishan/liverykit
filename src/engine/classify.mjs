@@ -104,8 +104,11 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
     const mat = model.materials[mesh.materialId];
     if (!mat) continue;
     for (const tex of Object.values(mat.slots)) {
-      if (!shadersFor.has(tex)) shadersFor.set(tex, new Set());
-      shadersFor.get(tex).add(mat.shader);
+      // Lowercased, as meshesUsingTexture compares: a slot may spell the file
+      // differently from the role that names it, and they are one file.
+      const k = tex.toLowerCase();
+      if (!shadersFor.has(k)) shadersFor.set(k, new Set());
+      shadersFor.get(k).add(mat.shader);
     }
   }
 
@@ -139,7 +142,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       ] : null,
       straddles: bound && x0 < -0.08 * halfWidth && x1 > 0.08 * halfWidth,
       skinFraction: skinCount ? (skinCounts.get(file.toLowerCase()) ?? 0) / skinCount : 0,
-      shaders: [...(shadersFor.get(file) ?? [])],
+      shaders: [...(shadersFor.get(file.toLowerCase()) ?? [])],
       ...(visibleByFile.has(file) ? { visible: visibleByFile.get(file) } : {}),
     });
   }
