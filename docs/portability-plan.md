@@ -84,17 +84,17 @@ panels on each car's `body` binding, today:
 | RSS Formula 4 | 39 | 24 | 10 | 10 | 0 |
 
 The fleet fixture in `test/fixtures/fleet-features.json.gz` is the other half
-of the harness, and it is missing the field step 2 needs. Its per-texture
-records carry `cover`, `straddles`, `skins`, `sh`, `box` and `visible`, and
-none of its 6,526 roles says how many islands the texture has. `survey.mjs`
-already writes that count, as `panels`, into every role it records; the field
-is lost afterwards, because the fixture is not the survey's output. It is a
-packed copy, with shader names interned into `sh`, made by a script that lives
-only in the commit that introduced the fixture. That script has to come into
-`tools/` so the fixture can be rebuilt by something in the tree, and it has to
-carry `panels` and the `uvLayout` from step 1. Regenerating the fixture is the
-only step in this plan that needs the fleet on disk, so it should be done once,
-early, and the result committed.
+of the harness, and when this plan was first written it was missing the field
+step 2 needs. Its per-texture records carried `cover`, `straddles`, `skins`,
+`sh`, `box` and `visible`, and none of its 6,526 roles said how many islands
+the texture had. `survey.mjs` already wrote that count, as `panels`, into
+every role it recorded; the field was lost afterwards, because the fixture was
+not the survey's output. It was a packed copy, with shader names interned into
+`sh`, made by a script that lived only in the commit that introduced the
+fixture. That script had to come into `tools/` so the fixture could be rebuilt
+by something in the tree, and it had to carry `panels` and the `uvLayout` from
+step 1. Regenerating the fixture was the only step in this plan that needed
+the fleet on disk, so it was to be done once, early, and the result committed.
 
 That script is now `tools/pack-fleet.mjs`, and the fixture was regenerated on
 2026-09-13 from a fresh survey of 252 cars (two ship no kn5). With visibility

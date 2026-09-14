@@ -8,8 +8,8 @@
 // already recorded, the island count, there was nothing to carry it across.
 //
 // Packing keeps everything the classifier reads and drops what it does not:
-// mesh names, axes, timings. Shader names are interned, because 25 of them
-// repeat across six thousand textures.
+// mesh names, axes, timings. Shader names are interned, because 27 of them
+// repeat across more than nine thousand textures.
 //
 //   node tools/survey.mjs <carsDir> --all --visibility --out fleet.json
 //   node tools/pack-fleet.mjs fleet.json [--out test/fixtures/fleet-features.json.gz]
@@ -60,7 +60,8 @@ const shaders = [...new Set(cars.flatMap((c) => Object.values(c.roles).flatMap((
 const index = new Map(shaders.map((s, i) => [s, i]));
 
 const doc = {
-  note: 'Measurements only — no game assets. Regenerate with tools/survey.mjs --all --visibility, then tools/pack-fleet.mjs.',
+  note: 'Measurements only — no game assets. Regenerate with tools/survey.mjs <carsDir> --all --visibility --out fleet.json, ' +
+    'then tools/pack-fleet.mjs fleet.json.',
   shaders,
   cars: cars.map((c) => ({
     id: c.id,

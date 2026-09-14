@@ -8,7 +8,7 @@
 //
 // So this scores it against a HELD-OUT LABEL — the cars whose filename is
 // unambiguous, which the classifier never sees — over a fixture of measurements
-// taken from a 235-car fleet sweep.
+// taken from a survey of all 252 cars in the fleet.
 //
 // THE FIXTURE CONTAINS NO GAME ASSETS. It is areas, bounding boxes, shader
 // names, filenames and skin-override counts: numbers about cars, of the same
