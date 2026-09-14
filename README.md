@@ -571,7 +571,7 @@ and several other things:
 | `ungrouped` | a region that declared `groupWith` is not on the same panel as the region it names |
 | `stripe-across` | a piece of a declared `stripe` runs across the car on its panel: its long side is the axis find_panels names as across the car |
 | `stripe-offset` | two pieces of one declared `stripe` do not line up where they meet: an edge steps more than 20 mm on the car |
-| `stripe-gap` | a declared `stripe` does not cover the car nose to tail: a stretch of paintable bodywork, seen from above (or from the side, for a flank stripe), is bare — over a rear wing too. Glass, grilles, openings and sheets the design does not paint are not counted |
+| `stripe-gap` | a declared `stripe` does not cover the car nose to tail: a stretch of paintable bodywork, seen from above (or from the side, for a flank stripe), is bare — over a rear wing too — or a panel inside its band, such as a roof hatch, is left unpainted. Glass, grilles, openings and sheets the design does not paint are not counted |
 | `too-small` | a race number's capitals under 140 mm tall on the car, or a team or driver name's under 45 mm, measured on the letters after the text is shrunk to fit its box |
 | `outside-safe` | outside the part of the panel measurement found readable |
 | `hidden-face` | on the face of a two-sided sheet the world cannot see |
