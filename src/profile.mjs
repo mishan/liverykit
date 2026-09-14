@@ -154,6 +154,13 @@ function validateBind(p, err) {
         (typeof entry.confidence !== 'number' || entry.confidence < 0 || entry.confidence > 1)) {
       err(`bind."${term}".confidence must be a number in 0..1, got ${JSON.stringify(entry.confidence)}`);
     }
+    // How a proposal was reached when nothing was measured. One value today:
+    // "name", for the driver kit, proposed from AC's own filenames. A closed
+    // set, so a typo cannot quietly make a binding look measured.
+    if (entry.evidence !== undefined && entry.evidence !== 'name') {
+      err(`bind."${term}".evidence may only be "name" (proposed from AC's own filename), ` +
+          `got ${JSON.stringify(entry.evidence)}`);
+    }
     for (const role of entry.roles) {
       // The whole point of the layer is that a livery stops guessing at names.
       // A binding pointing at a role that does not exist would reintroduce the
@@ -191,6 +198,7 @@ export function binding(profile, term) {
     roles,
     source: entry.source ?? null,
     confidence: entry.confidence,
+    ...(entry.evidence ? { evidence: entry.evidence } : {}),
     status: roles.length ? 'bound' : 'absent',
   };
 }
@@ -299,8 +307,13 @@ export function resolveTargets(profile, livery) {
     if (b.source === 'auto') {
       notes.push({
         term, status: 'unconfirmed',
-        text: `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
-              (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
+        // A named proposal says so instead of printing a confidence: nothing
+        // was ranked, and a number beside the measured ones would pass for one.
+        text: b.evidence === 'name'
+          ? `${term} -> ${b.roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
+            'nothing was measured, and nobody has confirmed it'
+          : `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
+            (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
       });
     }
   }

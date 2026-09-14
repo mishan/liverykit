@@ -596,6 +596,51 @@ export function proposalNotes(features) {
   return proposeInOrder(features).notes;
 }
 
+/**
+ * The driver's and the pit crew's kit, by the exact filenames AC ships.
+ *
+ * These live in separate kn5 files, not the car's, so nothing about them can be
+ * measured from the car; the only evidence is which files its skins carry. The
+ * names are AC's own, fixed spellings rather than a modder's choice, so for
+ * these four a name is acceptable evidence. It has to be the exact name, not a
+ * pattern: guessRole in scan.mjs calls anything with "driver" in it a suit and
+ * anything with "pit" in it crew, which names a role well enough and would bind
+ * crew_helmet_color.dds as a helmet and Lumirank_Driver_ID.dds as a suit.
+ *
+ * On the 252 surveyed cars: ac_crew.dds on 213, a suit on 45, gloves on 41, a
+ * helmet on 43. A car that ships two (a 2016 suit and an older one) gets both
+ * bound, since whichever driver model it loads, that one should be painted.
+ */
+export const DRIVER_KIT = {
+  helmet: ['helmet_2012.dds', 'helmet_1975.dds', 'helmet_1969.dds', 'helmet_1985.dds', 'helmet_2019.dds'],
+  suit: ['2016_suit_diff.dds', 'driver_suit2.dds', 'driver_suit.dds'],
+  gloves: ['2016_gloves_diff.dds', 'driver_gloves.dds'],
+  crew: ['ac_crew.dds'],
+};
+
+/**
+ * Bindings for the driver kit, from a profile's `textures`.
+ *
+ * `evidence: "name"` in place of a confidence, because nothing was ranked and a
+ * made-up number beside measured ones would read as a measurement. The resolver
+ * and the Bindings panel say "named" where they would print a confidence.
+ */
+export function proposeDriverKit(textures = {}) {
+  const bind = {};
+  for (const [term, names] of Object.entries(DRIVER_KIT)) {
+    const roles = Object.entries(textures)
+      .filter(([, t]) => names.includes(String(t?.file).toLowerCase()))
+      .map(([role]) => role);
+    if (roles.length) bind[term] = { roles, source: 'auto', evidence: 'name' };
+  }
+  return bind;
+}
+
+/** Everything a profile proposes: the measured terms, then the named kit. */
+export function proposeBindings(features, textures) {
+  return { ...proposeAll(features), ...proposeDriverKit(textures) };
+}
+
 const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
 
 /**

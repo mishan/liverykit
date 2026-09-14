@@ -11,7 +11,7 @@ import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
-import { textureFeatures, explain, SCORABLE, VOCABULARY } from '../src/engine/classify.mjs';
+import { textureFeatures, explain, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import { loadDecals } from '../src/decals.mjs';
 import '../src/index.mjs'; // registers the built-in packs
@@ -249,8 +249,12 @@ if (values.explain) {
   // part people skip. Everything this tool proposes is "auto": only the
   // person who read the evidence above may say "human".
   for (const term of SCORABLE) console.log(explain(features, term) + '\n');
-  const byHand = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t));
-  console.log(`  Not scored, so bound by hand or not at all: ${byHand.join(', ')}.\n`);
+  const kit = Object.keys(DRIVER_KIT);
+  const byHand = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t) && !kit.includes(t));
+  console.log(`  Not scored, so bound by hand or not at all: ${byHand.join(', ')}.`);
+  // The kit is named from the skins' files, so without --skins there is
+  // nothing to name it from, and its absence from the block says only that.
+  console.log(`  Named from AC's own skin filenames, not measured${values.skins ? '' : ' (needs --skins)'}: ${kit.join(', ')}.\n`);
 
   // The block a regeneration would write: the generator's proposal with the
   // existing profile's hand-work merged in, by the same two calls and from

@@ -234,6 +234,7 @@ async function checkAgainst(car) {
   const absolute = r.regions.filter((x) => x.status === 'absolute');
   const matched = r.regions.filter((x) => x.status === 'matched');
   const absent = (r.surfaces ?? []).filter((s) => s.status === 'absent');
+  const unbound = (r.surfaces ?? []).filter((s) => s.status === 'unbound');
   const invalid = (r.surfaces ?? []).filter((s) => s.status === 'invalid');
   const optional = r.regions.filter((x) => x.status === 'optional');
 
@@ -245,6 +246,9 @@ async function checkAgainst(car) {
     ...missing.map((x) => `<div class="note">! <code>${esc(x.id)}</code> ${esc(x.why)}</div>`),
     ...invalid.map((s) => `<div class="note">! ${esc(s.from)}: ${esc(s.why)}</div>`),
     ...absent.map((s) => `<div class="note">${esc(s.from)} — this car has no such surface</div>`),
+    // Apart from the above, because the next action differs: nothing is wrong
+    // with the design or the car, somebody just has to bind the term.
+    ...unbound.map((s) => `<div class="note">${esc(s.from)} — not bound on this car yet, so nothing would be painted there</div>`),
     // Neither a failure nor a pass. An absolute rectangle resolves on every car,
     // which is exactly why it is the placement most likely to be quietly wrong
     // on the next one; calling it fine would be the reassuring silence this
@@ -314,7 +318,8 @@ function drawBindings(r) {
     // reasons to look harder, so both are said here, not only in --explain.
     let how = 'confirmed';
     if (t.source !== 'human') {
-      how = typeof t.confidence === 'number' ? `proposed, ${t.confidence}` : 'proposed';
+      how = t.evidence === 'name' ? 'named by AC\'s filename, not measured'
+        : typeof t.confidence === 'number' ? `proposed, ${t.confidence}` : 'proposed';
       if (typeof t.confidence === 'number' && t.confidence < 0.2) how += ', close call';
       if (t.scored && !t.validated) how += t.measured ? ', measured, not validated' : ', unmeasured rule';
     }
