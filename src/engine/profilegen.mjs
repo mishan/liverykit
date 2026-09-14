@@ -639,7 +639,7 @@ export async function profileFromKn5(path, {
     // A term with no candidate is left OUT rather than bound to an empty array.
     // An empty array means "this car has no such surface", which is a claim, and
     // the classifier is not entitled to make it — only a person is.
-    if (p) bind[term] = { roles: [p.role], confidence: p.confidence, source: 'auto' };
+    if (p) bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
   }
   if (!visibility) {
     log('  ! bindings were proposed without visibility, which is the signal that separates');
