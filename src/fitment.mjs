@@ -1446,6 +1446,9 @@ const STRIPE_END_MM = 60;
 
 const STRIPE_SAMPLE_MM = 8;
 
+/** How far beyond a band's edges `stripeAt` reads the panel to fit it. */
+const STRIPE_FIT_MM = 100;
+
 function stripes(all, profile, seen, say, skip) {
   const byName = new Map();
   for (const { t, placed } of all) {
@@ -1549,19 +1552,19 @@ function stripeJoins(byName, profile, seen, say) {
   const F = ax.front === '-Z' ? -1 : 1;
   const L = ax.left === '-X' ? -1 : 1;
 
-  // Sampled with one walk of each sheet's triangles for every piece on it.
-  const byRole = new Map();
+  // Sampled with one walk of the triangles for every piece they could hold:
+  // the piece's own panel's mesh where the profile names it (see
+  // `ownMeshes`), else every mesh of its sheet.
+  const byMeshes = new Map();
   for (const pieces of byName.values()) {
     for (const piece of pieces) {
-      if (!byRole.has(piece.t.role)) byRole.set(piece.t.role, []);
-      byRole.get(piece.t.role).push(piece);
+      const meshes = ownMeshes(seen.model, profile, piece.t.role, piece.p.frac.panel);
+      const key = meshes.map((m) => seen.model.meshes.indexOf(m)).join(',');
+      if (!byMeshes.has(key)) byMeshes.set(key, { meshes, pieces: [] });
+      byMeshes.get(key).pieces.push(piece);
     }
   }
-  for (const [role, pieces] of byRole) {
-    let meshes = [];
-    try {
-      meshes = meshesUsingTexture(seen.model, texture(profile, role).file);
-    } catch { /* reported as unresolvable by `unseen` */ }
+  for (const { meshes, pieces } of byMeshes.values()) {
     const cells = (uv, per) => Math.max(8, Math.min(200, Math.ceil((uv * per * 1000) / STRIPE_SAMPLE_MM)));
     // On the piece's own island: its box covers whatever else the unwrap put
     // beside it, which is paint, but not this stripe's.
@@ -1592,17 +1595,29 @@ function stripeJoins(byName, profile, seen, say) {
           'it lines up with the rest of the stripe could not be measured.' });
     }
 
+    // A piece is part of the step before it when it sits beside it across the
+    // car, or when its stretch along the car lies within a step's, at the
+    // same height: the NSX's roof hatch is a piece of its own inside the
+    // roof's 1.8 m, and compared end to end with the roof it was reported as
+    // offset from it by the width of the roof.
+    const alongOf = (pts) => pts.reduce(([lo, hi], q) => [Math.min(lo, q.z), Math.max(hi, q.z)], [Infinity, -Infinity]);
     const steps = [];
     for (const piece of onCar.sort((a, b) => (b.c[2] - a.c[2]) * F)) {
+      const [zlo, zhi] = alongOf(piece.points);
       const last = steps.at(-1);
       const d = last && [0, 1, 2].map((k) => piece.c[k] - last.c[k]);
-      if (d && Math.abs(d[0]) > Math.abs(d[1]) && Math.abs(d[0]) > Math.abs(d[2])) {
-        last.pieces.push(piece);
-        last.points = last.points.concat(piece.points);
-        Object.assign(last, meanOf(last.points));
+      const beside = d && Math.abs(d[0]) > Math.abs(d[1]) && Math.abs(d[0]) > Math.abs(d[2]);
+      const within = (s) => (Math.min(zhi, s.z[1]) - Math.max(zlo, s.z[0])) / Math.max(zhi - zlo, 1e-6) >= 0.8
+        && Math.abs([0, 1, 2].reduce((sum, k) => sum + (piece.c[k] - s.c[k]) * s.n[k], 0)) < 0.15;
+      const host = beside ? last : steps.find(within);
+      if (host) {
+        host.pieces.push(piece);
+        host.points = host.points.concat(piece.points);
+        Object.assign(host, meanOf(host.points));
+        host.z = [Math.min(host.z[0], zlo), Math.max(host.z[1], zhi)];
         continue;
       }
-      steps.push({ pieces: [piece], points: piece.points, c: piece.c, n: piece.n });
+      steps.push({ pieces: [piece], points: piece.points, c: piece.c, n: piece.n, z: [zlo, zhi] });
     }
     for (let i = 0; i + 1 < steps.length; i++) {
       stripeJoin(steps[i], steps[i + 1], { stripe, say, F, L });
@@ -1748,10 +1763,7 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
     if (!sheets.has(file)) {
       sheets.set(file, {
         role: piece.t.role,
-        panels: Object.entries(profile.panels?.[piece.t.role] ?? {})
-          .filter(([, q]) => Array.isArray(q.rect) && typeof q.visible === 'number' && q.visible >= BARELY_SEEN)
-          .map(([panel, q]) => ({ panel, visible: q.visible, rect: q.rect,
-            outline: Array.isArray(q.outline) && q.outline.length >= 3 ? q.outline : null })),
+        panels: seenPanels(profile, piece.t.role),
         paint: [],
       });
     }
@@ -1759,7 +1771,6 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
     sheets.get(file).paint.push({ piece, poly, box: [Math.min(...poly.map((q) => q[0])), Math.min(...poly.map((q) => q[1])),
       Math.max(...poly.map((q) => q[0])), Math.max(...poly.map((q) => q[1]))] });
   }
-  const within = ([x, y, w, h], u, v) => u >= x && u <= x + w && v >= y && v <= y + h;
   const fileOf = (m) => (model.materials?.[model.meshes[m].materialId]?.slots?.txDiffuse ?? '').toLowerCase();
 
   // Front to back, a row of cells at a time across the stripe's width.
@@ -1774,7 +1785,7 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
       const sheet = sheets.get(fileOf(m));
       if (!sheet) continue;
       const u = env.U[k], v = env.V[k];
-      const pan = sheet.panels.find(({ rect, outline }) => within(rect, u, v) && (!outline || inPoly(outline, [u, v])));
+      const pan = panelAtUv(sheet.panels, u, v, model.meshes[m].name);
       if (!pan) continue;
       row.req++;
       row.h += env.H[k];
@@ -1921,10 +1932,32 @@ function carFrame(model, profile) {
   return { F, L: ax.left === '-X' ? -1 : 1, noseZ: F > 0 ? env.r1 : env.r0 };
 }
 
+/**
+ * The meshes a panel's island is on: the one the profile says it came from,
+ * where it says and that mesh wears the sheet, else every mesh of the sheet.
+ *
+ * A panel's outline does not keep other islands out. The NSX's roof has the
+ * bonnet's and the nose's texels laid out inside its outline, and sampled on
+ * every mesh of the sheet the roof's stripe was measured partly on the bonnet:
+ * `stripeAt` fitted the roof 425 mm off a straight line, and a stripe on it
+ * began at the front of the car.
+ */
+function ownMeshes(model, profile, role, pan) {
+  let meshes;
+  try {
+    meshes = meshesUsingTexture(model, texture(profile, role).file);
+  } catch {
+    return [];                                  // reported as unresolvable by `unseen`
+  }
+  const own = pan?.source?.mesh;
+  const mine = own ? meshes.filter((m) => m.name === own) : [];
+  return mine.length ? mine : meshes;
+}
+
 /** Surface points across a rectangle on a panel, and on that panel's island only. */
 function panelSamples(model, profile, role, panel, at) {
   const f = resolveRect(profile, role, { panel, at, safe: false });
-  const meshes = meshesUsingTexture(model, texture(profile, role).file);
+  const meshes = ownMeshes(model, profile, role, f.panel);
   const per = f.panel?.metresPerUv;
   const scaled = per?.[0] > 0 && per?.[1] > 0;
   const cells = (uv, s) => Math.max(8, Math.min(200, Math.ceil((uv * s * 1000) / STRIPE_SAMPLE_MM)));
@@ -1971,10 +2004,17 @@ export function panelOnCar(model, profile, role, panel, at = [0, 0, 1, 1]) {
 export function stripeAt(model, profile, role, panel, { across = null, up = null } = {}) {
   const want = across ?? up;
   if (!Array.isArray(want) || want.length !== 2) throw new Error('stripeAt needs across: [from, to] or up: [from, to], in millimetres');
-  const { points, rect: [rx, ry, rw, rh] } = panelSamples(model, profile, role, panel, [0, 0, 1, 1]);
-  if (points.length < 3) return { at: null, why: `${panel} lands on no geometry` };
+  const { points: all, rect: [rx, ry, rw, rh] } = panelSamples(model, profile, role, panel, [0, 0, 1, 1]);
+  if (all.length < 3) return { at: null, why: `${panel} lands on no geometry` };
   const { L } = carFrame(model, profile);
   const lat = across ? (q) => q.x * L * 1000 : (q) => q.y * 1000;
+  // Fitted where the band is, not over the whole island. Islands wrap down
+  // the sides and round the corners, where across the car stops changing:
+  // fitted over all of it the NSX's roof strayed 708 mm from a straight line,
+  // and its bumper's stripe came out 590 mm wide where 500 was asked for.
+  const [lo, hi] = [...want].sort((m, n) => m - n);
+  const points = all.filter((q) => lat(q) >= lo - STRIPE_FIT_MM && lat(q) <= hi + STRIPE_FIT_MM);
+  if (points.length < 3) return { at: null, why: `the band misses ${panel}` };
   const fit = (f) => {
     let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0, syy = 0;
     for (const q of points) {
@@ -1995,6 +2035,111 @@ export function stripeAt(model, profile, role, panel, { across = null, up = null
   const error = Math.round(points.reduce((worst, q) => Math.max(worst, Math.abs(lat(q) - (a + b * frac(q)))), 0));
   const r4 = (n) => Math.round(n * 10000) / 10000;
   return { at: axis === 'x' ? [r4(f0), 0, r4(f1 - f0), 1] : [0, r4(f0), 1, r4(f1 - f0)], error };
+}
+
+/** The panels of a sheet the world sees, BARELY_SEEN or more: the ones a stripe is held to. */
+const seenPanels = (profile, role) => Object.entries(profile.panels?.[role] ?? {})
+  .filter(([, q]) => Array.isArray(q.rect) && typeof q.visible === 'number' && q.visible >= BARELY_SEEN)
+  .map(([panel, q]) => ({ panel, visible: q.visible, rect: q.rect, mesh: q.source?.mesh ?? null,
+    outline: Array.isArray(q.outline) && q.outline.length >= 3 ? q.outline : null }));
+
+/**
+ * Which of those panels a point on the sheet lies on: its box, then its
+ * outline, and its own mesh where the profile names one — outlines enclose
+ * other islands' texels (see `ownMeshes`), and the mesh tells them apart.
+ */
+const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, h], outline, mesh: own }) =>
+  u >= x && u <= x + w && v >= y && v <= y + h && (!own || !mesh || own === mesh) && (!outline || inPoly(outline, [u, v])));
+
+/**
+ * The panels of one sheet a band along the car crosses, seen from above, front
+ * to back: what a stripe of that band is painted on. `across` is [from, to] in
+ * millimetres left of the centreline. Each comes with where it lies along the
+ * car, `behindNose`, and the most of the band's width it carries, `carriesMm`.
+ *
+ * Read off the same view of the car `stripeCoverage` holds a stripe to, so a
+ * stripe laid out from this is the one that check asks for. A hatch set into
+ * the roof is in it because it is in the band, whatever it is called; a rear
+ * wing is in it because seen from above it is the surface over the deck. What
+ * is seen through a hole is not: a stretch enclosed along the car by one
+ * panel that dips more than OPENING_DEPTH below it, as the NSX's bonnet vent
+ * does, is that panel's hole and gets no piece.
+ */
+export function stripePanels(model, profile, role, across) {
+  const { F, L, noseZ } = carFrame(model, profile);
+  const env = envelope(model, profile, 1, 1);
+  const file = texture(profile, role).file.toLowerCase();
+  const panels = seenPanels(profile, role);
+  const [lo, hi] = across.map((mm) => (mm / 1000) * L).sort((a, b) => a - b);
+  const cols = [];
+  for (let i = 0; i < env.cols; i++) {
+    const c = env.c0 + (i + 0.5) * ENVELOPE_CELL;
+    if (c >= lo && c <= hi) cols.push(i);
+  }
+  const order = [...Array(env.rows).keys()];
+  if (F > 0) order.reverse();
+  const rows = order.map((j) => {
+    const row = { j, cells: [], h: 0, top: null };
+    const count = new Map();
+    for (const i of cols) {
+      const k = j * env.cols + i, m = env.M[k];
+      if (m < 0 || (model.materials?.[model.meshes[m].materialId]?.slots?.txDiffuse ?? '').toLowerCase() !== file) continue;
+      const pan = panelAtUv(panels, env.U[k], env.V[k], model.meshes[m].name);
+      if (!pan) continue;
+      row.cells.push(pan);
+      row.h += env.H[k];
+      count.set(pan, (count.get(pan) ?? 0) + 1);
+    }
+    if (row.cells.length) {
+      row.h /= row.cells.length;
+      row.top = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    }
+    return row;
+  });
+
+  // Runs of rows under one main panel; a panel's next run with rows under
+  // others between encloses them, and they are its hole if any dips too far.
+  const runs = [];
+  rows.forEach((r, x) => {
+    if (!r.top) return;
+    const last = runs.at(-1);
+    if (last && last.top === r.top && last.to === x - 1) last.to = x;
+    else runs.push({ top: r.top, from: x, to: x });
+  });
+  const hole = new Set();
+  runs.forEach((a, n) => {
+    const b = runs.slice(n + 1).find((q) => q.top === a.top);
+    if (!b || b === runs[n + 1] && b.from === a.to + 1) return;
+    const h0 = rows[a.to].h, h1 = rows[b.from].h;
+    const line = (x) => h0 + ((x - a.to) / (b.from - a.to)) * (h1 - h0);
+    let deep = false;
+    for (let x = a.to + 1; x < b.from; x++) if (rows[x].top && rows[x].h < line(x) - OPENING_DEPTH) deep = true;
+    if (deep) for (let x = a.to + 1; x < b.from; x++) hole.add(x);
+  });
+
+  const edgeMm = (z) => Math.max(0, Math.round((noseZ - z) * F * 1000));
+  const byPanel = new Map();
+  rows.forEach((r, x) => {
+    if (hole.has(x)) return;
+    const here = new Map();
+    for (const pan of r.cells) here.set(pan, (here.get(pan) ?? 0) + 1);
+    for (const [pan, n] of here) {
+      const s = byPanel.get(pan) ?? { rows: [], widest: 0 };
+      s.rows.push(x);
+      s.widest = Math.max(s.widest, n);
+      byPanel.set(pan, s);
+    }
+  });
+  return [...byPanel.entries()]
+    // More than one cell of the grid each way, as a notch must be to be one.
+    .filter(([, s]) => s.rows.length >= 2 && s.widest >= 2)
+    .sort((a, b) => a[1].rows[0] - b[1].rows[0])
+    .map(([pan, s]) => ({
+      panel: pan.panel, visible: pan.visible,
+      behindNose: [edgeMm(env.r0 + (rows[s.rows[0]].j + (F > 0 ? 1 : 0)) * ENVELOPE_CELL),
+        edgeMm(env.r0 + (rows[s.rows.at(-1)].j + (F > 0 ? 0 : 1)) * ENVELOPE_CELL)],
+      carriesMm: Math.round(s.widest * ENVELOPE_CELL * 1000),
+    }));
 }
 
 /**
