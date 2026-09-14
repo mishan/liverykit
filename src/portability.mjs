@@ -93,7 +93,7 @@ export function portability(design, profile) {
       const landed = expanded.regions.filter((r) => r === region || sameRegion(r, region));
 
       if (kind === 'absolute') {
-        regions.push({ id: key, from: t.from, kind, status: 'absolute', panels: [] });
+        regions.push({ id: key, from: t.from, role: t.role, kind, status: 'absolute', panels: [] });
         continue;
       }
       if (kind === 'panel') {
@@ -101,6 +101,7 @@ export function portability(design, profile) {
         regions.push({
           id: key,
           from: t.from,
+          role: t.role,
           kind,
           status: there ? 'matched' : 'missing',
           panels: there ? [region.panel] : [],
@@ -112,10 +113,15 @@ export function portability(design, profile) {
         continue;
       }
       const panels = landed.map((r) => r.panel);
+      // The role and the tags travel with the answer, so a caller asking why a
+      // selection missed can ask the profile about that texture, not every one
+      // the surface binds.
       regions.push({
         id: key,
         from: t.from,
+        role: t.role,
         kind,
+        tags: region.tags,
         status: panels.length ? 'matched' : 'missing',
         panels,
         why: panels.length ? undefined : `no panel here is tagged [${(region.tags ?? []).join(', ')}]`,
