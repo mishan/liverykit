@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { request } from 'node:http';
-import { mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, readdir, mkdir, rename, symlink, chmod, stat, lstat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -217,6 +217,41 @@ test('Confirm writes "human" on that one term, and changes nothing else in the f
     const onDisk = await loadProfile(e.profilePath);
     const merged = mergeBindings(onDisk.bind, { brakes: { roles: ['interior'], confidence: 0.9, source: 'auto' } });
     assert.deepEqual(merged.brakes, { roles: ['rims_3'], confidence: 1, source: 'human' });
+  } finally {
+    await e.stop();
+  }
+});
+
+test('Confirm writes through a symlinked profile to the file it names', async () => {
+  // rename() replaces whatever sits at the path. A linked profile became a
+  // detached copy holding the confirmation, and the real file still said
+  // "auto" — to anyone reading it, the click had done nothing.
+  const e = await editor();
+  try {
+    const elsewhere = join(e.dir, 'elsewhere');
+    await mkdir(elsewhere);
+    const real = join(elsewhere, 'abarth500.json');
+    await rename(e.profilePath, real);
+    await symlink(real, e.profilePath);
+
+    const res = await e.confirm({ term: 'brakes', roles: ['rims_3'] });
+    assert.equal(res.status, 200, (await res.clone().json()).error);
+    assert.ok((await lstat(e.profilePath)).isSymbolicLink(), 'the link is still a link');
+    assert.equal(JSON.parse(await readFile(real, 'utf8')).bind.brakes.source, 'human', 'and its target was confirmed');
+    assert.deepEqual(await readdir(elsewhere), ['abarth500.json'], 'with no temporary file left beside it');
+  } finally {
+    await e.stop();
+  }
+});
+
+test('Confirm keeps the profile\'s permissions', async () => {
+  // A fresh file takes the umask, so a 0600 profile came back 0664.
+  const e = await editor();
+  try {
+    await chmod(e.profilePath, 0o600);
+    const res = await e.confirm({ term: 'brakes', roles: ['rims_3'] });
+    assert.equal(res.status, 200, (await res.clone().json()).error);
+    assert.equal(((await stat(e.profilePath)).mode & 0o777).toString(8), '600');
   } finally {
     await e.stop();
   }

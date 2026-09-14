@@ -33,7 +33,7 @@
 // ---------------------------------------------------------------------------
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rename, realpath, stat, chmod, rm } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1172,9 +1172,25 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           // disk halfway through leaves the old profile rather than half of
           // the new one. A torn profile does not load, and that stops every
           // build of every design on this car.
-          const tmp = `${profilePath}.${process.pid}.tmp`;
-          await writeFile(tmp, JSON.stringify(next, null, 2) + '\n');
-          await rename(tmp, profilePath);
+          //
+          // Beside the REAL file, and with its mode. rename() replaces whatever
+          // sits at the path, so a symlinked profile became a detached copy
+          // holding the confirmation while the file it named still said
+          // "auto", and a fresh file takes the umask, so a 0600 profile came
+          // back 0664. Created 0600 and widened to the original, never the
+          // other way round. A temporary file that did not become the profile
+          // is removed, not left beside it.
+          const real = await realpath(profilePath);
+          const { mode } = await stat(real);
+          const tmp = `${real}.${process.pid}.tmp`;
+          try {
+            await writeFile(tmp, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+            await chmod(tmp, mode & 0o7777);
+            await rename(tmp, real);
+          } catch (e) {
+            await rm(tmp, { force: true }).catch(() => {});
+            throw e;
+          }
           profile.bind = next.bind;
         });
         confirming = done.catch(() => {});
