@@ -2870,7 +2870,8 @@ test('the other-car check reports misses by name, and does not call absolutes fi
   const { dom, calls } = await runApp({ server });
   const report = {
     car: 'other', name: 'Some Other Car',
-    surfaces: [{ from: 'surfaces.wing', status: 'absent' }, { from: 'surfaces.rims', status: 'unbound' }],
+    surfaces: [{ from: 'surfaces.wing', status: 'absent' }, { from: 'surfaces.rims', status: 'unbound',
+      why: 'nobody has bound <b>rims</b> on this car yet; see --explain --all, or the Bindings panel' }],
     regions: [
       { id: 'flank', from: 'surfaces.body', kind: 'tags', status: 'matched', panels: ['a', 'b'] },
       { id: 'nose-badge', from: 'surfaces.body', kind: 'panel', status: 'missing',
@@ -2896,7 +2897,10 @@ test('the other-car check reports misses by name, and does not call absolutes fi
   assert.match(shown, /nose-badge/, 'a miss is named, because the next action is to go and fix that one');
   assert.match(shown, /no panel called/);
   assert.match(shown, /surfaces\.wing — this car has no such surface/, 'and a surface the car lacks is worth seeing too');
-  assert.match(shown, /surfaces\.rims — not bound on this car yet/, 'told apart from one nobody has bound');
+  // With the report's own why, which is where it says what to do about it —
+  // and escaped, like every other string the report carries.
+  assert.match(shown, /surfaces\.rims — nothing would be painted there: nobody has bound &lt;b&gt;rims&lt;\/b&gt; on this car yet; see --explain --all/,
+    'told apart from one the car lacks, and saying what to do');
 
   // The one that would be easiest to get wrong: an absolute placement always
   // resolves, which is exactly why it is the most likely to be quietly wrong on

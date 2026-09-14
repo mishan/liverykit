@@ -247,8 +247,11 @@ async function checkAgainst(car) {
     ...invalid.map((s) => `<div class="note">! ${esc(s.from)}: ${esc(s.why)}</div>`),
     ...absent.map((s) => `<div class="note">${esc(s.from)} — this car has no such surface</div>`),
     // Apart from the above, because the next action differs: nothing is wrong
-    // with the design or the car, somebody just has to bind the term.
-    ...unbound.map((s) => `<div class="note">${esc(s.from)} — not bound on this car yet, so nothing would be painted there</div>`),
+    // with the design or the car, somebody just has to bind the term. The
+    // report's `why` says how; a fixed string in its place meant its pointer
+    // at --explain --all and the Bindings panel never reached anyone.
+    ...unbound.map((s) => `<div class="note">${esc(s.from)} — nothing would be painted there: ` +
+      `${esc(s.why ?? 'it is not bound on this car yet')}</div>`),
     // Neither a failure nor a pass. An absolute rectangle resolves on every car,
     // which is exactly why it is the placement most likely to be quietly wrong
     // on the next one; calling it fine would be the reassuring silence this
