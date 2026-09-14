@@ -507,6 +507,28 @@ export function panelsWithTags(profile, role, tags, { limit = Infinity } = {}) {
  * Counted by distinct rectangle, the way the selection itself counts, so four
  * wheels on one rim are one panel here as they are there.
  */
+/**
+ * A tag selection's miss, in words a person can act on.
+ *
+ * The sweep reads `nearMiss` to know whether `mid` or `visible` emptied a
+ * selection, and the person who hits the same miss on a car of their own
+ * deserves the same answer rather than a bare "no panel tagged [...]": the fix
+ * for a missing `mid` and the fix for a missing `left` are different fixes. The
+ * texture's own tags follow, because a selection naming a tag that exists
+ * nowhere here — `body`, written by someone guessing at the vocabulary — is
+ * best answered by the list of what does.
+ */
+export function missExplanation(profile, role, tags) {
+  const known = [...new Set(Object.values(profile.panels?.[role] ?? {}).flatMap((p) => p.tags ?? []))].sort();
+  if (!known.length) return 'No panel on this texture has tags.';
+  const near = nearMiss(profile, role, tags);
+  const counts = tags.map((t) => `${t} ${near.each[t]}`).join(', ');
+  const closest = near.blocking
+    ? `Dropping \`${near.blocking}\` would match ${near.without[near.blocking]} (${counts}).`
+    : `No single tag empties it (${counts}).`;
+  return `${closest} Tags on this texture: ${known.join(', ')}`;
+}
+
 export function nearMiss(profile, role, tags) {
   const count = (ts) => panelsWithTags(profile, role, ts).length;
   const each = Object.fromEntries(tags.map((t) => [t, count([t])]));
@@ -608,20 +630,39 @@ export function expandRegions(profile, role, regions = []) {
     }
     if (region.tags === undefined) { out.push(region); continue; }
 
+    if (region.optional !== undefined && typeof region.optional !== 'boolean') {
+      throw new Error(
+        `"${region.treatment ?? 'region'}" on role "${role}" has optional: ` +
+        `${JSON.stringify(region.optional)}. It must be true or false.`
+      );
+    }
     const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
-      // With the tags this texture DOES have. "no panel tagged [left, body]"
-      // says what went wrong and nothing about what to write instead, and the
-      // one reading it — a person or an agent — was guessing at the vocabulary
-      // in the first place, or it would not have written `body`.
-      const known = [...new Set(Object.values(profile.panels?.[role] ?? {})
-        .flatMap((p) => p.tags ?? []))].sort();
+      // A miss the design said to expect. The portable example's
+      // `[shared, visible]` rule exists for cars whose flanks are instanced and
+      // finds nothing on the 16 of 26 that are not; reporting that as a skip
+      // on every one of them buried the misses that mean something. The note
+      // is still made, under its own status, so the portability report can
+      // list it as expected; the build does not print it.
+      if (region.optional) {
+        notes.push({
+          status: 'optional',
+          id: region.id ?? region.__key,
+          text: `${role}: "${region.treatment ?? 'region'}" found no panel tagged ` +
+                `[${region.tags.join(', ')}], which its design marks as optional`,
+        });
+        continue;
+      }
+      // With the near miss and the tags this texture DOES have. "no panel
+      // tagged [left, body]" says what went wrong and nothing about what to
+      // write instead, and the one reading it — a person or an agent — was
+      // guessing at the vocabulary in the first place, or it would not have
+      // written `body`.
       notes.push({
         status: 'no-match',
         id: region.id ?? region.__key,
         text: `${role}: no panel tagged [${region.tags.join(', ')}] — ` +
-              `"${region.treatment ?? 'region'}" was skipped. ` +
-              (known.length ? `Tags on this texture: ${known.join(', ')}` : 'No panel on this texture has tags.'),
+              `"${region.treatment ?? 'region'}" was skipped. ${missExplanation(profile, role, region.tags)}`,
       });
       continue;
     }

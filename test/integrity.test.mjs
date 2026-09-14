@@ -2057,9 +2057,12 @@ test('the editor can say what a design would find on another car', async () => {
     const report = await (await ask({ car: other })).json();
     assert.equal(report.car, other);
     for (const r of report.regions) {
-      assert.ok(['matched', 'missing', 'absolute'].includes(r.status), `odd status ${r.status}`);
+      // `optional` is a tag selection the design allows to find nothing — the
+      // portable example's [shared, visible] rule on a car with no instanced
+      // flanks — listed so the report is the whole story, not as a miss.
+      assert.ok(['matched', 'missing', 'absolute', 'optional'].includes(r.status), `odd status ${r.status}`);
       assert.ok(r.id, 'every region is named, because the point is to go and fix one');
-      if (r.status === 'missing') assert.ok(r.why, 'and a miss says why, or it is not actionable');
+      if (r.status === 'missing' || r.status === 'optional') assert.ok(r.why, 'and a miss says why, or it is not actionable');
     }
 
     // Everything below sends a design built HERE, addressing a texture role
@@ -2327,4 +2330,48 @@ test('the editor puts the driver behind the wheel on a car that faces -Z', async
   assert.ok(plusZ && minusZ, 'both models have a steering wheel');
   assert.ok(plusZ.z < 0.4, `+Z forward: the eye sits behind the wheel, got ${plusZ.z}`);
   assert.ok(minusZ.z > 0.4, `-Z forward: it sits the other side, got ${minusZ.z}`);
+});
+
+test('a tag selection that misses says which tag emptied it', async () => {
+  // The sweep knows whether `mid` or `visible` emptied a selection; the person
+  // hitting the same miss on their own car used to get only "no panel tagged",
+  // and the fix for a missing side and a missing level are different fixes.
+  const { expandRegions } = await import('../src/profile.mjs');
+  const { portability } = await import('../src/portability.mjs');
+  const p = tagCar({ left: '+X', front: '+Z' }, {
+    a: { rect: [0.0, 0, 0.2, 0.2], tags: ['left', 'mid'] },
+    b: { rect: [0.3, 0, 0.2, 0.2], tags: ['left'] },
+    c: { rect: [0.6, 0, 0.2, 0.2], tags: ['right', 'visible'] },
+  });
+  const { notes } = expandRegions(p, 'body', [{ treatment: 'fill', tags: ['left', 'visible'] }]);
+  assert.match(notes[0].text, /no panel tagged \[left, visible\]/);
+  assert.match(notes[0].text, /Dropping `visible` would match 2 \(left 2, visible 1\)\./);
+  assert.match(notes[0].text, /Tags on this texture: left, mid, right, visible/);
+  // And the portability report gives the same answer before anyone builds.
+  p.bind = { body: { roles: ['body'], source: 'human' } };
+  const r = portability({ name: 'd', surfaces: { body: { regions: [{ id: 'x', treatment: 'fill', tags: ['left', 'visible'] }] } } }, p);
+  assert.equal(r.regions[0].status, 'missing');
+  assert.match(r.regions[0].why, /Dropping `visible` would match 2/);
+});
+
+test('a region marked optional may find nothing without being reported as a skip', async () => {
+  // The portable example's [shared, visible] rule is for cars whose flanks are
+  // instanced, and finds nothing on the 16 of 26 that are not. The design says
+  // so in the file, and the build takes it at its word; the portability report
+  // still lists it, because that is where a person sees all a design does.
+  const { expandRegions } = await import('../src/profile.mjs');
+  const { portability } = await import('../src/portability.mjs');
+  const { isMissingNote } = await import('../src/build.mjs');
+  const p = tagCar({ left: '+X', front: '+Z' }, { a: { rect: [0, 0, 0.5, 0.5], tags: ['left', 'visible'] } });
+  const region = { id: 'twin', treatment: 'fill', tags: ['shared', 'visible'], optional: true };
+  const { regions, notes } = expandRegions(p, 'body', [region]);
+  assert.equal(regions.length, 0);
+  assert.equal(notes[0].status, 'optional');
+  assert.equal(isMissingNote(notes[0]), false, 'the design said this may miss');
+  p.bind = { body: { roles: ['body'], source: 'human' } };
+  const r = portability({ name: 'd', surfaces: { body: { regions: [region] } } }, p);
+  assert.equal(r.regions[0].status, 'optional', 'listed as what the design does here, not as a miss');
+  assert.throws(() => expandRegions(p, 'body', [{ ...region, optional: 'yes' }]), /optional: "yes"\. It must be true or false/);
+  // Matching is unchanged: an optional region that finds a panel lands on it.
+  assert.equal(expandRegions(p, 'body', [{ ...region, tags: ['left'] }]).regions.length, 1);
 });
