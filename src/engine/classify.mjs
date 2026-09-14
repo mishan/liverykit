@@ -52,8 +52,16 @@ import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';
 
-/** Terms whose scoring has been measured against the fleet. */
+/** Terms whose proposals --explain does not call a hint. See MEASURED. */
 export const VALIDATED = new Set(['body']);
+
+/**
+ * Terms whose scoring has a figure on a held-out filename label, recorded in
+ * docs/naming.md and the portability plan. Only VALIDATED ones are trusted as
+ * such; the rest are hints, but measured ones. Calling them unmeasured, as
+ * --explain and the Bindings panel did, told a person nobody had looked.
+ */
+export const MEASURED = new Set(['body', 'tyres', 'brakes', 'rims', 'interior']);
 
 const r3 = (n) => Math.round(n * 1000) / 1000;
 
@@ -601,7 +609,9 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
 
   lines.push(`${term} — ${spec.describes}`);
   if (!VALIDATED.has(term)) {
-    lines.push('  ! This term\'s scoring has NOT been measured against the fleet. Treat it as a hint.');
+    lines.push(MEASURED.has(term)
+      ? '  ! This term\'s scoring was measured on held-out labels (docs/naming.md) but is not validated. Treat it as a hint.'
+      : '  ! This term\'s scoring has NOT been measured against the fleet. Treat it as a hint.');
   }
   // Said before anything else, because without it the term has no candidates
   // at all, and "no candidate" would otherwise read as "no cabin" or "no rims".

@@ -133,6 +133,17 @@ test('rims discount a face drawn fewer than four times, and the interior leaves 
   assert.equal(rank([{ ...arch, wheelIslands: 1 }, cabin], 'interior')[0].file, 'arch.dds');
 });
 
+test('--explain calls a measured scorer measured, and says it is not validated', () => {
+  // The rims and the interior were measured, at 225 of 246 and 124 of 168,
+  // and --explain said they had NOT been, which told a person nobody had
+  // looked rather than that they fall short of the body's bar.
+  const f = { role: 'rim', file: 'rim.dds', area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 8, sidewalls: 0, instances: 4, blur: false };
+  const text = explain([f], 'rims');
+  assert.match(text, /measured on held-out labels \(docs\/naming\.md\) but is not validated/);
+  assert.doesNotMatch(text, /NOT been measured/);
+  assert.doesNotMatch(explain([f], 'body'), /Treat it as a hint/, 'and the body is not a hint at all');
+});
+
 test('the wheel and cockpit evidence is counted from the profile\'s panels', () => {
   // What the rims and interior scorers read. Four wheels drawn from one rim
   // face are four islands on one rectangle, so `instances` is the largest
