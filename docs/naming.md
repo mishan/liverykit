@@ -142,8 +142,9 @@ centroid sits above or below its own centre for reasons that have nothing to do
 with where it is on the car. "In the top half of the car" is a fact a design can
 use.
 
-Tags are computed from what a profile already stores — `centroid3d`, `visible`,
-`visibleFromCockpit`, `mirrorOf` — rather than from the model. That means an
+Tags are computed from what a profile already stores — `centroid3d`,
+`extent3d`, `visible`, `visibleFromCockpit`, `mirrorOf` — rather than from the
+model. That means an
 existing hand-tuned profile can be tagged without regenerating it and losing its
 aliases and renames, and there is one implementation rather than one for
 generation and another for migration.
