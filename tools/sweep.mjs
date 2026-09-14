@@ -215,6 +215,7 @@ function sweepOne(profile) {
       // body bound to sheets nothing is mapped onto. Counting only the first
       // said 10 for a body whose other texture carries 44.
       panels: roles.reduce((s, role) => s + Object.keys(profile.panels?.[role] ?? {}).length, 0),
+      ...(profile.textures?.[roles[0]]?.uvLayout ? { uvLayout: profile.textures[roles[0]].uvLayout } : {}),
     };
   }
 

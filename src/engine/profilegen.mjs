@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
+import { uvLayout } from './uvlayout.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
@@ -434,6 +435,18 @@ export async function profileFromKn5(path, {
     const meshes = meshesUsingTexture(model, texName);
     if (!meshes.length) { panels[role] = {}; continue; }
 
+    // Before the islands, because on a tiled material they mostly do not
+    // survive the filter below, and a sheet with no panels says nothing about
+    // why it has none. See uvlayout.mjs. Textures under minCoverage never get
+    // here, so for them the field is absent: not measured, not "unwrapped".
+    const layout = uvLayout(model, meshes);
+    if (layout && textures[role]) {
+      textures[role].uvLayout = layout.layout;
+      textures[role].uvInside = layout.inside;
+      // Only when it is not where it belongs, so its presence is the finding.
+      if (layout.tile[0] || layout.tile[1]) textures[role].uvTile = layout.tile;
+    }
+
     const islands = findIslands(model, meshes, { minVertices });
     const total = islands.reduce((s, i) => s + i.uvArea, 0) || 1;
     const keep = islands.filter((i) => i.uvArea / total >= minPanelArea);
@@ -559,6 +572,36 @@ export async function profileFromKn5(path, {
   if (!visibility) {
     log('  ! bindings were proposed without visibility, which is the signal that separates');
     log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
+  }
+
+  // Said once per car, because finding it out used to take an afternoon: a
+  // profile that loads, lists sixty textures and offers two panels looks like a
+  // bug in the profiler, not like a car painted with a seamless material.
+  const measured = Object.values(textures).filter((t) => t.uvLayout);
+  const tiled = measured.filter((t) => t.uvLayout === 'tiled');
+  // An unwrap shifted by whole sheets renders correctly in the game and loses
+  // its islands here: findIslands clamps each rectangle into [0, 1], an island
+  // lying wholly on another copy of the sheet clamps to nothing, and it is
+  // dropped as collapsed. The Avensis lost all 13,562 vertices of its body that
+  // way and profiled to three panels with no word about why. Until the islands
+  // are measured on their own copy of the sheet, the least this can do is say so.
+  const shifted = measured.filter((t) => t.uvTile && t.uvLayout !== 'tiled');
+  if (shifted.length) {
+    log(`  ! ${shifted.length} texture(s) are unwraps shifted off the sheet by whole copies of it ` +
+        `(${shifted.slice(0, 3).map((t) => `${t.file} at [${t.uvTile.join(', ')}]`).join(', ')}` +
+        `${shifted.length > 3 ? ', …' : ''}).`);
+    log('    The game draws them correctly; their islands are not measured yet, so they have few or no panels.');
+  }
+  if (tiled.length) {
+    log(`  ${tiled.length} of ${measured.length} paintable textures are tiled materials; nothing on them can be placed.`);
+    // The texture a livery would live on, if this car has one: the largest that
+    // spans the car. When that one tiles, the car as a whole cannot wear a
+    // design placed on a sheet, which is the thing worth saying in words.
+    const spanning = features.filter((f) => f.straddles).sort((a, b) => b.area - a.area)[0];
+    if (spanning && textures[spanning.role]?.uvLayout === 'tiled') {
+      log(`  ! ${spanning.file}, the largest texture spanning the car, is a tiled material. This car cannot`);
+      log('    wear artwork placed by panel, tag or rectangle; fills and even patterns still paint.');
+    }
   }
 
   // The car's own name for itself, when `--car-name` did not supply one.

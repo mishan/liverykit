@@ -829,12 +829,14 @@ test('the build report separates what was not painted from what merely warrants 
   const { isMissingNote } = await import('../src/build.mjs');
   const { resolveTargets } = await import('../src/profile.mjs');
 
-  for (const status of ['absent', 'unbound', 'unencodable', 'no-match']) {
+  for (const status of ['absent', 'unbound', 'unencodable', 'no-match', 'unplaceable']) {
     assert.equal(isMissingNote({ status }), true, status);
   }
   // `fit-stale` is the one that reads like a failure and isn't: the override was
   // refused, so the region stayed where the livery put it — painted, with a note.
-  for (const status of ['unconfirmed', 'unverified', 'fit-stale']) {
+  // `tiled` likewise: the surface was painted, and only its placed artwork, each
+  // piece with an `unplaceable` note of its own, was not.
+  for (const status of ['unconfirmed', 'unverified', 'fit-stale', 'tiled']) {
     assert.equal(isMissingNote({ status }), false, status);
   }
 

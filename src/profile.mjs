@@ -300,6 +300,16 @@ export function resolveTargets(profile, livery) {
         text: `${t.from} -> ${tex.file}: the car's own config hides every mesh wearing it, so this paints nothing the game shows`,
       });
     }
+    // Painted, with a caveat, rather than not painted: a flat colour or an even
+    // pattern on a tiled material is a perfectly good livery. What cannot land
+    // is anything placed, and each such region is reported where it is skipped.
+    if (tex?.uvLayout === 'tiled') {
+      notes.push({
+        term: t.from, status: 'tiled',
+        text: `${t.from} -> ${tex.file} is a tiled material: fills and even patterns paint, ` +
+              'and anything placed by panel, tag or rectangle is skipped',
+      });
+    }
   }
 
   if (!targets.length) {
@@ -484,6 +494,30 @@ export function nearMiss(profile, role, tags) {
 }
 
 /**
+ * Why a region cannot be placed on this texture, or null if it can.
+ *
+ * On a tiled material the UVs repeat across the surface instead of mapping it
+ * once, so a panel, a tag selection or a rectangle names a piece of the image
+ * that lands everywhere the tile does. Painting it would look like the design
+ * worked and put the artwork somewhere nobody chose. A region with none of the
+ * three — a fill, an even pattern — covers the whole sheet and paints fine.
+ *
+ * One function, used by the expander and by the portability report, so the
+ * report cannot call a region placeable that the build then skips.
+ */
+export function placementRefusal(profile, role, region) {
+  const tex = profile.textures?.[role];
+  if (tex?.uvLayout !== 'tiled') return null;
+  const how = region.tags !== undefined ? `tags [${[].concat(region.tags).join(', ')}]`
+    : region.panel !== undefined ? `panel "${region.panel}"`
+    : region.at !== undefined ? 'a rectangle (`at`)'
+    : null;
+  if (!how) return null;
+  return `${tex.file} is a tiled material, its UVs repeating across the surface rather than ` +
+    `mapping it once, so ${how} would land everywhere the tile does`;
+}
+
+/**
  * Expand a livery's regions against one texture role.
  *
  * A region selecting by `tags` becomes one region per matching panel — the same
@@ -500,6 +534,15 @@ export function expandRegions(profile, role, regions = []) {
   const notes = [];
 
   for (const region of regions) {
+    const refused = placementRefusal(profile, role, region);
+    if (refused) {
+      notes.push({
+        status: 'unplaceable',
+        id: region.id ?? region.__key,
+        text: `${role}: "${region.treatment ?? 'region'}" was skipped — ${refused}.`,
+      });
+      continue;
+    }
     if (region.tags === undefined) { out.push(region); continue; }
 
     // An empty array would match EVERY panel, because `every` on an empty list
