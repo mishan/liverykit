@@ -41,7 +41,7 @@ import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } fro
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile } from '../profile.mjs';
-import { VOCABULARY, SCORABLE, VALIDATED } from '../engine/classify.mjs';
+import { VOCABULARY, SCORABLE, VALIDATED, MEASURED } from '../engine/classify.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
@@ -772,6 +772,7 @@ export function bindingsReport(profile) {
       describes: spec.describes,
       scored: SCORABLE.includes(term),
       validated: VALIDATED.has(term),
+      measured: MEASURED.has(term),
       status: b.status,
       source: b.source,
       confidence: b.confidence,

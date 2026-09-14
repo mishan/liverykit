@@ -74,15 +74,18 @@ function raw(at, { method = 'GET', path, headers = {}, body = '' }) {
 
 test('the one-pass bind block is the block the generator writes', async (t) => {
   // One function behind both, so that pasting the block --all prints is the
-  // same as regenerating. Checked on every car in the fleet fixture against the
-  // per-term proposals it replaced.
+  // same as regenerating. Checked on every car in the fleet fixture against
+  // per-term proposals, each made from the roles the terms before it left.
   const doc = JSON.parse(gunzipSync(await readFile(join(ROOT, 'test/fixtures/fleet-features.json.gz'))).toString('utf8'));
   for (const car of doc.cars) {
     const features = featuresFromRecord(car, { shaderNames: doc.shaders });
     const want = {};
+    const taken = new Map();
     for (const term of SCORABLE) {
-      const p = propose(features, term);
-      if (p) want[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
+      const p = propose(features, term, { taken });
+      if (!p) continue;
+      want[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
+      for (const r of p.roles) taken.set(r, term);
     }
     assert.deepEqual(proposeAll(features), want, car.id);
   }

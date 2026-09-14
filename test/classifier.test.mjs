@@ -29,7 +29,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank, explain, propose, featuresFromRecord } from '../src/engine/classify.mjs';
+import { rank, explain, propose, proposeAll, proposalNotes, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
+import { parseKn5Buffer } from '../src/engine/kn5.mjs';
+import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
@@ -49,6 +51,128 @@ async function fleet() {
     features: featuresFromRecord(car, { shaderNames: doc.shaders }),
   }));
 }
+
+// Held-out labels for the two scorers measured in step 5, copied from
+// tools/evaluate.mjs as the body's are. Right is the top pick landing on a
+// labelled texture: a rim face and its blur twin are both rightly "the rims".
+const PICK_LABELS = {
+  rims: { looks: /rim|wheel|cerchi|felg/i, not: /_nm|normal|_map|glow|_ao|steer|logo|tyre|tire|bolt|nut|disc|brake|cal|lod|detail/i },
+  interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
+};
+
+// Measured on 2026-09-13 at rims 225/246 and interior 124/168; 228 and 125
+// once a rim was bound with its blur twin and a role left to one term. The
+// floors sit a
+// few points under, so a change that costs the fleet a handful of cars fails
+// here rather than surfacing months later as unpainted wheels.
+test('rims and interior land on a labelled texture on most of the fleet', async () => {
+  const cars = await fleet();
+  for (const [term, floor, least] of [['rims', 0.9, 230], ['interior', 0.7, 160]]) {
+    const { looks, not } = PICK_LABELS[term];
+    let n = 0, right = 0;
+    for (const car of cars) {
+      const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
+      if (!labels.length) continue;
+      n++;
+      const p = proposeAll(car.features)[term];
+      if (p && p.roles.some((r) => labels.includes(car.features.find((f) => f.role === r).file))) right++;
+    }
+    assert.ok(n >= least, `${term}: only ${n} labelled cars; the fixture may have lost its wheel or cockpit evidence`);
+    assert.ok(right / n >= floor, `${term}: ${right}/${n} = ${(right / n).toFixed(3)}, below ${floor}`);
+  }
+
+  // What the figure cannot see: a binding holding a texture a label calls
+  // another term's. The interior held the body skin on three open-wheelers
+  // before a role was left to one term; the one left is civic_body_in.dds,
+  // the Civic's cabin sheet, which only the body label calls a body.
+  const other = {
+    body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
+    tyres: (f) => /tyre|tire|tread/i.test(f.file) && !/_nm|normal|_map|blur|glow|_ao|rim/i.test(f.file),
+    brakes: (f) => /disc|disk|rotor/i.test(f.file) && !/_nm|normal|_map|blur|glow|cal/i.test(f.file),
+    ...Object.fromEntries(Object.entries(PICK_LABELS).map(([t, l]) => [t, (f) => l.looks.test(f.file) && !l.not.test(f.file)])),
+  };
+  const over = [];
+  for (const car of cars) {
+    for (const term of ['rims', 'interior']) {
+      for (const r of proposeAll(car.features)[term]?.roles ?? []) {
+        const f = car.features.find((x) => x.role === r);
+        const as = Object.keys(other).filter((t) => other[t](f));
+        if (as.length && !as.includes(term)) over.push(`${car.id}: ${term} bound ${f.file}, labelled ${as.join(', ')}`);
+      }
+    }
+  }
+  assert.deepEqual(over, ['btcc_honda_civic: interior bound civic_body_in.dds, labelled body']);
+});
+
+test('the rims and interior scorers leave out what their evidence rules out', () => {
+  const f = (o) => ({ role: o.file, area: 0.05, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, ...o });
+  const rim = f({ file: 'rim.dds', wheelIslands: 8, instances: 4 });
+  const tyre = f({ file: 'tyre.dds', wheelIslands: 8, instances: 4, shaders: ['ksTyres'], area: 0.2 });
+  const bodyNearWheel = f({ file: 'body.dds', wheelIslands: 2, area: 0.4, visible: 0.8, cockpit: 0.1 });
+  const cabin = f({ file: 'cabin.dds', area: 0.15, visible: 0.03, cockpit: 0.25 });
+  assert.deepEqual(rank([rim, tyre, bodyNearWheel], 'rims').map((x) => x.file), ['rim.dds'],
+    'a tyre has its own shader and a body is mostly not at a wheel');
+  assert.equal(rank([cabin, bodyNearWheel], 'interior')[0].file, 'cabin.dds', 'seen from the seat, not the track');
+  // No cockpit measurement, no interior: a zero is not "unseen from the seat".
+  assert.deepEqual(rank([{ ...cabin, cockpit: undefined }], 'interior'), []);
+  assert.match(explain([{ ...cabin, cockpit: undefined }], 'interior'), /Cockpit visibility was not measured/);
+  assert.match(explain([rim], 'rims'), /whl  inst/);
+});
+
+test('rims discount a face drawn fewer than four times, and the interior leaves out a sheet a fifth at the wheels', () => {
+  // Neither rule had a test that failed with it removed.
+  const f = (o) => ({ role: o.file, area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 8, sidewalls: 0, instances: 4, blur: false, ...o });
+  // A sheet per axle is kept, at 0.3, so a larger face drawn twice still
+  // ranks below one drawn four times.
+  const four = f({ file: 'rim.dds' });
+  const two = f({ file: 'rim_front.dds', area: 0.05, instances: 2 });
+  assert.deepEqual(rank([two, four], 'rims').map((x) => x.file), ['rim.dds', 'rim_front.dds']);
+  // A fifth of a texture's islands at a wheel rules it out of the interior,
+  // however much of it the seat sees; a tenth does not.
+  const cabin = f({ file: 'cabin.dds', wheelIslands: 0, cockpit: 0.25, visible: 0.05 });
+  const arch = f({ file: 'arch.dds', area: 0.3, islands: 10, wheelIslands: 2, cockpit: 0.3, visible: 0.1 });
+  assert.deepEqual(rank([arch, cabin], 'interior').map((x) => x.file), ['cabin.dds']);
+  assert.equal(rank([{ ...arch, wheelIslands: 1 }, cabin], 'interior')[0].file, 'arch.dds');
+});
+
+test('--explain calls a measured scorer measured, and says it is not validated', () => {
+  // The rims and the interior were measured, at 225 of 246 and 124 of 168,
+  // and --explain said they had NOT been, which told a person nobody had
+  // looked rather than that they fall short of the body's bar.
+  const f = { role: 'rim', file: 'rim.dds', area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 8, sidewalls: 0, instances: 4, blur: false };
+  const text = explain([f], 'rims');
+  assert.match(text, /measured on held-out labels \(docs\/naming\.md\) but is not validated/);
+  assert.doesNotMatch(text, /NOT been measured/);
+  assert.doesNotMatch(explain([f], 'body'), /Treat it as a hint/, 'and the body is not a hint at all');
+});
+
+test('the wheel and cockpit evidence is counted from the profile\'s panels', () => {
+  // What the rims and interior scorers read. Four wheels drawn from one rim
+  // face are four islands on one rectangle, so `instances` is the largest
+  // group of panels sharing a rect, not a count of panels.
+  const model = parseKn5Buffer(carKn5());
+  const shared = [0.1, 0.1, 0.2, 0.2];
+  const panels = {
+    body: {
+      a: { rect: shared, wheel: { part: 'sidewall' }, visibleFromCockpit: 0.4 },
+      b: { rect: shared, wheel: { part: 'tread' }, visibleFromCockpit: 0.2 },
+      c: { rect: shared, wheel: { part: 'sidewall' } },
+      d: { rect: [0.6, 0.6, 0.1, 0.1] },
+    },
+  };
+  const [f] = textureFeatures(model, { roles: { body: 'body.dds' }, panels });
+  assert.deepEqual([f.islands, f.wheelIslands, f.sidewalls, f.instances], [4, 3, 2, 3]);
+  assert.equal(f.cockpit, 0.3, 'the mean over the panels that measured it');
+
+  // Nothing measured from the cockpit says nothing, rather than a zero that
+  // would read as "unseen from the seat".
+  const [bare] = textureFeatures(model, { roles: { body: 'body.dds' }, panels: { body: { d: { rect: [0, 0, 1, 1] } } } });
+  assert.equal(bare.cockpit, undefined);
+  assert.deepEqual([bare.wheelIslands, bare.instances], [0, 1]);
+  // And without a profile, no island evidence at all, as before.
+  const [none] = textureFeatures(model, { roles: { body: 'body.dds' } });
+  assert.equal(none.wheelIslands, undefined);
+});
 
 function labelled(cars) {
   const out = [];
@@ -194,7 +318,8 @@ test('--explain names what the tyres bind, and the swatch it left out and why', 
   const white = f('white', 0.035, ['ksTyres', 'ksPerPixel']);
   const tread = f('tread', 0.03, ['ksTyres']);
   assert.deepEqual(propose([white, tread], 'tyres').roles, ['tread']);
-  const text = explain([white, tread], 'tyres');
+  // With a body on the car, which would otherwise be the one to take the white.
+  const text = explain([f('skin', 0.5, ['ksPerPixel']), white, tread], 'tyres');
   assert.match(text, /proposal: tread  \(confidence 1: every texture only ksTyres draws\)/);
   assert.doesNotMatch(text, /proposal: white/);
   assert.match(text, /left out: white \(white\.dds\) — ksPerPixel draws it too/);
@@ -254,7 +379,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
       const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
       if (!labels.length) continue;
       n++;
-      const bound = new Set((propose(car.features, term)?.roles ?? [])
+      const bound = new Set((proposeAll(car.features)[term]?.roles ?? [])
         .map((r) => car.features.find((f) => f.role === r).file));
       if (labels.every((l) => bound.has(l))) right++;
     }
@@ -277,7 +402,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
   const over = [];
   for (const car of cars) {
     for (const term of ['tyres', 'brakes']) {
-      for (const r of propose(car.features, term)?.roles ?? []) {
+      for (const r of proposeAll(car.features)[term]?.roles ?? []) {
         const f = car.features.find((x) => x.role === r);
         const as = Object.keys(is).filter((t) => is[t](f));
         if (as.length && !as.includes(term)) over.push(`${car.id}: ${term} bound ${f.file}, labelled ${as.join(', ')}`);
@@ -285,4 +410,166 @@ test('tyres and brakes bind every texture their names say they are, across the f
     }
   }
   assert.deepEqual(over, ['jtc_honda_civic_eg_gra: tyres bound disk_d_1.dds, labelled brakes']);
+});
+
+test('a role one term binds is not a candidate for a later one', () => {
+  // An open cockpit sees a lot of the body, and the body is large, so on
+  // three open-wheelers the interior claimed the body's skin as well, and a
+  // design painting both threw at build time: both would write one file. And
+  // rt_bacmono's wheel sheet, drawn by its tyre and its disc materials, was
+  // both its tyres and its brakes.
+  const f = (o) => ({ role: o.file.replace('.dds', ''), area: 0.05, box: [0, 1, 0, 1, 0, 1], straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, ...o });
+  const skin = f({ file: 'skin.dds', area: 0.5, visible: 0.7, cockpit: 0.3, shaders: ['ksPerPixelMultiMap_damage_dirt'] });
+  const cabin = f({ file: 'cabin.dds', visible: 0.1, cockpit: 0.5 });
+  const wheel = f({ file: 'wheel.dds', shaders: ['ksTyres', 'ksBrakeDisc'], islands: 0 });
+  const disc = f({ file: 'disc.dds', area: 0.01, shaders: ['ksBrakeDisc', 'ksPerPixel'], islands: 0 });
+  const all = [skin, cabin, wheel, disc];
+  assert.equal(propose(all, 'interior').role, 'skin', 'on its own evidence the interior takes the skin');
+  assert.equal(propose(all, 'brakes').role, 'wheel', 'and the brakes the wheel sheet');
+
+  const bind = proposeAll(all);
+  assert.deepEqual(Object.fromEntries(Object.entries(bind).map(([t, b]) => [t, b.roles])),
+    { body: ['skin'], tyres: ['wheel'], brakes: ['disc'], interior: ['cabin'] });
+  assert.equal(bind.interior.confidence, 1, 'the margin is over what is left, and nothing is');
+  const text = explain(all, 'interior');
+  assert.match(text, /taken: skin \(skin\.dds\) is bound to body/);
+  assert.match(text, /proposal: cabin  /);
+});
+
+test('no role is bound to two terms anywhere in the fleet', async () => {
+  for (const car of await fleet()) {
+    const held = new Map();
+    for (const [term, b] of Object.entries(proposeAll(car.features))) {
+      for (const r of b.roles) {
+        assert.ok(!held.has(r), `${car.id}: ${r} is bound to both ${held.get(r)} and ${term}`);
+        held.set(r, term);
+      }
+    }
+  }
+});
+
+test('rims say the wheels were not measured, rather than that the car has none', async () => {
+  // A model with no WHEEL_xx node gets no island marked as a wheel part, and
+  // counting those gave every texture zero wheel islands: the measurement
+  // the rims are scored on, read as having been taken and found nothing.
+  const panels = { rim: { a: { rect: [0.1, 0.1, 0.8, 0.8] } } };
+  const [unmeasured] = textureFeatures(parseKn5Buffer(buildKn5()), { roles: { rim: 'body.dds' }, panels });
+  assert.equal(unmeasured.wheelIslands, undefined, 'not a count of zero');
+  const text = explain([unmeasured], 'rims');
+  assert.match(text, /Wheel positions were not measured/);
+  assert.doesNotMatch(text, /may genuinely lack/);
+  // The synthetic car has its wheels, so there none at a wheel is a zero.
+  const [measured] = textureFeatures(parseKn5Buffer(carKn5()), { roles: { rim: 'body.dds' }, panels });
+  assert.equal(measured.wheelIslands, 0);
+  assert.match(explain([measured], 'rims'), /may genuinely lack/);
+
+  // And the generator says so as it proposes, not only --explain.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const N = 8, verts = [], indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) verts.push(vert(i / N - 0.5, 0.5, j / N - 0.5, 0.05 + 0.9 * i / N, 0.05 + 0.9 * j / N));
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-nowheels-'));
+  try {
+    await writeFile(join(dir, 'car.kn5'), buildKn5({ bodyMesh: { name: 'PANEL', verts, indices } }));
+    const said = [];
+    const profile = await profileFromKn5(join(dir, 'car.kn5'), { id: 'c', visibility: false, log: (l) => said.push(l) });
+    assert.ok(Object.keys(Object.values(profile.panels)[0]).length, 'the panel is measured');
+    assert.equal(profile.bind.rims, undefined);
+    assert.ok(said.some((l) => /rims were not proposed/.test(l) && /wheel/i.test(l)), said.join('\n'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a texture the cockpit pass did not measure is left out of the interior by name', () => {
+  // Excluded by a stated reason, and not by NaN: area times an undefined
+  // cockpit is NaN, and a ranking that drops NaN would drop it just the same
+  // with the rule gone, which is how the rule came to have no test.
+  const f = (o) => ({ role: o.file, area: 0.05, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, visible: 0.1, ...o });
+  const cabin = f({ file: 'cabin.dds', cockpit: 0.3 });
+  const tub = f({ file: 'tub.dds', area: 0.3 });
+  assert.deepEqual(rank([cabin, tub], 'interior').map((x) => x.file), ['cabin.dds']);
+  assert.match(explain([cabin, tub], 'interior'), /not a candidate: tub\.dds — cockpit visibility was not measured/);
+});
+
+test('a rim and the motion-blur rim it is swapped with are bound together', () => {
+  // AC swaps each wheel's rim for a blurred copy at speed. Binding only the
+  // top pick bound the blur rim alone on 33 fleet cars, the Abarth's
+  // Rim500_BLUR.dds among them, so the wheel wore the stock rim standing
+  // still and the livery only at speed.
+  const f = (o) => ({ role: o.file.replace(/\.\w+$/, ''), area: 0.03, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 16, wheelIslands: 16, sidewalls: 8, instances: 4, blur: false, ...o });
+  const rim = f({ file: 'rim.dds', area: 0.029 });
+  const blur = f({ file: 'rim_blur.dds', blur: true, twins: ['RIM.dds'] });
+  const ao = f({ file: 'rim_ao.dds', area: 0.01 });
+  // A body for --explain, which proposes the terms before the rims first.
+  const skin = f({ file: 'skin.dds', area: 0.5, wheelIslands: 0 });
+  const p = propose([rim, blur, ao], 'rims');
+  assert.deepEqual(p.roles, ['rim_blur', 'rim'], 'the pick, then the rim it is swapped with');
+  assert.equal(p.confidence, 0.67, 'the margin is over the best left unbound, not over its own twin');
+  assert.deepEqual(propose([{ ...rim, area: 0.04 }, blur, ao], 'rims').roles, ['rim', 'rim_blur']);
+  assert.match(explain([skin, rim, blur, ao], 'rims'), /proposal: rim_blur, rim  \(a rim and the motion-blur rim it is swapped with/);
+  // The model names the twin, so an overlay beside a blur rim is not taken for it.
+  assert.deepEqual(propose([{ ...blur, twins: ['other.dds'] }, ao], 'rims').roles, ['rim_blur']);
+
+  // A survey record has no mesh names, so the filename says which is the blur
+  // rim, and it is paired with the best plain candidate.
+  const [recorded] = featuresFromRecord({ skinCount: 0, roles: { rims_2: {
+    file: 'Rim500_BLUR.dds', cover: 0.03, straddles: true, skins: 0, shaders: ['ksPerPixel'], box: null,
+    panels: 16, wheelIslands: 16, sidewalls: 8, instances: 4,
+  } } });
+  assert.deepEqual([recorded.blur, recorded.twins], [true, undefined]);
+  assert.deepEqual(propose([rim, { ...blur, twins: undefined }, ao], 'rims').roles, ['rim_blur', 'rim']);
+
+  // A twin that cannot be bound is said, not dropped: the NSX's blur rim has
+  // no islands.
+  const bare = { ...blur, islands: 0, wheelIslands: 0, instances: 0 };
+  const alone = propose([rim, bare, ao], 'rims');
+  assert.deepEqual(alone.roles, ['rim']);
+  const said = /rim_blur\.dds, the motion-blur twin of rim\.dds, is not bound: it has no islands/;
+  assert.match(alone.notes.join('\n'), said);
+  assert.match(explain([skin, rim, bare, ao], 'rims'), said);
+});
+
+test('the model says which rim a motion-blur rim is swapped with', () => {
+  // By the node above each, as AC swaps them: see blurTwins.
+  const tri = (name, materialId) => ({
+    name, materialId, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, 1.2, 0.1, 0.1), vert(0.8, 0.5, 1.2, 0.9, 0.1), vert(0.8, 0.5, 1.6, 0.9, 0.9)],
+  });
+  const model = parseKn5Buffer(carKn5({
+    wrapped: [
+      { name: 'RIM_LF', meshes: [tri('EXT_RIM_LF', 1)] },
+      { name: 'RIM_BLUR_LF', meshes: [tri('EXT_RIM_BLUR_LF', 2)] },
+    ],
+    materials: [{ name: 'BodyMat' }, { name: 'Rim', slots: { txDiffuse: 'rim.dds' } }, { name: 'RimBlur', slots: { txDiffuse: 'rim_blur.dds' } }],
+    extraTextures: [{ name: 'rim.dds' }, { name: 'rim_blur.dds' }],
+  }));
+  const by = Object.fromEntries(textureFeatures(model, { roles: { body: 'body.dds', rim: 'rim.dds', rimBlur: 'rim_blur.dds' } })
+    .map((x) => [x.role, x]));
+  assert.equal(by.rim.blur, false);
+  assert.equal(by.rimBlur.blur, true);
+  assert.deepEqual(by.rimBlur.twins, ['rim.dds']);
+});
+
+test('no blur rim is bound without the rim it is swapped with, across the fleet', async () => {
+  // Or, on the two cars where no plain rim is a candidate at all, without
+  // the generator saying so by name.
+  const unsaid = [];
+  for (const car of await fleet()) {
+    const bound = (proposeAll(car.features).rims?.roles ?? []).map((r) => car.features.find((f) => f.role === r));
+    if (!bound.some((f) => f.blur) || bound.some((f) => !f.blur)) continue;
+    const said = proposalNotes(car.features).some((n) => bound.some((f) => n.includes(f.file)));
+    if (!said) unsaid.push(`${car.id}: ${bound.map((f) => f.file).join(', ')}`);
+  }
+  assert.deepEqual(unsaid, []);
 });
