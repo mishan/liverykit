@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { parseKn5Buffer, vertex } from '../src/engine/kn5.mjs';
+import { safeWithin } from '../src/engine/visibility.mjs';
 import { resolveTargets, expandRegions } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
 import { fitment } from '../src/fitment.mjs';
@@ -155,6 +156,75 @@ test('an island is moved back onto the sheet only when it fits wholly on another
   assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
   assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
     'a mesh with nothing to move reads exactly as stored');
+});
+
+test('a readable area never reaches off its panel', () => {
+  // The two real cases: the 458 GT2's rear glass overhangs the sheet at the
+  // top, and the MX-5 Cup's belts left a degenerate area off it entirely. Both
+  // profiles were refused by validateProfile.
+  assert.deepEqual(safeWithin([0.6278, -0.0133, 0.2922, 0.239], [0.6278, 0, 0.2997, 0.2289]),
+    [0.6278, 0, 0.2922, 0.2257]);
+  assert.equal(safeWithin([-0.6216, 0.9981, 0, 0], [0, 0.7615, 1, 0.2366]), null);
+  // And the Morgan's steering wheel, 0.0003 off the sheet: inside the rounding
+  // slack of its panel, and still refused until it is clamped onto the sheet.
+  assert.deepEqual(safeWithin([-0.0003, 0.0005, 0.999, 0.9689], [0, 0.0005, 0.9987, 0.999]),
+    [0, 0.0005, 0.9987, 0.9689]);
+  // And an area already on its panel is returned as it came, so no profile
+  // whose islands sit on the sheet changes by a digit.
+  const inside = [0.1, 0.2, 0.3, 0.4];
+  assert.equal(safeWithin(inside, [0.1, 0.2, 0.30004, 0.4]), inside);
+  // Including one that only rounding puts past its panel's edge, which the
+  // Abarth's rims have: 0.3895 tall against a panel ending 0.0001 short of it.
+  const rounded = [0.1, 0.2, 0.3002, 0.4];
+  assert.equal(safeWithin(rounded, [0.1, 0.2, 0.3, 0.4]), rounded);
+});
+
+test('a panel with nothing readable on it is hidden, not readable all over', async () => {
+  // A missing `safe` means the whole panel may be painted, so a safe area that
+  // came back empty and was skipped said the opposite of what was measured.
+  // Empty is empty whether it lies off the panel or on it.
+  assert.equal(safeWithin([0.2, 0.5, 0, 0.1], [0, 0, 1, 1]), null, 'no width, on the panel');
+
+  // A lip beside the car, unwrapped across u = 0. The part on the sheet is
+  // folded under, facing the ground that no view comes from, so what can be
+  // seen of the lip is the part on top, and all of that lies left of u = 0:
+  // off the panel, which is the part of the island on the sheet. The MX-5
+  // Cup's belts, in miniature.
+  const N = 6;
+  const verts = [];
+  const indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      verts.push(vert(1.2 + i / N, 0.75, -0.3 + 0.6 * j / N, 0.4 - 0.9 * i / N, 0.2 + 0.4 * j / N,
+        i < N / 2 ? [0, -1, 0] : [0, 1, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [{ name: 'PLATE', verts, indices, materialId: 1 }],
+      materials: [{ name: 'BodyMat' }, { name: 'PlateMat', slots: { txDiffuse: 'plate.dds' } }],
+      extraTextures: [{ name: 'plate.dds' }],
+    }));
+    const lines = [];
+    const profile = await profileFromKn5(file, { id: 'c', visibility: true, log: (s) => lines.push(s) });
+    const role = Object.entries(profile.textures).find(([, t]) => t.file === 'plate.dds')[0];
+    const [[name, plate]] = Object.entries(profile.panels[role]);
+    assert.equal(plate.safe, undefined);
+    assert.equal(plate.hidden, true, `nothing readable is on it: ${JSON.stringify(plate)}`);
+    assert.equal(plate.visible, 0, 'and it is not tagged as a place to read');
+    assert.ok(!plate.tags?.includes('visible'), `tags ${plate.tags}`);
+    assert.match(lines.join('\n'), new RegExp(`- ${name}: .*no readable area of that lies on its panel — treated as hidden`));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('a car unwrapped one sheet down profiles exactly like the same car unshifted', async () => {

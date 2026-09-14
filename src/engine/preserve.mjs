@@ -51,6 +51,7 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   const report = {
     roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
     name: null, skinOnly: [], dangling: [], textureNotes: [], notesMoved: [], notesLost: [],
+    folded: [], respelled: [],
   };
   if (!prior) return report;
 
@@ -172,14 +173,26 @@ function preserveDisplayName(profile, prior, report) {
  */
 function preserveRoleNames(profile, prior, report) {
   if (!prior.textures) return;
-  const priorByFile = new Map();
-  for (const [role, t] of Object.entries(prior.textures)) {
-    if (t?.file) priorByFile.set(t.file.toLowerCase(), role);
-  }
+  // A prior from before a file had one role may give it two, and keyed by file
+  // the last of them won: the one role a regeneration makes for the 906's
+  // paint, `body` in the prior, was renamed `body_2`. The role whose spelling
+  // the model still uses keeps its name, else the first of them.
+  const byFile = priorRolesByFile(prior);
+  const priorFor = (file) => {
+    const roles = byFile.get(file.toLowerCase()) ?? [];
+    return roles.find((r) => prior.textures[r].file === file) ?? roles[0];
+  };
 
   const renames = [];
   for (const [role, t] of Object.entries(profile.textures ?? {})) {
-    const want = priorByFile.get((t?.file ?? '').toLowerCase());
+    const want = t?.file ? priorFor(t.file) : undefined;
+    // A spelling a person may have chosen, to match the car's skins, going back
+    // to the one the generator writes. Not kept, since which file the model
+    // and skins name is measurement; but said, where it used to go unnoticed,
+    // because on Linux the two spellings are two files.
+    if (want && prior.textures[want].file !== t.file) {
+      report.respelled.push({ role: want, was: prior.textures[want].file, now: t.file });
+    }
     if (!want || want === role || profile.textures[want]) continue;
     renames.push([role, want]);
   }
@@ -195,15 +208,51 @@ function preserveRoleNames(profile, prior, report) {
     report.roles.push({ from, to });
   }
 
+  // The other prior roles for such a file are that role now. A binding a
+  // person made to one of them follows its file here, where it used to be
+  // dropped as naming a role that no longer exists.
+  const folded = foldedRoles(profile, prior);
+  for (const [from, to] of folded) report.folded.push({ from, to, file: prior.textures[from].file });
+
   // One pass over the whole table with every rename known, rather than a pass
   // per rename: rewriting the same entry twice is how a two-step rename lands on
   // the wrong role, and the collision guard above only rules that out today.
-  const moved = new Map(renames);
+  const moved = new Map([...folded, ...renames]);
   if (!moved.size) return;
   for (const entry of Object.values(profile.bind ?? {})) {
     if (!Array.isArray(entry?.roles)) continue;
-    entry.roles = entry.roles.map((r) => moved.get(r) ?? r);
+    entry.roles = [...new Set(entry.roles.map((r) => moved.get(r) ?? r))];
   }
+}
+
+/** A prior's roles by the file they name, lowercased as NTFS reads it, in the prior's order. */
+function priorRolesByFile(prior) {
+  const byFile = new Map();
+  for (const [role, t] of Object.entries(prior.textures ?? {})) {
+    if (!t?.file) continue;
+    const k = t.file.toLowerCase();
+    byFile.set(k, [...(byFile.get(k) ?? []), role]);
+  }
+  return byFile;
+}
+
+/**
+ * Prior roles that named one file between them and are now one role: each
+ * other role, to the role that holds the file. Asked after the renames, and of
+ * such files only, so a role that merely changed files is not folded anywhere.
+ */
+function foldedRoles(profile, prior) {
+  const holder = new Map();
+  for (const [role, t] of Object.entries(profile.textures ?? {})) {
+    if (t?.file) holder.set(t.file.toLowerCase(), role);
+  }
+  const folded = new Map();
+  for (const [file, roles] of priorRolesByFile(prior)) {
+    const to = holder.get(file);
+    if (roles.length < 2 || to === undefined) continue;
+    for (const r of roles) if (r !== to && !profile.textures[r]) folded.set(r, to);
+  }
+  return folded;
 }
 
 /**
@@ -274,6 +323,7 @@ function preserveTextureNotes(profile, prior, report) {
   for (const [role, t] of Object.entries(profile.textures ?? {})) {
     if (t?.file) byFile.set(t.file.toLowerCase(), role);
   }
+  const given = new Set();
   for (const [role, was] of Object.entries(prior.textures ?? {})) {
     if (was?.notes === undefined) continue;
     const to = was.file ? byFile.get(was.file.toLowerCase()) : (profile.textures?.[role] ? role : undefined);
@@ -282,8 +332,16 @@ function preserveTextureNotes(profile, prior, report) {
       continue;
     }
     const now = profile.textures[to];
+    // Two prior roles for one file both land here, and the second note is as
+    // much a person's as the first: kept beside it, where it was skipped.
+    if (given.has(to)) {
+      if (JSON.stringify(now.notes) !== JSON.stringify(was.notes)) now.notes = [now.notes, structuredClone(was.notes)].flat();
+      if (to !== role) report.notesMoved.push({ from: role, to, file: was.file });
+      continue;
+    }
     if (now.notes !== undefined) continue;
     now.notes = structuredClone(was.notes);
+    given.add(to);
     report.textureNotes.push(to);
     if (to !== role) report.notesMoved.push({ from: role, to, file: was.file });
   }
@@ -312,26 +370,36 @@ function preserveUnmeasuredPanels(profile, prior, report) {
 function preserveAliases(profile, prior, report) {
   if (!prior.aliases) return;
   const aliases = {};
+  // A role folded into another (see preserveRoleNames) brings its aliases, and
+  // one whose name the other already uses for a different panel is said.
+  const folded = foldedRoles(profile, prior);
+  const put = (to, alias, name, said) => {
+    const into = (aliases[to] ??= {});
+    if (into[alias] === undefined || into[alias] === name) into[alias] = name;
+    else report.gone.push(said);
+  };
 
   for (const [role, byName] of Object.entries(prior.aliases)) {
-    const now = profile.panels?.[role] ?? {};
+    const to = folded.get(role) ?? role;
+    const now = profile.panels?.[to] ?? {};
     for (const [alias, target] of Object.entries(byName)) {
       const was = prior.panels?.[role]?.[target];
       const key = rectKey(was);
+      const said = `${role}.${alias} -> ${target}`;
 
       // No rectangle to follow — a hand-written panel with no geometry. Name is
       // all there is, so name is what gets checked.
       if (key === null) {
-        if (now[target]) (aliases[role] ??= {})[alias] = target;
-        else report.gone.push(`${role}.${alias} -> ${target}`);
+        if (now[target]) put(to, alias, target, said);
+        else report.gone.push(said);
         continue;
       }
 
       const sameRect = Object.entries(now).filter(([, p]) => rectKey(p) === key);
-      if (!sameRect.length) { report.gone.push(`${role}.${alias} -> ${target}`); continue; }
+      if (!sameRect.length) { report.gone.push(said); continue; }
 
       // The old name still on the right texels is the happy path.
-      if (sameRect.some(([n]) => n === target)) { (aliases[role] ??= {})[alias] = target; continue; }
+      if (sameRect.some(([n]) => n === target)) { put(to, alias, target, said); continue; }
 
       // Several panels can share one rectangle — four wheels on one rim sheet.
       // The nearest centroid picks the instance the alias meant, with the name
@@ -340,7 +408,7 @@ function preserveAliases(profile, prior, report) {
         : sameRect.slice().sort(([a, pa], [b, pb]) =>
           dist(pa.centroid3d, was.centroid3d) - dist(pb.centroid3d, was.centroid3d)
           || a.localeCompare(b))[0];
-      (aliases[role] ??= {})[alias] = name;
+      put(to, alias, name, said);
       report.moved.push(`${role}.${alias}: ${target} -> ${name}`);
     }
   }
@@ -356,6 +424,16 @@ export function describeHandwork(report, source) {
   if (report.roles.length) {
     out.push(`  kept ${report.roles.length} hand-chosen role name(s) from ${source}:`);
     for (const { from, to } of report.roles) out.push(`    ${from} -> ${to}`);
+  }
+  if (report.folded.length) {
+    out.push(`  ${report.folded.length} role(s) in ${source} named a file another role names too, ` +
+      'and are that role now, with their bindings, notes and aliases:');
+    for (const f of report.folded) out.push(`    ${f.from} -> ${f.to}  (${f.file})`);
+  }
+  if (report.respelled.length) {
+    out.push(`  ${report.respelled.length} texture file(s) were spelled another way in ${source}, and are ` +
+      'written as spelled now: one file on Windows, but two in a skin folder on Linux:');
+    for (const r of report.respelled) out.push(`    ${r.role}: ${r.was} -> ${r.now}`);
   }
   for (const b of report.blocks) out.push(`  kept hand-written "${b}" from ${source}`);
   for (const s of report.sizes) {

@@ -49,10 +49,9 @@ follows is why, in the order worth fixing.
 
 ## A candidate with no islands is still eligible to be the body
 
-Of 26 cars, the body binding was confident (>= 0.7) on 21, shaky on 2, and a
-guess on 3: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04, and
-`ac_legends_gt_porsche_906` at 0, which is the right texture tied with itself
-(see below). The McLarens were 0.11 and 0.19 when first measured; the
+Of 26 cars, the body binding was confident (>= 0.7) on 22, shaky on 2, and a
+guess on 2: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04. They
+were 0.11 and 0.19 when first measured; the
 visibility changes of 2026-09-13 narrowed both margins and changed neither
 pick. The mp412c is the instructive one. It bound `body` to a role called `black` that
 has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
@@ -103,7 +102,7 @@ emptied the other five, and `visible` none.
 and every one of those because the car has no instanced bodywork. `shared` is a
 tag a portable design should not lean on without saying the miss is expected.
 
-## A texture listed under two spellings ties with itself
+## A texture listed under two spellings tied with itself — fixed
 
 `ac_legends_gt_porsche_906` bound `body` to its window sheet at 0.88 — confident,
 and wrong — until the shifted-sheet fix below, and that bug was the whole cause.
@@ -113,13 +112,28 @@ so its visibility was measured on the one left, at 1%, while the window sheet
 kept a panel measuring 100%. With its islands back the paint has 34 panels,
 56% visible, and wins.
 
-It wins at confidence 0. The model binds the file under two spellings,
-`906_EXT_Body_Diff.DDS` and `906_EXT_Body_Diff.dds`, so the profile lists it
+It won at confidence 0. The model binds the file under two spellings,
+`906_EXT_Body_Diff.DDS` and `906_EXT_Body_Diff.dds`, so the profile listed it
 as two roles with identical measurements, and the margin over the runner-up,
-which is itself, is nothing. A confidence floor, as the portability plan's
-step 3 proposes, would then refuse to paint the right answer. What the fix has
-to establish is that two roles naming one file on NTFS are ranked as one
-candidate; it sits beside the case-spelling entry further down.
+which was itself, was nothing. A confidence floor, as the portability plan's
+step 3 proposes, would then have refused to paint the right answer. And the
+profile would not load at all: `validateProfile` refuses one that names a file
+twice, since it would ship it twice to a filesystem that holds it once.
+
+It was 11 cars, not one. Eight list a texture under two case spellings — the
+906, the Glickenhaus, the MC12 GT1's `skin_00`, both MX-5s, the 570S's
+`EXT_skin` and both Evoras — and three list one spelling twice. Profiles now
+have one role per file, keyed by the lowercased name wherever the generator
+indexes textures, and keep the spelling most of the car's skins use when
+`--skins` is given, and the model's first otherwise, saying which; a build
+writes that one, which on Windows overrides every spelling of it, and on a
+case-sensitive filesystem matches the stock skins it sits beside. All 11 profiles load, and
+the 906 binds its paint at 0.79. Two of them, the 458 GT2 and the MX-5 Cup, had
+a second reason not to load, hidden behind the first: a panel's safe area,
+taken from raw UVs on an island overhanging the sheet, reached off it. It is
+now confined to the panel. A panel with no readable area left on it is marked
+hidden, with `visible: 0`, and logged, where a missing safe area used to read
+as the whole panel being readable.
 
 ## An unwrap shifted by whole sheets lost every island — fixed
 
@@ -171,17 +185,27 @@ share of each texture's island area, so recovered islands can push slivers
 under it. The NSX's `ext_mechanics_colour` gains 5 islands, grows 74% in area,
 and loses 14 slivers of 0.09% to 0.12%, going from 64 panels to 55.
 
-**Still open.** An island straddling a sheet boundary, which the game wraps
-across the image's edge, cannot move whole and is left where it is; its panel
-stops at the edge. The generator counts such islands by texture, over every
-island of at least `minVertices` vertices, including those on another copy of
-the sheet that keep no panel at all; counting only the islands that kept a
-panel said nothing about the 180SX, whose unwrap sits 60 sheets down.
+**Still open, on purpose.** An island straddling a sheet boundary, which the
+game wraps across the image's edge, cannot move whole and is left where it is;
+its panel stops at the edge. The generator counts such islands by texture, over
+every island of at least `minVertices` vertices, including those on another
+copy of the sheet that keep no panel at all; counting only the islands that
+kept a panel said nothing about the 180SX, whose unwrap sits 60 sheets down.
+Measured across the fleet after the fix, counting that narrower way, there are
+165 of them on 70 textures on 49 cars, and not one is on a texture the
+classifier proposes as a body; the wider count has not been re-measured. The
+textures most covered by them are flat swatches, glass and cockpit sheets —
+the S2000's `black.dds`, the GT40's `Grey.dds`, the Alpine's clear glass, the
+962C's cockpit — and on most of those the clamp loses a few percent of the
+island's area. A real fix needs a panel of two or four rectangles, one per
+piece the wrap leaves on the image, and every consumer of a panel's rect to
+handle it. That is not worth doing for surfaces nobody paints; it is worth
+doing the first time a sweep finds one on a body.
 
 ## The design finds two of its fourteen surfaces bound
 
 The vocabulary has 20 terms and three of them can be proposed automatically:
-`body` (26/26, mean confidence 0.75), `tyres` (25/26, 0.96) and `brakes`
+`body` (26/26, mean confidence 0.78), `tyres` (25/26, 0.96) and `brakes`
 (23/26, 0.96). `neon-grid-any` paints 14 terms and `brakes` is not one of
 them, so on arrival it found two. The other twelve — `rims`, `interior`,
 `belts`, `steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`,
@@ -275,23 +299,19 @@ ignores a DDS with a DX10 header, so the game does not draw this file either.
 Whatever is on that display in the car, it is not this texture, and decoding
 it would make the render show something the game does not.
 
-## A texture whose slot is spelled in another case vanishes from the profile
+## A texture whose slot is spelled in another case vanished from the profile — fixed
 
-`profilegen` builds `boundAs` keyed by the spelling in the material's SLOT and
-then looks it up by the spelling in the texture ENTRY. A kn5 where those differ
-in case only — which nothing in the format forbids, and which `meshesUsingTexture`
-already guards against by lowercasing both — files the texture as "shipped but
-never bound" and drops it. Not merely unpaintable: absent. It is in no list, it
-gets no `bake` seed, and the report has nothing to say about it.
+`profilegen` built `boundAs` keyed by the spelling in the material's SLOT and
+then looked it up by the spelling in the texture ENTRY. A kn5 where those
+differ in case only — which nothing in the format forbids, and which
+`meshesUsingTexture` already guarded against by lowercasing both — filed the
+texture as "shipped but never bound" and dropped it. Not merely unpaintable:
+absent.
 
-`headers`, `coverage` and `shadersOf` are keyed the same way, so the fix is to
-normalise the key once where these maps are built rather than at each lookup.
-There is a test in carconfig.test.mjs asserting the current behaviour, so that
-whoever changes it can see what changes.
-
-No car here has triggered it. It is written down because it was found while
-removing a redundant case-sensitive comparison one layer further in, and the
-outer one is the one that actually bites.
+`boundAs`, `coverage` and `shadersOf`, and the classifier's own shader lookup,
+are now keyed by the lowercased name where they are built, which is also what
+fixed the doubled-texture entry above. The test in carconfig.test.mjs that
+asserted the texture vanished now asserts it is kept, and still a bake.
 
 ## `trustworthyDiffuse` is still an inference
 

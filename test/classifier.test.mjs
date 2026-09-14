@@ -34,7 +34,7 @@ import { rank, featuresFromRecord } from '../src/engine/classify.mjs';
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
 
-// Measured at 189/193 when the fixture was last taken, on 2026-09-13. Two of the
+// Measured at 191/195 when the fixture was last taken, on 2026-09-13. Two of the
 // disagreements are the label being wrong rather than the classifier (the Evora
 // GTE and its carbon variant; see docs/naming.md). The other two are real:
 // mclaren_mp412c_gt3 picks a texture with no islands on it and
