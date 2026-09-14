@@ -1538,7 +1538,11 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     assert.deepEqual(S.findings, []);
     const both = await ed.mcp.callTool('find_space', { panel: roof, widthMm: 300, stripe: { widthMm: 300 } });
     assert.ok(both.isError);
-    assert.match(both.content[0].text, /without layout, largest or widthMm/);
+    assert.match(both.content[0].text, /without layout, largest, widthMm or heightMm/);
+    // heightMm alone, which a stripe answered as though it had not been sent.
+    const tall = await ed.mcp.callTool('find_space', { panel: roof, heightMm: 300, stripe: { widthMm: 300 } });
+    assert.ok(tall.isError, tall.content[0].text);
+    assert.match(tall.content[0].text, /without layout, largest, widthMm or heightMm/);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);
