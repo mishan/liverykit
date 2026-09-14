@@ -29,7 +29,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank, explain, featuresFromRecord } from '../src/engine/classify.mjs';
+import { rank, explain, propose, featuresFromRecord } from '../src/engine/classify.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
@@ -164,4 +164,50 @@ test('a large, visible sheet with no islands does not become the body', async ()
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('tyres bind every texture only the tyre shader draws, and leave a shared swatch out', () => {
+  // A tread and a sidewall on their own tyre materials, and a white swatch the
+  // tyre material shares with the body. Picking the biggest bound the tread
+  // alone on 11 fleet cars, leaving the sidewall, where the lettering goes,
+  // unpainted; and the Morgan's biggest was the shared swatch.
+  const f = (role, area, shaders) => ({ role, file: `${role}.dds`, area, shaders, straddles: true, skinFraction: 0, box: null });
+  const tread = f('tread', 0.03, ['ksTyres']);
+  const side = f('side', 0.02, ['ksTyres']);
+  const white = f('white', 0.04, ['ksTyres', 'ksPerPixel']);
+  const p = propose([white, tread, side], 'tyres');
+  assert.deepEqual(p.roles, ['tread', 'side']);
+  assert.equal(p.confidence, 1, 'nothing the tyre shader alone draws is left out');
+  assert.match(explain([white, tread, side], 'tyres'), /proposal: tread, side/);
+  // With nothing but the shared swatch, it is still the tyres — as it was.
+  assert.deepEqual(propose([white], 'tyres').roles, ['white']);
+  // And the body is still one texture.
+  assert.equal(propose([tread, side, { ...white, shaders: ['ksPerPixel'] }], 'body').roles.length, 1);
+});
+
+test('tyres and brakes bind every texture their names say they are, across the fleet', async () => {
+  // The same held-out label as the body's, for the terms a car's own shader
+  // names: filenames that plainly say tyre or tread, disc or rotor. These terms
+  // bind every texture only their shader draws, so a car may have several
+  // labelled textures, and the binding is right when it holds all of them.
+  // Measured at 182/184 for tyres and 193/202 for brakes; seven of the brake
+  // misses are discs no ksBrakeDisc material draws, which no binding rule that
+  // reads the shader can reach.
+  const cars = await fleet();
+  const score = (term, looks, not) => {
+    let right = 0, n = 0;
+    for (const car of cars) {
+      const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
+      if (!labels.length) continue;
+      n++;
+      const bound = new Set((propose(car.features, term)?.roles ?? [])
+        .map((r) => car.features.find((f) => f.role === r).file));
+      if (labels.every((l) => bound.has(l))) right++;
+    }
+    return { right, n };
+  };
+  const tyres = score('tyres', /tyre|tire|tread/i, /_nm|normal|_map|blur|glow|_ao|rim/i);
+  const brakes = score('brakes', /disc|disk|rotor/i, /_nm|normal|_map|blur|glow|cal/i);
+  assert.ok(tyres.n > 150 && tyres.right / tyres.n >= 0.97, `tyres ${tyres.right}/${tyres.n}`);
+  assert.ok(brakes.n > 150 && brakes.right / brakes.n >= 0.93, `brakes ${brakes.right}/${brakes.n}`);
 });

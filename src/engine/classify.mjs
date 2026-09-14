@@ -198,12 +198,24 @@ export const VOCABULARY = {
     describes: 'The main painted bodywork — the surface a livery design lives on.',
     score: scoreBody,
   },
+  // Terms a car's own shader names, where the car may use several textures for
+  // the one surface: a tread and a sidewall, a front disc and a rear. `propose`
+  // binds every candidate that only the term's shader draws, rather than the
+  // biggest, because picking one was wrong in the same way on every car that
+  // had two — 11 of 176 labelled cars bound the tread and left the sidewall,
+  // where the lettering goes, unpainted. A texture another shader also draws is
+  // a swatch shared with other parts, and painting it paints them too: the
+  // Morgan's tyres were bound to a white.dds its body materials use.
   tyres: {
     describes: 'Tyre sidewalls and tread.',
+    gate: /ksTyres/i,
+    bindsEvery: true,
     score: (f) => (f.shaders.some((s) => /ksTyres/i.test(s)) ? f.area : 0),
   },
   brakes: {
     describes: 'Brake discs.',
+    gate: /ksBrakeDisc/i,
+    bindsEvery: true,
     score: (f) => (f.shaders.some((s) => /ksBrakeDisc/i.test(s)) ? f.area : 0),
   },
 
@@ -343,9 +355,19 @@ export function rank(features, term = 'body') {
 export function propose(features, term = 'body') {
   const ranked = rank(features, term);
   if (!ranked.length) return null;
+  const spec = VOCABULARY[term];
+  // Every candidate only the term's own shader draws, for a term that binds
+  // them all (see VOCABULARY). Its confidence is 1: nothing that shader alone
+  // draws is left out, so there is no runner-up to be close to. A car with no
+  // such texture keeps the single best candidate, as every term used to.
+  const own = spec.bindsEvery
+    ? ranked.filter((f) => f.shaders.length > 0 && f.shaders.every((s) => spec.gate.test(s)))
+    : [];
+  const roles = own.length ? own.map((f) => f.role) : [ranked[0].role];
   return {
-    role: ranked[0].role,
-    confidence: ranked[0].confidence,
+    role: roles[0],
+    roles,
+    confidence: own.length ? 1 : ranked[0].confidence,
     source: 'auto',
     validated: VALIDATED.has(term),
   };
@@ -401,8 +423,13 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   sayExcluded();
 
   const best = ranked[0];
+  const proposal = propose(features, term);
   lines.push('');
-  lines.push(`  proposal: ${best.role}  (confidence ${best.confidence}, margin over runner-up)`);
+  if (proposal.roles.length > 1) {
+    lines.push(`  proposal: ${proposal.roles.join(', ')}  (every texture only ${spec.gate.source} draws)`);
+  } else {
+    lines.push(`  proposal: ${best.role}  (confidence ${best.confidence}, margin over runner-up)`);
+  }
   if (best.confidence < 0.2) {
     lines.push('  ! The top two are close. Look at the car before accepting this.');
   }
