@@ -150,7 +150,11 @@ them is a proposed body in the sweep, the mp412c's `black.dds`.
 
 - `src/engine/uvlayout.mjs` measures, per texture and before any island is
   filtered out, the share of its surface on islands no wider or taller than one
-  sheet, wherever they sit (`SHEET_SPAN`, 1.05, allowing for edge bleed).
+  sheet, wherever they sit (`SHEET_SPAN`, 1.05, allowing for edge bleed). The
+  constant lives in `src/engine/kn5.mjs`, and `placeOnSheet` and the straddle
+  count use the same span, so an island the layout calls one sheet is either
+  moved back whole or counted as straddling; three thresholds for the one idea
+  had left islands 1.02 to 1.05 sheets wide as unmoved slivers nobody counted.
   `textures[role].uvLayout` is `tiled` below 0.5, `unwrapped` at 0.9 or above
   and `mixed` between; `uvInside` records the share, and `uvTile` the copy of
   the sheet holding most of the surface when that is not [0, 0]. The 0.5 sits in
