@@ -392,7 +392,9 @@ try {
     views,
     criticGates: !values['advisory-critic'],
     looks,
-    polish,
+    // A replay's rounds after a pass are the polish its run recorded.
+    polish: replaying ? rounds : polish,
+    followRecording: replaying,
     // A replay is a test of the gate, not a design for the inbox.
     propose: !values['no-propose'] && !replaying,
     planner: planner.made,
