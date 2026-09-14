@@ -126,6 +126,16 @@ test('an unwrap shifted by a whole sheet is an unwrap, measured where a livery p
     `rect ${JSON.stringify(panels[0].rect)} should be the cushion's own [0.05, 0.05, 0.9, 0.9]`));
 });
 
+test('an unwrap straddling a sheet boundary is an unwrap, not a tiled material', async () => {
+  // Half of it above v = 0 and half below, as the S14 Zenki's livery is laid
+  // out. Every island fits within a sheet, so the image is mapped once, and a
+  // measure that asked how much sat on one copy of the sheet called it tiled
+  // and refused placement on the car's real livery.
+  const { profile, seat } = await profileWith({ repeat: 1, shift: [0, -0.5] });
+  assert.equal(profile.textures[seat].uvLayout, 'unwrapped');
+  assert.equal(profile.textures[seat].uvInside, 1);
+});
+
 test('an island is moved back onto the sheet only when it fits wholly on another copy', () => {
   const model = parseKn5Buffer(carKn5({
     extraMeshes: [
@@ -156,6 +166,23 @@ test('an island is moved back onto the sheet only when it fits wholly on another
   assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
   assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
     'a mesh with nothing to move reads exactly as stored');
+});
+
+test('an island that repeats across many sheets does not crowd the real panels out', async () => {
+  // A strip on the body's own texture whose UVs run a thousand sheets wide, as
+  // one does on the mp412c's chassis. Its UV area counted every repeat, and the
+  // car's six face panels fell under the minimum share of the sheet beside it.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({ extraMeshes: [{ ...cushion({ name: 'STRIP', repeat: 1000 }), materialId: 0 }] }));
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+    const names = Object.keys(profile.panels.body ?? Object.values(profile.panels)[0]);
+    for (const face of ['left_mid', 'right_mid']) assert.ok(names.includes(face), `${face} is kept: ${names}`);
+    assert.ok(names.length >= 6, `the six faces are all still panels: ${names}`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('a readable area never reaches off its panel', () => {
