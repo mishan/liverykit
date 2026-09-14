@@ -239,8 +239,9 @@ Both halves are in, as the portability plan's step 5.
 - **The one-pass confirmation:** `--explain --all` and the editor's Bindings
   panel.
 
-The rest of the twelve are bound by hand. The driver kit is next, to be
-proposed from AC's own filenames. Whether a fresh car really goes
+The driver kit (`helmet`, `suit`, `gloves`, `crew`) is proposed from AC's own
+filenames and recorded as named, not measured. The rest of the twelve are
+bound by hand. Whether a fresh car really goes
 from unbound to confirmed in one sitting is for a person to time. Nothing here
 can.
 
