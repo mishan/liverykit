@@ -72,13 +72,22 @@ const design = await loadLivery(liveryPath);
 
 // Resume, unless the file is something else. A sweep of another design mixed
 // into this one's table would be a wrong number that looks like a right one.
+//
+// A file that is not there is a first run when sweeping, and a mistake when
+// summarising: --summary on a mistyped --out used to print an empty table and
+// exit 0, which reads as a sweep of no cars.
+const summaryOnly = argv.includes('--summary');
+if (summaryOnly && argv.includes('--fresh')) throw new Error('--summary reads --out, and --fresh would discard it; pass one or the other');
 let records = [];
 if (!argv.includes('--fresh')) {
   try {
     records = JSON.parse(await readFile(outPath, 'utf8'));
   } catch (e) {
     if (e.code !== 'ENOENT') throw new Error(`${outPath} is not a sweep this can resume (${e.message}); pass --fresh to start over`);
+    if (summaryOnly) throw new Error(`there is no sweep at ${outPath} to summarise; pass the --out the sweep wrote`);
   }
+  if (!Array.isArray(records)) throw new Error(`${outPath} is not a sweep this can resume (not a list of records); pass --fresh to start over`);
+  if (summaryOnly && !records.length) throw new Error(`${outPath} holds no sweep records, so there is nothing to summarise`);
   const other = records.find((r) => r.livery !== liveryName);
   if (other) throw new Error(`${outPath} holds a sweep of "${other.livery}", not "${liveryName}"; pass --fresh or another --out`);
 }
