@@ -541,10 +541,11 @@ is right on open-wheelers and wrong on road cars is worse than none.
 job actually goes.
 
 - `liverykit --explain <kn5> --all` prints every scorable term with its top
-  candidates and evidence, then a ready-to-paste `bind` block with every entry
-  at `source: "auto"`. A person reads it, changes the ones that are wrong,
-  flips `auto` to `human` on the ones they looked at, and pastes it once. The
-  tool still never writes `human`.
+  candidates and evidence, then the ready-to-paste `bind` block a regeneration
+  would write: the proposal at `source: "auto"`, with anything already
+  confirmed in `cars/<id>.json` kept at `human`. A person reads it, changes the
+  ones that are wrong, flips `auto` to `human` on the ones they looked at, and
+  pastes it once. The tool still never writes `human` of its own accord.
 - In the editor, a **Bindings** panel that lists each term with its proposal,
   highlights the candidate texture's meshes on the car when a row is hovered,
   and has one **Confirm** button per row that writes `source: "human"` to the
@@ -561,10 +562,13 @@ job actually goes.
 
 **Built, the one-pass half.** `--explain --all` prints the three scored terms'
 rankings, names the seventeen that are bound by hand, and ends with the `bind`
-block. The block comes from `proposeAll` in `classify.mjs`, the function the
-generator now calls too, so what a person pastes is what a regeneration would
-have written; a test checks that against the generator on the fixture car, and
-against the old per-term loop on every car in the fleet fixture.
+block. The block is the generator's own proposal, from `proposeAll` in
+`classify.mjs`, with the existing profile's human bindings and role names
+merged in by the same `mergeBindings` and `preserveHandwork` calls
+`--from-kn5` makes, so what a person pastes is what a regeneration would have
+written. Tests check that against the generator on the fixture car with and
+without a prior profile, and `proposeAll` against the old per-term loop on
+every car in the fleet fixture.
 
 The editor's Bindings panel lists every bound term, with its files and what
 stands behind it: the confidence, "close call" under 0.2, "unmeasured rule" for
@@ -579,13 +583,18 @@ say, each because the first version without it could have lost work:
 - The route re-reads the profile from disk rather than writing back the copy
   the editor loaded, and refuses (409) unless the file still binds the term to
   the roles the person was shown.
-- Only `source` changes. The file is validated and then written beside itself
-  and renamed over, so a failed write leaves the old profile.
+- Only `source` changes. The file is validated and then written beside the
+  real file, through any symlink and with its permissions, and renamed over
+  it, so a failed write leaves the old profile and no temporary file.
 - Confirmations are queued, so two clicks cannot each write a file the other
   has not seen.
-- "Reachable only from the button" is an Origin check: a browser sets the
-  header itself, and the MCP client and scripts send none. A local process
-  forging it could get through, and could equally write the file itself.
+- "Reachable only from the button" is three checks. The server answers only a
+  Host of 127.0.0.1 or localhost at its own port, which shuts out a page on a
+  rebound name; Confirm's Origin must be one of those two; and it takes only
+  `application/json`, which another origin cannot send without a preflight.
+  The first version compared Origin with the request's own Host, which a
+  rebound page sets to match. A local process forging the headers could get
+  through, and could equally write the file itself.
 
 The route answers 409 when the editor was started without a profile file, and
 the panel then offers no button and says why. The proposal refusal is

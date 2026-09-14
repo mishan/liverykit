@@ -434,8 +434,9 @@ preserves everything marked `human` and replaces everything marked `auto`, the
 same way `aliases` are preserved.
 
 Two ways to do a whole car at once. `--explain <kn5> --all` prints every scored
-term's ranking and then a `"bind"` block to paste, with every entry at `auto`;
-you set `human` on the ones you checked. Or open the editor (`--ui`) and use its
+term's ranking and then a `"bind"` block to paste: the proposal at `auto`, with
+anything already confirmed in `cars/<id>.json` kept at `human`, so pasting it
+loses nothing. You set `human` on the ones you checked. Or open the editor (`--ui`) and use its
 **Bindings** panel. Hovering a row in the whole-car view darkens every part but
 the ones wearing that term's textures, and **Confirm** writes `"source": "human"`
 for that term straight into the profile. That button is the only way the tool
