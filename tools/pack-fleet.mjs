@@ -39,6 +39,16 @@ const cars = survey.filter((c) => !c.error).sort((a, b) => (a.id < b.id ? -1 : a
 // read as a texture with none, and the classifier is about to exclude exactly
 // those from being the body.
 for (const c of cars) {
+  // Skin counts are refused the same way. A car without one reads as a car no
+  // skin overrides, and a texture without one gives a NaN the body's score
+  // then carries, so either would pack and quietly score something else.
+  if (typeof c.skinCount !== 'number') {
+    throw new Error(`${c.id}: no skin count. Re-run tools/survey.mjs before packing.`);
+  }
+  const noSkins = Object.entries(c.roles).find(([, t]) => typeof t.skins !== 'number');
+  if (noSkins) {
+    throw new Error(`${c.id}: role "${noSkins[0]}" has no skin-override count. Re-run tools/survey.mjs before packing.`);
+  }
   const bare = Object.entries(c.roles).find(([, t]) => typeof t.panels !== 'number');
   if (bare) {
     throw new Error(`${c.id}: role "${bare[0]}" has no island count. This survey predates it; ` +
