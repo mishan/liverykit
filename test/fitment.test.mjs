@@ -1246,6 +1246,53 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
   assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
 });
 
+test('a name goes as wide as clean bodywork allows under the roundel, not only as wide as the group', async () => {
+  // Run 23's layout kept the name inside the roundel's rectangle, 486 mm on
+  // the NSX door, where the door is 900 mm wide under the disc: 47 mm capitals
+  // on two lines, failed as too small, and a patch of orange behind them.
+  const { groupLayout } = await import('../src/space.mjs');
+  const { letterHeights } = await import('../src/fitment.mjs');
+  // A door's shape: plates stand in front of the top 0.8 m of the sheet at
+  // both sides, leaving a column 0.8 m wide for the roundel, a band below it
+  // is clear all the way across, and a third plate hides the bottom 0.4 m.
+  // The group that holds the roundel is in the column, over the band.
+  const sheet = plane({ rows: 12, cols: 12 });
+  const plate = (x, y, sx, sy) => {
+    const m = { ...sheet.meshes[0], materialId: 1, world: [...sheet.meshes[0].world] };
+    m.world[0] = sx; m.world[5] = sy; m.world[12] = x; m.world[13] = y; m.world[14] = 0.005;
+    return m;
+  };
+  const model = { ...sheet, materials: [...sheet.materials, { slots: { txDiffuse: 'plate.dds' } }],
+    meshes: [sheet.meshes[0], plate(0, 0, 0.25, 0.5), plate(1.2, 0, 0.25, 0.5), plate(0, 1.2, 1, 0.25)] };
+  const prepared = occupancyFor(model);
+  const r = groupLayout({ profile, model, prepared, role: 'body', panel: 'L', number: '85',
+    name: 'NEON DOLL RACING', marginMm: 30, cellMm: 100 });
+  assert.ok(r.layout, JSON.stringify(r));
+  assert.equal(r.note, undefined, r.note);
+  const name = r.layout.regions.name;
+  assert.equal(name.length, 1, 'one line, now that it has the width');
+  assert.ok(name[0].at[2] * 1600 > r.layout.groupMm[0] + 100,
+    `the line runs wider than the group: ${Math.round(name[0].at[2] * 1600)} mm against ${r.layout.groupMm[0]}`);
+  // Where it went is clear bodywork, measured, not only clean cells.
+  const [ux, uy, uw, uh] = profile.panels.body.L.rect;
+  const at = name[0].at;
+  const seen = rectVisibility(model, prepared, [model.meshes[0]], [ux + at[0] * uw, uy + at[1] * uh, at[2] * uw, at[3] * uh]);
+  assert.ok(seen.fraction >= 0.98, `the name is in front of the plates' reach: ${seen.fraction}`);
+  const design = { ...design0(r.layout), identity: { number: '85', team: 'Neon Doll Racing' } };
+  const clean = fitment(design, profile).findings.filter((f) => ['overlap', 'too-small', 'overflows'].includes(f.kind));
+  assert.deepEqual(clean, []);
+  const mm = letterHeights(design, profile);
+  assert.ok(mm['team-1'].mm >= 45 && mm.number.mm >= 140, JSON.stringify(mm));
+});
+
+function design0(l) {
+  return { ...design([
+    { id: 'roundel', ...l.regions.roundel, color: 'white' },
+    { id: 'number', ...l.regions.number, color: 'ink' },
+    ...l.regions.name.map((r, i) => ({ id: `team-${i + 1}`, ...r, color: 'ink' })),
+  ]), palette: { ink: '#101014', white: '#ffffff' } };
+}
+
 test('the sweep keeps looking past three spots that fail the fine check', async () => {
   // Two fittings 30 mm wide stand proud of a 1600 x 400 mm panel, between the
   // coarse samples, so every cell reads clean. Any 390 mm square that starts

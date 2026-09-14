@@ -140,7 +140,7 @@ export function cleanGrid({ profile, model, prepared, role, panel: asked, cellMm
 
 export function findSpace({
   grid = null, profile, model, prepared, role, panel,
-  widthMm, heightMm = widthMm, marginMm = 0, count = 5, tries = count * 3, cellMm, across,
+  widthMm, heightMm = widthMm, marginMm = 0, count = 5, tries = count * 3, cellMm, across, fine = true,
 }) {
   if (!(widthMm > 0) || !(heightMm > 0)) {
     throw new Error('find_space needs a size on the car: widthMm, and heightMm (which defaults to it), above zero.');
@@ -200,6 +200,12 @@ export function findSpace({
     if (tried.some((s) => overlapShare(s, shape) > 0.5)) continue;
     tried.push(shape);
     const at = [shape[0] / boxMm[0], shape[1] / boxMm[1], widthMm / boxMm[0], heightMm / boxMm[1]];
+    // The cells' answer alone, unmeasured and said to be: for a caller that
+    // ranks many sizes before measuring the few it will use (groupLayout).
+    if (!fine) {
+      candidates.push({ at: at.map(r3), marginMm: Math.floor(clearance), onCar: null, visible: null, coarse: true });
+      continue;
+    }
     const v = rectVisibility(model, prepared, g.meshes,
       [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph], { across: 16 });
     const onCar = v ? v.samples / v.of : 0;
@@ -281,6 +287,7 @@ export function findSpace({
  */
 export function largestSpace({
   grid = null, profile, model, prepared, role, panel, aspect = 1, marginMm = 0, cellMm, across, precisionMm = 10,
+  fine = true, near = null,
 }) {
   if (!(aspect > 0)) {
     throw new Error('find_space with largest needs an aspect above zero: the shape\'s height over its width.');
@@ -295,21 +302,31 @@ export function largestSpace({
   // failing the fine check on a fitting narrower than a cell, with a fourth
   // clear, reported 300 mm on a panel that held 390.
   const tries = 12;
-  while (hi - lo > precisionMm && sizesTried < 16) {
+  const ask = (w) => {
     sizesTried++;
+    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries, fine });
+    if (!r.candidates.length) return false;
+    // Reported at a size that was itself measured. Rounded to the nearest
+    // millimetre, the size could be larger than the shape that passed, and
+    // the spot, clearance and fractions beside it were for another shape.
+    const fw = Math.floor(w), fh = Math.floor(w * aspect);
+    const at = fw > 0 && fh > 0
+      ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1, tries, fine }) : null;
+    if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
+    return true;
+  };
+  // Started near a size the cells already gave, when there is one: each
+  // question measures, and halving from nothing asked a dozen of them where a
+  // few either side of the cells' answer find the same limit. The cells can
+  // err either way by about a cell, so the search stays open above it.
+  if (near > 0) {
+    hi = Math.min(hi, near * 1.15);
+    if (ask(near * 0.85)) lo = near * 0.85;
+  }
+  while (hi - lo > precisionMm && sizesTried < 16) {
     const w = (lo + hi) / 2;
-    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries });
-    if (r.candidates.length) {
-      lo = w;
-      // Reported at a size that was itself measured. Rounded to the nearest
-      // millimetre, the size could be larger than the shape that passed, and
-      // the spot, clearance and fractions beside it were for another shape.
-      const fw = Math.floor(w), fh = Math.floor(w * aspect);
-      const at = fw > 0 && fh > 0 ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1, tries }) : null;
-      if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
-    } else {
-      hi = w;
-    }
+    if (ask(w)) lo = w;
+    else hi = w;
   }
   return {
     role: g.role,
@@ -424,9 +441,9 @@ function nameLines(name) {
  * upright group, and `ax` is how the treatment narrows glyphs for the panel's
  * stretch. Font sizes (`em`) are in pixels down the letters.
  */
-function divide({ W, H, number, lines, inside, ah, av, ax }) {
+function divide({ W, Wn = W, H, number, lines, inside, ah, av, ax }) {
   const widest = Math.max(...lines.map((l) => l.length));
-  const nameEmMax = (W * ah) / (widest * ADVANCE * ax);   // the width's limit on the name's font size
+  const nameEmMax = (Wn * ah) / (widest * ADVANCE * ax);   // the name's width limits its font size
   // The name's box has air above its capitals already (see NAME_SCALE).
   const gap = Math.max(10, 0.02 * W);
   // The ink's corner, from the middle of the box in ems: half the box's width
@@ -474,15 +491,10 @@ export function groupLayout({
   const ax = pan.anisotropy ? 1 / pan.anisotropy : 1;
   const splits = [[name], ...(nameLines(name) ? [nameLines(name)] : [])];
 
-  // Every proportion, and the name on one line and on two.
-  const options = [];
-  for (const aspect of GROUP_ASPECTS) {
-    const sp = largestSpace({ grid: g, model, prepared, aspect: quarter ? 1 / aspect : aspect, marginMm });
-    if (!sp.largest) continue;
-    const { widthMm, heightMm } = sp.largest;
-    const [W, H] = quarter ? [heightMm, widthMm] : [widthMm, heightMm];
-    for (const lines of splits) options.push({ aspect, lines, space: sp.largest, W, H });
-  }
+  const optionsFor = (aspect, space) => {
+    const [W, H] = quarter ? [space.heightMm, space.widthMm] : [space.widthMm, space.heightMm];
+    return splits.map((lines) => ({ aspect, lines, space, W, H }));
+  };
 
   // Upright rectangles, [x, y, w, h] in mm from the group's top left, turned
   // into the panel's own frame the way the renderer turns text: about the
@@ -496,9 +508,84 @@ export function groupLayout({
     const [tw, th] = quarter ? [h, w] : [w, h];
     return [(cx + dx - tw / 2) / bw, (cy + dy - th / 2) / bh, tw / bw, th / bh].map(r4);
   };
+  const toMm = (at) => [at[0] * bw, at[1] * bh, at[2] * bw, at[3] * bh];
+
+  // A T, not a box. The group is the largest rectangle that holds whole, and
+  // a name kept inside it got a door's width at the roundel's height: 486 mm
+  // on the NSX, two lines of 47 mm capitals that run 23's critic failed as too
+  // small, and the planner answered with an orange patch behind the name that
+  // a person called amateur. The door is 900 mm wide under the roundel. So
+  // each line of the name is as wide as clean bodywork allows where it lands,
+  // centred under the disc, from the group's own width (which the sweep held)
+  // out towards the panel's, read off the cells here and measured finely
+  // before a layout using it is returned.
+  const widest = (o, y, h) => {
+    const fits = (w) => coarseFits(g, toMm(turned(o)([(o.W - w) / 2, y, w, h])), marginMm);
+    let lo = o.W, hi = quarter ? bh : bw;
+    if (!fits(lo)) return o.W;
+    while (hi - lo > 10) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  };
+  // `shift` moves the whole stack down the upright group (up, when negative).
+  const stack = (o, d) => {
+    const Dh = d.s / av;
+    return { Dh, top: (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2 + (d.shift ?? 0) };
+  };
+  const roomFor = (o, d) => {
+    const { Dh, top } = stack(o, d);
+    return Math.min(...o.lines.map((_, i) => widest(o, top + Dh + d.gap + i * d.line, d.line)));
+  };
+  // Where the stack leaves the name the most room, with the disc still on
+  // clean cells. The sweep puts a group wherever it has the most clearance,
+  // which on a door narrow at the top and wide lower down can be the top, with
+  // the name under the disc still in the narrow part and nothing to widen
+  // into. Slid down, the same disc leaves the name the width below. A disc
+  // moved off the group the sweep held is measured before it is used.
+  const bestShift = (o, d) => {
+    const Dw = d.s / ah, { Dh } = stack(o, { ...d, shift: 0 });
+    const base = (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2;
+    const span = quarter ? bw : bh;
+    let best = { shift: 0, room: roomFor(o, { ...d, shift: 0 }) };
+    for (let s = -span; s <= span; s += 20) {
+      if (Math.abs(s) < 1) continue;
+      if (!coarseFits(g, toMm(turned(o)([(o.W - Dw) / 2, base + s, Dw, Dh])), marginMm)) continue;
+      const room = roomFor(o, { ...d, shift: s });
+      if (room > best.room + 5 || (room > best.room - 5 && room >= best.room && Math.abs(s) < Math.abs(best.shift))) {
+        best = { shift: s, room };
+      }
+    }
+    return best.shift;
+  };
+  // The room divided, the name given the width it has where that puts it,
+  // divided again with that width, until the two agree. `reach` takes only
+  // part of the extra width, for when the whole of it did not measure clean;
+  // `slide` lets the stack move to where the name has more.
+  const plan = (o, inside, reach = 1, slide = false) => {
+    const cut = (Wn) => {
+      const c = divide({ W: o.W, Wn, H: o.H, number, lines: o.lines, inside, ah, av, ax });
+      return c && { ...c, Wn, shift: slide ? bestShift(o, c) : 0 };
+    };
+    let d = cut(o.W);
+    for (let pass = 0; d && pass < 4; pass++) {
+      const want = o.W + Math.max(0, roomFor(o, d) - o.W) * reach;
+      if (Math.abs(want - d.Wn) < 5) break;
+      d = cut(want);
+    }
+    if (d && roomFor(o, d) < d.Wn - 1) {
+      const Wn = Math.max(o.W, roomFor(o, d));
+      const c = divide({ W: o.W, Wn, H: o.H, number, lines: o.lines, inside, ah, av, ax });
+      d = c && { ...c, Wn, shift: d.shift };
+    }
+    return d;
+  };
+
   const regionsFor = (o, d) => {
-    const Dw = d.s / ah, Dh = d.s / av;   // the disc's box in mm: square in pixels
-    const top = (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2;
+    const Dw = d.s / ah;   // the disc's box in mm: square in pixels
+    const { Dh, top } = stack(o, d);
     const at = turned(o);
     const h = d.numberEm / NUMBER_SCALE / av, w = number.length * d.numberEm * ADVANCE * ax * SPARE / ah;
     return {
@@ -508,7 +595,8 @@ export function groupLayout({
       number: { treatment: 'text', panel: g.name, at: at([(o.W - w) / 2, top + Dh / 2 - h / 2, w, h]),
         text: number, scale: NUMBER_SCALE, weight: 900, rotate: 'auto' },
       name: o.lines.map((text, i) => ({ treatment: 'text', panel: g.name,
-        at: at([0, top + Dh + d.gap + i * d.line, o.W, d.line]), text, scale: NAME_SCALE, weight: 800, rotate: 'auto' })),
+        at: at([(o.W - d.Wn) / 2, top + Dh + d.gap + i * d.line, d.Wn, d.line]), text, scale: NAME_SCALE, weight: 800,
+        rotate: 'auto' })),
     };
   };
 
@@ -518,10 +606,20 @@ export function groupLayout({
   // what failed it is kept for the answer: none passing is not "nothing fits".
   const rejected = [];
   const measure = (o) => {
-    for (const inside of INSIDE) {
-      const d = divide({ W: o.W, H: o.H, number, lines: o.lines, inside, ah, av, ax });
+    insides: for (const inside of INSIDE) for (const [reach, slide] of [[1, true], [1, false], [0.5, false], [0, false]]) {
+      const d = plan(o, inside, reach, slide);
       if (!d) return null;
       const regions = regionsFor(o, d);
+      // A disc moved off the group, or a name wider than it, is on bodywork
+      // the sweep did not hold, so it is held here, as finely as the group was.
+      if (d.shift !== 0 && !fineFits(g, model, prepared, regions.roundel.at, marginMm)) {
+        rejected.push(`the roundel moved ${Math.round(d.shift)} mm was not clean all round`);
+        continue;
+      }
+      if (d.Wn > o.W + 1 && !regions.name.every((r) => fineFits(g, model, prepared, r.at, marginMm))) {
+        rejected.push(`the name's line at ${Math.round(d.Wn)} mm wide was not clean all round`);
+        continue;
+      }
       const ids = ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
       const design = { name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
         identity: { number, team: name },
@@ -534,7 +632,7 @@ export function groupLayout({
         && !['low-contrast', 'unmirrored', 'too-small'].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
       if (wrong.length) {
         rejected.push(`${wrong[0].kind}: ${wrong[0].why}`);
-        continue;
+        continue insides;
       }
       const mm = letterHeights(design, profile);
       if (ids.slice(1).some((id) => mm[id]?.mm === undefined)) {
@@ -546,6 +644,32 @@ export function groupLayout({
     }
     return null;
   };
+  // Ranked on the cells, measured only at the top. Every proportion swept
+  // finely on both doors took 27 s of run 23, more than its planner's first
+  // round, for seven answers of eight that were never used. The cells give each
+  // proportion's size in milliseconds; the layouts they make are estimated and
+  // ranked, and only the best three proportions, and the best one-line one, are
+  // swept finely, starting near the size the cells gave.
+  const ranked = [];
+  for (const aspect of GROUP_ASPECTS) {
+    const sp = largestSpace({ grid: g, model, prepared, aspect: quarter ? 1 / aspect : aspect, marginMm, fine: false }).largest;
+    if (!sp) continue;
+    for (const o of optionsFor(aspect, sp)) {
+      const d = plan(o, INSIDE[0], 1, true);
+      if (d) ranked.push({ o, clears: d.numberMm >= NUMBER_MM && d.nameMm >= NAME_MM,
+        score: Math.min(d.numberMm / AIM.number, d.nameMm / AIM.name) });
+    }
+  }
+  ranked.sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
+  const picked = [...new Set([...ranked.slice(0, 3),
+    ranked.find((r) => r.o.lines.length === 1 && r.clears)].filter(Boolean).map((r) => r.o.aspect))];
+  const options = [];
+  for (const aspect of picked) {
+    const near = ranked.find((r) => r.o.aspect === aspect).o.space.widthMm;
+    const sp = largestSpace({ grid: g, model, prepared, aspect: quarter ? 1 / aspect : aspect, marginMm, near }).largest;
+    if (sp) options.push(...optionsFor(aspect, sp));
+  }
+
   const measured = options.map(measure).filter(Boolean)
     .sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
   let chosen = measured[0] ?? null;
@@ -584,6 +708,44 @@ export function groupLayout({
         'Try a smaller margin, a shorter name, or another panel.',
     } : {}),
   };
+}
+
+/**
+ * Whether a rectangle, in mm within a panel's box, sits on clean cells with
+ * `marginMm` of clean cells and box all round. By the cells alone, so
+ * instant, and as coarse as they are: `fineFits` is the measurement.
+ */
+function coarseFits(g, [x, y, w, h], marginMm) {
+  const [bw, bh] = g.boxMm;
+  const cw = bw / g.cols, ch = bh / g.rows;
+  const x0 = x - marginMm, y0 = y - marginMm, x1 = x + w + marginMm, y1 = y + h + marginMm;
+  if (x0 < -1e-6 || y0 < -1e-6 || x1 > bw + 1e-6 || y1 > bh + 1e-6) return false;
+  for (let r = Math.max(0, Math.floor(y0 / ch)); r < Math.min(g.rows, Math.ceil(y1 / ch)); r++) {
+    for (let c = Math.max(0, Math.floor(x0 / cw)); c < Math.min(g.cols, Math.ceil(x1 / cw)); c++) {
+      if (!g.clean[r][c]) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a panel-relative `at` is on the car and seen, and has `marginMm` of
+ * clean bodywork all round, measured as `findSpace` measures a spot it
+ * returns: the shape sampled 16 across, the margin every few millimetres.
+ */
+function fineFits(g, model, prepared, at, marginMm) {
+  const [px, py, pw, ph] = g.rect;
+  const [bw, bh] = g.boxMm;
+  const v = rectVisibility(model, prepared, g.meshes, [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph],
+    { across: 16 });
+  if (!v || v.samples / v.of < CLEAN || v.fraction < CLEAN) return false;
+  if (!(marginMm > 0)) return true;
+  const m = [at[0] * bw - marginMm, at[1] * bh - marginMm, (at[0] + at[2]) * bw + marginMm, (at[1] + at[3]) * bh + marginMm];
+  const fine = (d) => Math.max(14, Math.min(160, Math.ceil(d / FINE_MM)));
+  const around = rectVisibility(model, prepared, g.meshes,
+    [px + (m[0] / bw) * pw, py + (m[1] / bh) * ph, ((m[2] - m[0]) / bw) * pw, ((m[3] - m[1]) / bh) * ph],
+    { grid: [fine(m[2] - m[0]), fine(m[3] - m[1])] });
+  return !!around && around.samples / around.of >= MARGIN_CLEAN && around.fraction >= MARGIN_CLEAN;
 }
 
 /**
