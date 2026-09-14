@@ -20,22 +20,67 @@
 // there, or nothing, reported.
 //
 // COMPUTED FROM THE PROFILE, NOT THE MODEL. Everything here comes out of fields
-// a profile already stores — centroid3d, visible, visibleFromCockpit, mirrorOf —
-// so an existing hand-tuned profile can be tagged without regenerating it and
-// losing its aliases, renames and notes. It also means one implementation rather
-// than one for generation and another for migration.
+// a profile already stores — centroid3d, extent3d, visible, visibleFromCockpit,
+// mirrorOf — so an existing hand-tuned profile can be tagged without
+// regenerating it and losing its aliases, renames and notes. It also means one
+// implementation rather than one for generation and another for migration.
 //
 // `level` is measured against the CAR's vertical extent rather than each
 // island's own bounding box. The per-island version is nearly content-free: an
 // island's centroid sits above or below its own centre for reasons that have
 // nothing to do with where it is on the car. "In the top half of the car" is a
 // fact a livery can use.
+//
+// SECTION AND LEVEL BY REACH, where the profile says how far an island reaches.
+// A centroid is where an island's vertices are densest, which is the
+// unwrapper's business: a door running from the sill to the window line, most
+// of it along the middle of the car, was `lower` on the Exige, the Quattro and
+// the 650 GT3 because its centroid sat a little below half height, and a design
+// asking for the upper middle of the flank found nothing on any of them. So a
+// panel carrying `extent3d` is tagged with every section and level it reaches
+// into, as well as the one its centroid is in. A panel without it — every
+// profile generated before it was recorded — is tagged as it always was.
 // ---------------------------------------------------------------------------
 
 /** Cut points as fractions of the car's length, tail (0) to nose (1). */
 const SECTIONS = [
   [0.82, 'nose'], [0.62, 'front'], [0.38, 'mid'], [0.18, 'rear'], [-Infinity, 'tail'],
 ];
+
+/**
+ * The same sections as bands, for a panel's extent, and the two levels, in the
+ * order tags are written. The bands at either end are open, so an extent that
+ * reaches past the frame still counts; `width` is the nominal width that "half
+ * the band" is measured against.
+ */
+const SECTION_BANDS = [
+  ['nose', 0.82, Infinity, 0.18], ['front', 0.62, 0.82, 0.2], ['mid', 0.38, 0.62, 0.24],
+  ['rear', 0.18, 0.38, 0.2], ['tail', -Infinity, 0.18, 0.18],
+];
+const LEVEL_BANDS = [['upper', 0.5, Infinity, 0.5], ['lower', -Infinity, 0.5, 0.5]];
+
+/**
+ * Whether an extent [a, b] reaches into a band far enough to claim it: by a
+ * quarter of its own length, or by half the band's.
+ *
+ * A quarter of the panel is what the doors above needed, 36% to 38% of their
+ * height above the car's midline, and it keeps a panel that merely clips a
+ * band from claiming it: the 906's rear quarter panels reach 11% to 20% into
+ * `mid` and are not in the middle of the car. Half the band is what gives a
+ * long flank every section it runs through, since no band is a quarter of a
+ * panel that runs the car's whole length.
+ */
+function reaches(a, b, lo, hi, width) {
+  const overlap = Math.min(b, hi) - Math.max(a, lo);
+  return overlap > 0 && (overlap >= 0.25 * (b - a) || overlap >= 0.5 * width);
+}
+
+/** A panel's `extent3d`, if it has a well-formed one: [[x0, y0, z0], [x1, y1, z1]]. */
+function extentOf(p) {
+  const e = p.extent3d;
+  return Array.isArray(e) && e.length === 2
+    && e.every((q) => Array.isArray(q) && q.length === 3 && q.every(Number.isFinite)) ? e : null;
+}
 
 /**
  * Panels that occupy the same rectangle of the same texture.
@@ -115,9 +160,27 @@ export function computeTags(profile) {
 
         let zr = (c[2] - zMin) / zSpan;
         if (front < 0) zr = 1 - zr;
-        tags.push(SECTIONS.find(([cut]) => zr > cut)[1]);
+        const section = SECTIONS.find(([cut]) => zr > cut)[1];
+        const level = (c[1] - yMin) / ySpan > 0.5 ? 'upper' : 'lower';
 
-        tags.push((c[1] - yMin) / ySpan > 0.5 ? 'upper' : 'lower');
+        const box = extentOf(p);
+        if (!box) {
+          tags.push(section, level);
+        } else {
+          // In the centroid's frame, so the centroid's own tags come out as
+          // they always did, and kept alongside whatever else the extent
+          // reaches: tags only grow, so no selection that matched a panel
+          // before stops matching it.
+          let z0 = (box[0][2] - zMin) / zSpan, z1 = (box[1][2] - zMin) / zSpan;
+          if (front < 0) [z0, z1] = [1 - z1, 1 - z0];
+          const y0 = (box[0][1] - yMin) / ySpan, y1 = (box[1][1] - yMin) / ySpan;
+          for (const [name, lo, hi, width] of SECTION_BANDS) {
+            if (name === section || reaches(z0, z1, lo, hi, width)) tags.push(name);
+          }
+          for (const [name, lo, hi, width] of LEVEL_BANDS) {
+            if (name === level || reaches(y0, y1, lo, hi, width)) tags.push(name);
+          }
+        }
       }
 
       // Visibility thresholds, not raw fractions. A livery asking for "the bits
