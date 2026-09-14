@@ -555,7 +555,8 @@ export function createToolHandler(client) {
               'panel of this sheet the band crosses seen from above (bonnet, roof, a hatch set into it, engine ' +
               'cover, deck, the top of the rear wing), each with the "at" that puts the band in the same place ' +
               'on that panel and the stripe constraint that holds the pieces together, and what check_fitment ' +
-              'still finds with them, if anything. Glass, vents and openings get no piece. With this, panel is ' +
+              'still finds with them, if anything. Glass, vents and openings get no piece; a panel the band ' +
+              'crosses too little of to lay one on is listed under skipped, with why. With this, panel is ' +
               'any panel of the sheet the stripe is painted on.',
             properties: {
               widthMm: { type: 'number', description: 'The stripe\'s width on the car, in mm' },
