@@ -403,12 +403,30 @@ const NAME_SCALE = 1;
 const NUMBER_SCALE = 0.767;
 
 /**
- * How big the number and the name are aimed to be against each other: a door
- * a person laid out by hand had a 147 mm number over 47 mm capitals. The
+ * How big the number and the name are aimed to be against each other. The
  * layout is the one where the smaller of the two, as a share of its aim, is
- * largest, so neither is starved for the other.
+ * largest, so neither is starved for the other. A person's first door had a
+ * 147 mm number over 47 mm capitals; given run 24's layout (171 over 53), a
+ * person kept the number and spent the room on the name, 64 mm on a line
+ * 997 mm wide, and the critic had called the name small beside the number.
  */
-const AIM = { number: 147, name: 47 };
+const AIM = { number: 171, name: 64 };
+
+/**
+ * The margin a name's line keeps from anything not clean. Lettering has to be
+ * seen, not framed: the margin that keeps a roundel's rim off a shut line cost
+ * a name a cell of width at each end, and the gate holds text to being seen
+ * by its letters, not to a margin.
+ */
+const NAME_MARGIN = 10;
+
+/**
+ * How much taller than the swept group the roundel and name may stand. The
+ * group is the largest rectangle that holds whole, and the person's name line
+ * reached below it, onto bodywork the cells call clean. A taller stack is
+ * held to the cells and measured before it is used, like a slid one.
+ */
+const GROW = [1, 1.15, 1.3];
 
 /** How much of the disc's radius the number's ink may reach: some air inside the rim. */
 const INSIDE = [0.95, 0.9, 0.85];
@@ -519,10 +537,16 @@ export function groupLayout({
   // centred under the disc, from the group's own width (which the sweep held)
   // out towards the panel's, read off the cells here and measured finely
   // before a layout using it is returned.
+  const nameMargin = Math.min(marginMm, NAME_MARGIN);
+  // Inside the swept group, the group's own width has been held, whatever the
+  // cells say a cell either way; outside it nothing has, and a band the cells
+  // call unclean there has no room at all. It was given the group's width, so
+  // a slid stack could put a name on bodywork nobody had looked at.
+  const held = (o, y, h) => y >= -0.5 && y + h <= o.H + 0.5;
   const widest = (o, y, h) => {
-    const fits = (w) => coarseFits(g, toMm(turned(o)([(o.W - w) / 2, y, w, h])), marginMm);
+    const fits = (w) => coarseFits(g, toMm(turned(o)([(o.W - w) / 2, y, w, h])), nameMargin);
     let lo = o.W, hi = quarter ? bh : bw;
-    if (!fits(lo)) return o.W;
+    if (!fits(lo)) return held(o, y, h) ? o.W : 0;
     while (hi - lo > 10) {
       const mid = (lo + hi) / 2;
       if (fits(mid)) lo = mid;
@@ -545,29 +569,39 @@ export function groupLayout({
   // the name under the disc still in the narrow part and nothing to widen
   // into. Slid down, the same disc leaves the name the width below. A disc
   // moved off the group the sweep held is measured before it is used.
-  const bestShift = (o, d) => {
+  // The room the name has with the stack moved by `s`, or null where the disc
+  // would leave the group onto cells that are not clean.
+  const roomAt = (o, d, s) => {
     const Dw = d.s / ah, { Dh } = stack(o, { ...d, shift: 0 });
-    const base = (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2;
+    const y = (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2 + s;
+    if (!held(o, y, Dh) && !coarseFits(g, toMm(turned(o)([(o.W - Dw) / 2, y, Dw, Dh])), marginMm)) return null;
+    const room = roomFor(o, { ...d, shift: s });
+    return room > 0 ? room : null;
+  };
+  const bestShift = (o, d) => {
     const span = quarter ? bw : bh;
-    let best = { shift: 0, room: roomFor(o, { ...d, shift: 0 }) };
-    for (let s = -span; s <= span; s += 20) {
-      if (Math.abs(s) < 1) continue;
-      if (!coarseFits(g, toMm(turned(o)([(o.W - Dw) / 2, base + s, Dw, Dh])), marginMm)) continue;
-      const room = roomFor(o, { ...d, shift: s });
-      if (room > best.room + 5 || (room > best.room - 5 && room >= best.room && Math.abs(s) < Math.abs(best.shift))) {
-        best = { shift: s, room };
-      }
+    const shifts = [0];
+    for (let s = 20; s <= span; s += 20) shifts.push(s, -s);
+    let best = null;
+    for (const s of shifts) {
+      const room = roomAt(o, d, s);
+      if (room === null) continue;
+      if (!best || room > best.room + 5 || (room > best.room - 5 && Math.abs(s) < Math.abs(best.shift))) best = { shift: s, room };
     }
-    return best.shift;
+    return best?.shift ?? null;
   };
   // The room divided, the name given the width it has where that puts it,
   // divided again with that width, until the two agree. `reach` takes only
   // part of the extra width, for when the whole of it did not measure clean;
-  // `slide` lets the stack move to where the name has more.
-  const plan = (o, inside, reach = 1, slide = false) => {
+  // `slide` lets the stack move to where the name has more; `grow` lets it
+  // stand taller than the group (see GROW). Null where no place for it holds.
+  const plan = (o, inside, reach = 1, slide = false, grow = 1) => {
+    const H = o.H * grow;
     const cut = (Wn) => {
-      const c = divide({ W: o.W, Wn, H: o.H, number, lines: o.lines, inside, ah, av, ax });
-      return c && { ...c, Wn, shift: slide ? bestShift(o, c) : 0 };
+      const c = divide({ W: o.W, Wn, H, number, lines: o.lines, inside, ah, av, ax });
+      if (!c) return null;
+      const shift = slide ? bestShift(o, c) : (roomAt(o, c, 0) === null ? null : 0);
+      return shift === null ? null : { ...c, Wn, H, shift };
     };
     let d = cut(o.W);
     for (let pass = 0; d && pass < 4; pass++) {
@@ -577,8 +611,8 @@ export function groupLayout({
     }
     if (d && roomFor(o, d) < d.Wn - 1) {
       const Wn = Math.max(o.W, roomFor(o, d));
-      const c = divide({ W: o.W, Wn, H: o.H, number, lines: o.lines, inside, ah, av, ax });
-      d = c && { ...c, Wn, shift: d.shift };
+      const c = divide({ W: o.W, Wn, H, number, lines: o.lines, inside, ah, av, ax });
+      d = c && { ...c, Wn, H, shift: d.shift };
     }
     return d;
   };
@@ -605,18 +639,23 @@ export function groupLayout({
   // either is tried again with more air inside the rim, then given up, and
   // what failed it is kept for the answer: none passing is not "nothing fits".
   const rejected = [];
-  const measure = (o) => {
+  // The best that measures, over how tall the stack may stand.
+  const measure = (o) => GROW.map((grow) => measureAt(o, grow)).filter(Boolean)
+    .sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score)[0] ?? null;
+  const measureAt = (o, grow) => {
     insides: for (const inside of INSIDE) for (const [reach, slide] of [[1, true], [1, false], [0.5, false], [0, false]]) {
-      const d = plan(o, inside, reach, slide);
-      if (!d) return null;
+      const d = plan(o, inside, reach, slide, grow);
+      if (!d) continue;
       const regions = regionsFor(o, d);
-      // A disc moved off the group, or a name wider than it, is on bodywork
-      // the sweep did not hold, so it is held here, as finely as the group was.
-      if (d.shift !== 0 && !fineFits(g, model, prepared, regions.roundel.at, marginMm)) {
+      // A disc moved off the group or a stack taller than it, or a name wider
+      // than it, is on bodywork the sweep did not hold, so it is held here, as
+      // finely as the group was. A name to its own margin (see NAME_MARGIN).
+      const off = d.shift !== 0 || d.H > o.H + 0.5;
+      if (off && !fineFits(g, model, prepared, regions.roundel.at, marginMm)) {
         rejected.push(`the roundel moved ${Math.round(d.shift)} mm was not clean all round`);
         continue;
       }
-      if (d.Wn > o.W + 1 && !regions.name.every((r) => fineFits(g, model, prepared, r.at, marginMm))) {
+      if ((off || d.Wn > o.W + 1) && !regions.name.every((r) => fineFits(g, model, prepared, r.at, nameMargin))) {
         rejected.push(`the name's line at ${Math.round(d.Wn)} mm wide was not clean all round`);
         continue;
       }
@@ -655,9 +694,11 @@ export function groupLayout({
     const sp = largestSpace({ grid: g, model, prepared, aspect: quarter ? 1 / aspect : aspect, marginMm, fine: false }).largest;
     if (!sp) continue;
     for (const o of optionsFor(aspect, sp)) {
-      const d = plan(o, INSIDE[0], 1, true);
-      if (d) ranked.push({ o, clears: d.numberMm >= NUMBER_MM && d.nameMm >= NAME_MM,
-        score: Math.min(d.numberMm / AIM.number, d.nameMm / AIM.name) });
+      for (const grow of GROW) {
+        const d = plan(o, INSIDE[0], 1, true, grow);
+        if (d) ranked.push({ o, clears: d.numberMm >= NUMBER_MM && d.nameMm >= NAME_MM,
+          score: Math.min(d.numberMm / AIM.number, d.nameMm / AIM.name) });
+      }
     }
   }
   ranked.sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);

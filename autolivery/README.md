@@ -24,12 +24,13 @@ export AGENTOPS_API_KEY=...              # optional
 
 node bin/liverykit.mjs autolivery-nsx --ui          # the editor, in another terminal
 node autolivery/bin.mjs "Gulf-style, number 85, Neon Doll Racing, number readable from trackside" \
-  --critic-model claude-sonnet-5
+  --critic-model claude-sonnet-5 --critic-effort low
 ```
 
 The critic is the planner's model unless told otherwise. On the critic eval
-below, Sonnet 5 agreed with a person as often as Opus 5 at half the price, so
-the example asks for it.
+below, Sonnet 5 agreed with a person as often as Opus 5 at half the price, and
+at low effort it agreed just as often again, in about 10 s a picture instead of
+20, so the example asks for that.
 
 `autolivery-nsx` is the Honda NSX GT3 Evo in grey primer and nothing else. The
 editor needs the car's own `.kn5` for the 3D views, and so does the loop, because
