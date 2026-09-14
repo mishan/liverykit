@@ -166,8 +166,9 @@ the A110, the 300 SEL, the 2002 and the RX3. Every one of those bodies had no
 panels.
 
 **The fix.** `placeOnSheet` in `src/engine/kn5.mjs` moves each island that fits
-wholly on another copy of the sheet back onto the copy in [0, 1], by whole
-sheets, when the model is parsed, and `vertex()` applies the move. Everything
+on another copy of the sheet, within the bleed `SHEET_SPAN` allows (0.025 at
+each edge), back onto the copy in [0, 1], by whole sheets, when the model is
+parsed, and `vertex()` applies the move. Everything
 that reads UVs reads them through `vertex()` — islands, seams, outlines, safe
 areas, wheels, the software renderer, the geometry the editor draws — so they
 all see a moved island in the same place. An island goes to the copy of the
