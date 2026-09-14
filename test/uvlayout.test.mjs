@@ -343,6 +343,51 @@ test('every island straddling a sheet boundary is counted, including one no pane
   }
 });
 
+test('an island the layout calls one sheet is moved back whole or reported, never cut to a sliver', async () => {
+  // Three measures of "wider than a sheet" disagreed: 1.05 sheets for the
+  // layout and the panel threshold, and 1.02 for moving an island and for
+  // counting a straddler. An island 1.03 sheets tall was one sheet to the
+  // first two and neither moved nor counted by the others, so its panel was the
+  // 0.015 of it left on the sheet, and placement went ahead onto that.
+  const tall = (name, v0) => {
+    const N = 6;
+    const verts = [];
+    const indices = [];
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i <= N; i++) verts.push(vert(-0.3 + 0.1 * i, 0.5, -0.3 + 0.1 * j, 0.05 + 0.9 * i / N, v0 + 1.03 * j / N));
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = j * (N + 1) + i;
+        indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+      }
+    }
+    return { name, verts, indices, materialId: 1 };
+  };
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [
+        tall('CENTRED', -1.015),    // v = -1.015 to 0.015: a sheet down, bleeding at both edges
+        tall('LOPSIDED', -1.04),    // v = -1.04 to -0.01: on no one copy of the sheet
+      ],
+      materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+      extraTextures: [{ name: 'seat.dds', width: 64, height: 64 }],
+    }));
+    const lines = [];
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+    const seat = Object.entries(profile.textures).find(([, t]) => t.file === 'seat.dds')[0];
+    assert.equal(profile.textures[seat].uvLayout, 'unwrapped');
+    const rects = Object.values(profile.panels[seat]).map((p) => p.rect);
+    assert.deepEqual(rects, [[0.05, 0, 0.9, 1]], 'the centred island is the whole sheet, not a sliver of it');
+    assert.match(lines.join('\n'), /! 1 island\(s\) straddle a sheet boundary \(1 on seat\.dds\)/,
+      'and the one with no copy to move to is said');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('placement on a tiled material is skipped and reported, and a fill still paints', async () => {
   const { profile, seat } = await profileWith({ repeat: 40 });
   const notes = [];
