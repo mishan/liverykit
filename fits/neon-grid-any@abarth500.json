@@ -13,14 +13,18 @@
     "The doors are laid sideways in this texture — 270 degrees on the left, 90",
     "on the right — which is why the design asks for rotate: auto rather than",
     "hard-coding an angle. That is measured per panel, so this fit says nothing",
-    "about it."
+    "about it.",
+    "The team names name their panel, the door, although the design's own",
+    "selection finds it today. Regenerated with extents, the rear quarter also",
+    "reaches the middle of the car and is the bigger match, and the name would",
+    "have moved onto it with this fit's placement."
   ],
   "regions": {
     "number-left": { "panel": "left_mid", "at": [0.24, 0.18, 0.52, 0.52] },
     "number-right": { "panel": "right_mid", "at": [0.24, 0.18, 0.52, 0.52] },
 
-    "team-left": { "at": [0.06, 0.80, 0.88, 0.11] },
-    "team-right": { "at": [0.06, 0.80, 0.88, 0.11] },
+    "team-left": { "panel": "left_mid", "at": [0.06, 0.80, 0.88, 0.11] },
+    "team-right": { "panel": "right_mid", "at": [0.06, 0.80, 0.88, 0.11] },
 
     "driver-left": { "drop": true },
     "driver-right": { "drop": true }

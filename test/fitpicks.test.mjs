@@ -16,10 +16,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { loadProfile, resolveTargets, expandRegions } from '../src/profile.mjs';
-import { applyFit, allRegionKeys } from '../src/fit.mjs';
+import { loadProfile, resolveTargets, expandRegions, resolveRect, panelName } from '../src/profile.mjs';
+import { applyFit, allRegionKeys, regionKey } from '../src/fit.mjs';
+import { tagProfile } from '../src/engine/tags.mjs';
 import { loadLivery } from '../src/livery.mjs';
 
 const at = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
@@ -98,3 +99,71 @@ for (const [car, pinned] of Object.entries(PINNED)) {
       'the fit an explicit panel, and only then update this snapshot.');
   });
 }
+
+// The snapshot above only catches a move on a profile it has seen. None of the
+// shipped profiles carries `extent3d`, so it passed the extent tagger without
+// ever meeting it, and regenerating the Abarth took `team-left` from the door
+// to the rear quarter: the quarter is three times the door's size, newly
+// reaches `mid`, and `limit` takes the biggest match. So a fitted placement on
+// a `limit` selection names its panel, and this checks every shipped fit does.
+test('a fit that places a region picked by `limit` names the panel it was fitted on', async () => {
+  const unpinned = [];
+  for (const file of readdirSync(at('fits')).filter((f) => f.endsWith('.json'))) {
+    const fit = JSON.parse(readFileSync(at(`fits/${file}`), 'utf8'));
+    const design = await loadLivery(at(`liveries/${fit.livery}.mjs`));
+    const profile = await loadProfile(at(`cars/${fit.car}.json`));
+    for (const { from, spec, primary } of resolveTargets(profile, design).targets) {
+      (spec.regions ?? []).forEach((r, i) => {
+        const o = fit.regions?.[regionKey(from, r, i)];
+        if (r.once && !primary) return;
+        if (!o || o.drop || r.tags === undefined || r.limit === undefined) return;
+        if (o.panel === undefined) unpinned.push(`${file}: ${regionKey(from, r, i)}`);
+      });
+    }
+  }
+  assert.deepEqual(unpinned, [], 'these ride on whichever panel the selection picks today');
+});
+
+test('a pinned fit stays on its panel when a retag changes what `limit` picks', async () => {
+  // A door in the middle of the car and a rear quarter three times its size
+  // that reaches forward into `mid`. By centroid only the door is `mid`; by
+  // extent the quarter is too, and `[left, mid]` with `limit: 1` goes to it.
+  const car = (withExtent) => {
+    const p = {
+      id: 'c', calibration: { axes: { left: '+X', front: '+Z' } },
+      textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+      aliases: { body: { doorLeft: 'door' } },
+      panels: { body: {
+        nose: { rect: [0.9, 0.9, 0.05, 0.05], centroid3d: [0, 1, 2] },
+        tail: { rect: [0.9, 0.8, 0.05, 0.05], centroid3d: [0, 0, -2] },
+        door: { rect: [0, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0], extent3d: [[1, 0.2, -0.4], [1, 0.9, 0.4]] },
+        quarter: { rect: [0.3, 0, 0.5, 0.5], centroid3d: [1, 0.6, -1.2], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] },
+      } },
+    };
+    if (!withExtent) for (const q of Object.values(p.panels.body)) delete q.extent3d;
+    tagProfile(p);
+    return p;
+  };
+  const region = { id: 'team', treatment: 'fill', tags: ['left', 'mid'], limit: 1 };
+  const place = (profile, override) => {
+    const fitted = applyFit([region], { regions: { team: override } }, { profile, role: 'body' }).regions;
+    return expandRegions(profile, 'body', fitted).regions.map((r) => {
+      const { x, y, w, h } = resolveRect(profile, 'body', r);
+      return { panel: panelName(profile, 'body', r.panel), abs: [x, y, w, h] };
+    });
+  };
+  const where = [0.1, 0.2, 0.5, 0.5];
+  const before = car(false), after = car(true);
+
+  const loose = { at: where };
+  assert.equal(place(before, loose)[0].panel, 'door');
+  assert.equal(place(after, loose)[0].panel, 'quarter',
+    'the retag moves an unpinned fit, which is why a fit on a `limit` selection is pinned');
+
+  for (const pinned of [{ panel: 'door', at: where }, { panel: 'doorLeft', at: where }]) {
+    const door = [0.1 * 0.2, 0.2 * 0.2, 0.5 * 0.2, 0.5 * 0.2];
+    assert.deepEqual(place(before, pinned), [{ panel: 'door', abs: door }]);
+    assert.deepEqual(place(after, pinned), [{ panel: 'door', abs: door }],
+      `pinned as "${pinned.panel}", the same texels of the same panel either way`);
+  }
+});
