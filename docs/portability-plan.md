@@ -153,11 +153,15 @@ them is a proposed body in the sweep, the mp412c's `black.dds`.
 - `resolveTargets` gives a surface on a tiled texture a `tiled` note. The first
   draft put that in `MISSING`, but the surface is painted — a fill or an even
   pattern lands — so it is a caveat, and "asked for and not painted" would be
-  false. What is not painted is placed artwork. `expandRegions` skips any
-  region with `at`, `panel` or `tags` on a tiled texture with an `unplaceable`
-  note, which is in `MISSING`, and `portability()` reports the same region as
-  `unplaceable`. Both ask `placementRefusal`, so the report cannot call a region
-  placeable that the build skips. The editor lists it with the other misses.
+  false. What is not painted is placed artwork. `expandRegions` first checks
+  every region's shape, so a malformed one throws on any texture, tiled or
+  not; it then skips any region with `at`, `panel` or `tags` on a tiled
+  texture with an `unplaceable` note, which is in `MISSING`. `portability()`
+  reports the same region as `unplaceable`, and fitment as an `unmatched`
+  finding, so a gate that passes the draft does not pass artwork the build
+  skips. The report and the build both ask `placementRefusal`, so the report
+  cannot call a region placeable that the build skips. The editor lists it with
+  the other misses.
 - The panel-level `tiled` flag still has no reader. The first draft refused a
   region on a tiled panel of a mixed texture too. Measured, 10 of the 41 flagged
   panels in the shipped profiles overhang the sheet by 0.01 or less, which is
