@@ -279,8 +279,10 @@ export const VOCABULARY = {
   // the fleet every labelled rim texture has all its islands at a wheel and at
   // least four sharing a rectangle; other textures near a wheel have a median
   // of a fifth of their islands there. Measured in docs/naming.md: the top pick
-  // is a labelled rim on 225 of 246 cars. Most misses are an ambient-occlusion
-  // overlay on the same meshes, which no measurement here tells apart.
+  // is a labelled rim on 225 of 246 cars, and the binding, with the pick's
+  // motion-blur twin beside it, lands on one on 228. Most misses are an
+  // ambient-occlusion overlay on the same meshes, which no measurement here
+  // tells apart.
   rims: {
     describes: 'Wheel faces. Usually one texture shared by all four.',
     // A rim brings the motion-blur rim it is swapped with: see pairTwins.
@@ -299,9 +301,10 @@ export const VOCABULARY = {
   // Seen from the seat and not from the track. Cockpit visibility is the
   // deciding term here the way trackside visibility is for the body, and it is
   // measured only where a steering wheel was found, so a car without one gets
-  // no interior proposal rather than a guess. 124 of 168 labelled cars: the
-  // misses are mostly the cockpit's occlusion overlay, which shares the
-  // cabin's meshes and so its area.
+  // no interior proposal rather than a guess. 125 of 168 labelled cars, with
+  // the body's role no longer a candidate: the misses are mostly the
+  // cockpit's occlusion overlay, which shares the cabin's meshes and so its
+  // area.
   interior: {
     describes: 'Cabin surfaces — tub, dash, trim.',
     excludes: (f) => (typeof f.cockpit === 'number' ? null : 'cockpit visibility was not measured'),
