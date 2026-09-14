@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { request } from 'node:http';
-import { mkdtemp, readFile, writeFile, readdir, mkdir, rename, symlink, chmod, stat, lstat } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, readdir, mkdir, rename, symlink, chmod, stat, lstat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -95,12 +95,70 @@ test('the one-pass bind block is the block the generator writes', async () => {
   for (const term of SCORABLE) assert.match(stdout, new RegExp(`^${term} — `, 'm'), `a ranking for ${term}`);
   const unscored = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t));
   assert.match(stdout, new RegExp(`bound by hand or not at all: ${unscored.join(', ')}\\.`));
+  // No profile for this car in cars/, so nothing to merge, and said.
+  assert.match(stdout, /No \S*\/fixture-car\.json, so this block has no confirmed bindings merged in/);
 
   const block = JSON.parse(stdout.slice(stdout.indexOf('"bind": ') + 8, stdout.indexOf('\n\n  Nothing was written')));
   const generated = await profileFromKn5(kn5, { visibility: false, log: () => {} });
   assert.deepEqual(block, generated.bind);
   assert.ok(Object.keys(block).length, 'the fixture car has a body to propose');
   assert.ok(Object.values(block).every((b) => b.source === 'auto'), 'the tool never writes "human"');
+});
+
+/** The command line, run as a person would, answering with what it printed. */
+const cli = (args, env = {}) => new Promise((ok) => execFile(process.execPath, [join(ROOT, 'bin/liverykit.mjs'), ...args],
+  { env: { ...process.env, ...env } }, (e, out, err) => ok({ code: e?.code ?? 0, stdout: out, stderr: err })));
+
+const printedBlock = (stdout) =>
+  JSON.parse(stdout.slice(stdout.indexOf('"bind": ') + 8, stdout.indexOf('\n\n  Nothing was written')));
+
+test('the --all block keeps what a person confirmed, as a regeneration does', async () => {
+  // The generator merges the existing profile's human bindings in and --all
+  // did not, so pasting its block over cars/<id>.json put every confirmation
+  // back to "auto" and dropped the terms bound by hand. The prior is put in
+  // a temporary directory, never in this checkout's cars/, where a stray one
+  // would pass for a shipped car.
+  const id = 'fixture_prior';
+  const dir = await mkdtemp(join(tmpdir(), 'lk-prior-'));
+  const env = { LIVERYKIT_PRIOR_DIR: dir };
+  try {
+    const kn5 = join(dir, 'fixture-car.kn5');
+    await writeFile(kn5, carKn5());
+    const prior = await profileFromKn5(kn5, { id, log: () => {} });
+    prior.bind.body = { ...prior.bind.body, source: 'human' };
+    prior.bind.wing = { roles: [...prior.bind.body.roles], source: 'human' };
+    await writeFile(join(dir, `${id}.json`), JSON.stringify(prior, null, 2) + '\n');
+
+    const explained = await cli(['--explain', kn5, '--all', '--car-id', id], env);
+    assert.equal(explained.code, 0, explained.stderr);
+    const generated = await cli(['--from-kn5', kn5, '--car-id', id, '--out', join(dir, 'out')], env);
+    assert.equal(generated.code, 0, generated.stderr);
+    const written = JSON.parse(await readFile(join(dir, 'out', `${id}.json`), 'utf8'));
+
+    const block = printedBlock(explained.stdout);
+    assert.deepEqual(block, written.bind, 'what a person pastes is what a regeneration writes');
+    assert.equal(block.body.source, 'human', 'a confirmation stays confirmed');
+    assert.deepEqual(block.wing, prior.bind.wing, 'and a term bound by hand stays bound');
+    assert.match(explained.stdout, /kept 2 human-confirmed binding\(s\) from /);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('--explain takes --assume-size, as the generator does', async () => {
+  // Without it, on an encrypted car the candidates and the block were not the
+  // ones a generation with the flag produces. Proved by the check behind it:
+  // a size that is not a power of two is refused, as --from-kn5 refuses it.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-assume-'));
+  try {
+    const kn5 = join(dir, 'fixture-car.kn5');
+    await writeFile(kn5, carKn5({ encrypted: true }));
+    const r = await cli(['--explain', kn5, '--all', '--no-visibility', '--assume-size', '1000']);
+    assert.notEqual(r.code, 0, r.stdout);
+    assert.match(r.stderr, /power of two/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('the Bindings panel is told every term, bound or not', async () => {
