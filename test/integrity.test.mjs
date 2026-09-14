@@ -966,6 +966,54 @@ test('a panel\'s reach is read the same way round on a car facing -Z', async () 
   assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
 });
 
+test('what a panel reaches only by its extent is told apart from where its centroid is', async () => {
+  // Tags only grow, so the list alone cannot say which of a panel's sections
+  // is the one it sits in; the flank above carries three and is centred in one.
+  const { computeTags, reachOnly } = await import('../src/engine/tags.mjs');
+  const car = tagCar({ left: '+X', front: '+Z' }, {
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: [0, 1, 2] },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: [0, 0, -2] },
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0.5], extent3d: [[1, 0.2, -1.2], [1, 1.2, 1.2]] },
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: [1, 0.2, -0.6], extent3d: [[1, 0.1, -0.8], [1, 0.3, -0.4]] },
+    plain: { rect: [0.9, 0, 0.05, 0.05], centroid3d: [1, 0.5, 0.5] },
+  });
+  const reach = reachOnly(car).body;
+  assert.deepEqual(reach.flank, ['mid', 'rear', 'upper'], 'centred in the front, low; reaching the rest');
+  assert.deepEqual(reach.clip, [], 'a panel that reaches nothing beyond its centroid');
+  assert.deepEqual(reach.plain, [], 'a panel with no extent reaches nothing');
+  const tags = computeTags(car).body;
+  for (const [name, list] of Object.entries(reach)) {
+    assert.ok(list.every((t) => tags[name].includes(t)), `${name}: reach-only tags are among its tags`);
+  }
+});
+
+test('`limit` takes a panel centred in the section before a bigger one that only reaches it', async () => {
+  // Regenerating the Abarth gave its rear quarter `mid` by reach, and at three
+  // times the door's size it took `[left, mid, visible]` with `limit: 1` from
+  // the door that had been fitted. Reaching is not being there: a panel whose
+  // centroid is in the section comes first, and reach adds candidates after
+  // it, so tagging by extent fills a miss without moving a pick.
+  const { panelsWithTags } = await import('../src/profile.mjs');
+  const { tagProfile } = await import('../src/engine/tags.mjs');
+  const car = (withDoor) => {
+    const p = tagCar({ left: '+X', front: '+Z' }, {
+      nose: { rect: [0.9, 0.9, 0.05, 0.05], centroid3d: [0, 1, 2] },
+      tail: { rect: [0.9, 0.8, 0.05, 0.05], centroid3d: [0, 0, -2] },
+      ...(withDoor ? { door: { rect: [0, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0], extent3d: [[1, 0.2, -0.4], [1, 0.9, 0.4]] } } : {}),
+      quarter: { rect: [0.3, 0, 0.5, 0.5], centroid3d: [1, 0.6, -1.2], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] },
+    });
+    tagProfile(p);
+    return p;
+  };
+  assert.ok(car(true).panels.body.quarter.tags.includes('mid'), 'the quarter does reach `mid`');
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left', 'mid'], { limit: 1 }), ['door']);
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left', 'mid'], { limit: 2 }), ['door', 'quarter']);
+  assert.deepEqual(panelsWithTags(car(false), 'body', ['left', 'mid'], { limit: 1 }), ['quarter'],
+    'with nothing centred there, reaching is enough: the miss extents exist to fill');
+  assert.deepEqual(panelsWithTags(car(true), 'body', ['left'], { limit: 1 }), ['quarter'],
+    'a selection naming no section is still biggest first');
+});
+
 test('a generated profile records where each panel reaches, and a full-length flank is every section', async () => {
   const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
   const { carKn5 } = await import('./fixtures/kn5.mjs');
