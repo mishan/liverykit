@@ -28,7 +28,7 @@ import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, sampleRects } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
-import { meshesUsingTexture, vertex, triangles } from './engine/kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, isGlass } from './engine/kn5.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
 // From the editor's op module, because the BROWSER needs this list too — to
@@ -1506,14 +1506,23 @@ function stripeDirection({ t, p }, stripe, say, skip) {
       ? `its panel ${p.region.panel} has no measured axes (uAxis, vAxis); regenerate the profile with --from-kn5`
       : noScale(p);
     skip(`stripe-across for ${id}: ${why}`, { check: 'stripe-across', surface: t.from, role: t.role, ids: [p.id], why });
+    // And said, like the unclear panel below: `notChecked` alone left a piece
+    // nobody measured with no finding to its name, which a planner reading
+    // the findings takes for a piece that passed.
+    say({ ...where, severity: 'low', measured: false,
+      why: `${id} is part of the stripe "${stripe}", and which way it runs could not be checked: ${why}.` });
     return;
   }
-  const across = axes.x === 'across the car' ? 'x' : axes.y === 'across the car' ? 'y'
-    : axes.x === 'along the car' ? 'y' : axes.y === 'along the car' ? 'x' : null;
+  // Both axes named, or neither is used: with y unclear, that x runs across
+  // the car does not make y run along it, and a piece judged by it could be
+  // passed or failed for a direction nobody measured.
+  const across = !axes.x || !axes.y ? null
+    : axes.x === 'across the car' ? 'x' : axes.y === 'across the car' ? 'y'
+      : axes.x === 'along the car' ? 'y' : axes.y === 'along the car' ? 'x' : null;
   if (!across) {
     say({ ...where, severity: 'low', measured: false,
       why: `${id} is part of the stripe "${stripe}", and which way it runs could not be checked: find_panels ` +
-        `names neither of ${p.region.panel}'s axes as along or across the car ` +
+        `does not name both of ${p.region.panel}'s axes as one of along the car, across it, or up and down ` +
         `(${axes.unclear ?? `x runs ${axes.x}, y ${axes.y}`}).` });
     return;
   }
@@ -1762,7 +1771,7 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
     } catch { continue; }
     if (!sheets.has(file)) {
       sheets.set(file, {
-        role: piece.t.role,
+        role: piece.t.role, surface: piece.t.from,
         panels: seenPanels(profile, piece.t.role),
         paint: [],
       });
@@ -1771,7 +1780,10 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
     sheets.get(file).paint.push({ piece, poly, box: [Math.min(...poly.map((q) => q[0])), Math.min(...poly.map((q) => q[1])),
       Math.max(...poly.map((q) => q[0])), Math.max(...poly.map((q) => q[1]))] });
   }
-  const fileOf = (m) => (model.materials?.[model.meshes[m].materialId]?.slots?.txDiffuse ?? '').toLowerCase();
+  // Which sheet each panel in the band is on, so a finding names that one.
+  // Taken from the stripe's first piece, a formula car's body, which binds
+  // body and bodyRear, reported a gap on the rear sheet as the front one's.
+  const home = new Map();
 
   // Front to back, a row of cells at a time across the stripe's width.
   const order = [...Array(env.rows).keys()];
@@ -1782,11 +1794,12 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
       const k = j * env.cols + i, m = env.M[k];
       if (m < 0) continue;
       row.any = true;
-      const sheet = sheets.get(fileOf(m));
+      const sheet = sheets.get(sheetOf(model, m));
       if (!sheet) continue;
       const u = env.U[k], v = env.V[k];
       const pan = panelAtUv(sheet.panels, u, v, model.meshes[m].name);
       if (!pan) continue;
+      home.set(pan, sheet);
       row.req++;
       row.h += env.H[k];
       row.on.set(pan, (row.on.get(pan) ?? 0) + 1);
@@ -1852,8 +1865,8 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
           'stripe runs over its top as well: paint on the bodywork beneath it does not count.'
         : '';
       say({
-        kind: 'stripe-gap', severity: 'high', surface: first.t.from, role: first.t.role, panel: on[0].panel, ids, stripe,
-        from, to, mm: length,
+        kind: 'stripe-gap', severity: 'high', surface: home.get(on[0]).surface, role: home.get(on[0]).role,
+        panel: on[0].panel, ids, stripe, from, to, mm: length,
         why: `The stripe "${stripe}" leaves ${length} mm of the car bare ${seenFrom}, from ${from} to ${to} mm behind the ` +
           `nose${where}: that stretch is ${on.map((q) => `${q.panel} (${Math.round(q.visible * 100)}% visible)`).join(', ')}, ` +
           'bodywork this design paints and the world sees, not glass or an opening. A stripe along the car runs nose to ' +
@@ -1902,12 +1915,29 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L }) {
     // Mostly unpainted, and more than one cell of the grid each way: a piece
     // drawn a little narrower than the rest leaves its own panel's edge bare,
     // and that is `stripe-offset`'s to say.
-    if (s.bare * 4 < s.req * 3 || s.rows.length < 2 || s.widest < 2 || holes.has(pan)) continue;
+    if (s.bare * 4 < s.req * 3 || holes.has(pan)) continue;
     const from = frontOf(s.rows[0]), to = backOf(s.rows.at(-1));
     const carries = Math.round(s.widest * ENVELOPE_CELL * 1000);
+    const { surface, role } = home.get(pan);
+    if (s.rows.length < 2 || s.widest < 2) {
+      // Too thin to judge is not the same as fine. Passed over in silence, a
+      // panel the band clips by 20 mm read as one the stripe had covered, and
+      // `stripeLayout` leaves the same panel out, under `skipped`.
+      const thin = [s.widest < 2 && `${carries} mm of the band's ${Math.round(band)} mm width`,
+        s.rows.length < 2 && `${Math.round(ENVELOPE_CELL * 1000)} mm along the car`].filter(Boolean).join(' and ');
+      say({
+        kind: 'stripe-gap', severity: 'low', measured: false, surface, role, panel: pan.panel, ids, stripe, from, to,
+        why: `${pan.panel} lies inside the stripe "${stripe}" from ${from} to ${to} mm behind the nose and the stripe ` +
+          `does not paint it, but it carries only ${thin} there: too little of the ` +
+          `${Math.round(ENVELOPE_CELL * 1000)} mm grid the car is looked at through to tell a notch in the stripe ` +
+          `from the edge of a piece drawn a little narrow, so whether it needs a piece of its own could not be ` +
+          'measured; check it in a picture of the car.',
+      });
+      continue;
+    }
     const around = [...s.around.entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
     say({
-      kind: 'stripe-gap', severity: 'high', surface: first.t.from, role: first.t.role, panel: pan.panel, ids, stripe,
+      kind: 'stripe-gap', severity: 'high', surface, role, panel: pan.panel, ids, stripe,
       from, to, mm: carries,
       why: `${pan.panel} lies inside the stripe "${stripe}" from ${from} to ${to} mm behind the nose, carrying ` +
         `${carries} mm of its ${Math.round(band)} mm width there, and the stripe does not paint it: a notch of the base ` +
@@ -2044,6 +2074,18 @@ const seenPanels = (profile, role) => Object.entries(profile.panels?.[role] ?? {
     outline: Array.isArray(q.outline) && q.outline.length >= 3 ? q.outline : null }));
 
 /**
+ * The sheet a mesh wears as paint, lower-cased, or '' for glass. By its
+ * diffuse file, and never for glass, told as the renderer tells it (`glass`
+ * in engine/geometry.mjs): a windscreen may reuse the body's diffuse file,
+ * and taken by filename alone it is bodywork a stripe must cover, which is
+ * the one thing glass is not.
+ */
+function sheetOf(model, m) {
+  const mat = model.materials?.[model.meshes[m].materialId];
+  return blends(mat) && isGlass(mat?.shader) ? '' : (mat?.slots?.txDiffuse ?? '').toLowerCase();
+}
+
+/**
  * Which of those panels a point on the sheet lies on: its box, then its
  * outline, and its own mesh where the profile names one — outlines enclose
  * other islands' texels (see `ownMeshes`), and the mesh tells them apart.
@@ -2055,7 +2097,10 @@ const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, 
  * The panels of one sheet a band along the car crosses, seen from above, front
  * to back: what a stripe of that band is painted on. `across` is [from, to] in
  * millimetres left of the centreline. Each comes with where it lies along the
- * car, `behindNose`, and the most of the band's width it carries, `carriesMm`.
+ * car, `behindNose`, and the most of the band's width it carries, `carriesMm`;
+ * one the band covers too little of to measure, under two cells of the grid
+ * either way, comes marked `measured: false`, as the coverage check says of it.
+ * Glass is never one, whichever sheet its diffuse is (see `sheetOf`).
  *
  * Read off the same view of the car `stripeCoverage` holds a stripe to, so a
  * stripe laid out from this is the one that check asks for. A hatch set into
@@ -2083,7 +2128,7 @@ export function stripePanels(model, profile, role, across) {
     const count = new Map();
     for (const i of cols) {
       const k = j * env.cols + i, m = env.M[k];
-      if (m < 0 || (model.materials?.[model.meshes[m].materialId]?.slots?.txDiffuse ?? '').toLowerCase() !== file) continue;
+      if (m < 0 || sheetOf(model, m) !== file) continue;
       const pan = panelAtUv(panels, env.U[k], env.V[k], model.meshes[m].name);
       if (!pan) continue;
       row.cells.push(pan);
@@ -2131,14 +2176,16 @@ export function stripePanels(model, profile, role, across) {
     }
   });
   return [...byPanel.entries()]
-    // More than one cell of the grid each way, as a notch must be to be one.
-    .filter(([, s]) => s.rows.length >= 2 && s.widest >= 2)
     .sort((a, b) => a[1].rows[0] - b[1].rows[0])
     .map(([pan, s]) => ({
       panel: pan.panel, visible: pan.visible,
       behindNose: [edgeMm(env.r0 + (rows[s.rows[0]].j + (F > 0 ? 1 : 0)) * ENVELOPE_CELL),
         edgeMm(env.r0 + (rows[s.rows.at(-1)].j + (F > 0 ? 0 : 1)) * ENVELOPE_CELL)],
       carriesMm: Math.round(s.widest * ENVELOPE_CELL * 1000),
+      // More than one cell of the grid each way, as a notch must be to be one.
+      // Less is still a panel the band crosses, and was once filtered out
+      // here, so a layout neither laid a piece on it nor said it had not.
+      ...(s.rows.length >= 2 && s.widest >= 2 ? {} : { measured: false }),
     }));
 }
 

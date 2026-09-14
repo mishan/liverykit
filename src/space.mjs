@@ -599,7 +599,8 @@ export function groupLayout({
  * wing. `stripePanels` says which panels the band crosses and `stripeAt`
  * what each one needs, both from the model. The answer is held to fitment's
  * own stripe checks before it is given, and says what they found, if anything:
- * a layout that cannot pass them is not handed out as though it did.
+ * a layout that cannot pass them is not handed out as though it did. A panel
+ * the band crosses that gets no piece is under `skipped`, with why.
  */
 export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre' }) {
   if (!(Number.isFinite(widthMm) && widthMm > 0)) {
@@ -615,6 +616,13 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
   const pieces = [];
   const skipped = [];
   for (const c of stripePanels(model, profile, role, across)) {
+    if (c.measured === false) {
+      skipped.push({ panel: c.panel, carriesMm: c.carriesMm,
+        why: `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
+          `${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm one way: too little to fit a piece to or ` +
+          'to tell a gap by. Check it in a picture of the car, and add a piece by hand if the stripe needs one there.' });
+      continue;
+    }
     const got = stripeAt(model, profile, role, c.panel, { across });
     if (got.at) pieces.push({ ...c, id: `${name}-${c.panel}`, at: got.at, errorMm: got.error });
     else skipped.push({ panel: c.panel, why: got.why });
