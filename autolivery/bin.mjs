@@ -6,6 +6,7 @@ import { connect } from './mcp.mjs';
 import { createTrace } from './trace.mjs';
 import { run, proposeDesign } from './loop.mjs';
 import { loadRecording, createReplayPlanner, designDigest, checkBase } from './replay.mjs';
+import { plannerSystem } from './prompts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LIVERYKIT = resolve(HERE, '../bin/liverykit.mjs');
@@ -41,6 +42,9 @@ The loop:
   --polish <n>           rounds after a pass spent acting on the critic's advice, when it
                          gave any (default 1). The pass is kept, and offered instead of a
                          polish that does not pass the gate
+  --no-aero              do not ask for a ground-effect kit in the style's colours
+                         (splitter, side skirts, diffuser)
+  --no-wheels            do not ask for the wheels in the style's accent colour
 
 The models:
   --backend <b>          anthropic (default), or openai for any OpenAI-compatible
@@ -102,6 +106,8 @@ const { values, positionals } = parseArgs({
     'max-cost': { type: 'string', default: '5' },
     sampling: { type: 'string' },
     'full-history': { type: 'boolean', default: false },
+    'no-aero': { type: 'boolean', default: false },
+    'no-wheels': { type: 'boolean', default: false },
     help: { type: 'boolean', short: 'h', default: false },
   },
 });
@@ -243,6 +249,14 @@ if (values.sampling) {
   }
 }
 
+// What the planner is asked for beyond the brief, each part of it a flag so
+// that one costing the demo more than it earns can be left out.
+const extras = { aero: !values['no-aero'], wheels: !values['no-wheels'] };
+if (replaying && (values['no-aero'] || values['no-wheels'])) {
+  fail('--no-aero and --no-wheels change what the planner is asked, and a replay has no planner');
+}
+const system = plannerSystem(extras);
+
 // A replay's point is to cost nothing, so its critic is the local one unless
 // told otherwise.
 const criticBackend = values['critic-backend'] ?? (replaying ? 'openai' : values.backend);
@@ -328,7 +342,7 @@ const build = async (role, s) => {
       fail(`the Anthropic API would not serve ${model}: ${e.message}`);
     }
     const opts = { client: anthropic, model, effort: s.effort, trace, fallback: !values['no-fallback'], budget };
-    return { model, made: role === 'planner' ? claude.createPlanner(opts) : claude.createCritic(opts) };
+    return { model, made: role === 'planner' ? claude.createPlanner({ ...opts, system }) : claude.createCritic(opts) };
   }
 
   const local = await import('./openai.mjs');
@@ -355,7 +369,7 @@ const build = async (role, s) => {
     log(`  (${model} takes no images: the planner works from the critic's notes, not the renders)`);
   }
   const opts = { endpoint, model, trace, sampling, fresh: !values['full-history'] };
-  return { model, made: role === 'planner' ? local.createPlanner(opts) : local.createCritic({ ...opts, maxTokens: criticMaxTokens }) };
+  return { model, made: role === 'planner' ? local.createPlanner({ ...opts, system }) : local.createCritic({ ...opts, maxTokens: criticMaxTokens }) };
 };
 const planner = replaying
   ? { model: `replay of ${relative(process.cwd(), recording.dir) || recording.dir}` +
@@ -381,6 +395,10 @@ const referee = refereeMode === 'anthropic' && sides.critic.backend !== 'anthrop
   : null;
 
 console.log(`brief: ${brief}`);
+if (!replaying) {
+  const asked = [extras.aero && 'ground-effect kit', extras.wheels && 'wheels'].filter(Boolean);
+  console.log(`also asked for: ${asked.length ? asked.join(', ') : 'nothing (--no-aero, --no-wheels)'}`);
+}
 // A replay's planner is no model at all, and its run pays for nothing unless
 // the critic or second look is Claude: say so, rather than print a budget.
 console.log(`planner: ${planner.model}${replaying ? '' : ` (${sides.planner.backend})`} · ` +

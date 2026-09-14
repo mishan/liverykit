@@ -228,6 +228,17 @@ test('artwork outside the readable part of a panel is reported', () => {
   const out = r.findings.filter((f) => f.kind === 'outside-safe');
   assert.deepEqual(out.map((f) => f.ids[0]), ['edge'], 'and not the one that said safe: false');
   assert.equal(out[0].severity, 'high');
+
+  // A fill covering its whole panel is a colour field whether or not it says
+  // so: run 26's planner copied a ground-effect kit out of find_space without
+  // its safe: false, and deleted the diffuser the check then reported. A fill
+  // on part of the panel is still artwork that can stray.
+  const fields = fitment(design([
+    { id: 'whole', treatment: 'fill', panel: 'L', color: 'ink' },
+    { id: 'spelt-out', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' },
+    { id: 'part', treatment: 'fill', panel: 'L', at: [0, 0, 0.9, 1], color: 'ink' },
+  ]), withSafe).findings.filter((f) => f.kind === 'outside-safe');
+  assert.deepEqual(fields.map((f) => f.ids[0]), ['part']);
 });
 
 test('a band that cannot span is a finding, not an exception', () => {
@@ -1881,6 +1892,63 @@ test('find_space lays a stripe out along the car: a piece on every panel the ban
   assert.ok(onHatch.at.every((v, i) => Math.abs(v - [0, 0.4, 1, 0.5][i]) <= 0.01), JSON.stringify(onHatch));
   assert.equal(onHatch.id, 'side-hatch');
   assert.throws(() => stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 0 }), /widthMm/);
+});
+
+test('find_space lays a ground-effect kit out as the car\'s lowest panels all round, and leaves the door alone', async () => {
+  // A Gulf car's colours in profile are its orange splitter, skirts and
+  // diffuser; its centre stripe runs over the top, where a side view barely
+  // sees it. The kit is the car's own lowest panels, not a band at one
+  // height: on the NSX a band fitted the sill 56 mm off a straight line and
+  // took a sliver off the bottom of the door, under the lettering.
+  //
+  // A left flank at x 0.9: a sill 100 to 300 mm up along the middle, a door
+  // above it, and a front wing reaching from the sill's height to 800 mm.
+  // Across the front a splitter, and above it the nose; under the back a
+  // diffuser; and behind the sill a liner the world does not see.
+  const { aeroLayout } = await import('../src/space.mjs');
+  const flank = (x, y0, y1, z0, z1) => [[x, y0, z0], [x, y0, z1], [x, y1, z1], [x, y1, z0]];
+  const quads = [
+    { name: 'sill', uv: [0.02, 0.02, 0.4, 0.05], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.3, 1.0, -1.0) },
+    { name: 'door', uv: [0.02, 0.1, 0.3, 0.2], normal: [1, 0, 0], corners: flank(0.9, 0.3, 1.0, 1.0, -0.2) },
+    { name: 'wing', uv: [0.45, 0.02, 0.1, 0.15], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.8, 1.6, 1.0) },
+    { name: 'liner', uv: [0.85, 0.02, 0.1, 0.05], normal: [1, 0, 0], corners: flank(0.8, 0.1, 0.25, 0.5, -0.5) },
+    { name: 'splitter', uv: [0.6, 0.02, 0.2, 0.05], normal: [0, 1, 0],
+      corners: [[-0.9, 0.1, 2.0], [0.9, 0.1, 2.0], [0.9, 0.1, 1.8], [-0.9, 0.1, 1.8]] },
+    { name: 'nose', uv: [0.6, 0.2, 0.2, 0.1], normal: [0, 0, 1],
+      corners: [[-0.9, 0.1, 2.0], [0.9, 0.1, 2.0], [0.9, 0.6, 2.0], [-0.9, 0.6, 2.0]] },
+    { name: 'diffuser', uv: [0.6, 0.1, 0.2, 0.05], normal: [0, -1, 0],
+      corners: [[-0.8, 0.15, -1.8], [0.8, 0.15, -1.8], [0.8, 0.15, -2.0], [-0.8, 0.15, -2.0]] },
+  ];
+  const model = carOf(quads.map((q) => ({ ...q, name: q.name.toUpperCase() })));
+  const seen = { sill: 0.9, door: 0.9, wing: 0.9, liner: 0.05, splitter: 0.8, nose: 0.9, diffuser: 0.25 };
+  const profile = {
+    id: 'kit', name: 'Kit', calibration: { axes: { left: '+X', front: '+Z' } },
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: Object.fromEntries(quads.map(({ name, uv: [x, y, w, h] }) => [name, {
+      rect: [x, y, w, h], anisotropy: 1, metresPerUv: [5, 5], visible: seen[name], tags: ['visible'],
+      outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }])) },
+  };
+
+  const got = aeroLayout({ profile, model, role: 'body', heightMm: 300 });
+  assert.deepEqual(got.upMm, [100, 400], 'measured up from the bottom of the bodywork');
+  // The diffuser is 25% visible, seen from behind only, and is part of the
+  // kit; the liner, which nothing sees, is not, and neither is the nose.
+  assert.deepEqual(got.parts, { front: ['aero-splitter'], left: ['aero-wing', 'aero-sill'], rear: ['aero-diffuser'] }, JSON.stringify(got));
+  const at = Object.fromEntries(got.regions.map((r) => [r.panel, r.at]));
+  // Filled whole, which is a region with no `at`, and to its edge.
+  for (const p of ['splitter', 'sill', 'diffuser']) assert.equal(at[p], undefined, `${p} is filled whole`);
+  assert.ok(got.regions.every((r) => r.treatment === 'fill' && r.id === `aero-${r.panel}` && r.safe === false), JSON.stringify(got.regions));
+  // The wing is drawn to the sill's line, 300 mm up, and not to the kit's
+  // 400: two sevenths of its 700 mm from the bottom.
+  const wing = got.pieces.find((p) => p.panel === 'wing');
+  assert.ok(wing.upMm[0] === 100 && Math.abs(wing.upMm[1] - 300) <= 5, JSON.stringify(wing));
+  assert.ok(at.wing.every((v, i) => Math.abs(v - [0, 0, 1, 2 / 7][i]) <= 0.01) && wing.errorMm <= 5, JSON.stringify(wing));
+  // The door begins where the sill ends, so the line would leave it a sliver.
+  const door = (got.skipped ?? []).find((s) => s.panel === 'door');
+  assert.match(door?.why ?? '', /door begins (29\d|30\d) mm up, and the kit's line at (29\d|30\d) mm would leave a sliver/, JSON.stringify(got.skipped));
+
+  assert.throws(() => aeroLayout({ profile, model, role: 'body', heightMm: 0 }), /heightMm/);
 });
 
 test('a panel is measured on its own mesh, not on another island laid out inside its outline', () => {

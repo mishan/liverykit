@@ -3217,6 +3217,74 @@ test('the whole-car view is re-roled from the design, not from the cached geomet
   assert.deepEqual(reRole(undefined, undefined), []);
 });
 
+test('the whole car comes down grouped by the working design, so a rim painted since is a painted group', async () => {
+  // Reported: a proposal painted the NSX's rims orange, the texture rendered
+  // orange, and the whole-car view drew the wheels stock. The geometry was
+  // grouped by the livery on DISK, which paints only the body, and a rim on a
+  // two-layer material the design does not paint lands in a group with no
+  // file — shared with every such part — so the page had nothing to re-role.
+  // Grouped by the working design, the rim is its own painted group, and the
+  // page fetches again when the sheets the design paints change.
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { carKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-rims-'));
+  const rim = { name: 'EXT_RIM_LF', materialId: 1, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, 1.2, 0.1, 0.1), vert(0.8, 0.5, 1.2, 0.9, 0.1), vert(0.8, 0.5, 1.6, 0.9, 0.9)] };
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5({
+    wrapped: [{ name: 'RIM_LF', meshes: [rim] }],
+    materials: [{ name: 'BodyMat' }, { name: 'Rim', shader: 'ksPerPixelMultiMap', slots: { txDiffuse: 'rim.dds', txDetail: 'metal.dds' } }],
+    extraTextures: [{ name: 'rim.dds' }],
+  }));
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const rimRole = Object.entries(profile.textures).find(([, t]) => t.file === 'rim.dds')?.[0];
+  assert.ok(rimRole, `the profile has a role for rim.dds: ${Object.keys(profile.textures).join(', ')}`);
+  const livery = { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+    palette: { primer: '#8a8d91', orange: '#F26B21' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const { server, url } = await startUi({ livery, profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+    liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {} });
+  // Through node:http, not fetch: `runApp` installs the app's fake fetch as
+  // the global one and an earlier test in this file leaves it there.
+  const http = await import('node:http');
+  const call = (path, body) => new Promise((ok, no) => {
+    const req = http.request(new URL(path, url), { method: body ? 'POST' : 'GET',
+      headers: body ? { 'content-type': 'application/json' } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => ok({ status: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', no);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+  const rimGroups = async () => {
+    const res = await call('/api/model?all=1');
+    assert.equal(res.status, 200);
+    const b = res.body;
+    return unpackModel(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)).groups
+      .filter((g) => g.role === rimRole || g.file === 'rim.dds');
+  };
+  try {
+    assert.deepEqual(await rimGroups(), [], 'the livery on disk does not paint the rim, and nothing names it');
+
+    // Painted in the working design only, as an accepted proposal is.
+    const res = await call('/api/state',
+      { design: { ...livery, paint: { [rimRole]: { regions: [{ id: 'rims', treatment: 'fill', color: 'orange' }] } } } });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await rimGroups()).map((g) => [g.role, g.file]), [[rimRole, 'rim.dds']],
+      'the rim is a painted group of its own, wearing the design\'s sheet');
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 
 test('a texture named like a special key is a texture, not a prototype', async () => {
   // Every key in the roles index is a FILENAME out of a car somebody else made.

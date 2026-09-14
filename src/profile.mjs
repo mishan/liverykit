@@ -827,6 +827,19 @@ export function metresNarrowest(frac) {
   return Math.min(frac.w * per[0], frac.h * per[1]);
 }
 
+/**
+ * A fill that covers its whole panel: a colour field, never artwork meant to
+ * be read, so it reaches the island's edge as `safe: false` says, whether or
+ * not it says so. Run 26's planner copied a ground-effect kit out of
+ * find_space and dropped the `safe: false` on every piece, and the diffuser's
+ * fills came back as high outside-safe, which it fixed by deleting them.
+ */
+export function wholeFill(region) {
+  const at = region?.at;
+  return region?.treatment === 'fill' && Boolean(region.panel) && region.span !== true &&
+    (at === undefined || (Array.isArray(at) && at.length === 4 && at[0] === 0 && at[1] === 0 && at[2] === 1 && at[3] === 1));
+}
+
 export function resolveRect(profile, role, spec) {
   const at = spec.at ?? [0, 0, 1, 1];
   checkRect(at, `region "at"`, (m) => { throw new Error(m); }, { loose: spec.span === true });
@@ -847,7 +860,7 @@ export function resolveRect(profile, role, spec) {
     panel: pan,
   };
 
-  if (pan.safe && spec.safe !== false) {
+  if (pan.safe && spec.safe !== false && !wholeFill(spec)) {
     const [sx, sy, sw, sh] = pan.safe;
     const over =
       out.x < sx - 1e-9 || out.y < sy - 1e-9 ||

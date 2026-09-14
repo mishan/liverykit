@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, drawnBy } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -892,42 +892,203 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     throw new Error(`find_space's stripe takes name, the stripe's name for its ids and its constraint; got ${JSON.stringify(name)}.`);
   }
   const across = [offsetMm - widthMm / 2, offsetMm + widthMm / 2];
-  const pieces = [];
-  const skipped = [];
   const { hide, painted } = drawnBy(profile, design);
   const paints = [...new Set([...painted, role])];
-  for (const c of stripePanels(model, profile, role, across, { hide, painted: paints })) {
-    if (c.measured === false) {
-      skipped.push({ panel: c.panel, carriesMm: c.carriesMm,
-        why: c.why ?? `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
-          `${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm one way: too little to fit a piece to or ` +
-          'to tell a gap by. Check it in a picture of the car, and add a piece by hand if the stripe needs one there.' });
-      continue;
-    }
-    const got = stripeAt(model, profile, role, c.panel, { across });
-    if (got.at) pieces.push({ ...c, id: `${name}-${c.panel}`, at: got.at, errorMm: got.error });
-    else skipped.push({ panel: c.panel, why: got.why });
-  }
+  const { pieces, skipped } = bandPieces({ model, profile, role, band: across, name, hide, paints });
   const regions = pieces.map((p) => ({ id: p.id, treatment: 'stripe', panel: p.panel, at: p.at, constraints: { stripe: name } }));
-  // Checked on the car the layout was read off: the design's hides, and its
-  // other sheets painted with nothing, so the check draws what the layout saw.
-  const findings = regions.length
-    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
-      paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])),
-        [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
-      .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`)
-    : [];
   return {
     role, widthMm, offsetMm, name,
     regions,
     pieces: pieces.map((p) => ({ id: p.id, panel: p.panel, behindNoseMm: p.behindNose, carriesMm: p.carriesMm, errorMm: p.errorMm })),
     ...(skipped.length ? { skipped } : {}),
-    findings,
+    findings: bandFindings({ profile, model, role, regions, hide, paints }),
     ...(!regions.length ? {
       note: `A band ${widthMm} mm wide, ${offsetMm} mm from the centreline, crosses no panel of ${role} the world sees ` +
         'from above. Check the offset, or the sheet the panel named is on.',
     } : {}),
   };
+}
+
+/**
+ * A ground-effect kit: the front splitter, the side skirts and the rear
+ * diffuser, which is to say the car's lowest panels all the way round, from
+ * the bottom of its bodywork up to `heightMm`. A Gulf car's orange kit is what
+ * carries its colours in profile; its centre stripe runs over the top, where
+ * a side view barely sees it.
+ *
+ * Panel by panel, and not as one band like `stripeLayout`'s, because the kit
+ * is the car's own lowest panels in a colour. On the NSX a band at one height
+ * fitted the sill 56 mm off a straight line (its texture is laid on a slant),
+ * took a sliver off the bottom of the door, and wrapped round the front of the
+ * nose. So:
+ *
+ * - a panel the world sees lying wholly inside the height is part of the kit,
+ *   and filled whole: the splitter's lip, the sills, the bumpers' lower
+ *   corners, the diffuser;
+ * - a taller panel on a flank, crossed by the height seen from that side, is
+ *   drawn to the line of the kit's panel nearest it along the car, where a
+ *   rectangle on it holds that line within AERO_FIT_MM, as the rear of the
+ *   NSX's front wing does, so the skirt's top runs on rather than stepping;
+ * - any other is left out, under `skipped`, with why: a door, which the line
+ *   only grazes, or a panel laid out too unevenly to draw it on.
+ */
+export function aeroLayout({ profile, model, role, heightMm, name = 'aero', design = null }) {
+  if (!(Number.isFinite(heightMm) && heightMm > 0)) {
+    throw new Error(`find_space's aero needs heightMm, how far up the car the kit reaches from the bottom of the bodywork, in mm, above zero; got ${JSON.stringify(heightMm)}.`);
+  }
+  if (typeof name !== 'string' || !name.trim() || name !== name.trim()) {
+    throw new Error(`find_space's aero takes name, the kit's name for its ids; got ${JSON.stringify(name)}.`);
+  }
+  const { hide, painted } = drawnBy(profile, design);
+  const paints = [...new Set([...painted, role])];
+  const flanks = [['left', 1], ['right', -1]].map(([side, sign]) => ({ side, sign,
+    bottom: flankBottom(model, profile, role, sign, { hide, painted: paints }) })).filter((f) => f.bottom !== null);
+  if (!flanks.length) {
+    return { role, heightMm, name, regions: [], note: `Seen from either side, no panel of ${role} the world sees is in view.` };
+  }
+  const bottom = Math.min(...flanks.map((f) => f.bottom));
+  const top = bottom + heightMm;
+  const length = carLength(model, profile);
+  const partOf = (on) => (on.across[0] < 0 && on.across[1] > 0
+    ? ((on.behindNose[0] + on.behindNose[1]) / 2 < length / 2 ? 'front' : 'rear')
+    : on.across[0] > 0 ? 'left' : 'right');
+
+  const pieces = [];
+  const skipped = [];
+  const whole = new Set();
+  for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
+    if (!Array.isArray(q.rect) || q.hidden || !(q.visible >= AERO_SEEN)) continue;
+    // A panel's middle is inside its extent: one whose middle is above the kit
+    // cannot lie inside it, and is not sampled to find that out.
+    if (Array.isArray(q.centroid3d) && q.centroid3d[1] * 1000 > top + AERO_FIT_MM) continue;
+    const on = panelOnCar(model, profile, role, panel);
+    if (!on || on.why || on.up[1] > top + AERO_FIT_MM) continue;
+    whole.add(panel);
+    pieces.push({ id: `${name}-${panel}`, panel, at: [0, 0, 1, 1], part: partOf(on), whole: true, upMm: on.up, behindNoseMm: on.behindNose });
+  }
+
+  // A taller panel on a flank is drawn to the line of the kit nearest it along
+  // the car, so the skirt's top runs on from the sill rather than stepping up
+  // to the kit's height where the sill ends.
+  const gapTo = (a, b) => Math.max(0, a[0] - b[1], b[0] - a[1]);
+  for (const { side, sign } of flanks) {
+    const kit = pieces.filter((p) => p.part === side);
+    const crossed = stripePanels(model, profile, role, [bottom, top], { hide, painted: paints, side: sign });
+    const seen = new Map(crossed.map((c) => [c.panel, c]));
+    for (const c of crossed) {
+      if (whole.has(c.panel)) continue;
+      const on = panelOnCar(model, profile, role, c.panel);
+      if (!on || on.why) {
+        skipped.push({ panel: c.panel, why: on?.why ?? `${c.panel} lands on no geometry` });
+        continue;
+      }
+      if (partOf(on) !== side) continue;          // the nose, the tail, or the far side
+      const near = kit.reduce((best, p) => (!best || gapTo(p.behindNoseMm, c.behindNose) < gapTo(best.behindNoseMm, c.behindNose) ? p : best), null);
+      // The kit panel's top as the side view shows it at the end facing this
+      // one, which is lower than its top where something stands in front of
+      // it: on the NSX the door hangs over the sill's top edge, and a front
+      // wing drawn to the sill's own top stepped up above the orange showing
+      // beside it.
+      const shown = near && seen.get(near.panel)?.seenTopMm;
+      const end = shown && (c.behindNose[0] < near.behindNoseMm[0] ? shown.front : shown.back);
+      const up = [bottom, near ? Math.min(top, near.upMm[1], end ?? Infinity) : top];
+      // A panel whose bottom edge the line only grazes would carry a sliver.
+      const got = on.up[0] <= up[1] - AERO_MIN_MM ? stripeAt(model, profile, role, c.panel, { up })
+        : { at: null, why: `${c.panel} begins ${on.up[0]} mm up, and the kit's line at ${up[1]} mm would leave a sliver of under ${AERO_MIN_MM} mm on it` };
+      // Beside the kit, where it meets it, a panel that curls away out of
+      // sight is held to AERO_CURL_MM: the NSX's front wing ends in a curl in
+      // front of the door's corner, and a rectangle on it strays 65 mm from the
+      // line where it turns away, while its foot, the part seen, meets the
+      // sill's orange. Left out, that foot was a blue sliver in the skirt.
+      const beside = near && gapTo(near.behindNoseMm, c.behindNose) <= AERO_FIT_MM;
+      const allowed = beside ? AERO_CURL_MM : AERO_FIT_MM;
+      if (got.at && got.error <= allowed) {
+        pieces.push({ id: `${name}-${c.panel}`, panel: c.panel, at: got.at, part: side, upMm: up, behindNoseMm: c.behindNose, errorMm: got.error });
+        continue;
+      }
+      skipped.push({ panel: c.panel, upMm: on.up,
+        why: got.at
+          ? `${c.panel} reaches from ${on.up[0]} to ${on.up[1]} mm up, above the kit, and a rectangle on it strays ` +
+            `${got.error} mm from the kit's top edge, over the ${allowed} mm a line along the car can take there.`
+          : got.why });
+    }
+  }
+  pieces.sort((a, b) => a.behindNoseMm[0] - b.behindNoseMm[0]);
+  const parts = {};
+  for (const p of pieces) (parts[p.part] ??= []).push(p.id);
+  return {
+    role, heightMm, name, upMm: [bottom, top],
+    // `safe: false`: the kit is the whole panel, to its edge. Without it a
+    // piece reaching past the panel's readable part, as a diffuser seen mostly
+    // from behind does, was reported as high outside-safe, which run 25's
+    // planner fixed by deleting the diffuser. A whole-panel fill is exempt
+    // either way (`wholeFill`), since a planner copying these may drop it.
+    // A whole panel carries no `at`: it is the default, and every region here
+    // is copied out by the planner, a token at a time.
+    regions: pieces.map((p) => ({ id: p.id, treatment: 'fill', panel: p.panel, ...(p.whole ? {} : { at: p.at }), safe: false })),
+    parts,
+    pieces: pieces.map(({ at, ...p }) => p),
+    ...(skipped.length ? { skipped } : {}),
+    ...(!pieces.length ? { note: `No panel of ${role} the world sees lies within ${heightMm} mm of the bottom of its bodywork.` } : {}),
+  };
+}
+
+/**
+ * How far a kit piece's top may stray from the kit's line: a whole panel
+ * rising this far above it, or a rectangle on a taller one. Far below what a
+ * step in a line along the car's bottom edge can hide, and the NSX's front
+ * wing, the one panel it is drawn across, holds it to 3.
+ */
+const AERO_FIT_MM = 20;
+
+/** How far a rectangle may stray on a panel that curls away beside the kit (see `aeroLayout`). */
+const AERO_CURL_MM = 80;
+
+/** The least of a taller panel a kit piece is laid on: less is a sliver along its bottom edge. */
+const AERO_MIN_MM = 40;
+
+/**
+ * How visible a panel must be to be part of the kit. Below find_panels'
+ * "visible" (0.35), because a diffuser is under the back of the car and seen
+ * from behind it only: the NSX's is 0.23 to 0.29 visible, and without it the
+ * kit stops at the rear wheels.
+ */
+const AERO_SEEN = 0.15;
+
+/**
+ * The pieces of a band along the car, one for each panel it crosses: across
+ * the car seen from above, or with `side`, up a flank seen from that side.
+ */
+function bandPieces({ model, profile, role, band, name, hide, paints, side = 0, seenFrom = 'above' }) {
+  const pieces = [];
+  const skipped = [];
+  for (const c of stripePanels(model, profile, role, band, { hide, painted: paints, side })) {
+    if (c.measured === false) {
+      skipped.push({ panel: c.panel, carriesMm: c.carriesMm,
+        why: c.why ?? `seen from ${seenFrom} the band covers at most ${c.carriesMm} mm of ${c.panel} ` +
+          `${side ? 'up the car' : 'across the car'} and ${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm ` +
+          'one way: too little to fit a piece to or to tell a gap by. Check it in a picture of the car, and add a ' +
+          'piece by hand if the stripe needs one there.' });
+      continue;
+    }
+    const got = stripeAt(model, profile, role, c.panel, side ? { up: band } : { across: band });
+    if (got.at) pieces.push({ ...c, id: `${name}-${c.panel}`, at: got.at, errorMm: got.error });
+    else skipped.push({ panel: c.panel, why: got.why });
+  }
+  return { pieces, skipped };
+}
+
+/**
+ * What the stripe check finds with a layout's regions, on the car the layout
+ * was read off: the design's hides, and its other sheets painted with nothing,
+ * so the check draws what the layout saw.
+ */
+function bandFindings({ profile, model, role, regions, hide, paints }) {
+  if (!regions.length) return [];
+  return fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+    paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])),
+      [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
+    .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`);
 }
 
 /**

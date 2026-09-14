@@ -45,6 +45,12 @@ to watch the drafts the inbox never sees. `--help` lists the options:
 number of rounds, models, effort, whether the critic gates or only advises, and
 which views it judges.
 
+Beyond the brief, the planner is asked for two things a Gulf car carries where
+trackside sees it, since the stripe over the top barely shows from the side: a
+ground-effect kit in the style's colours (splitter, side skirts and diffuser,
+laid out by `find_space`'s `aero`) and the wheels in its accent colour.
+`--no-aero` and `--no-wheels` leave either out.
+
 ## On your own GPU
 
 The planner and the critic can each be any model behind an OpenAI-compatible

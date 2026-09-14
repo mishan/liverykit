@@ -565,6 +565,21 @@ export function createToolHandler(client) {
             },
             required: ['widthMm'],
           },
+          aero: {
+            type: 'object',
+            description: 'Instead of a size: lay out a ground-effect kit, the front splitter, the side skirts and ' +
+              'the rear diffuser: the car\'s lowest panels all round, from the bottom of its bodywork up to ' +
+              'heightMm, returned as regions ready to use, with which part of the car each is on. A panel the ' +
+              'world sees lying wholly inside that height is filled whole; a taller one on a flank, such as the ' +
+              'rear of a front wing, gets the kit up to the line of the kit panel next to it; a door, or any panel ' +
+              'the line would only clip, is left out, listed under skipped with why. With this, panel is any panel ' +
+              'of the sheet the kit is painted on.',
+            properties: {
+              heightMm: { type: 'number', description: 'How far up the car, in mm from the bottom of the bodywork, a panel may reach and still be part of the kit' },
+              name: { type: 'string', description: 'The kit\'s name, for its ids (default "aero")' },
+            },
+            required: ['heightMm'],
+          },
           cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
         },
         required: ['panel'],
