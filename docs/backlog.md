@@ -68,18 +68,21 @@ panels, and the mp412c binds it at 0.82. Excluding tiled textures as well, as
 the plan first said, cost two real bodies and was dropped (see the plan's
 step 2).
 
-## An auto binding the profile calls a guess is painted anyway
+## An auto binding the profile calls a guess is painted anyway — measured
 
 `resolveTargets` files an `unconfirmed` note for an `auto` binding and then
-paints it — with the same conviction at 0.04 as at 0.95. On a car whose pick
-is wrong that means artwork on the wrong sheet, reported in a note nobody reads
-before looking at the car; on the 650 GT3, whose pick at 0.04 is right, a floor
-would refuse the right answer, which is the trade the floor has to measure.
+paints it, with the same conviction at 0.04 as at 0.95. The idea was a
+threshold below which the honest answer is to paint nothing and say so.
 
-There is a threshold below which the honest answer is to paint nothing and say
-which term went unpainted, exactly as an absent surface is handled today. Where
-that threshold sits wants looking at across the fleet rather than picking a
-round number: the same sweep can answer it.
+Measured across the fleet, after the classifier learned to count islands,
+there is nothing below any plausible threshold to refuse: the three body
+proposals under 0.2 — the BAC Mono at 0.03, the 650 GT3 at 0.04, the McLaren
+P1 at 0.10 — are all right, and the one the label disagrees with is at 0.8.
+So no floor is set; `tools/evaluate.mjs` prints the table, and the question is
+worth asking again whenever the fleet or the classifier changes. What the
+table did find was 11 cars whose `tyres` bound the tread and not the sidewall;
+tyres and brakes now bind every texture only their own shader draws. See the
+plan's step 3.
 
 ## Tag selections that match nothing
 
