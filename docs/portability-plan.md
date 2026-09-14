@@ -556,14 +556,15 @@ the tree, `panels` and `uvLayout` carried into a regenerated fleet fixture, and
 one feature reader shared by the evaluator and the classifier test. Needs the
 fleet on disk once.
 
-**1. Tiled materials.** `uvLayout` per texture, measured on one copy of the
-sheet before the island filter, `uvTile` for a shifted sheet, the log lines,
+**1. Tiled materials.** `uvLayout` per texture, measured per island before the
+island filter, `uvTile` for a shifted sheet, the log lines,
 the `tiled` caveat and `unplaceable` notes, placement refused and fill allowed.
 Synthetic fixture case.
 
 **2. Islands as a classifier input.** `islands` and `uvLayout` in
-`textureFeatures` at every call site, zero score without them, the column in
-`explain`. Fleet accuracy re-measured; the two McLarens as a regression test.
+`textureFeatures` at every call site, zero score without islands, repeating
+islands out of the panel threshold, the column in `explain`. Fleet accuracy
+re-measured; the mp412c as a regression test.
 
 **3. The confidence floor.** `uncertain` status, measured floor, evaluation
 table with labels for `tyres` and `brakes`, reported in build and, as its own
