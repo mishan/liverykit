@@ -2693,6 +2693,44 @@ test('a region can be freed from this car\'s panel names, and pinned back', asyn
   assert.equal(region().tags, undefined, 'panel and tags may never both be set');
 });
 
+test('freeing a panel that reaches several sections selects the one it is in', async () => {
+  // A panel is tagged with every section and level its extent reaches. The
+  // regenerated Abarth's rear quarter carries all five sections and both
+  // levels, and freeing a region on it wrote every one of them: an AND that
+  // matches a panel running the length of the car, which most cars lack.
+  const { tagProfile } = await import('../src/engine/tags.mjs');
+  const server = copyFixture();
+  server.profile = structuredClone(server.profile);
+  server.profile.calibration = { axes: { left: '+X', front: '+Z' } };
+  const body = server.profile.panels.body;
+  // Two panels that fix the frame: length from z = -2 to 2, height 0 to 1.
+  body.nose = { rect: [0.9, 0.9, 0.05, 0.05], centroid3d: [0, 1, 2] };
+  body.tail = { rect: [0.9, 0.8, 0.05, 0.05], centroid3d: [0, 0, -2] };
+  // Centred high in the rear, reaching back to the tail, forward into the
+  // middle and down into the lower half.
+  Object.assign(body.L, { centroid3d: [1, 0.6, -1.2], extent3d: [[1, 0.1, -2], [1, 1, 0.2]] });
+  Object.assign(body.R, { centroid3d: [-1, 0.6, -1.2], extent3d: [[-1, 0.1, -2], [-1, 1, 0.2]] });
+  tagProfile(server.profile);
+  for (const t of ['tail', 'rear', 'mid', 'upper', 'lower']) {
+    assert.ok(body.L.tags.includes(t), `the panel does carry ${t}: ${body.L.tags}`);
+  }
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  delete server.livery.car;
+
+  const { dom } = await runApp({ server });
+  const inspector = dom.querySelector('#inspector');
+  const free = { dataset: { place: 'tags' }, onclick: null };
+  inspector.querySelectorAll = (q) => (q === '[data-place]' ? [free] : []);
+  inspector.querySelector = () => null;
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  await free.onclick();
+
+  const design = JSON.parse(dom.querySelector('#designjson').textContent);
+  assert.deepEqual(design.surfaces.body.regions[0].tags, ['left', 'rear', 'upper'],
+    'the side, and the section and level its centroid is in');
+});
+
 test('a tag selection may not be emptied, because empty matches everything', async () => {
   // `tags: []` matches EVERY panel — `every` on an empty list is vacuously true
   // — which is why expandRegions throws on it. A button that could write it
