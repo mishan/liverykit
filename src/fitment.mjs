@@ -357,6 +357,30 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
  * dozen times a round, and each paid a second for the same grid. Keyed on the
  * model object, so a model that is let go takes its grid with it.
  */
+/**
+ * How tall each text region's capitals are on the car, in millimetres, by the
+ * arithmetic `too-small` holds them to: `{ mm, shrunk }` by placement id, or
+ * `{ why }` where the letters cannot be measured.
+ *
+ * For a caller laying text out rather than checking it. find_space's group
+ * layout sizes a number and a name to clear the floors, and a copy of this
+ * arithmetic there would drift from the check it has to pass, which is how
+ * `inkBox` and `letterSize` once came apart.
+ */
+export function letterHeights(design, profile, fit = null) {
+  const out = {};
+  const { targets } = resolveTargets(profile, design);
+  for (const t of targets) {
+    const size = texSize(profile, t.role);
+    for (const p of placements(profile, t, t.spec ?? {}, fit)) {
+      if (p.region.treatment !== 'text') continue;
+      const got = letterSize(p, size, design.identity ?? {});
+      out[p.id] = got.why ? { why: got.why } : { mm: got.mm, shrunk: got.shrunk };
+    }
+  }
+  return out;
+}
+
 const preparedCache = new WeakMap();
 function preparedFor(model, profile) {
   const hides = JSON.stringify(Object.keys(profile?.hiddenByCar?.meshes ?? {}).sort());
@@ -1196,11 +1220,11 @@ function unreadable(placed, profile, t, say, skip) {
  * a long name is shrunk to fit its box's WIDTH, so a 150 mm box held 47 mm
  * letters. Run 16's name, which a person called too small to read, is 40.
  */
-const NUMBER_MM = 140;
-const NAME_MM = 45;
+export const NUMBER_MM = 140;
+export const NAME_MM = 45;
 
 /** Capital height over font size, for the bold sans the text treatment sets. */
-const CAP = 0.72;
+export const CAP = 0.72;
 
 const wordsOf = (s) => String(s ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 

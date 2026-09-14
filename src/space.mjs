@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -326,6 +326,264 @@ export function largestSpace({
   };
 }
 
+// ---------------------------------------------------------------------------
+// A race number in a roundel with a name under it, laid out as large as a panel
+// allows and handed back as regions.
+//
+// `largest` finds the biggest rectangle of one proportion, and the planner was
+// told what to draw inside it: a roundel 55% of the width, the name in the
+// bottom quarter. Nothing in that recipe knew the letters have floors. On the
+// NSX door the largest group of that proportion is 572 mm wide, which makes a
+// 315 mm roundel, and a two-digit number whose letters fit inside a disc that
+// size is about 110 mm tall against a floor of 140. So every run found that out
+// by drafting: run 21's planner measured a 97 mm number, then an overlap, then
+// 123 mm, and spent eight of its twelve turns and more than half the run's cost
+// arriving at a 370 mm roundel. Run 20's went the other way, gave the room to
+// the name, and shipped a 93 mm number.
+//
+// Here it is arithmetic, done once. Each proportion is swept for the largest
+// group that fits whole, the room inside is divided between the disc and the
+// name by the same letter arithmetic `too-small` uses, and the layout chosen is
+// checked by `fitment` itself before it is returned, so what comes back passes
+// the checks it was sized for rather than an estimate of them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Group proportions tried, as height over width on the car. Finely around the
+ * middle, where a door's answer is: on the NSX the largest group is 787 mm wide
+ * at 0.5 and 572 at 0.85, and a one-line name needs the width while the number
+ * needs the height.
+ */
+const GROUP_ASPECTS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.85, 1];
+
+/**
+ * The text treatment's default tracking, and the advance per glyph it
+ * estimates to fit a box. `inkBox` tests a ring against a wider 0.72 em, but
+ * never wider than the box: so the number's box is made exactly as wide as its
+ * letters, and the disc is tested against the letters rather than against an
+ * estimate that cost the number a tenth of its size.
+ */
+const TRACKING = 0.08;
+const ADVANCE = 0.62 + TRACKING;
+
+/**
+ * A name's font size over its line's height. The treatment's 0.7 leaves the
+ * capitals half the box, and stacked, the two lines of a name were mostly air:
+ * the layout gave a door a 42 mm name where run 21's planner, drawing at 1.4,
+ * got 54. At 1 the capitals are 0.72 of the box and still inside it (baseline
+ * at 0.78, capitals reaching 0.75 em above it), with the rest between lines.
+ */
+const NAME_SCALE = 1;
+
+/**
+ * The number's font size over its box height that puts its capitals in the
+ * middle of the box: the treatment sets the baseline at 0.78 of the height and
+ * `inkBox` has capitals reach 0.75 em above it and 0.02 below, so the ink's
+ * middle is 0.365 em above the baseline, and that sits at 0.5 of the box when
+ * the font size is 0.28 / 0.365 of it. Centred on the disc's centre, the ink
+ * is as far from the rim as it can be on every side.
+ */
+const NUMBER_SCALE = 0.767;
+
+/**
+ * How big the number and the name are aimed to be against each other: a door
+ * a person laid out by hand had a 147 mm number over 47 mm capitals. The
+ * layout is the one where the smaller of the two, as a share of its aim, is
+ * largest, so neither is starved for the other.
+ */
+const AIM = { number: 147, name: 47 };
+
+/** How much of the disc's radius the number's ink may reach: some air inside the rim. */
+const INSIDE = [0.95, 0.9, 0.85];
+
+/** How much wider than its letters the number's box is, so the treatment does not shrink them. */
+const SPARE = 1.01;
+
+/** The two lines a name splits into that make its longer line shortest, or null for one word. */
+function nameLines(name) {
+  const words = name.trim().split(/\s+/);
+  if (words.length < 2) return null;
+  let best = null;
+  for (let i = 1; i < words.length; i++) {
+    const pair = [words.slice(0, i).join(' '), words.slice(i).join(' ')];
+    if (!best || Math.max(...pair.map((l) => l.length)) < Math.max(...best.map((l) => l.length))) best = pair;
+  }
+  return best;
+}
+
+/**
+ * The room in an upright group W x H (mm) divided between the disc and the
+ * name's lines: the line height, tried in steps, that gives the best balance.
+ * Estimates; the layout chosen is measured before it is returned.
+ *
+ * The disc and the letters are sized in texture pixels, because that is where
+ * the ring is drawn and tested: a circle of the box's shorter side in pixels,
+ * which on a panel whose pixels are not square on the car is an ellipse there,
+ * and laid out in millimetres the number's ink ran out through its rim on the
+ * test car's doors. `ah` and `av` are pixels per millimetre across and down the
+ * upright group, and `ax` is how the treatment narrows glyphs for the panel's
+ * stretch. Font sizes (`em`) are in pixels down the letters.
+ */
+function divide({ W, H, number, lines, inside, ah, av, ax }) {
+  const widest = Math.max(...lines.map((l) => l.length));
+  const nameEmMax = (W * ah) / (widest * ADVANCE * ax);   // the width's limit on the name's font size
+  // The name's box has air above its capitals already (see NAME_SCALE).
+  const gap = Math.max(10, 0.02 * W);
+  // The ink's corner, from the middle of the box in ems: half the box's width
+  // across, and 0.385 em up or down (see NUMBER_SCALE).
+  const numberEm = (s) => (inside * s / 2) / Math.hypot(number.length * ADVANCE * ax * SPARE / 2, 0.385);
+  let best = null;
+  for (let i = 1; i <= 40; i++) {
+    const line = (nameEmMax / NAME_SCALE / av) * (i / 40);   // taller than that adds nothing
+    const s = Math.min(W * ah, (H - gap - lines.length * line) * av);   // the disc, in pixels
+    if (!(s > 0)) break;
+    const numberMm = CAP * numberEm(s) / av, nameMm = CAP * Math.min(NAME_SCALE * line * av, nameEmMax) / av;
+    const score = Math.min(numberMm / AIM.number, nameMm / AIM.name);
+    if (!best || score > best.score) best = { s, gap, line, numberEm: numberEm(s), numberMm, nameMm, score };
+  }
+  return best;
+}
+
+export function groupLayout({
+  grid = null, profile, model, prepared, role, panel, number, name, marginMm = 30, cellMm, across,
+}) {
+  for (const [k, v] of [['number', number], ['name', name]]) {
+    if (typeof v !== 'string' || !v.trim()) {
+      throw new Error(`find_space's layout needs ${k} as the text to lay out, e.g. { number: "85", name: "NEON DOLL RACING" }; ` +
+        `got ${JSON.stringify(v)}.`);
+    }
+  }
+  number = number.trim();
+  name = name.trim();
+  checkMargin(marginMm);
+  const g = grid ?? cleanGrid({ profile, model, prepared, role, panel,
+    ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
+  const pan = profile.panels[g.role][g.name];
+  const turn = ((Number(pan.textRotation ?? 0) % 360) + 360) % 360;
+  if (turn % 90 !== 0) {
+    throw new Error(`${g.name} is laid at ${turn}° in its texture, and text keeps its letters along one axis of ` +
+      'the texture only at a quarter turn, so no layout on it could be measured. Choose another panel.');
+  }
+  const quarter = turn === 90 || turn === 270;
+  const [bw, bh] = g.boxMm;
+  // Pixels per millimetre along the texture's u and v, then across and down
+  // the upright group, which a quarter turn swaps.
+  const tex = texture(profile, g.role);
+  const perU = tex.width / (pan.metresPerUv[0] * 1000), perV = tex.height / (pan.metresPerUv[1] * 1000);
+  const [ah, av] = quarter ? [perV, perU] : [perU, perV];
+  const ax = pan.anisotropy ? 1 / pan.anisotropy : 1;
+  const splits = [[name], ...(nameLines(name) ? [nameLines(name)] : [])];
+
+  // Every proportion, and the name on one line and on two.
+  const options = [];
+  for (const aspect of GROUP_ASPECTS) {
+    const sp = largestSpace({ grid: g, model, prepared, aspect: quarter ? 1 / aspect : aspect, marginMm });
+    if (!sp.largest) continue;
+    const { widthMm, heightMm } = sp.largest;
+    const [W, H] = quarter ? [heightMm, widthMm] : [widthMm, heightMm];
+    for (const lines of splits) options.push({ aspect, lines, space: sp.largest, W, H });
+  }
+
+  // Upright rectangles, [x, y, w, h] in mm from the group's top left, turned
+  // into the panel's own frame the way the renderer turns text: about the
+  // centre, (dx, dy) to (-dy, dx) at 90 with y down. A quarter-turned box is
+  // written with its sides swapped, as the treatment expects.
+  const turned = (o) => ([x, y, w, h]) => {
+    const [gx, gy, gw, gh] = o.space.at;
+    const cx = (gx + gw / 2) * bw, cy = (gy + gh / 2) * bh;
+    const du = x + w / 2 - o.W / 2, dv = y + h / 2 - o.H / 2;
+    const [dx, dy] = turn === 90 ? [-dv, du] : turn === 180 ? [-du, -dv] : turn === 270 ? [dv, -du] : [du, dv];
+    const [tw, th] = quarter ? [h, w] : [w, h];
+    return [(cx + dx - tw / 2) / bw, (cy + dy - th / 2) / bh, tw / bw, th / bh].map(r4);
+  };
+  const regionsFor = (o, d) => {
+    const Dw = d.s / ah, Dh = d.s / av;   // the disc's box in mm: square in pixels
+    const top = (o.H - (Dh + d.gap + o.lines.length * d.line)) / 2;
+    const at = turned(o);
+    const h = d.numberEm / NUMBER_SCALE / av, w = number.length * d.numberEm * ADVANCE * ax * SPARE / ah;
+    return {
+      roundel: { treatment: 'ring', panel: g.name, at: at([(o.W - Dw) / 2, top, Dw, Dh]), radius: 0.25, width: 0.5 },
+      number: { treatment: 'text', panel: g.name, at: at([(o.W - w) / 2, top + Dh / 2 - h / 2, w, h]),
+        text: number, scale: NUMBER_SCALE, rotate: 'auto' },
+      name: o.lines.map((text, i) => ({ treatment: 'text', panel: g.name,
+        at: at([0, top + Dh + d.gap + i * d.line, o.W, d.line]), text, scale: NAME_SCALE, rotate: 'auto' })),
+    };
+  };
+
+  // Measured, not estimated: the letters by `too-small`'s own arithmetic and
+  // the disc against them by `fitment`'s overlap check. A layout that fails
+  // either is tried again with more air inside the rim, then given up, and
+  // what failed it is kept for the answer: none passing is not "nothing fits".
+  const rejected = [];
+  const measure = (o) => {
+    for (const inside of INSIDE) {
+      const d = divide({ W: o.W, H: o.H, number, lines: o.lines, inside, ah, av, ax });
+      if (!d) return null;
+      const regions = regionsFor(o, d);
+      const ids = ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
+      const design = { name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
+        identity: { number, team: name },
+        paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc' },
+          { id: 'number', ...regions.number, color: 'ink' },
+          ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } };
+      // Contrast and mirroring are about the design this goes into, which
+      // chooses the colours and paints the other side; neither is the layout's.
+      const wrong = fitment(design, profile).findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
+        && !['low-contrast', 'unmirrored', 'too-small'].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
+      if (wrong.length) {
+        rejected.push(`${wrong[0].kind}: ${wrong[0].why}`);
+        continue;
+      }
+      const mm = letterHeights(design, profile);
+      if (ids.slice(1).some((id) => mm[id]?.mm === undefined)) {
+        throw new Error(`the letters on ${g.name} could not be measured: ${ids.map((id) => mm[id]?.why).find(Boolean)}`);
+      }
+      const numberMm = mm.number.mm, nameMm = Math.min(...ids.slice(2).map((id) => mm[id].mm));
+      return { o, regions, numberMm, nameMm, score: Math.min(numberMm / AIM.number, nameMm / AIM.name),
+        clears: numberMm >= NUMBER_MM && nameMm >= NAME_MM };
+    }
+    return null;
+  };
+  const measured = options.map(measure).filter(Boolean)
+    .sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
+  let chosen = measured[0] ?? null;
+  // One line where it costs little. A name split over two lines reads, but a
+  // person looking at run 20 did not like it, and a number that is a tenth
+  // smaller is still well over its floor when the best one was. Nor is a
+  // number already the size of the hand-laid door's worth a second line.
+  const oneLine = measured.find((m) => m.o.lines.length === 1 && m.clears);
+  if (chosen && chosen.o.lines.length > 1 && oneLine
+    && (oneLine.numberMm >= 0.9 * chosen.numberMm || oneLine.numberMm >= AIM.number)) chosen = oneLine;
+  const other = chosen && measured.find((m) => m.o.lines.length !== chosen.o.lines.length);
+
+  const said = (m) => ({
+    aspect: m.o.aspect,
+    groupMm: [Math.round(m.o.W), Math.round(m.o.H)],
+    marginMm: m.o.space.marginMm,
+    lines: m.o.lines.length,
+    lettersMm: { number: Math.round(m.numberMm), name: Math.round(m.nameMm) },
+    regions: m.regions,
+  });
+  return {
+    role: g.role,
+    panel: g.name,
+    boxMm: g.boxMm.map(Math.round),
+    textRotation: turn,
+    layout: chosen ? said(chosen) : null,
+    alternative: other ? said(other) : null,
+    ...(!chosen ? {
+      note: options.length
+        ? `Every layout tried on ${g.name} failed fitment, the first with ${rejected[0] ?? 'nothing said'}.`
+        : `No group of a roundel over a name fits whole on ${g.name} with ${marginMm} mm of clean bodywork all ` +
+          'round. Try a smaller margin or another panel.',
+    } : !chosen.clears ? {
+      note: `The largest layout on ${g.name} gives the number ${Math.round(chosen.numberMm)} mm capitals and the ` +
+        `name ${Math.round(chosen.nameMm)} mm, and check_fitment wants at least ${NUMBER_MM} and ${NAME_MM}. ` +
+        'Try a smaller margin, a shorter name, or another panel.',
+    } : {}),
+  };
+}
+
 /**
  * How far rectangle `a` can grow on every side before it touches `b`: zero
  * when they touch or overlap. The larger of the two gaps, not the diagonal,
@@ -350,3 +608,4 @@ const overlapShare = (a, b) => {
 
 const r2 = (x) => Math.round(x * 100) / 100;
 const r3 = (x) => Math.round(x * 1000) / 1000;
+const r4 = (x) => Math.round(x * 10000) / 10000;

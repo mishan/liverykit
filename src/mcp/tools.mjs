@@ -576,7 +576,21 @@ export function createToolHandler(client) {
           marginMm: { type: 'number', description: 'Only spots with at least this much clean bodywork all round (default 0)' },
           count: { type: 'number', description: 'How many spots (default 5)' },
           largest: { type: 'boolean', description: 'Instead of a size, sweep sizes and return the LARGEST shape of the given aspect that fits whole, with its spot' },
-          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; a roundel over a name, 0.85)' },
+          aspect: { type: 'number', description: 'With largest: the shape\'s height over its width (a roundel is 1; for a number and a name together, use layout)' },
+          layout: {
+            type: 'object',
+            description: 'Instead of a size: lay out a race number in a white roundel with a name under it, as large ' +
+              'as the panel allows, and return the regions ready to use (roundel, number, and the name on one ' +
+              'line or two) with the capital heights they measure. Tries the group\'s proportions, sizes the ' +
+              'letters by the arithmetic check_fitment holds them to, keeps the number\'s letters inside the ' +
+              'disc, and splits the name only when one line would cost the number more than a tenth of its ' +
+              'size. Follows the panel\'s own turn. marginMm defaults to 30 here.',
+            properties: {
+              number: { type: 'string', description: 'The race number as it is drawn, e.g. "85"' },
+              name: { type: 'string', description: 'The name under it, e.g. "NEON DOLL RACING"' },
+            },
+            required: ['number', 'name'],
+          },
           cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
         },
         required: ['panel'],
