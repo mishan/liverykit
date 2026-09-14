@@ -19,9 +19,9 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly, SHEET_SPAN } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { uvLayout, SHEET_SPAN } from './uvlayout.mjs';
+import { uvLayout } from './uvlayout.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';

@@ -222,8 +222,28 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
   return model;
 }
 
-/** How far past a sheet's edge an island may sit and still count as on it. */
-const SHEET_EDGE = 0.01;
+/**
+ * The widest or tallest an island may be, in sheets, and still map the image
+ * once. A little over one, because an unwrap's edge bleeds past the sheet: the
+ * Lotus 2-Eleven's leather reaches 1.022 sheets and an Alpine undercarriage
+ * 1.047, and neither repeats anything. A repeating island is far wider — the
+ * 992 Cup's body islands run 1.3 to 1.9 sheets, and one strip on the mp412c's
+ * chassis 1,222.
+ *
+ * One figure for every question about a sheet's size: the layout measure in
+ * uvlayout.mjs, the generator's panel threshold, and placeOnSheet's moving and
+ * counting below. There were two, 1.05 for the first pair and 1.02 here, and an
+ * island 1.03 sheets tall was one sheet to the layout, neither moved nor
+ * counted as straddling, and profiled as the 0.015 of it left on the sheet.
+ */
+export const SHEET_SPAN = 1.05;
+
+/**
+ * How far past a sheet's edge an island may sit and still count as on it: the
+ * bleed SHEET_SPAN allows, half at each edge, so nothing wider than the layout
+ * calls one sheet is ever on one copy of it.
+ */
+const SHEET_EDGE = (SHEET_SPAN - 1) / 2;
 
 /**
  * Bring each UV island that sits wholly on another copy of the sheet back onto
@@ -300,7 +320,7 @@ function placeOnSheet(model, mesh) {
   // generator can leave out what findIslands would not measure anywhere; a
   // line in UV is left out here, as findIslands drops that as collapsed.
   const straddlers = [];
-  const sheetSized = (lo, hi) => hi - lo > 1e-5 && hi - lo <= 1 + 2 * SHEET_EDGE;
+  const sheetSized = (lo, hi) => hi - lo > 1e-5 && hi - lo <= SHEET_SPAN;
   for (const [r, [u0, v0, u1, v1]] of bounds) {
     const ku = tileOf(u0, u1), kv = tileOf(v0, v1);
     if (ku === null || kv === null) {
