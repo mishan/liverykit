@@ -59,16 +59,19 @@ surveyed on 2026-09-13 — this picks the right body surface on **175/195, 90%**
 The failures are a coherent group: interior occlusion maps, engine bays and
 undertrays, all of them large, symmetric, and invisible.
 
-Adding ray-cast trackside visibility as a fifth term takes it to **191/195,
-97.9%**, and two of the four remaining "failures" are the label being wrong
+Adding ray-cast trackside visibility as a fifth term, and the number of
+paintable islands on each candidate, takes it to **192/195, 98.5%**, and two
+of the three remaining "failures" are the label being wrong
 rather than the classifier. On the Evora GTE and its carbon variant the
 classifier picks `Carpaint_D.dds` — overridden by every stock skin, seven on
 the GTE and one on the carbon, and 79% visible — over the labelled
-`Skin_soft.dds`, which no skin overrides and which is 0.1% visible. Counting those correctly, it is **193/195**. The two genuine
-misses are `mclaren_mp412c_gt3`, which picks a texture no island lives on, and
-`tando_buddies_180sx`, a drift mod whose paint is a tiled material; both are
-planned in [portability-plan.md](portability-plan.md). The first measurement,
-on 175 labelled cars, gave 158, 172 and 174.
+`Skin_soft.dds`, which no skin overrides and which is 0.1% visible. Counting
+those correctly, it is **194/195**. The one left is `tando_buddies_180sx`,
+where the label names a LOD texture with no islands and the classifier picks
+the paint nine stock skins override, so it may well be the label again.
+`mclaren_mp412c_gt3`, which picked a swatch no island lives on, was fixed by
+counting islands; see step 2 of [portability-plan.md](portability-plan.md).
+The first measurement, on 175 labelled cars, gave 158, 172 and 174.
 
 Visibility costs about four seconds per car. It is worth every one of them, and it
 already exists in `src/engine/visibility.mjs`.
@@ -261,7 +264,7 @@ markers for multi-part textures.
 over a committed fixture of fleet measurements on every commit, and CI builds
 the portable livery on both cars.)* `tools/survey.mjs` becomes the harness: run the classifier
 over all 252 cars and assert the accuracy figure doesn't drop. That number is the
-thing to defend, and right now it is 193/195 on the labelled subset.
+thing to defend, and right now it is 194/195 on the labelled subset.
 
 ## Known gaps, recorded so they don't get rediscovered
 
