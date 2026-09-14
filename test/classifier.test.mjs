@@ -78,6 +78,28 @@ test('rims and interior land on a labelled texture on most of the fleet', async 
     assert.ok(n >= least, `${term}: only ${n} labelled cars; the fixture may have lost its wheel or cockpit evidence`);
     assert.ok(right / n >= floor, `${term}: ${right}/${n} = ${(right / n).toFixed(3)}, below ${floor}`);
   }
+
+  // What the figure cannot see: a binding holding a texture a label calls
+  // another term's. The interior held the body skin on three open-wheelers
+  // before a role was left to one term; the one left is civic_body_in.dds,
+  // the Civic's cabin sheet, which only the body label calls a body.
+  const other = {
+    body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
+    tyres: (f) => /tyre|tire|tread/i.test(f.file) && !/_nm|normal|_map|blur|glow|_ao|rim/i.test(f.file),
+    brakes: (f) => /disc|disk|rotor/i.test(f.file) && !/_nm|normal|_map|blur|glow|cal/i.test(f.file),
+    ...Object.fromEntries(Object.entries(PICK_LABELS).map(([t, l]) => [t, (f) => l.looks.test(f.file) && !l.not.test(f.file)])),
+  };
+  const over = [];
+  for (const car of cars) {
+    for (const term of ['rims', 'interior']) {
+      for (const r of proposeAll(car.features)[term]?.roles ?? []) {
+        const f = car.features.find((x) => x.role === r);
+        const as = Object.keys(other).filter((t) => other[t](f));
+        if (as.length && !as.includes(term)) over.push(`${car.id}: ${term} bound ${f.file}, labelled ${as.join(', ')}`);
+      }
+    }
+  }
+  assert.deepEqual(over, ['btcc_honda_civic: interior bound civic_body_in.dds, labelled body']);
 });
 
 test('the rims and interior scorers leave out what their evidence rules out', () => {
