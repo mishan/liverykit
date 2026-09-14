@@ -60,7 +60,9 @@ const PICK_LABELS = {
   interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
 };
 
-// Measured on 2026-09-13: rims 225/246, interior 124/168. The floors sit a
+// Measured on 2026-09-13 at rims 225/246 and interior 124/168; 228 and 125
+// once a rim was bound with its blur twin and a role left to one term. The
+// floors sit a
 // few points under, so a change that costs the fleet a handful of cars fails
 // here rather than surfacing months later as unpainted wheels.
 test('rims and interior land on a labelled texture on most of the fleet', async () => {
