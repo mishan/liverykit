@@ -14,7 +14,7 @@ What did not hold was the part that decides *where* a portable design lands:
 | body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds its paint at 0.79 |
 | an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
 | `[left, visible]` or `[right, visible]` matched no panel | 1 each, the mp412c, whose body is tiled |
-| a `[mid, upper, visible]` selection matched nothing on a car with a right body | 7 on the left, 6 on the right |
+| a `[mid, upper, visible]` selection matched nothing on a car with a right body | 3 on the left, 2 on the right; 7 and 6 before tags read each panel's extent |
 | `[shared, visible]` matched no panel | 16 |
 | a body on a tiled material, not an unwrapped sheet | 1 (the mp412c's `black.dds`) |
 | surfaces the design paints that were bound on arrival | 2 of 14 |
@@ -26,7 +26,8 @@ second "no islands" car had 47 panels on its body. A third was wrong in a way
 step 1's measurement showed: it listed three cars as painted with tiled
 materials, and none of the three is. Two are unwraps shifted off the sheet by
 a whole copy of it, and the third mostly is. The fix for that moved those
-cars' islands back onto the sheet, and the table is the sweep on that engine.
+cars' islands back onto the sheet, and the table is the sweep on that engine,
+with step 4's first fix, tags read from each panel's extent, in place.
 
 Every one of these is a case of the tool doing something confidently that it
 had the information to doubt. The classifier had the island counts beside it.
@@ -43,8 +44,8 @@ the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
 *Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 and 1
-are built, and so is the shifted-sheet fix step 1 turned up; steps 2 to 5 are
-not.*
+are built, and so are the shifted-sheet fix step 1 turned up and the first two
+parts of step 4; steps 2, 3 and 5, and the rest of step 4, are not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -298,7 +299,8 @@ the sweep but the mp412c, whose body is a tiled material. What misses is
 `mid`: `[left, mid, upper, visible]` matched nothing on 7 cars with a right
 body and `[right, mid, upper, visible]` on 6, and on eight of those thirteen
 the tag that emptied the selection was `mid`. `[shared, visible]` matched
-nothing on 16, 15 of them with a right body.
+nothing on 16, 15 of them with a right body. With the first fix below in
+place, the `mid` misses fall to 3 and 2.
 
 **Causes.** The mp412c misses every tag rule because its body is a tiled
 material, which steps 1 and 2 deal with; its misses say nothing about tagging.
@@ -329,9 +331,12 @@ happens in `computeTags`:
 **Fix, in the order the causes rank.**
 
 - **Write `extent3d` into the profile** from `box3d`, and assign section and
-  level tags by overlap rather than centroid. A panel spanning 0.30 to 0.70 of
-  the car's length is `front`, `mid` and `rear`; a design asking for `mid` gets
-  it. The centroid stays for `left`, `right` and `centre`, where it is the
+  level tags by overlap rather than centroid. *Done.* A panel reaches a band
+  when it overlaps it by a quarter of its own span or by half the band's,
+  thresholds taken from the doors that missed and the panels that must not
+  claim `mid` (see `tags.mjs`), and it keeps its centroid's tags too. A panel
+  spanning 0.20 to 0.80 of the car's length is `front`, `mid` and `rear`; a
+  design asking for `mid` gets it. The centroid stays for `left`, `right` and `centre`, where it is the
   right measure, since a flank does not straddle the centreline and a bonnet
   does. `extent3d` comes from the model, so `tagProfile` on an existing
   profile cannot invent it: a panel without it keeps its centroid tags, the way
@@ -339,7 +344,8 @@ happens in `computeTags`:
   geometry. The shipped profiles change only when they are regenerated from
   their models, and the regeneration keeps everything
   `src/engine/preserve.mjs` protects.
-- **Check that retagging moves nothing that was fitted.** This is the riskiest
+- **Check that retagging moves nothing that was fitted.** *Done, as
+  `test/fitpicks.test.mjs`.* This is the riskiest
   part of the step, and the plan's first draft said CI would catch it. It
   would not. CI builds `neon-grid-any` on the RSS and the Abarth and compares
   the output filenames; artwork can move to another panel and the check still
@@ -382,6 +388,18 @@ or every change it reports is resolved in the fit. The sweep's `mid` miss
 counts on cars with a right body, 7 and 6 today, are recorded before and after,
 alongside the shipped profiles' baseline from step 0, and the backlog entry is
 rewritten with the new numbers rather than deleted.
+
+**What the first two parts established.** `test/fitpicks.test.mjs` pins where
+the portable design lands on the three shipped profiles and passes unchanged,
+since none of them carries `extent3d` until it is regenerated. The tag tests
+give a flank running 0.2 to 0.8 of the car every section it reaches and both
+levels, leave a panel clipping a fifth of the way into `mid` in `rear`, and
+give the synthetic car's full-length side face all five sections. On the
+sweep the `mid` misses on cars with a right body fall from 7 and 6 to 3 and 2:
+the Exige, the Quattro, the 650 GT3 and the RX3 now match. What is left is the
+906, whose visible mid-length flank is wholly below the midline; the Lotus 49,
+which has no visible side panel in the middle of the car; and the Morgan's
+left side, with two panels on it. No other rule's count moved.
 
 ## 5. Binding more of the vocabulary
 
