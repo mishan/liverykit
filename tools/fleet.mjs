@@ -55,6 +55,18 @@ const listIds = (xs, max = 6) =>
   xs.slice(0, max).join(', ') + (xs.length > max ? `, and ${xs.length - max} more` : '');
 
 /**
+ * What emptied a tag selection on one car, as the summary counts it. A tie is
+ * named as a tie: crediting the first tag in list order is how a car where
+ * `mid` and `visible` did equally well was counted against `mid`. A texture
+ * with no panels is named as that, since every count is zero there and
+ * blaming "two or more tags" sent somebody to the tagger for a binding fault.
+ */
+const blockedBy = (near) =>
+  near?.panels === 0 ? 'a texture with no panels'
+    : near?.tied?.length ? `${near.tied.join(' or ')} (tied)`
+    : near?.blocking ?? 'two or more tags';
+
+/**
  * The backlog's table, recomputed from sweep records.
  *
  * Returns lines rather than printing, so a test can read them. Each figure is
@@ -99,7 +111,7 @@ export function summarise(records) {
       const key = `${g.from} [${g.tags.join(', ')}]`;
       const seen = mine.get(key) ?? { matched: false, blocking: new Set() };
       if (g.status === 'matched') seen.matched = true;
-      else seen.blocking.add(g.nearMiss?.blocking ?? 'two or more tags');
+      else seen.blocking.add(blockedBy(g.nearMiss));
       mine.set(key, seen);
     }
     for (const [key, seen] of mine) {
