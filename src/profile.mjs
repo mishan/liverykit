@@ -569,7 +569,25 @@ export function placementRefusal(profile, role, region) {
 
 /** Throw if a region's placement fields are malformed, whatever texture it is on. */
 function checkRegionShape(role, region) {
-  if (region.tags === undefined) return;
+  const name = region.id ?? region.__key ?? region.treatment ?? 'region';
+  if (region.optional !== undefined && typeof region.optional !== 'boolean') {
+    throw new Error(
+      `"${name}" on role "${role}" has optional: ` +
+      `${JSON.stringify(region.optional)}. It must be true or false.`
+    );
+  }
+  if (region.tags === undefined) {
+    // It says a tag selection may find nothing. On a panel or a rectangle there
+    // is no selection to miss, and checked only on tag regions it passed there
+    // and did nothing, which reads as a promise and keeps none.
+    if (region.optional !== undefined) {
+      throw new Error(
+        `"${name}" on role "${role}" has optional, which applies only to a tag selection: ` +
+        'it says the tags may find nothing here. Remove it, or select by "tags".'
+      );
+    }
+    return;
+  }
   // An empty array would match EVERY panel, because `every` on an empty list
   // is vacuously true — so `tags: []` would silently paint the whole texture
   // instead of nothing. A non-array fails inside `every` with "tags.every is
@@ -630,12 +648,6 @@ export function expandRegions(profile, role, regions = []) {
     }
     if (region.tags === undefined) { out.push(region); continue; }
 
-    if (region.optional !== undefined && typeof region.optional !== 'boolean') {
-      throw new Error(
-        `"${region.treatment ?? 'region'}" on role "${role}" has optional: ` +
-        `${JSON.stringify(region.optional)}. It must be true or false.`
-      );
-    }
     const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
       // A miss the design said to expect. The portable example's

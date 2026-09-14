@@ -2375,3 +2375,26 @@ test('a region marked optional may find nothing without being reported as a skip
   // Matching is unchanged: an optional region that finds a panel lands on it.
   assert.equal(expandRegions(p, 'body', [{ ...region, tags: ['left'] }]).regions.length, 1);
 });
+
+test('optional is refused anywhere but a tag selection, and pinning a region drops it', async () => {
+  // Checked only on tag regions, `optional: 'yes'` beside an `at` and
+  // `optional: true` beside a panel passed and did nothing — a field that
+  // reads as a promise and keeps none, which is the no-op this project
+  // refuses everywhere else.
+  const { expandRegions } = await import('../src/profile.mjs');
+  const { applyFit } = await import('../src/fit.mjs');
+  const p = tagCar({}, { a: { rect: [0, 0, 0.5, 0.5], tags: ['left', 'visible'] } });
+  assert.throws(() => expandRegions(p, 'body', [{ id: 'x', treatment: 'fill', at: [0, 0, 1, 1], optional: 'yes' }]),
+    /optional: "yes"\. It must be true or false/);
+  for (const fields of [{ panel: 'a', optional: true }, { at: [0, 0, 1, 1], optional: true }, { optional: false }]) {
+    assert.throws(() => expandRegions(p, 'body', [{ id: 'x', treatment: 'fill', ...fields }]),
+      /"x" on role "body" has optional, which applies only to a tag selection/, JSON.stringify(fields));
+  }
+  // A fit pinning an optional tag region to a panel leaves no selection to
+  // miss, so it drops the field rather than turning a pin into an error.
+  const region = { id: 'twin', treatment: 'fill', tags: ['left'], optional: true };
+  const pinned = applyFit([region], { regions: { twin: { panel: 'a' } } },
+    { profile: p, role: 'body', surfaceKey: 'surfaces.body' }).regions;
+  assert.equal(pinned[0].optional, undefined);
+  assert.deepEqual(expandRegions(p, 'body', pinned).regions.map((r) => r.panel), ['a']);
+});

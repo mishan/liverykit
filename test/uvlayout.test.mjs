@@ -464,6 +464,8 @@ test('a malformed region is refused on a tiled material exactly as on any other'
     [{ tags: 'left' }, /non-empty array of tag names/],
     [{ panel: 'a', tags: ['left'] }, /both "panel" and "tags"/],
     [{ tags: ['left'], limit: 0 }, /whole number of panels/],
+    [{ tags: ['left'], optional: 'yes' }, /It must be true or false/],
+    [{ panel: 'a', optional: true }, /optional, which applies only to a tag selection/],
   ];
   for (const [fields, why] of bad) {
     for (const layout of [null, 'tiled']) {
