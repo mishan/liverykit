@@ -84,7 +84,9 @@ export function portability(design, profile) {
     } catch (e) {
       // `tags: []`, or a region carrying both `panel` and `tags`. That is a
       // fault in the DESIGN rather than in this pairing, so it is reported
-      // against the surface and the rest of the check continues.
+      // against the surface and the rest of the check continues. The expander
+      // checks every region before refusing any on a tiled material, so the
+      // refusals below are only ever asked about a well-formed design.
       surfaces[surfaces.length - 1] = { from: t.from, role: t.role, status: 'invalid', why: e.message };
       continue;
     }

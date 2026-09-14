@@ -517,6 +517,35 @@ export function placementRefusal(profile, role, region) {
     `mapping it once, so ${how} would land everywhere the tile does`;
 }
 
+/** Throw if a region's placement fields are malformed, whatever texture it is on. */
+function checkRegionShape(role, region) {
+  if (region.tags === undefined) return;
+  // An empty array would match EVERY panel, because `every` on an empty list
+  // is vacuously true — so `tags: []` would silently paint the whole texture
+  // instead of nothing. A non-array fails inside `every` with "tags.every is
+  // not a function", which says nothing useful about the livery.
+  if (!Array.isArray(region.tags) || region.tags.length === 0) {
+    throw new Error(
+      `"${region.treatment ?? 'region'}" on role "${role}" has tags: ` +
+      `${JSON.stringify(region.tags)}. It must be a non-empty array of tag names, ` +
+      `e.g. tags: ['left', 'visible'].`
+    );
+  }
+  if (region.panel) {
+    throw new Error(
+      `A region on role "${role}" has both "panel" and "tags". Use one: ` +
+      `"panel" names a single panel on this car, "tags" selects whichever panels match.`
+    );
+  }
+  if (region.limit !== undefined
+      && (!Number.isInteger(region.limit) || region.limit < 1)) {
+    throw new Error(
+      `"${region.treatment ?? 'region'}" on role "${role}" has limit: ` +
+      `${JSON.stringify(region.limit)}. It must be a whole number of panels, 1 or more.`
+    );
+  }
+}
+
 /**
  * Expand a livery's regions against one texture role.
  *
@@ -533,6 +562,12 @@ export function expandRegions(profile, role, regions = []) {
   const out = [];
   const notes = [];
 
+  // Every region is checked before any is refused. The tiled-material refusal
+  // used to come first, so on a tiled texture `tags: []` was reported as
+  // skipped artwork and on every other car it threw: one design, `unplaceable`
+  // in one portability report and `invalid` in the next.
+  for (const region of regions) checkRegionShape(role, region);
+
   for (const region of regions) {
     const refused = placementRefusal(profile, role, region);
     if (refused) {
@@ -545,30 +580,6 @@ export function expandRegions(profile, role, regions = []) {
     }
     if (region.tags === undefined) { out.push(region); continue; }
 
-    // An empty array would match EVERY panel, because `every` on an empty list
-    // is vacuously true — so `tags: []` would silently paint the whole texture
-    // instead of nothing. A non-array fails inside `every` with "tags.every is
-    // not a function", which says nothing useful about the livery.
-    if (!Array.isArray(region.tags) || region.tags.length === 0) {
-      throw new Error(
-        `"${region.treatment ?? 'region'}" on role "${role}" has tags: ` +
-        `${JSON.stringify(region.tags)}. It must be a non-empty array of tag names, ` +
-        `e.g. tags: ['left', 'visible'].`
-      );
-    }
-    if (region.panel) {
-      throw new Error(
-        `A region on role "${role}" has both "panel" and "tags". Use one: ` +
-        `"panel" names a single panel on this car, "tags" selects whichever panels match.`
-      );
-    }
-    if (region.limit !== undefined
-        && (!Number.isInteger(region.limit) || region.limit < 1)) {
-      throw new Error(
-        `"${region.treatment ?? 'region'}" on role "${role}" has limit: ` +
-        `${JSON.stringify(region.limit)}. It must be a whole number of panels, 1 or more.`
-      );
-    }
     const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
       // With the tags this texture DOES have. "no panel tagged [left, body]"

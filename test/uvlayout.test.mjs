@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { resolveTargets } from '../src/profile.mjs';
+import { resolveTargets, expandRegions } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
 import { fitment } from '../src/fitment.mjs';
 import { renderTexture } from '../src/render.mjs';
@@ -152,6 +152,35 @@ test('a surface bound to a tiled material is painted with a caveat, and the repo
   assert.match(number.why, /seat\.dds/);
   assert.notEqual(report.regions.find((r) => r.id !== 'number').status, 'unplaceable',
     'an even pattern is not placement');
+});
+
+test('a malformed region is refused on a tiled material exactly as on any other', () => {
+  // The tiled refusal ran first, so `tags: []` and its kind came back as
+  // skipped artwork on a tiled car and threw on every other: the same design
+  // was `unplaceable` in one portability report and `invalid` in the next.
+  const car = (uvLayout) => ({
+    id: 't', textures: { body: { file: 'b.dds', width: 64, height: 64, ...(uvLayout ? { uvLayout } : {}) } },
+    panels: { body: { a: { rect: [0, 0, 0.5, 0.5], tags: ['left'] } } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+  });
+  const bad = [
+    [{ tags: [] }, /non-empty array of tag names/],
+    [{ tags: 'left' }, /non-empty array of tag names/],
+    [{ panel: 'a', tags: ['left'] }, /both "panel" and "tags"/],
+    [{ tags: ['left'], limit: 0 }, /whole number of panels/],
+  ];
+  for (const [fields, why] of bad) {
+    for (const layout of [null, 'tiled']) {
+      const regions = [{ id: 'x', treatment: 'fill', ...fields }];
+      assert.throws(() => expandRegions(car(layout), 'body', regions), why, `${JSON.stringify(fields)} on ${layout ?? 'an unwrap'}`);
+      const surface = portability({ name: 'd', surfaces: { body: { regions } } }, car(layout)).surfaces
+        .find((s) => s.from === 'surfaces.body');
+      assert.equal(surface.status, 'invalid', `${JSON.stringify(fields)} on ${layout ?? 'an unwrap'}`);
+    }
+  }
+  // A well-formed placement is still refused, and only then.
+  const { notes } = expandRegions(car('tiled'), 'body', [{ id: 'x', treatment: 'fill', tags: ['left'] }]);
+  assert.deepEqual(notes.map((n) => n.status), ['unplaceable']);
 });
 
 test('placed artwork a tiled material refuses is a fitment finding, like a selection that missed', async () => {
