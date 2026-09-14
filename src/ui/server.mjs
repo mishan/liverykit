@@ -1531,8 +1531,8 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (layout !== null && (typeof layout !== 'object' || Array.isArray(layout))) {
           return json(400, { error: `layout is { number, name }, the texts to lay out; got ${JSON.stringify(layout)}.` });
         }
-        if (layout && (largest || widthMm !== undefined)) {
-          return json(400, { error: 'layout sizes the group itself: ask it without largest or widthMm.' });
+        if (layout && (largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'layout sizes the group itself: ask it without largest, widthMm or heightMm.' });
         }
         // A stripe runs the length of the car, not across this panel: the
         // panel only says which sheet it is painted on. It is its own
