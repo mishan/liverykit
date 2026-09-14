@@ -581,7 +581,8 @@ The measurement settled both rules.
   measured.
 
 On held-out filename labels, the rims pick lands on a labelled texture on
-225 of 246 cars, and the interior pick on 124 of 168. `docs/naming.md` has the
+228 of 246 cars (225 for the pick alone, without its blur twin), and the
+interior on 125 of 168. `docs/naming.md` has the
 detail. Rules that also counted skins, or favoured a little trackside
 visibility, moved the result by two cars at most, and were left out.
 
@@ -602,8 +603,8 @@ without a prior profile, and `proposeAll` against the old per-term loop on
 every car in the fleet fixture.
 
 The editor's Bindings panel lists every bound term, with its files and what
-stands behind it: the confidence, "close call" under 0.2, "unmeasured rule" for
-a scorer not in `VALIDATED`. It names the unbound terms in one line, so the
+stands behind it: the confidence, "close call" under 0.2, "measured, not
+validated" for a scorer not in `VALIDATED`. It names the unbound terms in one line, so the
 list does not pass for the whole vocabulary. Hovering a row in the whole-car or
 cockpit view darkens every part not wearing that term's textures, by a
 per-group `dim` uniform. A term whose files are on no part of the model, a
