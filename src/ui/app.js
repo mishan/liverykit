@@ -2006,6 +2006,10 @@ function constraintControls(id) {
     <div class="row">
       <label>on the same panel as <input data-con="groupWith" size="12"
         value="${has('groupWith') ? esc(c.groupWith) : ''}" placeholder="region id"></label>
+    </div>
+    <div class="row">
+      <label>part of the stripe <input data-con="stripe" size="12"
+        value="${has('stripe') ? esc(c.stripe) : ''}" placeholder="stripe name"> along the car</label>
     </div>`;
 }
 
@@ -2030,7 +2034,7 @@ function wireConstraintControls(id) {
       el.onchange = () => write(el.checked ? true : null);
       continue;
     }
-    if (key === 'groupWith') {
+    if (key === 'groupWith' || key === 'stripe') {
       el.onchange = () => write(String(el.value ?? '').trim() || null);
       continue;
     }

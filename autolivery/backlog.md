@@ -9,8 +9,11 @@ the judgments the critic keeps getting wrong into measurement. In order:
 - a table of well-known liveries
 - a rule that keeps the team name with the number (done: `groupWith`, which a
   design declares; never assumed)
+- a stripe's direction and continuity in 3D (done: `stripe`, which a design
+  declares; `stripe-across`, `stripe-offset` and `stripe-gap`, the last holding
+  it to the car's whole length and over the rear wing)
 
-## Check a stripe's direction and continuity in 3D
+## Check a stripe's direction and continuity in 3D (done, as `stripe`)
 
 **What went wrong.** A Gulf centre stripe went wrong twice, in two different ways:
 

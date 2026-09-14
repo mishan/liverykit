@@ -64,43 +64,18 @@ const get = async (url, path) => (await fetch(new URL(path, url).href)).json();
 const cli = (script, ...args) => new Promise((ok) => execFile(process.execPath,
   [join(ROOT, 'autolivery', script), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
 
-test('the number group the planner is told to lay out clears the disc with room to spare', async () => {
-  // As first written the roundel was 60% of an aspect-0.75 group and the name
-  // its bottom quarter, so the disc reached 0.6 of the group's width down and
-  // the name's box began at 0.5625: the letters cleared the rim by about 1% of
-  // the width, and a name drawn larger had the disc through it. find_space's
-  // own description gave the same group as "about 0.8".
-  const aspect = Number(PLANNER_SYSTEM.match(/largest: true, aspect ([\d.]+)/)?.[1]);
-  const roundel = Number(PLANNER_SYSTEM.match(/the roundel is (\d+)% of the group's width/)?.[1]) / 100;
-  const band = Number(PLANNER_SYSTEM.match(/in the bottom (\d+)% of its height/)?.[1]) / 100;
-  assert.ok(aspect > 0 && roundel > 0 && band > 0, 'the prompt states the group\'s proportions');
-
-  // Laid out as told on a square panel, so a fraction of it is the same length either way.
-  const profile = {
-    id: 'fixture', name: 'Fixture',
-    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
-    bind: { body: { roles: ['body'], source: 'human' } },
-    panels: { body: { D: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 1, tags: [] } } },
-  };
-  const [gx, gy, gw] = [0.1, 0.1, 0.8], gh = gw * aspect, d = gw * roundel;
-  const group = (scale) => ({
-    name: 'G', packs: ['core'], palette: { ink: '#101014', white: '#FFFFFF' }, identity: { team: 'GULF', number: '9' },
-    surfaces: { body: { regions: [
-      { id: 'roundel', treatment: 'ring', panel: 'D', at: [gx + (gw - d) / 2, gy, d, d], color: 'white',
-        radius: 0.25, width: 0.5 },
-      { id: 'team', treatment: 'text', panel: 'D', at: [gx, gy + gh * (1 - band), gw, gh * band], text: '{team}',
-        color: 'ink', scale },
-    ] } },
-  });
-  // At the default scale, and at a name filling its whole band.
-  for (const scale of [0.7, 1]) {
-    const overlap = fitment(group(scale), profile).findings.filter((f) => f.kind === 'overlap');
-    assert.deepEqual(overlap, [], `with the name at scale ${scale}`);
-  }
-
+test('the planner is told to take the number group from find_space\'s layout, which the tool offers', async () => {
+  // It was told a recipe to draw inside the largest rectangle of one
+  // proportion, and the recipe could not give the NSX door a number that
+  // cleared its floor: run 21 spent most of a round finding that out. The
+  // layout is measured by the server now; the prompt and the tool must agree
+  // on how it is asked for.
+  assert.match(PLANNER_SYSTEM, /find_space with \{ panel, layout: \{ number, name \}, marginMm: 30 \}/);
+  assert.doesNotMatch(PLANNER_SYSTEM, /aspect 0\.85|55% of the group/, 'and no recipe is left beside it');
   const tools = await createToolHandler({}).listTools();
-  const said = tools.find((t) => t.name === 'find_space').inputSchema.properties.aspect.description;
-  assert.equal(Number(said.match(/a roundel over a name, ([\d.]+)/)?.[1]), aspect, `find_space says the same: ${said}`);
+  const schema = tools.find((t) => t.name === 'find_space').inputSchema.properties;
+  assert.deepEqual(schema.layout?.required, ['number', 'name']);
+  assert.doesNotMatch(schema.aspect.description, /0\.85/);
 });
 
 test('a draft is rendered as drafted, and nothing is proposed by looking at it', async () => {
@@ -195,6 +170,285 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
     assert.ok(spans.some((s) => s.name === 'draft_design' && !s.ok), 'a refusal is traced as a failure');
   } finally {
     await ed.stop();
+  }
+});
+
+test('a pass with advice gets a round to act on it, and is offered itself when that round does not pass', async () => {
+  // Run 22 passed in round 1 with a name the critic called thin and a stripe
+  // it said broke over the roof, and the run ended there: advice failed nothing.
+  const ed = await fixtureEditor();
+  try {
+    const go = async ({ second = null, notes = [['make the number bolder'], []], polish } = {}) => {
+      const pending = (await get(ed.url, 'api/proposal')).proposal;
+      if (pending) {
+        await fetch(new URL('api/proposal/ack', ed.url).href, { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: pending.id, status: 'discarded' }) });
+      }
+      const feedbacks = [];
+      let judged = 0;
+      const planner = {
+        async round({ n, feedback, call }) {
+          feedbacks.push(feedback);
+          const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+          if (n > 1) return second(call, panels[0].panel);
+          await call('reset_draft');
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'ink', value: '#101014' },
+            { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+              panel: panels[0].panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
+          ] });
+          await call('finish_round', { summary: 'a number' });
+        },
+      };
+      const critic = { async judge() {
+        return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+          notes: notes[judged++] ?? [] };
+      } };
+      const out = join(ed.dir, `run-${feedbacks.length}-${Math.random().toString(36).slice(2)}`);
+      const result = await run({ brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+        out, rounds: 3, views: ['left'], shot: { width: 200, height: 150 }, ...(polish === undefined ? {} : { polish }) });
+      return { result, feedbacks, proposal: (await get(ed.url, 'api/proposal')).proposal };
+    };
+
+    // The polish passes, and it is what is offered.
+    const bolder = await go({ second: async (call) => {
+      await call('draft_design', { design: [{ op: 'set-option', id: 'number-left', key: 'weight', value: 900 }] });
+      await call('finish_round', { summary: 'bolder' });
+    } });
+    assert.equal(bolder.result.passedIn, 2);
+    assert.deepEqual(bolder.result.polish, { round: 2, passed: true, from: 1 });
+    assert.match(bolder.feedbacks[1].text, /make the number bolder/, 'round 2 heard the advice');
+    assert.match(bolder.feedbacks[1].text, /polish/);
+    assert.equal(bolder.feedbacks[1].ask, 'Polish it');
+    assert.deepEqual(bolder.proposal.design, bolder.result.draft.design);
+    assert.ok(bolder.result.draft.design.some((o) => o.op === 'set-option'), 'the polished draft');
+    assert.match(bolder.proposal.why, /polished in round 2/);
+    assert.equal(bolder.result.history[1].polish, true);
+
+    // The polish breaks the number: round 1's draft is offered, measured as it was.
+    const broken = await go({ second: async (call, panel) => {
+      await call('draft_design', { design: [{ op: 'set-region', id: 'number-left', region: { id: 'number-left',
+        treatment: 'text', text: '85', panel, at: [0.3, 0.45, 0.4, 0.005], color: 'ink' } }] });
+      await call('finish_round', { summary: 'smaller' });
+    } });
+    assert.equal(broken.result.passed, true);
+    assert.equal(broken.result.passedIn, 1);
+    assert.equal(broken.result.rounds, 2, 'the polish round is in the record');
+    assert.deepEqual(broken.result.draft.design, broken.result.history[0].draft.design, 'round 1\'s draft, restored');
+    assert.deepEqual(broken.proposal.design, broken.result.history[0].draft.design);
+    assert.match(broken.proposal.why, /in round 1, every fitment check/, 'the why is round 1\'s, not the polish\'s');
+    assert.match(broken.proposal.why, /round 2, was not offered: it did not pass the gate/);
+
+    // A polish the planner cannot finish, the budget spent, keeps the pass.
+    const spent = await go({ second: async () => { throw new Error('stopped before another model call: $1.00 spent'); } });
+    assert.equal(spent.result.passedIn, 1);
+    assert.equal(spent.result.polish.passed, false);
+    assert.match(spent.result.polish.why, /could not be finished/);
+    assert.deepEqual(spent.proposal?.design, spent.result.history[0].draft.design, 'and it still reaches the inbox');
+
+    // No advice, no polish; and none when it is switched off.
+    const quiet = await go({ notes: [[], []] });
+    assert.equal(quiet.result.rounds, 1);
+    assert.equal(quiet.result.polish, undefined);
+    const off = await go({ polish: 0 });
+    assert.equal(off.result.rounds, 1);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('every round lands on the attempts page as it is judged, and the page stops reloading when the run ends', async () => {
+  const ed = await fixtureEditor();
+  try {
+    const out = join(ed.dir, 'run');
+    const pages = [];
+    const planner = {
+      async round({ n, call }) {
+        // What the page said while this round was being drafted.
+        pages.push(await readFile(join(out, 'index.html'), 'utf8'));
+        const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+        const at = n === 1 ? [0.3, 0.45, 0.4, 0.005] : [0.1, 0.3, 0.8, 0.4];
+        await call('reset_draft');
+        await call('draft_design', { design: [
+          { op: 'set-palette', name: 'ink', value: '#101014' },
+          { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+            panel: panels[0].panel, at, color: 'ink' } },
+        ] });
+        await call('finish_round', { summary: n === 1 ? 'a <thin> number' : 'a number big enough to read' });
+      },
+    };
+    const critic = { async judge() {
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true, notes: [] };
+    } };
+    const result = await run({
+      brief: 'number 85 & a <name>', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+      out, rounds: 3, views: ['left'], shot: { width: 200, height: 150 },
+    });
+    assert.equal(result.passedIn, 2);
+
+    assert.match(pages[0], /round 1 of 3 in progress/, 'the page is there before round 1 is judged');
+    assert.match(pages[0], /http-equiv="refresh"/, 'and reloads itself while the run goes on');
+    assert.match(pages[1], /Round 1 — <span class="fail">failed/, 'round 1 is on it before round 2 is drafted');
+    assert.match(pages[1], /unreadable/, 'with why, in the measurement\'s words');
+
+    const done = await readFile(join(out, 'index.html'), 'utf8');
+    assert.doesNotMatch(done, /http-equiv="refresh"/, 'a finished run\'s page stops reloading');
+    assert.match(done, /passed in round 2/);
+    assert.match(done, /in the editor&#39;s inbox/, 'and says where the design went');
+    assert.ok(done.indexOf('Round 2') < done.indexOf('Round 1'), 'newest first');
+    assert.match(done, /number 85 &amp; a &lt;name&gt;/, 'the brief is escaped');
+    assert.match(done, /a &lt;thin&gt; number/, 'and so is the planner\'s summary');
+    for (const [, src] of done.matchAll(/<img src="([^"]+)"/g)) {
+      assert.ok(existsSync(join(out, decodeURI(src))), `${src} is a picture the gate saved beside the page`);
+    }
+    assert.equal(existsSync(join(out, 'index.html.partial')), false);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a replay judges a recorded polish round even when today\'s critic gives the pass no advice', async () => {
+  const { createReplayPlanner } = await import('../autolivery/replay.mjs');
+  const ed = await fixtureEditor();
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const number = (weight) => ({ design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+        panel: panels[0].panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink', weight } },
+    ], fit: [] });
+    // A run that passed in round 1 and then polished; today's critic is quiet.
+    const recording = { rounds: [{ draft: number(700), summary: 'a number' }, { draft: number(900), summary: 'bolder' }] };
+    const critic = { async judge() {
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true, notes: [] };
+    } };
+    const replay = async (followRecording) => {
+      const out = join(ed.dir, `replay-${followRecording}`);
+      return run({ brief: 'number 85', mcp: ed.mcp, planner: createReplayPlanner(recording), critic,
+        trace: await createTrace({ dir: out }), out, rounds: 2, polish: 2, followRecording, propose: false,
+        views: ['left'], shot: { width: 200, height: 150 } });
+    };
+    const followed = await replay(true);
+    assert.equal(followed.rounds, 2, 'the recorded polish round is judged');
+    assert.deepEqual(followed.polish, { round: 2, passed: true, from: 1 });
+    assert.equal((await replay(false)).rounds, 1, 'a live run with no advice still stops at the pass');
+
+    // A recorded polish today's editor refuses is the replay failing. It was
+    // caught as a polish that could not be finished, round 1's pass was put
+    // back, and the replay reported passed without judging the polish at all.
+    const refusedOut = join(ed.dir, 'replay-refused');
+    await assert.rejects(run({ brief: 'number 85', mcp: ed.mcp, critic,
+      planner: createReplayPlanner({ rounds: [{ draft: number(700), summary: 'a number' },
+        { draft: { design: [{ op: 'no-such-op' }], fit: [] }, summary: 'from an older editor' }] }),
+      trace: await createTrace({ dir: refusedOut }), out: refusedOut, rounds: 2, polish: 2, followRecording: true,
+      propose: false, views: ['left'], shot: { width: 200, height: 150 } }),
+    /round 2: today's editor refuses the recorded draft_design.*no-such-op/);
+
+    // A replay polishes as its run did, so --polish beside it is refused like
+    // --rounds. It used to be accepted and replaced by the recorded rounds.
+    const recorded = join(ed.dir, 'recorded');
+    await mkdir(recorded);
+    await writeFile(join(recorded, 'result.json'), JSON.stringify({ brief: 'b', passed: false, history: [
+      { draft: number(700), summary: 'a number' }] }));
+    const polished = await cli('bin.mjs', '--replay', recorded, '--polish', '0', '--editor', 'http://127.0.0.1:1/');
+    assert.equal(polished.code, 1);
+    assert.match(polished.stderr, /--polish does not apply to --replay/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('the attempts page reloads until the run ends, and a run that dies says so on it', async () => {
+  const { attemptsPage } = await import('../autolivery/attempts.mjs');
+  // Passed, and not finished: a polish round or the proposal is still coming.
+  const between = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false,
+    history: [{ round: 1, passed: true, gates: { render: 'pass', fitment: 'pass', critic: 'pass' } }] });
+  assert.match(between, /http-equiv="refresh"/, 'still reloading after a pass');
+  assert.match(between, /still going/);
+
+  const ed = await fixtureEditor();
+  try {
+    const out = join(ed.dir, 'dies');
+    const planner = { async round() { throw new Error('the planner declined: policy'); } };
+    const critic = { async judge() { throw new Error('never asked'); } };
+    await assert.rejects(run({ brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+      out, rounds: 2, views: ['left'], shot: { width: 200, height: 150 } }), /declined/);
+    const left = await readFile(join(out, 'index.html'), 'utf8');
+    assert.doesNotMatch(left, /http-equiv="refresh"/, 'a dead run\'s page stops reloading');
+    assert.match(left, /stopped: the run ended: the planner declined: policy/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('both planners are told to polish, not to fix, in a polish round', async () => {
+  // The loop test sees the feedback's ask; this is what reaches each model.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-polish-ask-'));
+  const polishing = { text: '{"passed":"Round 1 passed the gate."}', images: [], ask: 'Polish it' };
+  try {
+    const trace = await createTrace({ dir });
+    const call = async () => ({ content: [{ type: 'text', text: 'ok' }] });
+    const usage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const sent = [];
+    const client = { beta: { messages: { create: async (p) => {
+      sent.push(structuredClone(p));
+      return { id: 'msg', model: 'claude-opus-5', stop_reason: 'tool_use', usage,
+        content: [{ type: 'tool_use', id: 'u1', name: 'finish_round', input: { summary: 'polished' } }] };
+    } } } };
+    await createPlanner({ client, model: 'claude-opus-5', effort: 'high', trace, fallback: false })
+      .round({ n: 2, rounds: 3, brief: 'b', feedback: polishing, tools: [], call });
+    const claudeSaw = sent[0].messages.at(-1).content.map((b) => b.text ?? '').join('\n');
+    assert.match(claudeSaw, /Round 2 of 3\. Polish it, then finish_round\./);
+    assert.doesNotMatch(claudeSaw, /Fix what the gate named/);
+
+    const { fetchImpl, sent: asked } = fakeServer({ vision: true, replies: [calls(['q1', 'finish_round', { summary: 'polished' }])] });
+    const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
+    await local.createPlanner({ endpoint, model: 'local-model', trace })
+      .round({ n: 2, rounds: 3, brief: 'b', feedback: polishing, tools: [], call });
+    const localSaw = asked.at(-1).messages.at(-1).content.map((p) => p.text ?? '').join('\n');
+    assert.match(localSaw, /Round 2 of 3\. Polish it, then finish_round\./);
+    assert.doesNotMatch(localSaw, /Fix what the gate named/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the attempts page says how a run ended, whichever way it ended', async () => {
+  const { attemptsPage } = await import('../autolivery/attempts.mjs');
+  const pass = { round: 1, passed: true, gates: { render: 'pass', fitment: 'pass', critic: 'pass' } };
+
+  // Passed and still going promises nothing: a polish round follows a pass
+  // only when polish is on and the critic gave advice.
+  const going = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false, history: [pass] });
+  assert.match(going, /the run is still going/);
+  assert.doesNotMatch(going, /a polish round/);
+
+  // Died after the pass, in the proposal: stopped comes first, and says the
+  // pass never reached the inbox.
+  const died = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false, history: [pass],
+    stopped: 'the run ended: the liverykit MCP server exited' });
+  assert.match(died, /stopped: the run ended: the liverykit MCP server exited \(round 1 had passed; nothing reached the inbox\)/);
+  assert.doesNotMatch(died, /http-equiv="refresh"/);
+
+  // A round the second look decided shows the pictures it judged.
+  const closer = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: true, history: [{
+    ...pass, renders: ['/run/round-1-sheet.png'], closer: ['/run/round-1-closer-left.png'],
+    critic: { reads_at_distance: false, notes: [] }, secondLook: { reads_at_distance: true, notes: [] } }] });
+  const second = closer.slice(closer.indexOf('second look, closer'));
+  assert.match(second, /<img src="round-1-closer-left\.png"/, 'beside the verdict given on it');
+
+  // A server that dies at the very first call still leaves a page that ends.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-first-call-'));
+  try {
+    const out = join(dir, 'run');
+    const mcp = { async listTools() { throw new ServerGone('the liverykit MCP server exited'); } };
+    await assert.rejects(run({ brief: 'number 85', mcp, planner: {}, critic: {}, trace: await createTrace({ dir: out }), out }),
+      /exited/);
+    const left = await readFile(join(out, 'index.html'), 'utf8');
+    assert.match(left, /stopped: the run ended: the liverykit MCP server exited/);
+    assert.doesNotMatch(left, /http-equiv="refresh"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
@@ -862,6 +1116,48 @@ test('a group that failed cannot be undeclared to pass', async () => {
   }
 });
 
+test('a stripe that failed cannot be undeclared to pass', async () => {
+  // Run 19 painted its Gulf stripe across the roof. Declared, that fails the
+  // round; letting go of `stripe` the next round gets out of the check as
+  // surely as letting go of groupWith gets out of the group.
+  const ed = await fixtureEditor();
+  try {
+    const planner = {
+      async round({ n, call }) {
+        if (n === 1) {
+          const { panels } = JSON.parse((await call('find_panels', { tag: 'centre' })).content[0].text);
+          const roof = panels.find((p) => p.axes?.x === 'across the car' && p.axes?.y === 'along the car').panel;
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'orange', value: '#F0611A' },
+            // Across the car: the whole of x, which runs across it, and a
+            // fifth of y, which runs along it.
+            { op: 'add-region', surface: 'surfaces.body', region: {
+              id: 'stripe-roof', treatment: 'stripe', panel: roof, at: [0, 0.4, 1, 0.2], color: 'orange',
+              constraints: { stripe: 'centre' } } },
+          ] });
+        } else {
+          await call('draft_design', { design: [{ op: 'set-constraint', id: 'stripe-roof', key: 'stripe', value: null }] });
+        }
+        await call('finish_round', { summary: `round ${n}` });
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'an orange stripe', present: true, where: 'roof' }],
+      cut_off: [], unreadable: [], notes: [] }) };
+    const result = await run({
+      brief: 'an orange stripe', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, 'run') }),
+      out: join(ed.dir, 'run'), rounds: 2, views: ['left'], shot: { width: 200, height: 150 }, propose: false,
+    });
+    assert.ok(result.history[0].failures.some((f) => /high stripe-across: stripe-roof is part of the stripe "centre"/.test(f)),
+      JSON.stringify(result.history[0].failures));
+    assert.equal(result.history[1].passed, false);
+    assert.ok(result.history[1].failures.some((f) => /stripe-roof: stripe removed after it failed round 1/.test(f)),
+      JSON.stringify(result.history[1].failures));
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('text on a panel the profile cannot measure can pass, and is said to be unmeasured', async () => {
   // RSS4's helmet has no metresPerUv, so a driver name on it was two
   // notChecked entries, and the gate failed any round that had one. Nothing a
@@ -1007,6 +1303,7 @@ test('a critic that fails a clean draft gets a closer second look, and the secon
     assert.deepEqual(asked.images.map((i) => i.view), ['left', 'left', 'right'], "the round's picture, then closer sides");
     assert.deepEqual(cleared.result.history[0].critic.cut_off, flagged.cut_off, 'the first verdict is kept');
     assert.deepEqual(cleared.result.history[0].secondLook.cut_off, []);
+    assert.equal(cleared.result.history[0].closer?.length, 2, 'the pictures the second look judged are in the record');
     assert.ok(cleared.lines.some((l) => /critic FAIL \(cut off: the roundel behind 85.*→ closer look PASS/.test(l)),
       cleared.lines.join('\n'));
 
@@ -1409,6 +1706,42 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     assert.ok(L.largest && L.largest.widthMm > 300, JSON.stringify(L));
     assert.ok(Math.abs(L.largest.heightMm - L.largest.widthMm * 0.8) <= 1, 'in the proportion asked for');
     assert.ok(L.largest.marginMm >= 50 && L.largest.at.length === 4);
+
+    // And the number group laid out whole, as regions ready to use.
+    const lay = await ed.mcp.callTool('find_space', { panel: panels[0].panel, layout: { number: '85', name: 'GULF' } });
+    assert.ok(!lay.isError, lay.content[0].text);
+    const G = JSON.parse(lay.content[0].text);
+    assert.equal(G.layout?.regions.roundel.treatment, 'ring', JSON.stringify(G));
+    assert.equal(G.layout.regions.number.text, '85');
+    assert.deepEqual(G.layout.regions.name.map((r) => r.text), ['GULF']);
+    assert.ok(G.layout.marginMm >= 30, 'at the margin a layout defaults to');
+    // Two questions at once is refused, not half answered.
+    const mixed = await ed.mcp.callTool('find_space', { panel: panels[0].panel, largest: true, layout: { number: '8', name: 'G' } });
+    assert.ok(mixed.isError);
+    assert.match(mixed.content[0].text, /without largest, widthMm or heightMm/);
+    // A height alone is a size too, and was dropped without a word.
+    const tall = await ed.mcp.callTool('find_space', { panel: panels[0].panel, heightMm: 200, layout: { number: '8', name: 'G' } });
+    assert.ok(tall.isError, tall.content[0].text);
+
+    // And a stripe along the car, as regions ready to use, which the planner
+    // is told to take rather than work out: on this car the roof is the only
+    // panel seen from above, across it in x and 1.9 m wide.
+    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ widthMm, offsetMm \} \}/);
+    const roof = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'centre' })).content[0].text).panels
+      .find((p) => p.axes?.y === 'along the car').panel;
+    const laid = await ed.mcp.callTool('find_space', { panel: roof, stripe: { widthMm: 300 } });
+    assert.ok(!laid.isError, laid.content[0].text);
+    const S = JSON.parse(laid.content[0].text);
+    assert.deepEqual(S.regions.map((r) => [r.panel, r.constraints]), [[roof, { stripe: 'centre' }]], JSON.stringify(S));
+    assert.ok(S.regions[0].at.every((v, i) => Math.abs(v - [0.4211, 0, 0.1579, 1][i]) <= 0.01), JSON.stringify(S.regions[0]));
+    assert.deepEqual(S.findings, []);
+    const both = await ed.mcp.callTool('find_space', { panel: roof, widthMm: 300, stripe: { widthMm: 300 } });
+    assert.ok(both.isError);
+    assert.match(both.content[0].text, /without layout, largest, widthMm or heightMm/);
+    // heightMm alone, which a stripe answered as though it had not been sent.
+    const tallStripe = await ed.mcp.callTool('find_space', { panel: roof, heightMm: 300, stripe: { widthMm: 300 } });
+    assert.ok(tallStripe.isError, tallStripe.content[0].text);
+    assert.match(tallStripe.content[0].text, /without layout, largest, widthMm or heightMm/);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);

@@ -871,6 +871,13 @@ test('every tool reads what its schema declares, and declares what it reads', as
     width: 300, height: 200, widthMm: 200, heightMm: 200, marginMm: 0, count: 1, aspect: 1, cellMm: 100,
     minVisibility: 0, minArea: 0, maxAnisotropy: 10,
     proposal: { design: [], fit: [] }, design: [{ op: 'set-palette', name: 'ink', value: '#101014' }], fit: [],
+    // find_space's layout is a different question from a size, and the server
+    // refuses the two together rather than answer one; every property goes in
+    // one call here, so it is sent as absent. It is read either way, and its
+    // own reads are tested with it (test/fitment.test.mjs, test/autolivery.test.mjs).
+    layout: null,
+    // The same for a stripe, which the server refuses beside a size too.
+    stripe: null,
   };
   const drift = [];
   try {
