@@ -150,9 +150,12 @@ wholly on another copy of the sheet back onto the copy in [0, 1], by whole
 sheets, when the model is parsed, and `vertex()` applies the move. Everything
 that reads UVs reads them through `vertex()` — islands, seams, outlines, safe
 areas, wheels, the software renderer, the geometry the editor draws — so they
-all see a moved island in the same place. An island already on the sheet, one
-that spans more than a sheet, and one straddling a boundary are left exactly
-as stored, and a texture's `uvTile` still records where the model put it.
+all see a moved island in the same place. An island goes to the copy of the
+sheet holding most of it, [0, 1] winning a tie, so a sliver lying just past
+the sheet's edge and a flange hard-edged to a shifted body land where their
+neighbours do rather than clamping to nothing. One that spans more than a
+sheet, and one straddling a boundary, are left exactly as stored, and a
+texture's `uvTile` still records where the model put it.
 
 Checked against the sweep's 26 cars, profiled before and after: the profiler
 is deterministic, 14 profiles come out byte-identical, and every texture that
@@ -170,7 +173,10 @@ and loses 14 slivers of 0.09% to 0.12%, going from 64 panels to 55.
 
 **Still open.** An island straddling a sheet boundary, which the game wraps
 across the image's edge, cannot move whole and is left where it is; its panel
-stops at the edge. The generator counts such islands by texture.
+stops at the edge. The generator counts such islands by texture, over every
+island of at least `minVertices` vertices, including those on another copy of
+the sheet that keep no panel at all; counting only the islands that kept a
+panel said nothing about the 180SX, whose unwrap sits 60 sheets down.
 
 ## The design finds two of its fourteen surfaces bound
 
