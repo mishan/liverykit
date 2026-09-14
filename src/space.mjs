@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights, stripePanels, stripeAt } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights, stripePanels, stripeAt, drawnBy } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -601,8 +601,12 @@ export function groupLayout({
  * own stripe checks before it is given, and says what they found, if anything:
  * a layout that cannot pass them is not handed out as though it did. A panel
  * the band crosses that gets no piece is under `skipped`, with why.
+ *
+ * `design` is the one the stripe is for, where there is one: what it hides
+ * and paints decides what the picture draws over the band, and a layout read
+ * off a car with a hidden part still standing on it lays no piece under it.
  */
-export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre' }) {
+export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name = 'centre', design = null }) {
   if (!(Number.isFinite(widthMm) && widthMm > 0)) {
     throw new Error(`find_space's stripe needs widthMm, the stripe's width on the car in mm, above zero; got ${JSON.stringify(widthMm)}.`);
   }
@@ -615,10 +619,12 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
   const across = [offsetMm - widthMm / 2, offsetMm + widthMm / 2];
   const pieces = [];
   const skipped = [];
-  for (const c of stripePanels(model, profile, role, across)) {
+  const { hide, painted } = drawnBy(profile, design);
+  const paints = [...new Set([...painted, role])];
+  for (const c of stripePanels(model, profile, role, across, { hide, painted: paints })) {
     if (c.measured === false) {
       skipped.push({ panel: c.panel, carriesMm: c.carriesMm,
-        why: `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
+        why: c.why ?? `seen from above the band covers at most ${c.carriesMm} mm of ${c.panel} across the car and ` +
           `${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm one way: too little to fit a piece to or ` +
           'to tell a gap by. Check it in a picture of the car, and add a piece by hand if the stripe needs one there.' });
       continue;
@@ -628,9 +634,12 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     else skipped.push({ panel: c.panel, why: got.why });
   }
   const regions = pieces.map((p) => ({ id: p.id, treatment: 'stripe', panel: p.panel, at: p.at, constraints: { stripe: name } }));
+  // Checked on the car the layout was read off: the design's hides, and its
+  // other sheets painted with nothing, so the check draws what the layout saw.
   const findings = regions.length
-    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {},
-      paint: { [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
+    ? fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+      paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])),
+        [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
       .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`)
     : [];
   return {
