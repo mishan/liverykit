@@ -54,6 +54,13 @@ for (const c of cars) {
     throw new Error(`${c.id}: role "${bare[0]}" has no island count. This survey predates it; ` +
       're-run tools/survey.mjs before packing.');
   }
+  // The same for the wheel evidence the rims scorer reads: missing, it would
+  // read as "no wheel islands", and the scorer excludes exactly those.
+  const noWheels = Object.entries(c.roles).find(([, t]) => typeof t.wheelIslands !== 'number');
+  if (noWheels) {
+    throw new Error(`${c.id}: role "${noWheels[0]}" has no wheel-island count. This survey predates it; ` +
+      're-run tools/survey.mjs before packing.');
+  }
 }
 
 const shaders = [...new Set(cars.flatMap((c) => Object.values(c.roles).flatMap((t) => t.shaders)))].sort();
@@ -75,6 +82,10 @@ const doc = {
       box: t.box,
       ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
       panels: t.panels,
+      wheelIslands: t.wheelIslands,
+      sidewalls: t.sidewalls,
+      instances: t.instances,
+      ...(typeof t.cockpit === 'number' ? { cockpit: t.cockpit } : {}),
       ...(t.uvLayout ? { uvLayout: t.uvLayout } : {}),
     }])),
   })),
@@ -89,3 +100,7 @@ if (failed.length) console.log(`  left out ${failed.length} the survey could not
 // of it defends a different figure than the one the docs quote.
 const noVis = cars.filter((c) => !Object.values(c.roles).some((t) => typeof t.visible === 'number'));
 if (noVis.length) console.log(`  ! ${noVis.length} car(s) have no visibility: ${noVis.map((c) => c.id).join(', ')}`);
+// Cockpit visibility needs a steering wheel to stand behind, and a car
+// without one is scored for interior without its deciding signal.
+const noCockpit = cars.filter((c) => !Object.values(c.roles).some((t) => typeof t.cockpit === 'number'));
+if (noCockpit.length) console.log(`  ! ${noCockpit.length} car(s) have no cockpit visibility: ${noCockpit.map((c) => c.id).join(', ')}`);

@@ -139,8 +139,11 @@ for (const { id, klass } of todo) {
     // different accuracy figures within a month.
     const visibleByFile = new Map();
     for (const [role, v] of visOf) visibleByFile.set(prof.textures[role].file, v);
+    // The profile's panels too, as the generator passes them, so the wheel
+    // and cockpit evidence recorded here is what the scorers read at
+    // generation time.
     const features = textureFeatures(model, {
-      roles: prof.textures, skinCounts: counts, skinCount, visibleByFile,
+      roles: prof.textures, skinCounts: counts, skinCount, visibleByFile, panels: prof.panels,
     });
     const byRole = new Map(features.map((f) => [f.role, f]));
 
@@ -156,6 +159,8 @@ for (const { id, klass } of todo) {
           panels: panels[role] ?? 0,
           cover: f.area, meshes: f.meshes, box: f.box, straddles: f.straddles,
           ...(typeof f.visible === 'number' ? { visible: f.visible } : {}),
+          wheelIslands: f.wheelIslands, sidewalls: f.sidewalls, instances: f.instances,
+          ...(typeof f.cockpit === 'number' ? { cockpit: f.cockpit } : {}),
           skins: counts.get(t.file.toLowerCase()) ?? 0,
           shaders: f.shaders,
           ...(t.uvLayout ? { uvLayout: t.uvLayout, uvInside: t.uvInside } : {}),
