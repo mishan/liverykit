@@ -781,7 +781,7 @@ function inkBox(p, size, identity = {}) {
   // The frame the treatment draws in, about the box's centre (see render.mjs).
   const cx = x0 + w / 2, cy = y0 + h / 2;
   const fx = cx - f.w / 2, fy = cy - f.h / 2;
-  const inkW = Math.min(f.w, s.length * em * (0.72 + (o.tracking ?? 0.08)) * ax);
+  const inkW = Math.min(f.w, s.length * em * (INK_ADVANCE + (o.tracking ?? TEXT_TRACKING)) * ax);
   const anchor = o.anchor ?? 'middle';
   const left = anchor === 'start' ? fx : anchor === 'end' ? fx + f.w - inkW : fx + (f.w - inkW) / 2;
   const base = fy + f.h * 0.78;
@@ -823,7 +823,7 @@ function textFrame(p, size, identity) {
   let em = h * (o.scale ?? 0.7);
   let shrunk = false;
   if (o.fit !== false) {
-    const est = s.length * em * (0.62 + (o.tracking ?? 0.08)) * ax;
+    const est = s.length * em * (TEXT_ADVANCE + (o.tracking ?? TEXT_TRACKING)) * ax;
     if (est > w) { em *= w / est; shrunk = true; }
   }
   return { s, turn, quarter, w, h, em, ax, shrunk };
@@ -1240,6 +1240,16 @@ export const NAME_MM = 45;
 
 /** Capital height over font size, for the bold sans the text treatment sets. */
 export const CAP = 0.72;
+
+/**
+ * The text treatment's estimate of a glyph's advance, in ems, to fit a box;
+ * the wider one `inkBox` holds a ring against; and its default tracking.
+ * Exported for find_space's layout, which sizes letters by inverting this
+ * arithmetic: a second copy there would drift from the check it has to pass.
+ */
+export const TEXT_ADVANCE = 0.62;
+export const INK_ADVANCE = 0.72;
+export const TEXT_TRACKING = 0.08;
 
 const wordsOf = (s) => String(s ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 

@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, fitment, letterHeights } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -363,8 +363,7 @@ const GROUP_ASPECTS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.85, 1];
  * letters, and the disc is tested against the letters rather than against an
  * estimate that cost the number a tenth of its size.
  */
-const TRACKING = 0.08;
-const ADVANCE = 0.62 + TRACKING;
+const ADVANCE = TEXT_ADVANCE + TEXT_TRACKING;
 
 /**
  * A name's font size over its line's height. The treatment's 0.7 leaves the
@@ -517,21 +516,26 @@ export function groupLayout({
   // either is tried again with more air inside the rim, then given up, and
   // what failed it is kept for the answer: none passing is not "nothing fits".
   const rejected = [];
+  // The layout as a design of its own, for fitment to measure. `held` is what
+  // the roundel declares, when the check is to be the planner's.
+  const idsOf = (regions) => ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
+  const asDesign = (regions, held = null) => ({ name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
+    identity: { number, team: name },
+    paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc', ...(held ? { constraints: held } : {}) },
+      { id: 'number', ...regions.number, color: 'ink' },
+      ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } });
+  // Contrast and mirroring are about the design this goes into, which
+  // chooses the colours and paints the other side; neither is the layout's.
+  const wrongIn = (findings, ids, also = []) => findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
+    && !['low-contrast', 'unmirrored', ...also].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
   const measure = (o) => {
     for (const inside of INSIDE) {
       const d = divide({ W: o.W, H: o.H, number, lines: o.lines, inside, ah, av, ax });
       if (!d) return null;
       const regions = regionsFor(o, d);
-      const ids = ['roundel', 'number', ...regions.name.map((_, i) => `name-${i + 1}`)];
-      const design = { name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
-        identity: { number, team: name },
-        paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc' },
-          { id: 'number', ...regions.number, color: 'ink' },
-          ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } };
-      // Contrast and mirroring are about the design this goes into, which
-      // chooses the colours and paints the other side; neither is the layout's.
-      const wrong = fitment(design, profile).findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
-        && !['low-contrast', 'unmirrored', 'too-small'].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
+      const ids = idsOf(regions);
+      const design = asDesign(regions);
+      const wrong = wrongIn(fitment(design, profile).findings, ids, ['too-small']);
       if (wrong.length) {
         rejected.push(`${wrong[0].kind}: ${wrong[0].why}`);
         continue;
@@ -548,15 +552,42 @@ export function groupLayout({
   };
   const measured = options.map(measure).filter(Boolean)
     .sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
-  let chosen = measured[0] ?? null;
+  // Held to what the planner is told to declare, with the car. The sweep
+  // calls a spot clean at 98% of it on the car and seen, and the prompt has
+  // the roundel declare minOnCar 1, minVisible 1 and the layout's margin, so
+  // a layout measured without the car could be handed out and then fail
+  // check_fitment the moment the planner used it. Asked of the candidates a
+  // layout could be, best first, and only once each.
+  const heldOnCar = new Map();
+  const holds = (m) => {
+    if (!heldOnCar.has(m)) {
+      const held = { minOnCar: 1, minVisible: 1, minMargin: m.o.space.marginMm };
+      // The letter floors are the layout's own business, said in `clears`
+      // and the note: a layout that misses them is still offered as the best
+      // there is.
+      const wrong = wrongIn(fitment(asDesign(m.regions, held), profile, null, { model }).findings, idsOf(m.regions),
+        ['too-small']);
+      if (wrong.length) rejected.push(`with the car and the roundel's constraints, ${wrong[0].kind}: ${wrong[0].why}`);
+      heldOnCar.set(m, !wrong.length);
+    }
+    return heldOnCar.get(m);
+  };
+  const best = (pick) => measured.find((m) => pick(m) && holds(m)) ?? null;
+  let chosen = best(() => true);
   // One line where it costs little. A name split over two lines reads, but a
   // person looking at run 20 did not like it, and a number that is a tenth
   // smaller is still well over its floor when the best one was. Nor is a
   // number already the size of the hand-laid door's worth a second line.
-  const oneLine = measured.find((m) => m.o.lines.length === 1 && m.clears);
+  const oneLine = best((m) => m.o.lines.length === 1 && m.clears);
   if (chosen && chosen.o.lines.length > 1 && oneLine
     && (oneLine.numberMm >= 0.9 * chosen.numberMm || oneLine.numberMm >= AIM.number)) chosen = oneLine;
-  const other = chosen && measured.find((m) => m.o.lines.length !== chosen.o.lines.length);
+  const other = chosen && best((m) => m.o.lines.length !== chosen.o.lines.length);
+  // One sheet, when the surface paints several. The layout is measured on
+  // this texture, and a design's `surfaces.<term>` paints every texture the
+  // term binds: where another has a panel of the same name laid out
+  // differently, the same regions land there at another size, or nowhere.
+  const alsoOn = [...new Set(Object.values(profile.bind ?? {}).filter((b) => (b.roles ?? []).includes(g.role))
+    .flatMap((b) => b.roles).filter((r) => r !== g.role && profile.panels?.[r]?.[g.name]))];
 
   const said = (m) => ({
     aspect: m.o.aspect,
@@ -573,6 +604,10 @@ export function groupLayout({
     textRotation: turn,
     layout: chosen ? said(chosen) : null,
     alternative: other ? said(other) : null,
+    ...(alsoOn.length ? {
+      sheet: `The surface that paints ${g.role} also paints ${alsoOn.join(' and ')}, which has a panel called ` +
+        `${g.name} too. Put these regions on paint.${g.role}, so they land on this sheet alone, where they were measured.`,
+    } : {}),
     ...(!chosen ? {
       note: options.length
         ? `Every layout tried on ${g.name} failed fitment, the first with ${rejected[0] ?? 'nothing said'}.`
