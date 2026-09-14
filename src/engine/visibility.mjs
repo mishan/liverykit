@@ -340,14 +340,6 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
 }
 
 /**
- * Annotate islands with a `safe` UV rect covering only their visible part.
- *
- * `occluders` should be every mesh in the car, not just the painted ones — a
- * wheel or a wing hides bodywork just as well as bodywork does. `prepared`,
- * from `occupancyFor`, is the same grid built once for every texture of a car
- * instead of once per texture.
- */
-/**
  * A safe area confined to its panel.
  *
  * The safe area is the bounds of the readable vertices, taken from their raw
@@ -379,6 +371,14 @@ export function safeWithin(safe, rect, slack = 5e-4) {
   return [round(x0), round(y0), round(x1 - x0), round(y1 - y0)];
 }
 
+/**
+ * Annotate islands with a `safe` UV rect covering only their visible part.
+ *
+ * `occluders` should be every mesh in the car, not just the painted ones — a
+ * wheel or a wing hides bodywork just as well as bodywork does. `prepared`,
+ * from `occupancyFor`, is the same grid built once for every texture of a car
+ * instead of once per texture.
+ */
 export function computeSafeAreas(model, islands, {
   occluders = model.meshes,
   cellSize = 0.025,                 // 2.5 cm
