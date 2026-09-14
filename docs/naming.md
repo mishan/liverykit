@@ -256,7 +256,7 @@ markers for multi-part textures.
 **Five — regression.** *(done — `test/classifier.test.mjs` scores the classifier
 over a committed fixture of fleet measurements on every commit, and CI builds
 the portable livery on both cars.)* `tools/survey.mjs` becomes the harness: run the classifier
-over all 235 cars and assert the accuracy figure doesn't drop. That number is the
+over all 252 cars and assert the accuracy figure doesn't drop. That number is the
 thing to defend, and right now it is 191/193 on the labelled subset.
 
 ## Known gaps, recorded so they don't get rediscovered

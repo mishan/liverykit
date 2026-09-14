@@ -1,11 +1,12 @@
 // ---------------------------------------------------------------------------
 // Point one design at many cars and record what it would do on each.
 //
-// docs/backlog.md opens with a sweep of this kind: neon-grid-any against 25
-// cars nobody had profiled, and a table of what went wrong. It was done by
-// hand, so its numbers could be quoted and never re-run, and every fix in
-// docs/portability-plan.md is supposed to move one of them. This is that sweep
-// as a script: the same questions, asked the same way each time.
+// docs/backlog.md opens with a sweep of this kind: neon-grid-any against 26
+// cars nobody had profiled, and a table of what went wrong. It was first done
+// by hand, over 25 of them, so its numbers could be quoted and never re-run,
+// and every fix in docs/portability-plan.md is supposed to move one of them.
+// This is that sweep as a script: the same questions, asked the same way each
+// time.
 //
 // Nothing is built or rendered. It asks `portability()`, which asks the
 // resolver and the region expander the build itself uses, so a region reported

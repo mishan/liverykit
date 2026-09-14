@@ -17,8 +17,8 @@ Written from a sweep rather than an impression, so the entries under it can be
 argued with. 26 cars were sampled from a 254-car install — every eleventh,
 sorted, plus the three this repository already knows — profiled from scratch
 with `profileFromKn5` (no prior, no aliases, no hand-work of any kind), and
-then `liveries/neon-grid-any.mjs` was resolved against each and run through
-`fitment`. Sizes ran 25-75 textures and 2-855 panels.
+then `liveries/neon-grid-any.mjs` was resolved against each. Sizes ran 25-75
+textures and 2-855 panels.
 
 The sweep was first done by hand, and is now a script:
 
@@ -32,12 +32,15 @@ both understood: it profiles `pm3dm_bmw_320i_stw`, whose only model is
 covers 26 cars rather than 25; and it counts a tag rule as missed by cars, not
 by regions, which halves the flank figures the first write-up gave (see below).
 
-**The format and the checker held.** Zero fatal findings across 25 unfamiliar
-cars; everything reported was a low-severity overlap or mirror mismatch from
-the design's own layering. Nothing about the design file, the fit file or the
-fitment machinery is the weak part. The sweep ran without a model, so the
-geometry checks — `unseen`, `off-mesh`, `unpainted-twin` — did not run, and
-nothing was built or rendered: this measures resolution and placement.
+**The format and the checker held.** The hand sweep also ran each of its 25
+cars through `fitment`, and found zero fatal findings; everything reported was
+a low-severity overlap or mirror mismatch from the design's own layering.
+`tools/sweep.mjs` does not run `fitment`, so that figure is the hand sweep's
+and has not been measured again. Nothing about the design file, the fit file
+or the fitment machinery is the weak part. `fitment` ran without a model, so
+the geometry checks — `unseen`, `off-mesh`, `unpainted-twin` — did not run,
+and neither sweep built or rendered anything: this measures resolution and
+placement.
 
 **The design painted two surfaces on every car**: `body` and `tyres`. What
 follows is why, in the order worth fixing.
