@@ -29,7 +29,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank, explain, propose, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
+import { rank, explain, propose, proposeAll, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
 import { parseKn5Buffer } from '../src/engine/kn5.mjs';
 import { carKn5 } from './fixtures/kn5.mjs';
 
@@ -72,7 +72,7 @@ test('rims and interior land on a labelled texture on most of the fleet', async 
       const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
       if (!labels.length) continue;
       n++;
-      const p = propose(car.features, term);
+      const p = proposeAll(car.features)[term];
       if (p && p.roles.some((r) => labels.includes(car.features.find((f) => f.role === r).file))) right++;
     }
     assert.ok(n >= least, `${term}: only ${n} labelled cars; the fixture may have lost its wheel or cockpit evidence`);
@@ -267,7 +267,8 @@ test('--explain names what the tyres bind, and the swatch it left out and why', 
   const white = f('white', 0.035, ['ksTyres', 'ksPerPixel']);
   const tread = f('tread', 0.03, ['ksTyres']);
   assert.deepEqual(propose([white, tread], 'tyres').roles, ['tread']);
-  const text = explain([white, tread], 'tyres');
+  // With a body on the car, which would otherwise be the one to take the white.
+  const text = explain([f('skin', 0.5, ['ksPerPixel']), white, tread], 'tyres');
   assert.match(text, /proposal: tread  \(confidence 1: every texture only ksTyres draws\)/);
   assert.doesNotMatch(text, /proposal: white/);
   assert.match(text, /left out: white \(white\.dds\) — ksPerPixel draws it too/);
@@ -327,7 +328,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
       const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
       if (!labels.length) continue;
       n++;
-      const bound = new Set((propose(car.features, term)?.roles ?? [])
+      const bound = new Set((proposeAll(car.features)[term]?.roles ?? [])
         .map((r) => car.features.find((f) => f.role === r).file));
       if (labels.every((l) => bound.has(l))) right++;
     }
@@ -350,7 +351,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
   const over = [];
   for (const car of cars) {
     for (const term of ['tyres', 'brakes']) {
-      for (const r of propose(car.features, term)?.roles ?? []) {
+      for (const r of proposeAll(car.features)[term]?.roles ?? []) {
         const f = car.features.find((x) => x.role === r);
         const as = Object.keys(is).filter((t) => is[t](f));
         if (as.length && !as.includes(term)) over.push(`${car.id}: ${term} bound ${f.file}, labelled ${as.join(', ')}`);
@@ -358,4 +359,40 @@ test('tyres and brakes bind every texture their names say they are, across the f
     }
   }
   assert.deepEqual(over, ['jtc_honda_civic_eg_gra: tyres bound disk_d_1.dds, labelled brakes']);
+});
+
+test('a role one term binds is not a candidate for a later one', () => {
+  // An open cockpit sees a lot of the body, and the body is large, so on
+  // three open-wheelers the interior claimed the body's skin as well, and a
+  // design painting both threw at build time: both would write one file. And
+  // rt_bacmono's wheel sheet, drawn by its tyre and its disc materials, was
+  // both its tyres and its brakes.
+  const f = (o) => ({ role: o.file.replace('.dds', ''), area: 0.05, box: [0, 1, 0, 1, 0, 1], straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, ...o });
+  const skin = f({ file: 'skin.dds', area: 0.5, visible: 0.7, cockpit: 0.3, shaders: ['ksPerPixelMultiMap_damage_dirt'] });
+  const cabin = f({ file: 'cabin.dds', visible: 0.1, cockpit: 0.5 });
+  const wheel = f({ file: 'wheel.dds', shaders: ['ksTyres', 'ksBrakeDisc'], islands: 0 });
+  const disc = f({ file: 'disc.dds', area: 0.01, shaders: ['ksBrakeDisc', 'ksPerPixel'], islands: 0 });
+  const all = [skin, cabin, wheel, disc];
+  assert.equal(propose(all, 'interior').role, 'skin', 'on its own evidence the interior takes the skin');
+  assert.equal(propose(all, 'brakes').role, 'wheel', 'and the brakes the wheel sheet');
+
+  const bind = proposeAll(all);
+  assert.deepEqual(Object.fromEntries(Object.entries(bind).map(([t, b]) => [t, b.roles])),
+    { body: ['skin'], tyres: ['wheel'], brakes: ['disc'], interior: ['cabin'] });
+  assert.equal(bind.interior.confidence, 1, 'the margin is over what is left, and nothing is');
+  const text = explain(all, 'interior');
+  assert.match(text, /taken: skin \(skin\.dds\) is bound to body/);
+  assert.match(text, /proposal: cabin  /);
+});
+
+test('no role is bound to two terms anywhere in the fleet', async () => {
+  for (const car of await fleet()) {
+    const held = new Map();
+    for (const [term, b] of Object.entries(proposeAll(car.features))) {
+      for (const r of b.roles) {
+        assert.ok(!held.has(r), `${car.id}: ${r} is bound to both ${held.get(r)} and ${term}`);
+        held.set(r, term);
+      }
+    }
+  }
 });

@@ -394,17 +394,25 @@ export function rank(features, term = 'body') {
     .filter((f) => f.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  if (!scored.length) return [];
-
-  const [best, next] = scored;
-  const confidence = next ? (best.score - next.score) / best.score : 1;
-  scored[0] = { ...best, confidence: Math.round(confidence * 100) / 100 };
-  return scored;
+  return withMargin(scored);
 }
 
-/** Whether a proposal is worth making at all, or whether the field is too flat. */
-export function propose(features, term = 'body') {
-  const ranked = rank(features, term);
+/** The top candidate's margin over the next, as its `confidence`. */
+function withMargin(scored) {
+  if (!scored.length) return scored;
+  const [best, next] = scored;
+  const confidence = next ? (best.score - next.score) / best.score : 1;
+  return [{ ...best, confidence: Math.round(confidence * 100) / 100 }, ...scored.slice(1)];
+}
+
+/**
+ * Whether a proposal is worth making at all, or whether the field is too flat.
+ *
+ * `taken` maps a role to the term already holding it. Such a role is not a
+ * candidate here, and the margin is over what is left (see proposeInOrder).
+ */
+export function propose(features, term = 'body', { taken = new Map() } = {}) {
+  const ranked = withMargin(rank(features, term).filter((f) => !taken.has(f.role)));
   if (!ranked.length) return null;
   const spec = VOCABULARY[term];
   // Every candidate only the term's own shader draws, for a term that binds
@@ -436,15 +444,37 @@ export function propose(features, term = 'body') {
  * loops over the same terms would be two answers the day one of them changes.
  */
 export function proposeAll(features) {
+  return proposeInOrder(features).bind;
+}
+
+/**
+ * The scorable terms proposed one after another, each from the roles the ones
+ * before it left, stopping short of `until` when given.
+ *
+ * Each scorer reads its own evidence and none knows what another took. On
+ * three open-wheelers an open cockpit sees enough of the large body skin for
+ * the interior to claim it too, and a design painting both then threw at
+ * build time, since both would write one file; rt_bacmono's wheel sheet was
+ * both its tyres and its brakes. So a role one term binds is not a candidate
+ * for a later one, and the later term gets its next-best. The order is the
+ * vocabulary's: the body, the one validated term, first; tyres and brakes,
+ * gated on their own shaders; rims, from the wheels; the interior, from the
+ * cockpit, last. `explain` stops here at its own term to say what was taken.
+ */
+function proposeInOrder(features, until = null) {
   const bind = {};
+  const taken = new Map();
   for (const term of SCORABLE) {
-    const p = propose(features, term);
+    if (term === until) break;
+    const p = propose(features, term, { taken });
     // A term with no candidate is left OUT rather than bound to an empty array.
     // An empty array means "this car has no such surface", which is a claim, and
     // the classifier is not entitled to make it — only a person is.
-    if (p) bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
+    if (!p) continue;
+    bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
+    for (const r of p.roles) taken.set(r, term);
   }
-  return bind;
+  return { bind, taken };
 }
 
 const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
@@ -513,9 +543,17 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   // top row: where the gate decided, a shared swatch can outrank everything
   // it binds, and printing that row with its margin named a proposal nobody
   // would get, then warned about a closeness that had decided nothing.
-  const proposal = propose(features, term);
+  const { taken } = proposeInOrder(features, term);
+  const proposal = propose(features, term, { taken });
   lines.push('');
-  if (proposal.shared) {
+  // Named, because a candidate an earlier term holds can still head the table
+  // above, and would otherwise read as the proposal.
+  for (const f of ranked.filter((x) => taken.has(x.role))) {
+    lines.push(`  taken: ${f.role} (${f.file}) is bound to ${taken.get(f.role)}, so it is not a candidate here`);
+  }
+  if (!proposal) {
+    lines.push('  proposal: none. Every candidate is bound to an earlier term.');
+  } else if (proposal.shared) {
     lines.push(`  proposal: ${proposal.roles.join(', ')}  (confidence 1: every texture only ${spec.gate.source} draws)`);
     for (const f of ranked.filter((x) => proposal.shared.includes(x.role))) {
       const others = f.shaders.filter((s) => !spec.gate.test(s));
