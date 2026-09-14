@@ -101,6 +101,7 @@ export function portability(design, profile) {
         regions.push({
           id: key, from: t.from, role: t.role, kind,
           ...(kind === 'tags' ? { tags: region.tags } : {}),
+          ...(region.optional ? { optional: true } : {}),
           status: 'unplaceable', panels: [], why: refused,
         });
         continue;
@@ -133,6 +134,8 @@ export function portability(design, profile) {
       // the surface binds. A miss the design marked `optional` is listed as
       // such, not as `missing`: it is part of what the design does on this
       // car, and this report is where a person looks to see all of that.
+      // `optional` rides on the region matched or not, so a fleet summary can
+      // keep it apart from a required region with the same tags.
       const miss = region.optional ? 'optional' : 'missing';
       regions.push({
         id: key,
@@ -140,6 +143,7 @@ export function portability(design, profile) {
         role: t.role,
         kind,
         tags: region.tags,
+        ...(region.optional ? { optional: true } : {}),
         status: panels.length ? 'matched' : miss,
         panels,
         why: panels.length ? undefined

@@ -394,7 +394,9 @@ test('the sweep runs on the shipped profiles with no model on the machine', () =
   assert.ok(nsx.length && nsx.every((g) => g.status === 'optional'));
 
   assert.match(stdout, /shipped profiles, as they stand/);
-  assert.match(stdout, /surfaces\.body \[shared, visible\] found nothing on 2 of 3, as its design allows \(optional\)/);
+  // Two of three, not two of two: the Abarth's match is counted under the
+  // optional rule, which needs the sweep to record which regions are optional.
+  assert.match(stdout, /surfaces\.body \[shared, visible\] \(optional\) found nothing on 2 of 3, as its design allows/);
 
   // And the table can be read back without sweeping again.
   const table = (s) => s.slice(s.indexOf('neon-grid-any on')).trim();
@@ -407,8 +409,29 @@ test('the summary counts an optional miss apart from a real one', () => {
     id, from: 'kn5', textures: 30, panels: 40,
     bindings: { body: { roles: ['b'], source: 'auto', confidence: 0.9, panels: 20 } },
     surfaces: [{ from: 'surfaces.body', status: 'present' }],
-    regions: [{ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], status }],
+    regions: [{ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], optional: true, status }],
   });
   const lines = summarise([car('a', 'matched'), car('b', 'optional'), car('c', 'optional')]).join('\n');
-  assert.match(lines, /\[shared, visible\] found nothing on 2 of 3, as its design allows \(optional\)/);
+  assert.match(lines, /\[shared, visible\] \(optional\) found nothing on 2 of 3, as its design allows/);
+});
+
+test('the summary keeps optional misses beside real ones, and an optional rule apart from a required one', () => {
+  // Two regions on one surface with the same tags, one optional: keyed by
+  // surface and tags alone they merged, and a car where the optional one
+  // missed and the required one did not counted as a clean match. And an
+  // optional rule that also missed for real printed only the real miss.
+  const car = (id, regions) => ({
+    id, from: 'kn5', textures: 30, panels: 40,
+    bindings: { body: { roles: ['b'], source: 'auto', confidence: 0.9, panels: 20 } },
+    surfaces: [{ from: 'surfaces.body', status: 'present' }], regions,
+  });
+  const tagged = (status, extra = {}) =>
+    ({ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], status, ...extra });
+  const lines = summarise([
+    car('a', [tagged('optional'), tagged('matched')]),
+    car('b', [tagged('optional'), tagged('missing', { nearMiss: { blocking: 'shared', tied: [], panels: 9 } })]),
+    car('c', [tagged('unplaceable', { optional: true }), tagged('matched')]),
+  ]).join('\n');
+  assert.match(lines, /surfaces\.body \[shared, visible\] \(optional\) matched nothing on 1 of 3 — blocked by a tiled material 1; found nothing on 2 more, as its design allows/);
+  assert.match(lines, /surfaces\.body \[shared, visible\] matched nothing on 1 of 3 — blocked by shared 1$/m);
 });

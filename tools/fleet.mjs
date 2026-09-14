@@ -119,7 +119,12 @@ export function summarise(records) {
     const mine = new Map();
     for (const g of r.regions ?? []) {
       if (g.kind !== 'tags') continue;
-      const key = `${g.from} [${g.tags.join(', ')}]`;
+      // Optional or not is part of the rule. Keyed by surface and tags alone,
+      // an optional region and a required one with the same tags merged, and a
+      // car where only the optional one missed read as a match. A record swept
+      // before the flag existed says so only by an `optional` status.
+      const optional = g.optional === true || g.status === 'optional';
+      const key = `${g.from} [${g.tags.join(', ')}]${optional ? ' (optional)' : ''}`;
       const seen = mine.get(key) ?? { matched: false, optional: false, blocking: new Set() };
       if (g.status === 'matched') seen.matched = true;
       else if (g.status === 'optional') seen.optional = true;
@@ -141,12 +146,15 @@ export function summarise(records) {
   }
   for (const [key, rule] of [...rules].sort(([a], [b]) => a.localeCompare(b))) {
     if (rule.expected && !rule.missed.length) {
-      lines.push(`${key} found nothing on ${rule.expected} of ${rule.cars}, as its design allows (optional)`);
+      lines.push(`${key} found nothing on ${rule.expected} of ${rule.cars}, as its design allows`);
       continue;
     }
     if (!rule.missed.length) { lines.push(`${key} matched on all ${rule.cars}`); continue; }
     const why = [...rule.blocking].sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} ${c}`).join(', ');
-    lines.push(`${key} matched nothing on ${rule.missed.length} of ${rule.cars} — blocked by ${why}`);
+    // The expected misses beside the real ones, not dropped for them: an
+    // optional rule that also failed on a tiled material printed only that.
+    lines.push(`${key} matched nothing on ${rule.missed.length} of ${rule.cars} — blocked by ${why}` +
+      (rule.expected ? `; found nothing on ${rule.expected} more, as its design allows` : ''));
   }
 
   // Surfaces the design paints, found bound on arrival.
