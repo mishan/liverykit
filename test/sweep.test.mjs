@@ -206,6 +206,18 @@ test('a body with a tiled texture says so whichever role it is, and the car line
   assert.match(stdout, new RegExp(`abarth500 +\\d+ panels, ${refused + missing} region\\(s\\) not placed`));
 }));
 
+test('the car line counts the misses a design allows apart from the ones it does not', () => inTmp(async (dir) => {
+  // An optional region is not painted either, and a line that left it out
+  // told a person looking at the NSX that everything landed.
+  const out = join(dir, 'sweep.json');
+  const { stdout } = await sweep('neon-grid-any', '--out', out);
+  const nsx = JSON.parse(await readFile(out, 'utf8')).find((r) => r.id === 'ac_friends_honda_nsx_gt3_evo');
+  const optional = nsx.regions.filter((g) => g.status === 'optional').length;
+  assert.ok(optional > 0);
+  assert.match(stdout, new RegExp(`ac_friends_honda_nsx_gt3_evo +\\d+ panels, \\d+ region\\(s\\) not placed ` +
+    `\\(and ${optional} optional, as the design allows\\)`));
+}));
+
 /** A car folder holding these files, as an install lays them out. */
 async function carFolder(parent, id, files) {
   const dir = join(parent, id);
