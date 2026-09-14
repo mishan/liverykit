@@ -26,13 +26,24 @@ export async function bestKn5(dir) {
   } catch {
     return null;
   }
-  const candidates = files.filter((f) => !/^collider\.kn5$/i.test(f) && !/_lod_[bcd]\.kn5$/i.test(f));
+  const sized = await Promise.all(files.map(async (name) => ({ name, bytes: (await stat(join(dir, name))).size })));
+  const best = bestOf(sized);
+  return best && join(dir, best);
+}
+
+/**
+ * The rule `bestKn5` applies, to `[{ name, bytes }]`: the name it picks, or null.
+ *
+ * Two models of one size are told apart by name. Without that the choice went
+ * by readdir's order, which is the filesystem's, and jtc_honda_civic_eg_gra
+ * ships two byte-identical-size models, so two machines could sweep two
+ * different files. By code point, `<id>.kn5` sorts before `<id>_1.kn5`.
+ */
+export function bestOf(files) {
+  const candidates = files.filter(({ name }) => !/^collider\.kn5$/i.test(name) && !/_lod_[bcd]\.kn5$/i.test(name));
   if (!candidates.length) return null;
-  const sized = await Promise.all(candidates.map(async (f) => {
-    const p = join(dir, f);
-    return { path: p, bytes: (await stat(p)).size };
-  }));
-  return sized.sort((a, b) => b.bytes - a.bytes)[0].path;
+  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  return [...candidates].sort((a, b) => b.bytes - a.bytes || byName(a, b))[0].name;
 }
 
 /**

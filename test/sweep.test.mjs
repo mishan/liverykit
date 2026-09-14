@@ -19,8 +19,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nearMiss } from '../src/profile.mjs';
 import { featuresFromRecord } from '../src/engine/classify.mjs';
-import { everyNth, summarise } from '../tools/fleet.mjs';
-import { carKn5 } from './fixtures/kn5.mjs';
+import { bestKn5, bestOf, everyNth, summarise } from '../tools/fleet.mjs';
+import { buildKn5, carKn5 } from './fixtures/kn5.mjs';
 
 const run = promisify(execFile);
 const tool = (name) => fileURLToPath(new URL(`../tools/${name}`, import.meta.url));
@@ -186,6 +186,57 @@ test('the body counts the panels on every texture it binds, not only the first',
   const [record] = JSON.parse(await readFile(out, 'utf8'));
   const count = (role) => Object.keys(p.panels[role]).length;
   assert.equal(record.bindings.body.panels, count('skin') + count('skinbase_default'));
+}));
+
+/** A car folder holding these files, as an install lays them out. */
+async function carFolder(parent, id, files) {
+  const dir = join(parent, id);
+  await mkdir(dir, { recursive: true });
+  for (const [name, bytes] of Object.entries(files)) await writeFile(join(dir, name), bytes);
+  return dir;
+}
+
+test('two models of one size go by name, whatever order the folder lists them in', () => {
+  // As jtc_honda_civic_eg_gra ships them. The choice went by readdir's order,
+  // which is the filesystem's, so two machines could sweep two different
+  // files. The main spelling sorts first.
+  const tie = [{ name: 'tie_1.kn5', bytes: 10 }, { name: 'tie.kn5', bytes: 10 }];
+  assert.equal(bestOf(tie), 'tie.kn5');
+  assert.equal(bestOf([...tie].reverse()), 'tie.kn5');
+});
+
+test('the model a car is swept from is its biggest that is not a LOD or a collider', () => inTmp(async (dir) => {
+  const best = async (id, files) => {
+    const got = await bestKn5(await carFolder(dir, id, files));
+    return got && got.slice(dir.length + 1);
+  };
+  const bytes = (n) => Buffer.alloc(n);
+  // The full model under the other spelling, and nothing else: the plan's
+  // pm3dm_bmw_320i_stw, which the hand sweep's "not a LOD" filter threw away.
+  assert.equal(await best('lone', { 'lone_LODA.kn5': bytes(10) }), join('lone', 'lone_LODA.kn5'));
+  // A decimated copy or a physics hull loses even when it is the bigger file:
+  // its islands are not the ones a skin is authored against.
+  assert.equal(await best('lods', { 'lods.kn5': bytes(10), 'lods_lod_b.kn5': bytes(20), 'collider.kn5': bytes(30) }),
+    join('lods', 'lods.kn5'));
+  assert.equal(await best('only-lods', { 'x_lod_b.kn5': bytes(10), 'collider.kn5': bytes(5) }), null);
+  assert.equal(await best('empty', {}), null);
+}));
+
+test('the sweep profiles each car from its model, and records a car without one', () => inTmp(async (dir) => {
+  const cars = join(dir, 'content', 'cars');
+  await carFolder(cars, 'alpha', { 'alpha_LODA.kn5': carKn5() });
+  // The LOD is made the bigger file, so size alone would have taken it.
+  await carFolder(cars, 'beta', { 'beta.kn5': carKn5(), 'beta_lod_b.kn5': buildKn5({ textureBytes: 1 << 20 }) });
+  await carFolder(cars, 'gamma', { 'readme.txt': 'no model here' });
+  const out = join(dir, 'sweep.json');
+  await sweep('neon-grid-any', '--cars', cars, '--all', '--no-profiles', '--no-visibility', '--out', out);
+  const records = JSON.parse(await readFile(out, 'utf8'));
+  assert.deepEqual(records.map((r) => [r.id, r.from, r.source ?? r.error]),
+    [['alpha', 'kn5', 'alpha_LODA.kn5'], ['beta', 'kn5', 'beta.kn5'], ['gamma', 'kn5', 'no kn5']]);
+  for (const r of records.slice(0, 2)) {
+    assert.equal(r.visibility, false);
+    assert.equal(r.panels, 6, `${r.id}: the synthetic car's six faces`);
+  }
 }));
 
 test('the summary counts a rule as missed only where it landed nowhere', () => {
