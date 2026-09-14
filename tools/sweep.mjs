@@ -28,7 +28,8 @@
 // ---------------------------------------------------------------------------
 
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { join, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadProfile, resolveTargets, nearMiss } from '../src/profile.mjs';
@@ -79,6 +80,31 @@ const { path: liveryPath, dir: liveryDir } = await resolveLivery(liveryArg);
 const liveryName = basename(liveryDir ?? liveryPath).replace(/\.(mjs|json)$/, '');
 const design = await loadLivery(liveryPath);
 
+// What a record's answer depends on besides the car, so a resume can tell a
+// record this run would have written from one it would not. The key is the
+// car and the design's name, and until this was recorded, other profiles,
+// visibility turned off or the design edited all reused old records without
+// a word. The design is hashed as loaded rather than as a file, since an .mjs
+// can import what it places, and an edited comment changes nothing swept.
+const designHash = createHash('sha256').update(JSON.stringify(design)).digest('hex').slice(0, 16);
+const sweptWith = {
+  kn5: { design: designHash, cars: carsDir && resolve(carsDir), visibility },
+  profile: { design: designHash, profiles: profilesDir && resolve(profilesDir) },
+};
+
+/** How a record was swept differently from how this run would sweep it. */
+function sweptOtherwise(was, now) {
+  if (!was) return ['before the sweep recorded how it swept'];
+  const why = [];
+  if (was.design !== now.design) why.push('from a different version of the design');
+  if ('cars' in now && was.cars !== now.cars) why.push(`with --cars ${was.cars}, not ${now.cars}`);
+  if ('profiles' in now && was.profiles !== now.profiles) why.push(`with --profiles ${was.profiles}, not ${now.profiles}`);
+  if ('visibility' in now && was.visibility !== now.visibility) {
+    why.push(`with visibility ${was.visibility ? 'on' : 'off'}, not ${now.visibility ? 'on' : 'off'}`);
+  }
+  return why;
+}
+
 // Resume, unless the file is something else. A sweep of another design mixed
 // into this one's table would be a wrong number that looks like a right one.
 //
@@ -99,6 +125,29 @@ if (!argv.includes('--fresh')) {
   if (summaryOnly && !records.length) throw new Error(`${outPath} holds no sweep records, so there is nothing to summarise`);
   const other = records.find((r) => r.livery !== liveryName);
   if (other) throw new Error(`${outPath} holds a sweep of "${other.livery}", not "${liveryName}"; pass --fresh or another --out`);
+
+  // Refused, not re-swept. Quietly re-running the cars that differ would turn
+  // a resume into a different sweep, and overwrite the numbers somebody may be
+  // comparing against — a before-and-after pair is the point of the file. So
+  // the person decides. Only the kinds of car this run sweeps are checked: a
+  // run without --cars leaves the model records as they were, and says so in
+  // their own group of the table.
+  const sweeping = new Set([...(profilesDir ? ['profile'] : []), ...(carsDir ? ['kn5'] : [])]);
+  const otherwise = new Map();
+  for (const r of records) {
+    if (summaryOnly ? !r.sweptWith || r.sweptWith.design === designHash : !sweeping.has(r.from)) continue;
+    const why = summaryOnly ? ['from a different version of the design'] : sweptOtherwise(r.sweptWith, sweptWith[r.from]);
+    for (const w of why) otherwise.set(w, (otherwise.get(w) ?? 0) + 1);
+  }
+  // A summary reads what is there, whatever the options, but not in silence
+  // when the design has moved on since.
+  if (summaryOnly) {
+    for (const [w, n] of otherwise) console.log(`! ${n} record(s) were swept ${w} than ${liveryPath} holds now`);
+  } else if (otherwise.size) {
+    throw new Error(`${outPath} holds records this run would not have written: ` +
+      [...otherwise].map(([w, n]) => `${n} of them ${w}`).join('; ') +
+      '. Pass --fresh to sweep again from scratch, or another --out.');
+  }
 }
 
 function printSummary() {
@@ -139,9 +188,14 @@ if (carsDir) {
   for (const id of ids) plan.push({ key: `kn5:${id}`, from: 'kn5', id });
 }
 
-const done = new Set(records.map((r) => r.key));
+// A car that failed is tried again. It used to count as done, so the only way
+// to retry it was --fresh, which throws away every car that worked.
+const done = new Set(records.filter((r) => !r.error).map((r) => r.key));
+const failed = new Set(records.filter((r) => r.error).map((r) => r.key));
 const todo = plan.filter((p) => !done.has(p.key)).slice(0, limit);
-console.log(`${plan.length} planned, ${done.size} already done, ${todo.length} this pass`);
+const retrying = todo.filter((p) => failed.has(p.key)).length;
+console.log(`${plan.length} planned, ${done.size} already done, ${todo.length} this pass` +
+  (retrying ? ` (${retrying} failed last time)` : ''));
 
 // --- the sweep --------------------------------------------------------------
 
@@ -204,7 +258,9 @@ for (const item of todo) {
     record = { key: item.key, id: item.id, from: item.from, error: e instanceof Error ? e.message : String(e) };
   }
   record.livery = liveryName;
+  record.sweptWith = sweptWith[item.from];
   record.ms = Date.now() - t0;
+  records = records.filter((r) => r.key !== record.key);
   records.push(record);
 
   if (record.error) {
