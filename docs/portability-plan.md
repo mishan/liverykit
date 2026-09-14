@@ -560,6 +560,37 @@ job actually goes.
   for it, and an agent's proposal would then be one string away from the same
   write.
 
+**Built, the scorers.** `textureFeatures` counts four things from the
+profile's panels:
+- a texture's islands that sit at a wheel;
+- how many of those face along the axle;
+- the most islands sharing one rectangle;
+- its mean cockpit visibility.
+
+The survey records all four, and the fleet fixture is repacked from a fresh
+survey of the 252 cars.
+
+The measurement settled both rules.
+- **`rims`**: every labelled rim texture has all of its islands at a wheel,
+  and nearly all have four or more sharing a rectangle. Other textures near a
+  wheel have a median of a fifth of their islands there. A rim is therefore a
+  texture with nine tenths or more of its islands at a wheel that no tyre or
+  disc shader draws, discounted when it has fewer than four copies.
+- **`interior`**: area times cockpit visibility times what trackside
+  visibility leaves. It is proposed only where cockpit visibility was
+  measured.
+
+On held-out filename labels, the rims pick lands on a labelled texture on
+225 of 246 cars, and the interior pick on 124 of 168. `docs/naming.md` has the
+detail. Rules that also counted skins, or favoured a little trackside
+visibility, moved the result by two cars at most, and were left out.
+
+Neither term is in `VALIDATED`. The misses for both are mostly
+ambient-occlusion overlays drawn on the right meshes, which nothing measured
+here tells apart. The sweep's cars now arrive with 3 to 4 of `neon-grid-any`'s
+14 surfaces bound, a mean of 4.0 where it was 2.0. Nothing else in the sweep
+moved.
+
 **Built, the one-pass half.** `--explain --all` prints the three scored terms'
 rankings, names the seventeen that are bound by hand, and ends with the `bind`
 block. The block is the generator's own proposal, from `proposeAll` in
@@ -655,8 +686,9 @@ updated. Sweep before and after.
 
 **5. Vocabulary.** `rims` and `interior` scored and validated, driver kit
 proposed from exact skin filenames, `--explain --all`, the editor's Bindings
-panel on a route of its own. The last two are in, first, as the paragraph
-below said they should be.
+panel on a route of its own. The last two went in first, as the paragraph
+below said they should. The scorers followed, measured at 91% and 74% on
+held-out labels.
 
 Steps 1 through 4 are each a day or two, and they run in order: step 2 reads
 step 1's `uvLayout`, and step 3's measurement meant something only once step 2
