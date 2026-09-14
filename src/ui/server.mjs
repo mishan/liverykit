@@ -1069,7 +1069,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (size > MAX_BODY) throw new Error(`Request body over ${MAX_BODY} bytes; a fit is nothing like that big.`);
         chunks.push(c);
       }
-      return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      try {
+        return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      } catch (e) {
+        // The sender's mistake, and answered as one. It reached the catch
+        // below as a 500, which says the editor broke when nothing had.
+        throw Object.assign(new Error(`The request body is not JSON: ${e.message}`), { status: 400 });
+      }
     };
 
     try {
@@ -1667,7 +1673,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       if (!data) return send(404, 'text/plain', 'not found');
       return send(200, MIME[extname(file)], data);
     } catch (e) {
-      return json(500, { error: e.message });
+      return json(e.status ?? 500, { error: e.message });
     }
   });
 
