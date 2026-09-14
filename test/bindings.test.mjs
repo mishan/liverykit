@@ -17,10 +17,12 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 import { startUi, confirmBinding, bindingsReport } from '../src/ui/server.mjs';
-import { loadProfile, mergeBindings } from '../src/profile.mjs';
+import { loadProfile, mergeBindings, validateProfile, resolveTargets } from '../src/profile.mjs';
 import { loadLivery } from '../src/livery.mjs';
+import { portability } from '../src/portability.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { proposeAll, propose, featuresFromRecord, SCORABLE, VOCABULARY } from '../src/engine/classify.mjs';
+import { proposeAll, propose, proposeDriverKit, featuresFromRecord, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
+import { summarise } from '../tools/fleet.mjs';
 import { dimmed } from '../src/ui/view3d.js';
 import { carKn5 } from './fixtures/kn5.mjs';
 import '../src/index.mjs';
@@ -100,8 +102,10 @@ test('the one-pass bind block is the block the generator writes', async (t) => {
     (e, out, err) => ok({ code: e?.code ?? 0, stdout: out, stderr: err })));
   assert.equal(code, 0, stderr);
   for (const term of SCORABLE) assert.match(stdout, new RegExp(`^${term} — `, 'm'), `a ranking for ${term}`);
-  const unscored = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t));
+  const kit = Object.keys(DRIVER_KIT);
+  const unscored = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t) && !kit.includes(t));
   assert.match(stdout, new RegExp(`bound by hand or not at all: ${unscored.join(', ')}\\.`));
+  assert.match(stdout, new RegExp(`not measured \\(needs --skins\\): ${kit.join(', ')}\\.`));
   // No profile for this car in cars/, so nothing to merge, and said.
   assert.match(stdout, /No \S*\/fixture-car\.json, so this block has no confirmed bindings merged in/);
 
@@ -435,6 +439,81 @@ test('confirmBinding changes only the source, and checks what it writes', () => 
   assert.throws(() => confirmBinding(broken, { term: 'body', roles: ['gone'] }),
     (e) => e.status === 409 && /does not define/.test(e.message));
   assert.deepEqual(bindingsReport(p).find((t) => t.term === 'body').files, ['a.dds']);
+});
+
+test('the driver kit is proposed from AC\'s exact filenames, and nothing looser', () => {
+  // Every one of the four wrong ones is a real file on a real car, and each
+  // would have been bound by a pattern: guessRole calls the NSX's
+  // Lumirank_Driver_ID.dds a suit.
+  const textures = {
+    helmet: { file: 'HELMET_2012.dds' },
+    visor: { file: 'Helmet_2012_Glass.dds' },
+    crewHelmet: { file: 'crew_helmet_color.dds' },
+    id: { file: 'Lumirank_Driver_ID.dds' },
+    suit: { file: '2016_SUIT_DIFF.dds' },
+    oldSuit: { file: 'driver_suit2.dds' },
+    crew: { file: 'ac_crew.dds' },
+  };
+  assert.deepEqual(proposeDriverKit(textures), {
+    helmet: { roles: ['helmet'], source: 'auto', evidence: 'name' },
+    // Both suits: whichever driver model the car loads, its suit is painted.
+    suit: { roles: ['suit', 'oldSuit'], source: 'auto', evidence: 'name' },
+    crew: { roles: ['crew'], source: 'auto', evidence: 'name' },
+  });
+  assert.deepEqual(proposeDriverKit({}), {}, 'no skins scanned, nothing named');
+});
+
+test('on the RSS4 the named kit is what a person bound by hand', async () => {
+  const p = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  const proposed = proposeDriverKit(p.textures);
+  for (const term of Object.keys(DRIVER_KIT)) {
+    assert.equal(p.bind[term].source, 'human', `${term} was bound by hand`);
+    assert.deepEqual(proposed[term]?.roles, p.bind[term].roles, term);
+  }
+});
+
+test('a named binding is checked, said to be named, and kept out of the confidence means', () => {
+  const p = {
+    id: 'x',
+    textures: {
+      body: { file: 'b.dds', width: 4, height: 4 },
+      helmet: { file: 'helmet_2012.dds', width: 4, height: 4, sizeFrom: 'skin', inModel: false },
+    },
+    bind: { helmet: { roles: ['helmet'], source: 'auto', evidence: 'name' } },
+  };
+  validateProfile(structuredClone(p));
+  const typo = structuredClone(p);
+  typo.bind.helmet.evidence = 'guess';
+  assert.throws(() => validateProfile(typo), /evidence may only be "name"/);
+
+  const { notes } = resolveTargets(p, { name: 't', surfaces: { helmet: {} } });
+  const note = notes.find((n) => n.status === 'unconfirmed');
+  assert.match(note.text, /by name; nothing was measured/);
+  assert.doesNotMatch(note.text, /confidence/);
+
+  const lines = summarise([{
+    id: 'a', from: 'kn5', textures: 2, panels: 1, surfaces: [], regions: [],
+    bindings: {
+      body: { roles: ['body'], source: 'auto', confidence: 0.9, panels: 1 },
+      helmet: { roles: ['helmet'], source: 'auto', evidence: 'name', panels: 0 },
+    },
+  }]).join('\n');
+  assert.match(lines, /named helmet on 1 of 1, from AC's own filename/);
+  assert.doesNotMatch(lines, /proposed helmet/, 'not averaged in as a confidence of zero');
+});
+
+test('the portability report tells a surface nobody bound from one the car lacks', () => {
+  const p = {
+    id: 'x', panels: {},
+    textures: { body: { file: 'b.dds', width: 4, height: 4 } },
+    bind: { body: { roles: ['body'], source: 'human' }, wing: { roles: [], source: 'human' } },
+  };
+  const r = portability({ name: 't', surfaces: { body: {}, wing: {}, rims: {} } }, p);
+  const by = Object.fromEntries(r.surfaces.map((s) => [s.from, s]));
+  assert.equal(by['surfaces.body'].status, 'present');
+  assert.equal(by['surfaces.wing'].status, 'absent', 'a person said this car has none');
+  assert.equal(by['surfaces.rims'].status, 'unbound', 'nobody has said anything');
+  assert.match(by['surfaces.rims'].why, /nobody has bound "rims"/);
 });
 
 test('the whole-car view darkens every part but the ones wearing the texture', () => {

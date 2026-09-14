@@ -164,15 +164,23 @@ export function summarise(records) {
     `of ${wanted}, mean ${mean(present).toFixed(1)}`);
 
   // What the classifier proposed, per term.
+  // A named proposal is counted apart: it has no confidence, and folding it
+  // in as zero would drag the measured terms' means towards a number nobody
+  // measured.
   const terms = new Map();
+  const named = new Map();
   for (const r of ok) {
     for (const [term, b] of Object.entries(r.bindings ?? {})) {
       if (b.source !== 'auto' || !b.roles?.length) continue;
+      if (b.evidence === 'name') { named.set(term, (named.get(term) ?? 0) + 1); continue; }
       terms.set(term, [...(terms.get(term) ?? []), b.confidence ?? 0]);
     }
   }
   for (const [term, cs] of [...terms].sort(([a], [b]) => a.localeCompare(b))) {
     lines.push(`proposed ${term} on ${cs.length} of ${n}, mean confidence ${mean(cs).toFixed(2)}`);
+  }
+  for (const [term, c] of [...named].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(`named ${term} on ${c} of ${n}, from AC's own filename (no confidence: nothing was ranked)`);
   }
 
   // The tiled-material cars were first found as the ones with almost no panels.

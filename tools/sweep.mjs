@@ -226,6 +226,7 @@ function sweepOne(profile) {
       roles,
       source: entry?.source ?? null,
       ...(entry?.confidence !== undefined ? { confidence: entry.confidence } : {}),
+      ...(entry?.evidence ? { evidence: entry.evidence } : {}),
       // Every bound texture's panels, summed. Zero is the backlog's McLaren: a
       // body bound to sheets nothing is mapped onto. Counting only the first
       // said 10 for a body whose other texture carries 44.

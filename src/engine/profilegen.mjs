@@ -24,7 +24,7 @@ import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, is
 import { uvLayout } from './uvlayout.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
-import { textureFeatures, proposeAll } from './classify.mjs';
+import { textureFeatures, proposeBindings } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
 import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
 import { measureWheels } from './wheels.mjs';
@@ -634,7 +634,7 @@ export async function profileFromKn5(path, {
   }
 
   const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile, panels });
-  const bind = proposeAll(features);
+  const bind = proposeBindings(features, textures);
   if (!visibility) {
     log('  ! bindings were proposed without visibility, which is the signal that separates');
     log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
