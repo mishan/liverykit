@@ -122,6 +122,11 @@ test('the mp412c finds its body once a sheet with no islands cannot be it', asyn
   // over SKIN_00, on a car whose interior has 90 panels.
   const car = (await fleet()).find((c) => c.id === 'mclaren_mp412c_gt3');
   assert.equal(rank(car.features, 'body')[0].file, 'SKIN_00.dds');
+  // The rule itself, and not only the pick: on today's fixture SKIN_00 would
+  // outscore the swatch on visibility alone, so asserting the winner passed
+  // with the exclusion removed.
+  assert.ok(!rank(car.features, 'body').some((f) => f.file === 'black.dds'), 'excluded, not merely outranked');
+  assert.match(explain(car.features, 'body'), /not a candidate: black\.dds — no islands/);
 });
 
 test('a large, visible sheet with no islands does not become the body', async () => {
@@ -129,7 +134,7 @@ test('a large, visible sheet with no islands does not become the body', async ()
   // no island reaches the panel threshold. On area alone it wins.
   const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
   const { carKn5, vert } = await import('./fixtures/kn5.mjs');
-  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
 
@@ -145,14 +150,18 @@ test('a large, visible sheet with no islands does not become the body', async ()
     }
   }
   const dir = await mkdtemp(join(tmpdir(), 'lk-canopy-'));
-  const file = join(dir, 'car.kn5');
-  await writeFile(file, carKn5({
-    extraMeshes: [{ name: 'CANOPY', verts, indices, materialId: 1 }],
-    materials: [{ name: 'BodyMat' }, { name: 'CanopyMat', slots: { txDiffuse: 'canopy.dds' } }],
-    extraTextures: [{ name: 'canopy.dds' }],
-  }));
-  const profile = await profileFromKn5(file, { id: 'c', visibility: false });
-  const canopy = Object.entries(profile.textures).find(([, t]) => t.file === 'canopy.dds')[0];
-  assert.equal(Object.keys(profile.panels[canopy] ?? {}).length, 0, 'the canopy has no islands');
-  assert.equal(profile.textures[profile.bind.body.roles[0]].file, 'body.dds');
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [{ name: 'CANOPY', verts, indices, materialId: 1 }],
+      materials: [{ name: 'BodyMat' }, { name: 'CanopyMat', slots: { txDiffuse: 'canopy.dds' } }],
+      extraTextures: [{ name: 'canopy.dds' }],
+    }));
+    const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+    const canopy = Object.entries(profile.textures).find(([, t]) => t.file === 'canopy.dds')[0];
+    assert.equal(Object.keys(profile.panels[canopy] ?? {}).length, 0, 'the canopy has no islands');
+    assert.equal(profile.textures[profile.bind.body.roles[0]].file, 'body.dds');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
