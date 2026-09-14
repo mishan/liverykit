@@ -310,13 +310,13 @@ function drawBindings(r) {
   const rows = r.terms.filter((t) => t.status !== 'unbound').map((t) => {
     const what = t.status === 'absent' ? 'none on this car' : t.files.join(', ');
     // What stands behind a proposal, since that is what the person is being
-    // asked to check. A close margin and a rule nobody has measured are both
+    // asked to check. A close margin and a rule short of validation are both
     // reasons to look harder, so both are said here, not only in --explain.
     let how = 'confirmed';
     if (t.source !== 'human') {
       how = typeof t.confidence === 'number' ? `proposed, ${t.confidence}` : 'proposed';
       if (typeof t.confidence === 'number' && t.confidence < 0.2) how += ', close call';
-      if (t.scored && !t.validated) how += ', unmeasured rule';
+      if (t.scored && !t.validated) how += t.measured ? ', measured, not validated' : ', unmeasured rule';
     }
     const button = t.source !== 'human' && r.writable
       ? `<button data-confirm="${esc(t.term)}">Confirm</button>` : '';
