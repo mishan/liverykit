@@ -34,7 +34,11 @@ const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 // leaves the region exactly where the livery put it, so the surface still gets
 // painted; filing it under "asked for and not painted" would report artwork that
 // is on the car as absent from it.
-const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match']);
+//
+// A tiled material splits the same way. `tiled` says the surface was painted
+// and only its placed artwork was not; `unplaceable` is that artwork, one note
+// per region, and it was not painted.
+const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match', 'unplaceable']);
 
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {

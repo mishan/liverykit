@@ -158,6 +158,7 @@ for (const { id, klass } of todo) {
           ...(typeof f.visible === 'number' ? { visible: f.visible } : {}),
           skins: counts.get(t.file.toLowerCase()) ?? 0,
           shaders: f.shaders,
+          ...(t.uvLayout ? { uvLayout: t.uvLayout, uvInside: t.uvInside } : {}),
         }];
       })),
       doNotPaint: prof.doNotPaint.length,

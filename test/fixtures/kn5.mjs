@@ -61,6 +61,10 @@ export function buildKn5({
   // encrypted kn5 substitutes 1x1 placeholders, so a test that wants the stock
   // texture route to hand back real bytes asks for a bigger one.
   textureBytes = 128,
+  // More textures after the first, for tests about a car that wears more than
+  // one sheet: `[{ name, width, height }]`. A material binds one by naming it
+  // in `slots.txDiffuse`, and a mesh picks that material with `materialId`.
+  extraTextures = [],
 } = {}) {
   const parts = [];
 
@@ -73,7 +77,13 @@ export function buildKn5({
   // lives in the protected blob appended after the node tree.
   dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
   dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
-  parts.push(u32(2), u32(0), u32(1), str(textureName), u32(dds.length), dds);
+  parts.push(u32(2 + extraTextures.length), u32(0), u32(1), str(textureName), u32(dds.length), dds);
+  for (const t of extraTextures) {
+    const extra = Buffer.alloc(128); extra.write('DDS ', 0, 'ascii');
+    extra.writeUInt32LE(t.height ?? 64, 12);
+    extra.writeUInt32LE(t.width ?? 64, 16);
+    parts.push(u32(1), str(t.name), u32(extra.length), extra);
+  }
 
   // The materials, binding that texture as a diffuse.
   //

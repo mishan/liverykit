@@ -81,9 +81,10 @@ round number: the same sweep can answer it.
 ## Tag selections that match nothing
 
 `[left, visible]` and `[right, visible]` found no panel on 5 of 26 cars each,
-and those five are every car whose body binding is wrong: the three tiled
-materials, the McLaren bound to a sheet with no panels, and the Porsche 906
-below. On every car with a right body, the flank rules landed. The first
+and those five are every car whose body has no usable panels: the three whose
+body sheet is shifted off [0, 1] and lost its islands (below), the McLaren
+bound to a sheet with no panels, and the Porsche 906 bound to its window. On
+every car with a right body that kept its panels, the flank rules landed. The first
 write-up said 10 each, "about 40% of cars"; that counted the design's two
 `[left, visible]` regions, the piping and the number, as two misses per car.
 
@@ -117,20 +118,37 @@ any plausible floor. What the fix has to establish is what the rays aimed at
 the body are stopping on, and that the body ranks first once they stop on the
 right thing.
 
-## Nothing says when a car has no islands to paint at all
+## An unwrap shifted by whole sheets loses every island
 
 Three of the 26 — `tando_buddies_180sx` (2 panels from 66 textures),
 `btcc_toyota_avensis` (3) and `tc_legends_mazda_rx3` (7) — have essentially no
-UV islands anywhere. Their coordinates run far outside [0,1]: v from -59 to -9
-and u to +/-32000, because the paint is a seamless tiled material rather than
-an unwrapped skin sheet. `findIslands` returns nothing, correctly.
+UV islands anywhere. This entry first put that down to seamless tiled
+materials. Measured, it is nothing of the kind, and `findIslands` is not
+returning nothing correctly.
 
-What comes out is a profile that loads, validates, lists 66 textures and offers
-2 panels, and a design that then paints a sheet nobody can place anything on.
-The generator should say it: N textures whose UVs are tiled rather than
-unwrapped, and therefore nothing to map. A car like that may simply not be
-paintable by this approach, and finding that out should take a line of output
-rather than an afternoon.
+The Avensis body is one mesh of 13,562 vertices whose UVs run from v = -0.96 to
+-0.01: an ordinary unwrap, sitting one copy of the sheet below [0, 1]. Textures
+are sampled with wrap addressing, so the game draws it exactly as it would at
+v = 0 to 1. `findIslands` finds its islands and then clamps each rectangle into
+[0, 1]; an island lying wholly on another copy clamps to zero height, and the
+next line drops it as "collapsed to a line". The RX3's body is the same, one
+sheet down. The 180SX's sits 60 sheets down and straddles a sheet boundary, so
+only 54% of its surface lies on any one copy.
+
+It is not three cars. Across the fleet, 316 textures carrying real geometry,
+on 45 cars, are unwraps shifted by whole sheets, and on 13 cars it is the
+texture the classifier proposes as the body: the Capri, the Corvette, the
+365 GTB, the Giulietta, the RS3, the Civic, the Avensis, the Mygale, the GTA,
+the A110, the 300 SEL, the 2002 and the RX3. Every one of those bodies has no
+panels.
+
+Profiles now say so: a texture's `uvTile` records the offset, and the
+generator logs the shifted textures by name. What the fix has to establish is
+that an island is measured on its own copy of the sheet, with its rectangle,
+seams, outline and every other UV-derived figure shifted back by the same
+whole number; that a sheet straddling a boundary is either split where it
+wraps or reported as such; and that the Avensis's body comes out with panels
+while every unshifted profile comes out byte-identical.
 
 ## The design finds two of its fourteen surfaces bound
 

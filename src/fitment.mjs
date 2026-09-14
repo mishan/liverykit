@@ -398,8 +398,13 @@ function placements(profile, t, spec, fit, say = () => {}) {
   // running — came back with no findings at all, and read as a clean pass
   // over a car that was still bare primer. Nothing about artwork that paints
   // nothing is measurable, which is exactly why it has to be a finding.
+  //
+  // A region a tiled material refuses is the same news — the build skips it
+  // and the portability report lists it — and forwarding only `no-match` let
+  // that design through as clean. An `optional` miss is not forwarded: the
+  // design said, in the file, that it may find nothing.
   for (const n of expanded.notes) {
-    if (n.status !== 'no-match') continue;
+    if (n.status !== 'no-match' && n.status !== 'unplaceable') continue;
     say({ kind: 'unmatched', severity: 'high', surface: t.from, ids: [n.id ?? t.from], why: n.text });
   }
   const out = expanded.regions.flatMap((r, i) => {
