@@ -11,7 +11,7 @@ What did not hold was the part that decides *where* a portable design lands:
 |---|---|
 | body bound to a texture with no UV islands at all | 1 (`mclaren_mp412c_gt3`, confidence 0.04) |
 | body bound to the right texture, whose islands were all dropped | 0; 2 (Avensis, RX3) before the shifted-sheet fix, and the 180SX's kept 2 panels |
-| body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds the right texture at confidence 0 (see the backlog) |
+| body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds its paint at 0.79 |
 | an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
 | `[left, visible]` or `[right, visible]` matched no panel | 1 each, the mp412c, whose body is tiled |
 | a `[mid, upper, visible]` selection matched nothing on a car with a right body | 7 on the left, 6 on the right |
