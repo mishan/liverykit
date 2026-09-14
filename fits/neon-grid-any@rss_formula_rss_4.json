@@ -11,7 +11,7 @@
     "small but flat and sits where a real F4 carries the driver's name."
   ],
   "regions": {
-    "number-left": { "at": [0.30, 0.10, 0.40, 0.44] },
-    "number-right": { "at": [0.30, 0.10, 0.40, 0.44] }
+    "number-left": { "panel": "left_mid", "at": [0.30, 0.10, 0.40, 0.44] },
+    "number-right": { "panel": "right_mid", "at": [0.30, 0.10, 0.40, 0.44] }
   }
 }
