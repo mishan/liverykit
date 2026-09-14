@@ -205,12 +205,17 @@ is writing to: the tool name says it.
 - *Saving.* Not `save_design`, not `save_fit`, not `build`. A person presses
   Save. An agent that could save could undo the entire point of the inbox by
   proposing and accepting in one breath.
-- *Confirming a binding.* `--explain` ranks candidates and a human writes
-  `source: "human"`. That field exists to separate a machine's proposal —
-  right about 98% of the time — from a person's confirmation, and an agent
-  filling it in destroys the only signal that tells them apart. The MCP may
-  *report* the ranking. It may not record agreement with it. Both shipped
-  profiles are 20-and-0 and 13-and-1 human to auto; that ratio is the work.
+- *Confirming a binding.* `--explain` ranks candidates, and a human writes
+  `source: "human"`, by hand or with the editor's Bindings panel. That field
+  exists to separate a machine's proposal (right about 98% of the time) from a
+  person's confirmation. An agent filling it in destroys the only signal that
+  tells them apart. The MCP may *report* the ranking. It may not record
+  agreement with it. The panel's Confirm button posts to
+  `/api/bindings/confirm`, a route of its own that answers only the editor's
+  page, not to the proposal inbox. Routing it through the inbox would have
+  meant relaxing the refusal below, and an agent's proposal would then be one
+  string away from the same write. Both shipped profiles are 20-and-0 and
+  13-and-1 human to auto; that ratio is the work.
 - *Writing a `.mjs`.* Same rule as the editor, same reason.
 
 ## What it must refuse
@@ -220,7 +225,10 @@ lose by accident later:
 
 1. **No editor, no service.** The eye is load-bearing.
 2. **No writes to disk.** Propose only.
-3. **No `source: "human"`.** Ever, by any route.
+3. **No `source: "human"`.** Ever, by any route an agent has. Proposals
+   carrying it are refused by the MCP tools and again by `applyProposalDiff`,
+   and `test/bindings.test.mjs` checks that the second refusal still holds now
+   that the editor has a Confirm button of its own.
 4. **Nothing a save would refuse.** Run `designRefusal` and `validateFit` at
    proposal time, so a bad proposal fails in front of the agent that can fix it
    rather than in front of the person who did not make it.
@@ -328,7 +336,8 @@ test of whether this is a feature or a fashion.
 somebody who can see it. Those are different claims and only the second one is
 true.
 
-**It does not replace `--explain`.** Confirming a binding stays a human act.
+**It does not replace `--explain` or the Bindings panel.** Confirming a binding
+stays a human act.
 
 ## Shape of the work
 

@@ -559,6 +559,43 @@ job actually goes.
   for it, and an agent's proposal would then be one string away from the same
   write.
 
+**Built, the one-pass half.** `--explain --all` prints the three scored terms'
+rankings, names the seventeen that are bound by hand, and ends with the `bind`
+block. The block comes from `proposeAll` in `classify.mjs`, the function the
+generator now calls too, so what a person pastes is what a regeneration would
+have written; a test checks that against the generator on the fixture car, and
+against the old per-term loop on every car in the fleet fixture.
+
+The editor's Bindings panel lists every bound term, with its files and what
+stands behind it: the confidence, "close call" under 0.2, "unmeasured rule" for
+a scorer not in `VALIDATED`. It names the unbound terms in one line, so the
+list does not pass for the whole vocabulary. Hovering a row in the whole-car or
+cockpit view darkens every part not wearing that term's textures, by a
+per-group `dim` uniform. A term whose files are on no part of the model, a
+helmet say, is said in the status line rather than drawn as a car gone dark.
+Confirm posts to `/api/bindings/confirm`. Four things the text above did not
+say, each because the first version without it could have lost work:
+
+- The route re-reads the profile from disk rather than writing back the copy
+  the editor loaded, and refuses (409) unless the file still binds the term to
+  the roles the person was shown.
+- Only `source` changes. The file is validated and then written beside itself
+  and renamed over, so a failed write leaves the old profile.
+- Confirmations are queued, so two clicks cannot each write a file the other
+  has not seen.
+- "Reachable only from the button" is an Origin check: a browser sets the
+  header itself, and the MCP client and scripts send none. A local process
+  forging it could get through, and could equally write the file itself.
+
+The route answers 409 when the editor was started without a profile file, and
+the panel then offers no button and says why. The proposal refusal is
+unchanged, and a test checks it still refuses with the route in place, and
+that a regeneration's merge keeps what the route wrote. Removing the Origin
+check, the roles check or the proposal refusal each fails its test.
+
+Not measured: the timed sitting. Only a person confirming a fresh car can
+measure that.
+
 **What it must establish.** For `rims` and `interior`, an accuracy figure on a
 held-out label, recorded in `docs/naming.md` beside the body's. For the
 one-pass confirmation, that a fresh car goes from an unbound profile to a
@@ -609,7 +646,8 @@ updated. Sweep before and after.
 
 **5. Vocabulary.** `rims` and `interior` scored and validated, driver kit
 proposed from exact skin filenames, `--explain --all`, the editor's Bindings
-panel on a route of its own.
+panel on a route of its own. The last two are in, first, as the paragraph
+below said they should be.
 
 Steps 1 through 4 are each a day or two, and they run in order: step 2 reads
 step 1's `uvLayout`, and step 3's measurement meant something only once step 2

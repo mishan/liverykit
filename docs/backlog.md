@@ -230,6 +230,11 @@ repeated twelve times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than twelve.
 
+The second half is in: `--explain --all` and the editor's Bindings panel,
+described in the portability plan's step 5. Whether a fresh car really goes
+from unbound to confirmed in one sitting is for a person to time. Nothing here
+can.
+
 ## A panel only a secondary texture has cannot be painted through its surface
 
 **Symptom.** Where a term binds two textures, as the RSS4's `body` binds
