@@ -14,29 +14,44 @@ Ordered roughly by how much they cost the person looking at the preview.
 > is [roadmap.md](roadmap.md).
 
 Written from a sweep rather than an impression, so the entries under it can be
-argued with. 26 cars were sampled from a 254-car install — every eleventh, plus
-the three this repository already knows — profiled from scratch with
-`profileFromKn5` (no prior, no aliases, no hand-work of any kind), and then
-`liveries/neon-grid-any.mjs` was resolved against each and run through
-`fitment`. 25 profiled cleanly; the miss was the sampler's own "not a LOD"
-filter meeting a car whose only model is `<id>_LODA.kn5`. Sizes ran 25-75
+argued with. 26 cars were sampled from a 254-car install — every eleventh,
+sorted, plus the three this repository already knows — profiled from scratch
+with `profileFromKn5` (no prior, no aliases, no hand-work of any kind), and
+then `liveries/neon-grid-any.mjs` was resolved against each. Sizes ran 25-75
 textures and 2-855 panels.
 
-**The format and the checker held.** Zero fatal findings across 25 unfamiliar
-cars; everything reported was a low-severity overlap or mirror mismatch from
-the design's own layering. Nothing about the design file, the fit file or the
-fitment machinery is the weak part. The sweep ran without a model, so the
-geometry checks — `unseen`, `off-mesh`, `unpainted-twin` — did not run, and
-nothing was built or rendered: this measures resolution and placement.
+The sweep was first done by hand, and is now a script:
+
+    node tools/sweep.mjs neon-grid-any --cars <install>/content/cars
+
+The figures below are the script's, on the engine at `d16e8a0`. Run on the
+engine as it stood when this was first written (`1562ef1`), it reproduces the
+hand sweep's bindings exactly. It differs from the hand sweep in two places,
+both understood: it profiles `pm3dm_bmw_320i_stw`, whose only model is
+`_LODA.kn5` and which the hand sampler's "not a LOD" filter threw away, so it
+covers 26 cars rather than 25; and it counts a tag rule as missed by cars, not
+by regions, which halves the flank figures the first write-up gave (see below).
+
+**The format and the checker held.** The hand sweep also ran each of its 25
+cars through `fitment`, and found zero fatal findings; everything reported was
+a low-severity overlap or mirror mismatch from the design's own layering.
+`tools/sweep.mjs` does not run `fitment`, so that figure is the hand sweep's
+and has not been measured again. Nothing about the design file, the fit file
+or the fitment machinery is the weak part. `fitment` ran without a model, so
+the geometry checks — `unseen`, `off-mesh`, `unpainted-twin` — did not run,
+and neither sweep built or rendered anything: this measures resolution and
+placement.
 
 **The design painted two surfaces on every car**: `body` and `tyres`. What
 follows is why, in the order worth fixing.
 
 ## A candidate with no islands is still eligible to be the body
 
-Of 25 cars, the body binding was confident (>= 0.7) on 20, shaky on 3, and a
-guess on 2: `ks_mclaren_650_gt3` at 0.11 and `mclaren_mp412c_gt3` at 0.19. The
-second is the instructive one. It bound `body` to a role called `black` that
+Of 26 cars, the body binding was confident (>= 0.7) on 21, shaky on 3, and a
+guess on 2: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04. They
+were 0.11 and 0.19 when first measured; the visibility changes of 2026-09-13
+narrowed both margins and changed neither pick. The second is the instructive
+one. It bound `body` to a role called `black` that
 has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
 so the design painted a sheet with nothing mapped on it, and every tag
 selection then matched nothing.
@@ -44,10 +59,12 @@ selection then matched nothing.
 The classifier ranks candidates on surface area, whether they straddle the
 centreline, how many stock skins override them, shader, how much of the car's
 length and height they span, and visibility — never on the name. It does not
-ask whether a candidate has any paintable islands,
-which is the one piece of evidence that would have moved both of these. A
-texture no island lives on cannot be the thing a livery paints, and that is a
-measurement already sitting in the profile beside the binding.
+ask whether a candidate has any paintable islands, which is the one piece of
+evidence that would have settled the second of these. A texture no island lives
+on cannot be the thing a livery paints, and that is a measurement already
+sitting in the profile beside the binding. The first McLaren is a different
+case: its pick, `skin`, has 47 panels, and the problem is only that the call
+was close — which is the next entry's.
 
 ## An auto binding the profile calls a guess is painted anyway
 
@@ -61,20 +78,48 @@ which term went unpainted, exactly as an absent surface is handled today. Where
 that threshold sits wants looking at across the fleet rather than picking a
 round number: the same sweep can answer it.
 
-## Tag selections match nothing on 20 of 25 cars
+## Tag selections that match nothing
 
-`[shared, visible]` found no panel on 18 of 25, and `[left, visible]` and
-`[right, visible]` on 10 each — so a portable design's flank lettering lands
-nowhere on about 40% of cars. Two causes are mixed together in that number and
-want separating before either is chased: cars where the body binding is wrong
-(above), and cars whose panels genuinely carry neither tag.
+`[left, visible]` and `[right, visible]` found no panel on 5 of 26 cars each,
+and those five are every car whose body binding is wrong: the three tiled
+materials, the McLaren bound to a sheet with no panels, and the Porsche 906
+below. On every car with a right body, the flank rules landed. The first
+write-up said 10 each, "about 40% of cars"; that counted the design's two
+`[left, visible]` regions, the piping and the number, as two misses per car.
 
-`shared` in particular looks like a tag a portable design should not lean on:
-it means an instanced panel, and most cars' flanks are not instanced.
+What genuinely misses is `mid`. Leaving those five cars out,
+`[left, mid, upper, visible]` matched nothing on 5 cars and
+`[right, mid, upper, visible]` on 4, and on six of those nine misses the tag
+that emptied the selection was `mid` — on `ks_mclaren_650_gt3`, `lotus_49`,
+`lotus_exige_240` and `ks_audi_sport_quattro_s1`, only 3 to 13 body panels are
+`mid` at all. That is the centroid tagging: a flank that spans the middle of the
+car is `mid` only if its centroid happens to land there. `visible` was the tag
+that emptied a selection on none of them.
+
+`[shared, visible]` found nothing on 18, 13 of them cars with a correct body,
+and every one of those because the car has no instanced bodywork. `shared` is a
+tag a portable design should not lean on without saying the miss is expected.
+
+## A see-through sheet can outrank the paint on visibility
+
+`ac_legends_gt_porsche_906` binds `body` to `906_EXT_WINDOW_DIFF.dds` at 0.88:
+confident, and wrong. Its paint is `906_EXT_Body_Diff.DDS`, which every one of
+its 39 stock skins overrides and which covers 32% of the car — but its one
+panel measures 1% visible, while the window sheet, an alpha-tested
+`ksPerPixelMultiMap_AT` material that 23 skins override, measures 100%.
+Visibility is the classifier's decisive term, so the window wins.
+
+It was the same on the engine this section's sweep was first run on (0.77), so
+it predates the visibility changes of 2026-09-13, and the hand sweep counted it
+among the confident bindings. Nothing in the portability plan catches it: the
+window has a panel, so a rule against empty sheets passes it, and 0.88 clears
+any plausible floor. What the fix has to establish is what the rays aimed at
+the body are stopping on, and that the body ranks first once they stop on the
+right thing.
 
 ## Nothing says when a car has no islands to paint at all
 
-Three of the 25 — `tando_buddies_180sx` (2 panels from 66 textures),
+Three of the 26 — `tando_buddies_180sx` (2 panels from 66 textures),
 `btcc_toyota_avensis` (3) and `tc_legends_mazda_rx3` (7) — have essentially no
 UV islands anywhere. Their coordinates run far outside [0,1]: v from -59 to -9
 and u to +/-32000, because the paint is a seamless tiled material rather than
@@ -90,8 +135,8 @@ rather than an afternoon.
 ## The design finds two of its fourteen surfaces bound
 
 The vocabulary has 20 terms and three of them can be proposed automatically:
-`body` (25/25, mean confidence 0.78), `tyres` (24/25, 0.95) and `brakes`
-(22/25, 0.96). `neon-grid-any` paints 14 terms and `brakes` is not one of
+`body` (26/26, mean confidence 0.77), `tyres` (25/26, 0.96) and `brakes`
+(23/26, 0.96). `neon-grid-any` paints 14 terms and `brakes` is not one of
 them, so on arrival it found two. The other twelve — `rims`, `interior`,
 `belts`, `steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`,
 `gloves`, `crew` and `numberPlate` — came back unbound on every car in the
@@ -101,7 +146,7 @@ That is the ceiling on "portable": everything past the body and the tyres is a
 per-car `--explain` and a human confirmation, which is a thirty-second job
 repeated twelve times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
-the fleet), and making confirming the rest one pass rather than eleven.
+the fleet), and making confirming the rest one pass rather than twelve.
 
 ## A panel only a secondary texture has cannot be painted through its surface
 
