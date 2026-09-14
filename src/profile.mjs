@@ -74,10 +74,25 @@ export function validateProfile(p, source = '<inline>') {
     for (const [name, panel] of Object.entries(panels)) {
       checkRect(panel.rect, `${role}.${name}.rect`, err);
       if (panel.safe) checkRect(panel.safe, `${role}.${name}.safe`, err);
+      if (panel.extent3d !== undefined) checkBox(panel.extent3d, `${role}.${name}.extent3d`, err);
     }
   }
 
   return p;
+}
+
+// Checked here rather than left to the tagger, which reads a panel with no
+// usable extent by its centroid alone. That is right for a profile generated
+// before extents were recorded and wrong for one whose extent is broken: the
+// panel quietly loses every section it reaches, and nothing says why.
+function checkBox(e, what, err) {
+  const corner = (q) => Array.isArray(q) && q.length === 3;
+  if (!Array.isArray(e) || e.length !== 2 || !e.every(corner)) err(`${what} must be [[x0, y0, z0], [x1, y1, z1]]`);
+  const shown = `[${e.map((q) => `[${q}]`).join(', ')}]`;
+  if (e.flat().some((n) => typeof n !== 'number' || !Number.isFinite(n))) err(`${what} must be numbers, got ${shown}`);
+  if (e[0].some((n, i) => n > e[1][i])) {
+    err(`${what} has its corners the wrong way round: the first is the minimum, got ${shown}`);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -75,7 +75,11 @@ function reaches(a, b, lo, hi, width) {
   return overlap > 0 && (overlap >= 0.25 * (b - a) || overlap >= 0.5 * width);
 }
 
-/** A panel's `extent3d`, if it has a well-formed one: [[x0, y0, z0], [x1, y1, z1]]. */
+/**
+ * A panel's `extent3d`, if it has a well-formed one: [[x0, y0, z0], [x1, y1, z1]].
+ * A malformed one is refused by validateProfile, so the fallback here is for a
+ * profile that never went through it, not a way of passing one over.
+ */
 function extentOf(p) {
   const e = p.extent3d;
   return Array.isArray(e) && e.length === 2
