@@ -392,6 +392,45 @@ test('both planners are told to polish, not to fix, in a polish round', async ()
   }
 });
 
+test('the attempts page says how a run ended, whichever way it ended', async () => {
+  const { attemptsPage } = await import('../autolivery/attempts.mjs');
+  const pass = { round: 1, passed: true, gates: { render: 'pass', fitment: 'pass', critic: 'pass' } };
+
+  // Passed and still going promises nothing: a polish round follows a pass
+  // only when polish is on and the critic gave advice.
+  const going = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false, history: [pass] });
+  assert.match(going, /the run is still going/);
+  assert.doesNotMatch(going, /a polish round/);
+
+  // Died after the pass, in the proposal: stopped comes first, and says the
+  // pass never reached the inbox.
+  const died = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false, history: [pass],
+    stopped: 'the run ended: the liverykit MCP server exited' });
+  assert.match(died, /stopped: the run ended: the liverykit MCP server exited \(round 1 had passed; nothing reached the inbox\)/);
+  assert.doesNotMatch(died, /http-equiv="refresh"/);
+
+  // A round the second look decided shows the pictures it judged.
+  const closer = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: true, history: [{
+    ...pass, renders: ['/run/round-1-sheet.png'], closer: ['/run/round-1-closer-left.png'],
+    critic: { reads_at_distance: false, notes: [] }, secondLook: { reads_at_distance: true, notes: [] } }] });
+  const second = closer.slice(closer.indexOf('second look, closer'));
+  assert.match(second, /<img src="round-1-closer-left\.png"/, 'beside the verdict given on it');
+
+  // A server that dies at the very first call still leaves a page that ends.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-first-call-'));
+  try {
+    const out = join(dir, 'run');
+    const mcp = { async listTools() { throw new ServerGone('the liverykit MCP server exited'); } };
+    await assert.rejects(run({ brief: 'number 85', mcp, planner: {}, critic: {}, trace: await createTrace({ dir: out }), out }),
+      /exited/);
+    const left = await readFile(join(out, 'index.html'), 'utf8');
+    assert.match(left, /stopped: the run ended: the liverykit MCP server exited/);
+    assert.doesNotMatch(left, /http-equiv="refresh"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
   // Past the limit, every call was refused with "call finish_round now",
   // finish_round included, so the round could never end. And a finish_round
@@ -1243,6 +1282,7 @@ test('a critic that fails a clean draft gets a closer second look, and the secon
     assert.deepEqual(asked.images.map((i) => i.view), ['left', 'left', 'right'], "the round's picture, then closer sides");
     assert.deepEqual(cleared.result.history[0].critic.cut_off, flagged.cut_off, 'the first verdict is kept');
     assert.deepEqual(cleared.result.history[0].secondLook.cut_off, []);
+    assert.equal(cleared.result.history[0].closer?.length, 2, 'the pictures the second look judged are in the record');
     assert.ok(cleared.lines.some((l) => /critic FAIL \(cut off: the roundel behind 85.*→ closer look PASS/.test(l)),
       cleared.lines.join('\n'));
 
