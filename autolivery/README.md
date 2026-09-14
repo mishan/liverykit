@@ -32,7 +32,10 @@ every measurement and render is taken from the model — see the main README on
 [supplying the game's files](../README.md#you-supply-the-games-files).
 
 Each round prints its tool calls and the gate's verdict. Renders, `trace.jsonl`
-and `result.json` go to `autolivery/runs/<time>/`. `--help` lists the options:
+and `result.json` go to `autolivery/runs/<time>/`, and so does `index.html`: every
+round as it lands, newest first, with the picture the gate judged and why it
+passed or failed. It reloads itself until the run ends; open it beside the editor
+to watch the drafts the inbox never sees. `--help` lists the options:
 number of rounds, models, effort, whether the critic gates or only advises, and
 which views it judges.
 

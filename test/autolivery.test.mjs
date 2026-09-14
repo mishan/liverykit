@@ -257,6 +257,56 @@ test('a pass with advice gets a round to act on it, and is offered itself when t
   }
 });
 
+test('every round lands on the attempts page as it is judged, and the page stops reloading when the run ends', async () => {
+  const ed = await fixtureEditor();
+  try {
+    const out = join(ed.dir, 'run');
+    const pages = [];
+    const planner = {
+      async round({ n, call }) {
+        // What the page said while this round was being drafted.
+        pages.push(await readFile(join(out, 'index.html'), 'utf8'));
+        const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+        const at = n === 1 ? [0.3, 0.45, 0.4, 0.005] : [0.1, 0.3, 0.8, 0.4];
+        await call('reset_draft');
+        await call('draft_design', { design: [
+          { op: 'set-palette', name: 'ink', value: '#101014' },
+          { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+            panel: panels[0].panel, at, color: 'ink' } },
+        ] });
+        await call('finish_round', { summary: n === 1 ? 'a <thin> number' : 'a number big enough to read' });
+      },
+    };
+    const critic = { async judge() {
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true, notes: [] };
+    } };
+    const result = await run({
+      brief: 'number 85 & a <name>', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+      out, rounds: 3, views: ['left'], shot: { width: 200, height: 150 },
+    });
+    assert.equal(result.passedIn, 2);
+
+    assert.match(pages[0], /round 1 of 3 in progress/, 'the page is there before round 1 is judged');
+    assert.match(pages[0], /http-equiv="refresh"/, 'and reloads itself while the run goes on');
+    assert.match(pages[1], /Round 1 — <span class="fail">failed/, 'round 1 is on it before round 2 is drafted');
+    assert.match(pages[1], /unreadable/, 'with why, in the measurement\'s words');
+
+    const done = await readFile(join(out, 'index.html'), 'utf8');
+    assert.doesNotMatch(done, /http-equiv="refresh"/, 'a finished run\'s page stops reloading');
+    assert.match(done, /passed in round 2/);
+    assert.match(done, /in the editor&#39;s inbox/, 'and says where the design went');
+    assert.ok(done.indexOf('Round 2') < done.indexOf('Round 1'), 'newest first');
+    assert.match(done, /number 85 &amp; a &lt;name&gt;/, 'the brief is escaped');
+    assert.match(done, /a &lt;thin&gt; number/, 'and so is the planner\'s summary');
+    for (const [, src] of done.matchAll(/<img src="([^"]+)"/g)) {
+      assert.ok(existsSync(join(out, decodeURI(src))), `${src} is a picture the gate saved beside the page`);
+    }
+    assert.equal(existsSync(join(out, 'index.html.partial')), false);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
   // Past the limit, every call was refused with "call finish_round now",
   // finish_round included, so the round could never end. And a finish_round
