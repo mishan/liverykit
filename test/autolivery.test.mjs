@@ -307,6 +307,91 @@ test('every round lands on the attempts page as it is judged, and the page stops
   }
 });
 
+test('a replay judges a recorded polish round even when today\'s critic gives the pass no advice', async () => {
+  const { createReplayPlanner } = await import('../autolivery/replay.mjs');
+  const ed = await fixtureEditor();
+  try {
+    const { panels } = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'left' })).content[0].text);
+    const number = (weight) => ({ design: [
+      { op: 'set-palette', name: 'ink', value: '#101014' },
+      { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+        panel: panels[0].panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink', weight } },
+    ], fit: [] });
+    // A run that passed in round 1 and then polished; today's critic is quiet.
+    const recording = { rounds: [{ draft: number(700), summary: 'a number' }, { draft: number(900), summary: 'bolder' }] };
+    const critic = { async judge() {
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true, notes: [] };
+    } };
+    const replay = async (followRecording) => {
+      const out = join(ed.dir, `replay-${followRecording}`);
+      return run({ brief: 'number 85', mcp: ed.mcp, planner: createReplayPlanner(recording), critic,
+        trace: await createTrace({ dir: out }), out, rounds: 2, polish: 2, followRecording, propose: false,
+        views: ['left'], shot: { width: 200, height: 150 } });
+    };
+    const followed = await replay(true);
+    assert.equal(followed.rounds, 2, 'the recorded polish round is judged');
+    assert.deepEqual(followed.polish, { round: 2, passed: true, from: 1 });
+    assert.equal((await replay(false)).rounds, 1, 'a live run with no advice still stops at the pass');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('the attempts page reloads until the run ends, and a run that dies says so on it', async () => {
+  const { attemptsPage } = await import('../autolivery/attempts.mjs');
+  // Passed, and not finished: a polish round or the proposal is still coming.
+  const between = attemptsPage({ brief: 'b', passed: true, passedIn: 1, finished: false,
+    history: [{ round: 1, passed: true, gates: { render: 'pass', fitment: 'pass', critic: 'pass' } }] });
+  assert.match(between, /http-equiv="refresh"/, 'still reloading after a pass');
+  assert.match(between, /still going/);
+
+  const ed = await fixtureEditor();
+  try {
+    const out = join(ed.dir, 'dies');
+    const planner = { async round() { throw new Error('the planner declined: policy'); } };
+    const critic = { async judge() { throw new Error('never asked'); } };
+    await assert.rejects(run({ brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+      out, rounds: 2, views: ['left'], shot: { width: 200, height: 150 } }), /declined/);
+    const left = await readFile(join(out, 'index.html'), 'utf8');
+    assert.doesNotMatch(left, /http-equiv="refresh"/, 'a dead run\'s page stops reloading');
+    assert.match(left, /stopped: the run ended: the planner declined: policy/);
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('both planners are told to polish, not to fix, in a polish round', async () => {
+  // The loop test sees the feedback's ask; this is what reaches each model.
+  const dir = await mkdtemp(join(tmpdir(), 'autolivery-polish-ask-'));
+  const polishing = { text: '{"passed":"Round 1 passed the gate."}', images: [], ask: 'Polish it' };
+  try {
+    const trace = await createTrace({ dir });
+    const call = async () => ({ content: [{ type: 'text', text: 'ok' }] });
+    const usage = { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const sent = [];
+    const client = { beta: { messages: { create: async (p) => {
+      sent.push(structuredClone(p));
+      return { id: 'msg', model: 'claude-opus-5', stop_reason: 'tool_use', usage,
+        content: [{ type: 'tool_use', id: 'u1', name: 'finish_round', input: { summary: 'polished' } }] };
+    } } } };
+    await createPlanner({ client, model: 'claude-opus-5', effort: 'high', trace, fallback: false })
+      .round({ n: 2, rounds: 3, brief: 'b', feedback: polishing, tools: [], call });
+    const claudeSaw = sent[0].messages.at(-1).content.map((b) => b.text ?? '').join('\n');
+    assert.match(claudeSaw, /Round 2 of 3\. Polish it, then finish_round\./);
+    assert.doesNotMatch(claudeSaw, /Fix what the gate named/);
+
+    const { fetchImpl, sent: asked } = fakeServer({ vision: true, replies: [calls(['q1', 'finish_round', { summary: 'polished' }])] });
+    const endpoint = await local.connectEndpoint({ baseUrl: 'http://fake/v1', fetchImpl });
+    await local.createPlanner({ endpoint, model: 'local-model', trace })
+      .round({ n: 2, rounds: 3, brief: 'b', feedback: polishing, tools: [], call });
+    const localSaw = asked.at(-1).messages.at(-1).content.map((p) => p.text ?? '').join('\n');
+    assert.match(localSaw, /Round 2 of 3\. Polish it, then finish_round\./);
+    assert.doesNotMatch(localSaw, /Fix what the gate named/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
   // Past the limit, every call was refused with "call finish_round now",
   // finish_round included, so the round could never end. And a finish_round
@@ -1572,7 +1657,10 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     // Two questions at once is refused, not half answered.
     const mixed = await ed.mcp.callTool('find_space', { panel: panels[0].panel, largest: true, layout: { number: '8', name: 'G' } });
     assert.ok(mixed.isError);
-    assert.match(mixed.content[0].text, /without largest or widthMm/);
+    assert.match(mixed.content[0].text, /without largest, widthMm or heightMm/);
+    // A height alone is a size too, and was dropped without a word.
+    const tall = await ed.mcp.callTool('find_space', { panel: panels[0].panel, heightMm: 200, layout: { number: '8', name: 'G' } });
+    assert.ok(tall.isError, tall.content[0].text);
 
     // And a stripe along the car, as regions ready to use, which the planner
     // is told to take rather than work out: on this car the roof is the only
@@ -1588,7 +1676,11 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     assert.deepEqual(S.findings, []);
     const both = await ed.mcp.callTool('find_space', { panel: roof, widthMm: 300, stripe: { widthMm: 300 } });
     assert.ok(both.isError);
-    assert.match(both.content[0].text, /without layout, largest or widthMm/);
+    assert.match(both.content[0].text, /without layout, largest, widthMm or heightMm/);
+    // heightMm alone, which a stripe answered as though it had not been sent.
+    const tallStripe = await ed.mcp.callTool('find_space', { panel: roof, heightMm: 300, stripe: { widthMm: 300 } });
+    assert.ok(tallStripe.isError, tallStripe.content[0].text);
+    assert.match(tallStripe.content[0].text, /without layout, largest, widthMm or heightMm/);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);
