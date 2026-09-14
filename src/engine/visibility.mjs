@@ -619,28 +619,50 @@ export function rectVisibility(model, prepared, meshes, rect, {
  * counted, so the coverage figure stays a fraction of the artwork rather than
  * of the box drawn around it.
  */
-function sampleRect(model, meshes, [rx, ry, rw, rh], nu, nv, poly = null) {
-  if (!(rw > 0) || !(rh > 0)) return { points: [], cells: 0 };
+function sampleRect(model, meshes, rect, nu, nv, poly = null) {
+  return sampleRects(model, meshes, [{ rect, nu, nv, poly }])[0];
+}
 
-  // Which cells are in play, decided once: the inner loop runs per triangle
-  // per cell, and a point-in-polygon test in there would be asked the same
-  // question thousands of times over.
-  const asked = new Array(nu * nv).fill(true);
-  let cells = nu * nv;
-  if (Array.isArray(poly) && poly.length >= 3) {
-    cells = 0;
-    for (let j = 0; j < nv; j++) {
-      for (let i = 0; i < nu; i++) {
-        // Cell centres, not edges.
-        const inside = inPoly(poly, [rx + ((i + 0.5) / nu) * rw, ry + ((j + 0.5) / nv) * rh]);
-        asked[j * nu + i] = inside;
-        if (inside) cells++;
+/**
+ * `sampleRect` for several rectangles, from one walk over the triangles (see
+ * `scanGrids`). `list` is `[{ rect, nu, nv, poly, within }]`.
+ *
+ * `within` is a second shape every sample must also be inside: a panel's
+ * outline, for a question about the paint on that panel alone. A rectangle
+ * in a texture covers whatever else the unwrap put inside it, and a stripe on
+ * the NSX's bonnet, sampled over its box, measured 1234 mm wide where it was
+ * 500: the rest was the tops of both front wings, laid out in the same
+ * stretch of the sheet.
+ */
+export function sampleRects(model, meshes, list) {
+  const plans = list.map(({ rect: [rx, ry, rw, rh], nu, nv, poly = null, within = null }) => {
+    if (!(rw > 0) || !(rh > 0)) return null;
+    // Which cells are in play, decided once: the inner loop runs per triangle
+    // per cell, and a point-in-polygon test in there would be asked the same
+    // question thousands of times over.
+    let asked = null;
+    let cells = nu * nv;
+    const shapes = [poly, within].filter((s) => Array.isArray(s) && s.length >= 3);
+    if (shapes.length) {
+      asked = new Array(nu * nv).fill(false);
+      cells = 0;
+      for (let j = 0; j < nv; j++) {
+        for (let i = 0; i < nu; i++) {
+          // Cell centres, not edges.
+          const at = [rx + ((i + 0.5) / nu) * rw, ry + ((j + 0.5) / nv) * rh];
+          const inside = shapes.every((s) => inPoly(s, at));
+          asked[j * nu + i] = inside;
+          if (inside) cells++;
+        }
       }
     }
-  }
-  if (!cells) return { points: [], cells: 0 };
-  const hit = scanGrid(model, meshes, [rx, ry, rw, rh], nu, nv, asked);
-  return { points: hit.filter(Boolean), cells };
+    return cells ? { rect: [rx, ry, rw, rh], nu, nv, asked, cells } : null;
+  });
+  const hits = scanGrids(model, meshes, plans.filter(Boolean));
+  let k = 0;
+  return plans.map((plan) => (plan
+    ? { points: hits[k++].filter(Boolean), cells: plan.cells }
+    : { points: [], cells: 0 }));
 }
 
 /**
@@ -653,49 +675,67 @@ function sampleRect(model, meshes, [rx, ry, rw, rh], nu, nv, poly = null) {
  * times over one door, it took half a minute to do 609 times what it could
  * have done once.
  */
-function scanGrid(model, meshes, [rx, ry, rw, rh], nu, nv, asked = null) {
-  const hit = new Array(nu * nv).fill(null);
+function scanGrid(model, meshes, rect, nu, nv, asked = null) {
+  return scanGrids(model, meshes, [{ rect, nu, nv, asked }])[0];
+}
+
+/**
+ * `scanGrid` for several rectangles at once, from one walk over the triangles.
+ *
+ * The walk is the cost and the rectangles are nearly free, so a question about
+ * the pieces of a stripe — six panels of one sheet, every time a draft is
+ * checked — is asked here once rather than six times over the same triangles.
+ * `grids` is `[{ rect, nu, nv, asked }]`; the answer is one hit list per grid,
+ * each exactly what `scanGrid` returns for it alone.
+ */
+export function scanGrids(model, meshes, grids) {
+  const hits = grids.map(({ nu, nv }) => new Array(nu * nv).fill(null));
   for (const mesh of meshes) {
     const own = model.meshes.indexOf(mesh);
     for (const [ia, ib, ic] of triangles(model, mesh)) {
       const A = vertex(model, mesh, ia), B = vertex(model, mesh, ib), C = vertex(model, mesh, ic);
-
-      // Only the grid cells this triangle could possibly cover.
-      const i0 = Math.max(0, Math.floor(((Math.min(A.u, B.u, C.u) - rx) / rw) * nu));
-      const i1 = Math.min(nu - 1, Math.ceil(((Math.max(A.u, B.u, C.u) - rx) / rw) * nu));
-      const j0 = Math.max(0, Math.floor(((Math.min(A.v, B.v, C.v) - ry) / rh) * nv));
-      const j1 = Math.min(nv - 1, Math.ceil(((Math.max(A.v, B.v, C.v) - ry) / rh) * nv));
-      if (i1 < i0 || j1 < j0) continue;
+      const umin = Math.min(A.u, B.u, C.u), umax = Math.max(A.u, B.u, C.u);
+      const vmin = Math.min(A.v, B.v, C.v), vmax = Math.max(A.v, B.v, C.v);
 
       // Barycentric coordinates in UV, which is where the question is asked.
       const d = (B.u - A.u) * (C.v - A.v) - (C.u - A.u) * (B.v - A.v);
       if (Math.abs(d) < 1e-12) continue;            // degenerate in uv: no area to sample
 
-      for (let j = j0; j <= j1; j++) {
-        for (let i = i0; i <= i1; i++) {
-          const slot = j * nu + i;
-          if (hit[slot] || (asked && !asked[slot])) continue;  // first triangle to cover it wins
-          const u = rx + ((i + 0.5) / nu) * rw, v = ry + ((j + 0.5) / nv) * rh;
-          const b1 = ((u - A.u) * (C.v - A.v) - (C.u - A.u) * (v - A.v)) / d;
-          const b2 = ((B.u - A.u) * (v - A.v) - (u - A.u) * (B.v - A.v)) / d;
-          const b0 = 1 - b1 - b2;
-          if (b0 < 0 || b1 < 0 || b2 < 0) continue;
-          const nx = A.nx * b0 + B.nx * b1 + C.nx * b2;
-          const ny = A.ny * b0 + B.ny * b1 + C.ny * b2;
-          const nz = A.nz * b0 + B.nz * b1 + C.nz * b2;
-          const nl = Math.hypot(nx, ny, nz) || 1;
-          hit[slot] = {
-            x: A.x * b0 + B.x * b1 + C.x * b2,
-            y: A.y * b0 + B.y * b1 + C.y * b2,
-            z: A.z * b0 + B.z * b1 + C.z * b2,
-            nx: nx / nl, ny: ny / nl, nz: nz / nl,
-            mesh: own,
-          };
+      grids.forEach(({ rect: [rx, ry, rw, rh], nu, nv, asked }, g) => {
+        // Only the grid cells this triangle could possibly cover.
+        const i0 = Math.max(0, Math.floor(((umin - rx) / rw) * nu));
+        const i1 = Math.min(nu - 1, Math.ceil(((umax - rx) / rw) * nu));
+        const j0 = Math.max(0, Math.floor(((vmin - ry) / rh) * nv));
+        const j1 = Math.min(nv - 1, Math.ceil(((vmax - ry) / rh) * nv));
+        if (i1 < i0 || j1 < j0) return;
+        const hit = hits[g];
+
+        for (let j = j0; j <= j1; j++) {
+          for (let i = i0; i <= i1; i++) {
+            const slot = j * nu + i;
+            if (hit[slot] || (asked && !asked[slot])) continue;  // first triangle to cover it wins
+            const u = rx + ((i + 0.5) / nu) * rw, v = ry + ((j + 0.5) / nv) * rh;
+            const b1 = ((u - A.u) * (C.v - A.v) - (C.u - A.u) * (v - A.v)) / d;
+            const b2 = ((B.u - A.u) * (v - A.v) - (u - A.u) * (B.v - A.v)) / d;
+            const b0 = 1 - b1 - b2;
+            if (b0 < 0 || b1 < 0 || b2 < 0) continue;
+            const nx = A.nx * b0 + B.nx * b1 + C.nx * b2;
+            const ny = A.ny * b0 + B.ny * b1 + C.ny * b2;
+            const nz = A.nz * b0 + B.nz * b1 + C.nz * b2;
+            const nl = Math.hypot(nx, ny, nz) || 1;
+            hit[slot] = {
+              x: A.x * b0 + B.x * b1 + C.x * b2,
+              y: A.y * b0 + B.y * b1 + C.y * b2,
+              z: A.z * b0 + B.z * b1 + C.z * b2,
+              nx: nx / nl, ny: ny / nl, nz: nz / nl,
+              mesh: own,
+            };
+          }
         }
-      }
+      });
     }
   }
-  return hit;
+  return hits;
 }
 
 /**

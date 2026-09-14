@@ -921,6 +921,48 @@ test('a group that failed cannot be undeclared to pass', async () => {
   }
 });
 
+test('a stripe that failed cannot be undeclared to pass', async () => {
+  // Run 19 painted its Gulf stripe across the roof. Declared, that fails the
+  // round; letting go of `stripe` the next round gets out of the check as
+  // surely as letting go of groupWith gets out of the group.
+  const ed = await fixtureEditor();
+  try {
+    const planner = {
+      async round({ n, call }) {
+        if (n === 1) {
+          const { panels } = JSON.parse((await call('find_panels', { tag: 'centre' })).content[0].text);
+          const roof = panels.find((p) => p.axes?.x === 'across the car' && p.axes?.y === 'along the car').panel;
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'orange', value: '#F0611A' },
+            // Across the car: the whole of x, which runs across it, and a
+            // fifth of y, which runs along it.
+            { op: 'add-region', surface: 'surfaces.body', region: {
+              id: 'stripe-roof', treatment: 'stripe', panel: roof, at: [0, 0.4, 1, 0.2], color: 'orange',
+              constraints: { stripe: 'centre' } } },
+          ] });
+        } else {
+          await call('draft_design', { design: [{ op: 'set-constraint', id: 'stripe-roof', key: 'stripe', value: null }] });
+        }
+        await call('finish_round', { summary: `round ${n}` });
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true,
+      matches_brief: true, requirements: [{ asked: 'an orange stripe', present: true, where: 'roof' }],
+      cut_off: [], unreadable: [], notes: [] }) };
+    const result = await run({
+      brief: 'an orange stripe', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: join(ed.dir, 'run') }),
+      out: join(ed.dir, 'run'), rounds: 2, views: ['left'], shot: { width: 200, height: 150 }, propose: false,
+    });
+    assert.ok(result.history[0].failures.some((f) => /high stripe-across: stripe-roof is part of the stripe "centre"/.test(f)),
+      JSON.stringify(result.history[0].failures));
+    assert.equal(result.history[1].passed, false);
+    assert.ok(result.history[1].failures.some((f) => /stripe-roof: stripe removed after it failed round 1/.test(f)),
+      JSON.stringify(result.history[1].failures));
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('text on a panel the profile cannot measure can pass, and is said to be unmeasured', async () => {
   // RSS4's helmet has no metresPerUv, so a driver name on it was two
   // notChecked entries, and the gate failed any round that had one. Nothing a
