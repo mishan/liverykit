@@ -453,10 +453,12 @@ export async function profileFromKn5(path, {
     const keep = islands.filter((i) => i.uvArea / total >= minPanelArea);
     // An island that straddles a sheet boundary is drawn by the game wrapped
     // across the image's edge, and it is the one kind placeOnSheet cannot bring
-    // back whole: its rect here stops at the edge. Counted, to be said below.
-    const across = keep.filter((i) => i.tiled
-      && i.uv.u1 - i.uv.u0 <= 1.02 && i.uv.v1 - i.uv.v0 <= 1.02
-      && (i.uv.u0 < -0.01 || i.uv.v0 < -0.01 || i.uv.u1 > 1.01 || i.uv.v1 > 1.01)).length;
+    // back whole: its rect here stops at the edge, and one on another copy of
+    // the sheet has none. placeOnSheet lists them over every island, and those
+    // big enough for findIslands to measure are counted, to be said below.
+    // Counted over `keep`, the ones with no panel went unsaid; counted at any
+    // size, one brushed-metal sheet on the S14 Zenki buried them under 1,728.
+    const across = meshes.flatMap((m) => m.straddlers ?? []).filter((n) => n >= minVertices).length;
     if (across) straddling.set(texName, across);
     nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
@@ -603,7 +605,8 @@ export async function profileFromKn5(path, {
     const n = [...straddling.values()].reduce((a, b) => a + b, 0);
     log(`  ! ${n} island(s) straddle a sheet boundary (${[...straddling].slice(0, 3)
       .map(([f, k]) => `${k} on ${f}`).join(', ')}${straddling.size > 3 ? ', …' : ''}).`);
-    log('    The game wraps them across the image\'s edge; their panels here stop at it.');
+    log('    The game wraps them across the image\'s edge; their panels here stop at it,');
+    log('    and one lying wholly off [0, 1] has no panel at all.');
   }
   if (tiled.length) {
     log(`  ${tiled.length} of ${measured.length} paintable textures are tiled materials; nothing on them can be placed.`);

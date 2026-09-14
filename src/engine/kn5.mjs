@@ -244,7 +244,9 @@ const SHEET_EDGE = 0.01;
  * [0, 1]: one on [0, 1] stays put; one spanning more than a sheet is a tiling
  * material with no single copy to move to; one straddling a boundary is wrapped
  * across the image's edge by the game and cannot move whole. All three are left
- * exactly as stored, so a model with nothing to move reads as it always did.
+ * exactly as stored, so a model with nothing to move reads as it always did,
+ * and each straddler's vertex count is kept in `mesh.straddlers` for the
+ * generator to say.
  *
  * Islands here are what findIslands calls islands — triangles joined through
  * shared vertex indices within one mesh — so a moved island moves whole and a
@@ -260,11 +262,13 @@ function placeOnSheet(model, mesh) {
   for (const [a, b, c] of triangles(model, mesh)) { union(a, b); union(b, c); }
 
   const bounds = new Map();
+  const size = new Map();
   for (let i = 0; i < n; i++) {
     const o = mesh.vertexStart + i * mesh.stride;
     const u = model.buf.readFloatLE(o + 24);
     const v = 1 + model.buf.readFloatLE(o + 28);
     const r = find(i);
+    size.set(r, (size.get(r) ?? 0) + 1);
     const b = bounds.get(r);
     if (!b) { bounds.set(r, [u, v, u, v]); continue; }
     if (u < b[0]) b[0] = u; if (v < b[1]) b[1] = v;
@@ -289,11 +293,24 @@ function placeOnSheet(model, mesh) {
     return best;
   };
   const moves = new Map();
+  // Straddlers are listed here, over every island, because this is where it
+  // is decided that they cannot move. Listed from the panels instead, one
+  // straddling on another copy of the sheet was never among them: it clamps to
+  // nothing in findIslands and is dropped. Each by its vertex count, so the
+  // generator can leave out what findIslands would not measure anywhere; a
+  // line in UV is left out here, as findIslands drops that as collapsed.
+  const straddlers = [];
+  const sheetSized = (lo, hi) => hi - lo > 1e-5 && hi - lo <= 1 + 2 * SHEET_EDGE;
   for (const [r, [u0, v0, u1, v1]] of bounds) {
     const ku = tileOf(u0, u1), kv = tileOf(v0, v1);
-    if (ku === null || kv === null || (ku === 0 && kv === 0)) continue;
+    if (ku === null || kv === null) {
+      if (sheetSized(u0, u1) && sheetSized(v0, v1)) straddlers.push(size.get(r));
+      continue;
+    }
+    if (ku === 0 && kv === 0) continue;
     moves.set(r, [-ku, -kv]);
   }
+  if (straddlers.length) mesh.straddlers = straddlers;
   if (!moves.size) return;
 
   const shift = new Float32Array(2 * n);
@@ -302,7 +319,6 @@ function placeOnSheet(model, mesh) {
     if (m) { shift[2 * i] = m[0]; shift[2 * i + 1] = m[1]; }
   }
   mesh.uvShift = shift;
-  mesh.islandsMoved = moves.size;
 }
 
 /**
