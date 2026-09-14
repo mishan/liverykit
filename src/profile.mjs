@@ -507,28 +507,6 @@ export function panelsWithTags(profile, role, tags, { limit = Infinity } = {}) {
  * Counted by distinct rectangle, the way the selection itself counts, so four
  * wheels on one rim are one panel here as they are there.
  */
-/**
- * A tag selection's miss, in words a person can act on.
- *
- * The sweep reads `nearMiss` to know whether `mid` or `visible` emptied a
- * selection, and the person who hits the same miss on a car of their own
- * deserves the same answer rather than a bare "no panel tagged [...]": the fix
- * for a missing `mid` and the fix for a missing `left` are different fixes. The
- * texture's own tags follow, because a selection naming a tag that exists
- * nowhere here — `body`, written by someone guessing at the vocabulary — is
- * best answered by the list of what does.
- */
-export function missExplanation(profile, role, tags) {
-  const known = [...new Set(Object.values(profile.panels?.[role] ?? {}).flatMap((p) => p.tags ?? []))].sort();
-  if (!known.length) return 'No panel on this texture has tags.';
-  const near = nearMiss(profile, role, tags);
-  const counts = tags.map((t) => `${t} ${near.each[t]}`).join(', ');
-  const closest = near.blocking
-    ? `Dropping \`${near.blocking}\` would match ${near.without[near.blocking]} (${counts}).`
-    : `No single tag empties it (${counts}).`;
-  return `${closest} Tags on this texture: ${known.join(', ')}`;
-}
-
 export function nearMiss(profile, role, tags) {
   const count = (ts) => panelsWithTags(profile, role, ts).length;
   const each = Object.fromEntries(tags.map((t) => [t, count([t])]));
@@ -541,6 +519,40 @@ export function nearMiss(profile, role, tags) {
     tied: best.length > 1 ? best : [],
     panels: count([]),
   };
+}
+
+/**
+ * A tag selection's miss, in words a person can act on.
+ *
+ * The sweep reads `nearMiss` to know whether `mid` or `visible` emptied a
+ * selection, and the person who hits the same miss on a car of their own
+ * deserves the same answer rather than a bare "no panel tagged [...]": the fix
+ * for a missing `mid` and the fix for a missing `left` are different fixes. The
+ * texture's own tags follow, because a selection naming a tag that exists
+ * nowhere here — `body`, written by someone guessing at the vocabulary — is
+ * best answered by the list of what does.
+ *
+ * Only "dropping X" when dropping X is advice somebody can take. On a single
+ * tag it advised `tags: []`, which the expander refuses; and when no single
+ * drop recovers anything it said "no single tag empties it", which is the
+ * opposite of true when two tags each match nothing on their own.
+ */
+export function missExplanation(profile, role, tags) {
+  const near = nearMiss(profile, role, tags);
+  if (!near.panels) return 'This texture has no panels, so no tag selection can match on it.';
+  const known = [...new Set(Object.values(profile.panels?.[role] ?? {}).flatMap((p) => p.tags ?? []))].sort();
+  if (!known.length) return 'No panel on this texture has tags.';
+  const counts = `(${tags.map((t) => `${t} ${near.each[t]}`).join(', ')})`;
+  const code = (ts) => ts.map((t) => `\`${t}\``);
+  const and = (ts) => (ts.length > 1 ? `${ts.slice(0, -1).join(', ')} and ${ts.at(-1)}` : ts[0]);
+  const zeros = tags.filter((t) => !near.each[t]);
+  const closest = tags.length === 1 ? `No panel on this texture is tagged \`${tags[0]}\`.`
+    : near.blocking ? `Dropping \`${near.blocking}\` would match ${near.without[near.blocking]} ${counts}.`
+    : near.tied.length ? `Dropping ${code(near.tied).join(' or ')} would match ${near.without[near.tied[0]]} each ${counts}.`
+    : zeros.length > 1 ? `${and(code(zeros))} each match no panel here, so dropping any one tag still leaves nothing ${counts}.`
+    : zeros.length ? `\`${zeros[0]}\` matches no panel here, and the other tags never meet on one panel either ${counts}.`
+    : `No single tag dropped recovers it: at least two of them never meet on one panel ${counts}.`;
+  return `${closest} Tags on this texture: ${known.join(', ')}`;
 }
 
 /**

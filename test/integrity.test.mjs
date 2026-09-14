@@ -2354,6 +2354,31 @@ test('a tag selection that misses says which tag emptied it', async () => {
   assert.match(r.regions[0].why, /Dropping `visible` would match 2/);
 });
 
+test('a miss explanation says what is true when no single tag dropped recovers the selection', async () => {
+  const { missExplanation } = await import('../src/profile.mjs');
+  const p = tagCar({}, {
+    a: { rect: [0.0, 0, 0.2, 0.2], tags: ['left', 'mid', 'upper'] },
+    b: { rect: [0.3, 0, 0.2, 0.2], tags: ['left', 'upper', 'visible'] },
+    c: { rect: [0.6, 0, 0.2, 0.2], tags: ['right'] },
+  });
+  // One tag: "dropping `body`" advised `tags: []`, which the expander refuses.
+  const one = missExplanation(p, 'body', ['body']);
+  assert.match(one, /^No panel on this texture is tagged `body`\. Tags on this texture: left, mid, right, upper, visible$/);
+  // Each of two tags empties it alone. "No single tag empties it" said the
+  // opposite of what was true.
+  const two = missExplanation(p, 'body', ['left', 'shared', 'top']);
+  assert.match(two, /`shared` and `top` each match no panel here, so dropping any one tag still leaves nothing \(left 2, shared 0, top 0\)\./);
+  assert.match(missExplanation(p, 'body', ['body', 'mid', 'right']),
+    /`body` matches no panel here, and the other tags never meet on one panel either/);
+  assert.match(missExplanation(p, 'body', ['mid', 'visible', 'right']),
+    /No single tag dropped recovers it: at least two of them never meet on one panel \(mid 1, visible 1, right 1\)\./);
+  // A tie is named as one, not settled by list order.
+  assert.match(missExplanation(p, 'body', ['left', 'mid', 'upper', 'visible']),
+    /Dropping `mid` or `visible` would match 1 each \(left 2, mid 1, upper 2, visible 1\)\./);
+  // And a texture with nothing on it is not a question of tags at all.
+  assert.match(missExplanation(tagCar({}, {}), 'body', ['left']), /^This texture has no panels/);
+});
+
 test('a region marked optional may find nothing without being reported as a skip', async () => {
   // The portable example's [shared, visible] rule is for cars whose flanks are
   // instanced, and finds nothing on the 16 of 26 that are not. The design says
