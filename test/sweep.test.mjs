@@ -205,6 +205,42 @@ test('two models of one size go by name, whatever order the folder lists them in
   assert.equal(bestOf([...tie].reverse()), 'tie.kn5');
 });
 
+test('the packer reads its input with or without --out, and refuses a survey without skin counts', () => inTmp(async (dir) => {
+  const record = {
+    id: 'x', skinCount: 4,
+    roles: { body: { file: 'b.dds', panels: 12, cover: 0.4, box: [0, 1, 0, 1, 0, 1], straddles: true,
+      wheelIslands: 0, sidewalls: 0, instances: 2, skins: 2, shaders: ['ksPerPixel'] } },
+  };
+  const survey = join(dir, 'fleet.json');
+  const out = join(dir, 'fleet.json.gz');
+  const pack = (...args) => run(process.execPath, [tool('pack-fleet.mjs'), ...args]);
+
+  const noCount = structuredClone(record);
+  delete noCount.skinCount;
+  await writeFile(survey, JSON.stringify([noCount]));
+  await assert.rejects(pack(survey, '--out', out), /x: no skin count/);
+  const noSkins = structuredClone(record);
+  delete noSkins.roles.body.skins;
+  await writeFile(survey, JSON.stringify([noSkins]));
+  await assert.rejects(pack(survey, '--out', out), /x: role "body" has no skin-override count/);
+
+  await writeFile(survey, JSON.stringify([record]));
+  await pack('--out', out, survey);
+  assert.deepEqual(JSON.parse(gunzipSync(await readFile(out)).toString('utf8')).cars.map((c) => c.id), ['x']);
+
+  // Without --out, index 0 was taken for --out's value and the input was
+  // skipped; every test passed --out, so nothing noticed. Checked with a
+  // survey the packer refuses before it writes, so the committed fixture is
+  // never packed over: the refusal names the car only if the input was read.
+  const fixture = fileURLToPath(new URL('./fixtures/fleet-features.json.gz', import.meta.url));
+  const before = await readFile(fixture);
+  const old = structuredClone(record);
+  delete old.roles.body.panels;
+  await writeFile(survey, JSON.stringify([old]));
+  await assert.rejects(pack(survey), /x: role "body" has no island count/);
+  assert.ok((await readFile(fixture)).equals(before), 'the committed fixture is untouched');
+}));
+
 test('the model a car is swept from is its biggest that is not a LOD or a collider', () => inTmp(async (dir) => {
   const best = async (id, files) => {
     const got = await bestKn5(await carFolder(dir, id, files));
