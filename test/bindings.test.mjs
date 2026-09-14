@@ -45,10 +45,13 @@ async function editor({ withPath = true } = {}) {
     headers: { 'content-type': 'application/json', ...(origin ? { origin } : {}) },
     body: JSON.stringify(sent),
   });
-  const stop = () => new Promise((ok) => {
-    server.closeAllConnections?.();
-    server.close(ok);
-  });
+  const stop = async () => {
+    await new Promise((ok) => {
+      server.closeAllConnections?.();
+      server.close(ok);
+    });
+    await rm(dir, { recursive: true, force: true });
+  };
   return { dir, profilePath, text, at, confirm, stop };
 }
 
@@ -69,7 +72,7 @@ function raw(at, { method = 'GET', path, headers = {}, body = '' }) {
   });
 }
 
-test('the one-pass bind block is the block the generator writes', async () => {
+test('the one-pass bind block is the block the generator writes', async (t) => {
   // One function behind both, so that pasting the block --all prints is the
   // same as regenerating. Checked on every car in the fleet fixture against the
   // per-term proposals it replaced.
@@ -86,6 +89,7 @@ test('the one-pass bind block is the block the generator writes', async () => {
 
   // And through the command line, against the generator itself.
   const dir = await mkdtemp(join(tmpdir(), 'lk-all-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
   const kn5 = join(dir, 'fixture-car.kn5');
   await writeFile(kn5, carKn5());
   const { code, stdout, stderr } = await new Promise((ok) => execFile(process.execPath,
