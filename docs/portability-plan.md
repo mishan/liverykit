@@ -105,8 +105,8 @@ That script is now `tools/pack-fleet.mjs`, and the fixture was regenerated on
 as it now measures, the classifier scores 189/193 on the held-out label. Two of
 the four misses are the Evora labels `docs/naming.md` already explains; the
 other two are `mclaren_mp412c_gt3` and `tando_buddies_180sx`, which are steps 2
-and 1 of this plan. `uvLayout` does not exist yet, so the fixture is packed
-again when step 1 lands; the survey takes a quarter of an hour.
+and 1 of this plan. It was packed again from a second survey when step 1
+landed, so it carries each texture's `uvLayout` too.
 
 Three places rebuild classifier features from records instead of from a model:
 `survey.mjs` itself, `tools/evaluate.mjs`, which reads the survey's raw output,
