@@ -64,43 +64,18 @@ const get = async (url, path) => (await fetch(new URL(path, url).href)).json();
 const cli = (script, ...args) => new Promise((ok) => execFile(process.execPath,
   [join(ROOT, 'autolivery', script), ...args], (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
 
-test('the number group the planner is told to lay out clears the disc with room to spare', async () => {
-  // As first written the roundel was 60% of an aspect-0.75 group and the name
-  // its bottom quarter, so the disc reached 0.6 of the group's width down and
-  // the name's box began at 0.5625: the letters cleared the rim by about 1% of
-  // the width, and a name drawn larger had the disc through it. find_space's
-  // own description gave the same group as "about 0.8".
-  const aspect = Number(PLANNER_SYSTEM.match(/largest: true, aspect ([\d.]+)/)?.[1]);
-  const roundel = Number(PLANNER_SYSTEM.match(/the roundel is (\d+)% of the group's width/)?.[1]) / 100;
-  const band = Number(PLANNER_SYSTEM.match(/in the bottom (\d+)% of its height/)?.[1]) / 100;
-  assert.ok(aspect > 0 && roundel > 0 && band > 0, 'the prompt states the group\'s proportions');
-
-  // Laid out as told on a square panel, so a fraction of it is the same length either way.
-  const profile = {
-    id: 'fixture', name: 'Fixture',
-    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
-    bind: { body: { roles: ['body'], source: 'human' } },
-    panels: { body: { D: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [4, 4], visible: 1, tags: [] } } },
-  };
-  const [gx, gy, gw] = [0.1, 0.1, 0.8], gh = gw * aspect, d = gw * roundel;
-  const group = (scale) => ({
-    name: 'G', packs: ['core'], palette: { ink: '#101014', white: '#FFFFFF' }, identity: { team: 'GULF', number: '9' },
-    surfaces: { body: { regions: [
-      { id: 'roundel', treatment: 'ring', panel: 'D', at: [gx + (gw - d) / 2, gy, d, d], color: 'white',
-        radius: 0.25, width: 0.5 },
-      { id: 'team', treatment: 'text', panel: 'D', at: [gx, gy + gh * (1 - band), gw, gh * band], text: '{team}',
-        color: 'ink', scale },
-    ] } },
-  });
-  // At the default scale, and at a name filling its whole band.
-  for (const scale of [0.7, 1]) {
-    const overlap = fitment(group(scale), profile).findings.filter((f) => f.kind === 'overlap');
-    assert.deepEqual(overlap, [], `with the name at scale ${scale}`);
-  }
-
+test('the planner is told to take the number group from find_space\'s layout, which the tool offers', async () => {
+  // It was told a recipe to draw inside the largest rectangle of one
+  // proportion, and the recipe could not give the NSX door a number that
+  // cleared its floor: run 21 spent most of a round finding that out. The
+  // layout is measured by the server now; the prompt and the tool must agree
+  // on how it is asked for.
+  assert.match(PLANNER_SYSTEM, /find_space with \{ panel, layout: \{ number, name \}, marginMm: 30 \}/);
+  assert.doesNotMatch(PLANNER_SYSTEM, /aspect 0\.85|55% of the group/, 'and no recipe is left beside it');
   const tools = await createToolHandler({}).listTools();
-  const said = tools.find((t) => t.name === 'find_space').inputSchema.properties.aspect.description;
-  assert.equal(Number(said.match(/a roundel over a name, ([\d.]+)/)?.[1]), aspect, `find_space says the same: ${said}`);
+  const schema = tools.find((t) => t.name === 'find_space').inputSchema.properties;
+  assert.deepEqual(schema.layout?.required, ['number', 'name']);
+  assert.doesNotMatch(schema.aspect.description, /0\.85/);
 });
 
 test('a draft is rendered as drafted, and nothing is proposed by looking at it', async () => {
@@ -1409,6 +1384,19 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     assert.ok(L.largest && L.largest.widthMm > 300, JSON.stringify(L));
     assert.ok(Math.abs(L.largest.heightMm - L.largest.widthMm * 0.8) <= 1, 'in the proportion asked for');
     assert.ok(L.largest.marginMm >= 50 && L.largest.at.length === 4);
+
+    // And the number group laid out whole, as regions ready to use.
+    const lay = await ed.mcp.callTool('find_space', { panel: panels[0].panel, layout: { number: '85', name: 'GULF' } });
+    assert.ok(!lay.isError, lay.content[0].text);
+    const G = JSON.parse(lay.content[0].text);
+    assert.equal(G.layout?.regions.roundel.treatment, 'ring', JSON.stringify(G));
+    assert.equal(G.layout.regions.number.text, '85');
+    assert.deepEqual(G.layout.regions.name.map((r) => r.text), ['GULF']);
+    assert.ok(G.layout.marginMm >= 30, 'at the margin a layout defaults to');
+    // Two questions at once is refused, not half answered.
+    const mixed = await ed.mcp.callTool('find_space', { panel: panels[0].panel, largest: true, layout: { number: '8', name: 'G' } });
+    assert.ok(mixed.isError);
+    assert.match(mixed.content[0].text, /without largest or widthMm/);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);

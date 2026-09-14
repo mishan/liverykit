@@ -1174,6 +1174,76 @@ test('find_space can sweep sizes and say how big a shape of a given proportion c
   assert.throws(() => largestSpace({ grid, model: half, prepared, aspect: 0 }), /aspect above zero/);
 });
 
+test('a number in a roundel over a name is laid out to clear the letter floors, and passes fitment as returned', async () => {
+  // Run 21's planner spent eight of twelve turns and more than half the run's
+  // cost resizing this group by hand, from a recipe (a roundel 55% of the
+  // group's width) that could not give the number 140 mm letters on the door
+  // it was for. Run 20's gave the room to the name and shipped a 93 mm number.
+  const { groupLayout } = await import('../src/space.mjs');
+  const { letterHeights } = await import('../src/fitment.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const prepared = occupancyFor(model);
+  const identity = { number: '85', team: 'Neon Doll Racing' };
+  const lay = (prof, over = {}) => groupLayout({ profile: prof, model, prepared, role: 'body', panel: 'L',
+    number: '85', name: 'NEON DOLL RACING', marginMm: 30, cellMm: 100, ...over });
+  const withPanel = (extra) => ({ ...profile, panels: { body: { L: { ...profile.panels.body.L, ...extra } } } });
+  // The returned regions as a design would use them: ids, colours, nothing moved.
+  const asDesign = (l) => ({ ...design([
+    { id: 'roundel', ...l.regions.roundel, color: 'white' },
+    { id: 'number', ...l.regions.number, color: 'ink' },
+    ...l.regions.name.map((r, i) => ({ id: `team-${i + 1}`, ...r, color: 'ink' })),
+  ]), palette: { ink: '#101014', white: '#ffffff' }, identity });
+  const clean = (prof, l) => fitment(asDesign(l), prof).findings
+    .filter((f) => ['overlap', 'too-small', 'overflows', 'unmatched', 'unreadable'].includes(f.kind));
+  const centreY = (at) => at[1] + at[3] / 2, centreX = (at) => at[0] + at[2] / 2;
+
+  // 1.6 m of clean panel: the name fits on one line and both clear their floors.
+  const big = lay(profile);
+  assert.ok(big.layout, JSON.stringify(big));
+  assert.equal(big.note, undefined);
+  assert.equal(big.layout.lines, 1, 'one line where one line costs the number nothing');
+  assert.ok(big.layout.lettersMm.number >= 140 && big.layout.lettersMm.name >= 45, JSON.stringify(big.layout.lettersMm));
+  assert.deepEqual(clean(profile, big.layout), [], 'fitment finds nothing wrong with it as returned');
+  // What it says the letters measure is what check_fitment's arithmetic says.
+  const mm = letterHeights(asDesign(big.layout), profile);
+  assert.equal(Math.round(mm.number.mm), big.layout.lettersMm.number);
+  assert.ok(centreY(big.layout.regions.roundel.at) < centreY(big.layout.regions.name[0].at), 'the name is under the disc');
+
+  // Laid upside down in its texture, as the NSX's right door is: still under
+  // the disc on the car, so above it in the texture, and still clean.
+  const flipped = withPanel({ textRotation: 180 });
+  const down = lay(flipped);
+  assert.deepEqual(clean(flipped, down.layout), []);
+  assert.ok(centreY(down.layout.regions.name[0].at) < centreY(down.layout.regions.roundel.at),
+    `under the disc on the car is above it in the texture: ${JSON.stringify(down.layout.regions)}`);
+  assert.deepEqual(down.layout.lettersMm, big.layout.lettersMm);
+
+  // A quarter turn, as the Abarth's doors measure: the name is beside the disc
+  // in the texture, on the side the renderer's turn puts "down".
+  const turned = withPanel({ textRotation: 90 });
+  const side = lay(turned);
+  assert.deepEqual(clean(turned, side.layout), []);
+  assert.ok(centreX(side.layout.regions.name[0].at) < centreX(side.layout.regions.roundel.at),
+    `at 90 degrees down on the car is -x in the texture: ${JSON.stringify(side.layout.regions)}`);
+
+  // 800 mm across, less a 100 mm cell each side for the margin: sixteen letters
+  // on one line would be about 39 mm tall, so the name goes over two, and says so.
+  const narrow = withPanel({ metresPerUv: [2, 2] });
+  const two = lay(narrow);
+  assert.equal(two.layout.lines, 2, JSON.stringify(two.layout));
+  assert.deepEqual(two.layout.regions.name.map((r) => r.text), ['NEON DOLL', 'RACING']);
+  assert.deepEqual(clean(narrow, two.layout), []);
+  assert.equal(two.alternative?.lines, 1, 'and the one-line layout it turned down is there to see');
+
+  // 200 mm across cannot hold either at its floor: the best there is comes back,
+  // and the note says which floors it misses rather than letting it pass as one.
+  const tiny = lay(withPanel({ metresPerUv: [0.5, 0.5] }), { cellMm: 20 });
+  assert.match(tiny.note ?? '', /check_fitment wants at least 140 and 45/, JSON.stringify(tiny));
+
+  assert.throws(() => lay(profile, { number: '' }), /layout needs number/);
+  assert.throws(() => lay(withPanel({ textRotation: 30 })), /laid at 30°/);
+});
+
 test('the sweep keeps looking past three spots that fail the fine check', async () => {
   // Two fittings 30 mm wide stand proud of a 1600 x 400 mm panel, between the
   // coarse samples, so every cell reads clean. Any 390 mm square that starts
