@@ -718,8 +718,7 @@ export function groupLayout({
     }
   }
   ranked.sort((a, b) => Number(b.clears) - Number(a.clears) || b.score - a.score);
-  const picked = [...new Set([...ranked.slice(0, 3),
-    ranked.find((r) => r.o.lines.length === 1 && r.clears)].filter(Boolean).map((r) => r.o.aspect))];
+  const picked = pickProportions(ranked);
   const options = [];
   for (const aspect of picked) {
     const near = ranked.find((r) => r.o.aspect === aspect).o.space.widthMm;
@@ -765,6 +764,25 @@ export function groupLayout({
         'Try a smaller margin, a shorter name, or another panel.',
     } : {}),
   };
+}
+
+/**
+ * The proportions worth sweeping finely, from layouts ranked best first: the
+ * best `n` different ones, and the best one-line layout's if that is another.
+ *
+ * Distinct proportions, not the top `n` entries. Each proportion is ranked
+ * several times over, once per name split and per height, so the top three
+ * entries could all be one proportion, and three meant to be swept were one.
+ */
+export function pickProportions(ranked, n = 3) {
+  const picked = [];
+  for (const r of ranked) {
+    if (picked.length >= n) break;
+    if (!picked.includes(r.o.aspect)) picked.push(r.o.aspect);
+  }
+  const oneLine = ranked.find((r) => r.o.lines.length === 1 && r.clears);
+  if (oneLine && !picked.includes(oneLine.o.aspect)) picked.push(oneLine.o.aspect);
+  return picked;
 }
 
 /**
