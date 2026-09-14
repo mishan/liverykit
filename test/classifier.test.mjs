@@ -185,6 +185,25 @@ test('tyres bind every texture only the tyre shader draws, and leave a shared sw
   assert.equal(propose([tread, side, { ...white, shaders: ['ksPerPixel'] }], 'body').roles.length, 1);
 });
 
+test('--explain names what the tyres bind, and the swatch it left out and why', () => {
+  // A white both ksTyres and ksPerPixel draw, a little larger than a tread
+  // only ksTyres draws. propose binds the tread at 1, and --explain printed
+  // the white at its margin over the tread, then warned that the two were
+  // close: a proposal nobody would get, and a warning about it.
+  const f = (role, area, shaders) => ({ role, file: `${role}.dds`, area, shaders, straddles: true, skinFraction: 0, box: null });
+  const white = f('white', 0.035, ['ksTyres', 'ksPerPixel']);
+  const tread = f('tread', 0.03, ['ksTyres']);
+  assert.deepEqual(propose([white, tread], 'tyres').roles, ['tread']);
+  const text = explain([white, tread], 'tyres');
+  assert.match(text, /proposal: tread  \(confidence 1: every texture only ksTyres draws\)/);
+  assert.doesNotMatch(text, /proposal: white/);
+  assert.match(text, /left out: white \(white\.dds\) — ksPerPixel draws it too/);
+  assert.doesNotMatch(text, /top two are close/);
+  // Where the margin is what decided, the warning still stands.
+  const plain = (x) => ({ ...x, shaders: ['ksPerPixel'] });
+  assert.match(explain([plain(white), plain(tread)], 'body'), /proposal: white  \(confidence 0\.14, margin over runner-up\)[\s\S]*top two are close/);
+});
+
 test('tyres and brakes bind every texture their names say they are, across the fleet', async () => {
   // The same held-out label as the body's, for the terms a car's own shader
   // names: filenames that plainly say tyre or tread, disc or rotor. These terms

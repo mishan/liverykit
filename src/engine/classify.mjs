@@ -370,6 +370,10 @@ export function propose(features, term = 'body') {
     confidence: own.length ? 1 : ranked[0].confidence,
     source: 'auto',
     validated: VALIDATED.has(term),
+    // The candidates the gate left out as shared swatches, for --explain to
+    // name. Present only where the gate decided: with nothing the term's
+    // shader alone draws, the margin decided, and there is nothing to name.
+    ...(own.length ? { shared: ranked.filter((f) => !own.includes(f)).map((f) => f.role) } : {}),
   };
 }
 
@@ -422,16 +426,24 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   if (notCandidates.length) lines.push('');
   sayExcluded();
 
-  const best = ranked[0];
+  // What propose binds, and on what grounds. That is not always the table's
+  // top row: where the gate decided, a shared swatch can outrank everything
+  // it binds, and printing that row with its margin named a proposal nobody
+  // would get, then warned about a closeness that had decided nothing.
   const proposal = propose(features, term);
   lines.push('');
-  if (proposal.roles.length > 1) {
-    lines.push(`  proposal: ${proposal.roles.join(', ')}  (every texture only ${spec.gate.source} draws)`);
+  if (proposal.shared) {
+    lines.push(`  proposal: ${proposal.roles.join(', ')}  (confidence 1: every texture only ${spec.gate.source} draws)`);
+    for (const f of ranked.filter((x) => proposal.shared.includes(x.role))) {
+      const others = f.shaders.filter((s) => !spec.gate.test(s));
+      lines.push(`  left out: ${f.role} (${f.file}) — ${others.join(', ')} draws it too, so painting it would paint those parts`);
+    }
   } else {
-    lines.push(`  proposal: ${best.role}  (confidence ${best.confidence}, margin over runner-up)`);
-  }
-  if (best.confidence < 0.2) {
-    lines.push('  ! The top two are close. Look at the car before accepting this.');
+    if (spec.bindsEvery) lines.push(`  No texture is drawn by ${spec.gate.source} alone, so the best candidate is proposed.`);
+    lines.push(`  proposal: ${proposal.role}  (confidence ${proposal.confidence}, margin over runner-up)`);
+    if (proposal.confidence < 0.2) {
+      lines.push('  ! The top two are close. Look at the car before accepting this.');
+    }
   }
   if (!ranked.some((f) => typeof f.visible === 'number')) {
     lines.push('  ! Visibility was not computed. It is the signal that separates bodywork');
