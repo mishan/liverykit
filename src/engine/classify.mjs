@@ -47,9 +47,10 @@
 // not the same as trustworthy without looking.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, triangles, vertex } from './kn5.mjs';
+import { meshesUsingTexture, motionBlurOnly, triangles, vertex } from './kn5.mjs';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
+import { blurTwins } from './visibility.mjs';
 
 /** Terms whose scoring has been measured against the fleet. */
 export const VALIDATED = new Set(['body']);
@@ -120,6 +121,8 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
   // then gave every texture zero wheel islands: a measurement never taken,
   // read by the rims scorer and by --explain as one that found no rim.
   const wheelsMeasured = wheelCentres(model).length > 0;
+  // Each motion-blur mesh, and the drawn meshes AC swaps it with.
+  const twinned = blurTwins(model);
 
   const out = [];
   for (const [role, tex] of Object.entries(roles)) {
@@ -136,6 +139,12 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       if (b[4] < z0) z0 = b[4]; if (b[5] > z1) z1 = b[5];
     }
     const bound = ms.length > 0 && x0 <= x1;
+    const blur = ms.length > 0 && ms.every((m) => motionBlurOnly(m.name));
+    const twins = blur
+      ? [...new Set(ms.flatMap((m) => [...(twinned.get(model.meshes.indexOf(m)) ?? [])])
+        .map((j) => model.materials[model.meshes[j].materialId]?.slots?.txDiffuse)
+        .filter(Boolean))]
+      : [];
     const ps = panels ? Object.values(panels[role] ?? {}) : [];
     // Mean cockpit visibility over the panels that measured it, unweighted
     // like trackside `visible` (see tools/survey.mjs for why unweighted). It
@@ -157,6 +166,11 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       straddles: bound && x0 < -0.08 * halfWidth && x1 > 0.08 * halfWidth,
       skinFraction: skinCount ? (skinCounts.get(file.toLowerCase()) ?? 0) / skinCount : 0,
       shaders: [...(shadersFor.get(file.toLowerCase()) ?? [])],
+      // A texture only meshes named for blur wear is the copy AC swaps in at
+      // speed, and `twins` are the files the drawn meshes it replaces wear.
+      // The rims bind the pair from these (see pairTwins).
+      blur,
+      ...(blur ? { twins } : {}),
       ...(visibleByFile.has(file) ? { visible: visibleByFile.get(file) } : {}),
       // What the caller's profile found on the texture: how many paintable
       // islands, and how its UVs use the image. This function measures the
@@ -206,6 +220,11 @@ export function featuresFromRecord(car, { shaderNames = [] } = {}) {
     box: t.box,
     skinFraction: car.skinCount ? t.skins / car.skinCount : 0,
     shaders: t.shaders ?? t.sh.map((i) => shaderNames[i]),
+    // The survey records what the model said. A record from before it did,
+    // the fixture's among them, has no mesh names to read the swap from, so
+    // the filename says which is a blur rim and its twin is left unknown.
+    blur: typeof t.blur === 'boolean' ? t.blur : /blur/i.test(t.file),
+    ...(Array.isArray(t.twins) ? { twins: t.twins } : {}),
     ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
     ...(typeof t.panels === 'number' ? { islands: t.panels } : {}),
     ...(typeof t.wheelIslands === 'number'
@@ -256,6 +275,8 @@ export const VOCABULARY = {
   // overlay on the same meshes, which no measurement here tells apart.
   rims: {
     describes: 'Wheel faces. Usually one texture shared by all four.',
+    // A rim brings the motion-blur rim it is swapped with: see pairTwins.
+    pairsTwins: true,
     // Not measured is not zero islands at a wheel: see textureFeatures.
     excludes: (f) => (typeof f.wheelIslands === 'number' ? null : 'wheel positions were not measured'),
     score: (f) => {
@@ -444,18 +465,76 @@ export function propose(features, term = 'body', { taken = new Map() } = {}) {
   const own = spec.bindsEvery
     ? ranked.filter((f) => f.shaders.length > 0 && f.shaders.every((s) => spec.gate.test(s)))
     : [];
-  const roles = own.length ? own.map((f) => f.role) : [ranked[0].role];
+  const paired = spec.pairsTwins && !own.length ? pairTwins(ranked, features, taken) : null;
+  const roles = own.length ? own.map((f) => f.role) : paired ? paired.bound.map((f) => f.role) : [ranked[0].role];
   return {
     role: roles[0],
     roles,
-    confidence: own.length ? 1 : ranked[0].confidence,
+    confidence: own.length ? 1 : paired ? paired.confidence : ranked[0].confidence,
     source: 'auto',
     validated: VALIDATED.has(term),
     // The candidates the gate left out as shared swatches, for --explain to
     // name. Present only where the gate decided: with nothing the term's
     // shader alone draws, the margin decided, and there is nothing to name.
     ...(own.length ? { shared: ranked.filter((f) => !own.includes(f)).map((f) => f.role) } : {}),
+    ...(paired ? { paired: paired.bound.length > 1, notes: paired.notes } : {}),
   };
+}
+
+/**
+ * A rim, and the motion-blur rim AC swaps it for at speed: one surface that a
+ * livery has to paint twice.
+ *
+ * Binding only the top pick bound the blur rim alone on 33 of the fleet
+ * fixture's cars, 31 of them with the plain rim among the candidates, so the
+ * wheel wore the stock rim standing still and the livery only at speed; on
+ * most of the rest it left the blur rim stock. So
+ * the pick brings its twins, whichever of the two ranked first, and the
+ * margin is over the best candidate left unbound, not over its own twin.
+ *
+ * Which blur rim goes with which rim is the model's to say (`twins`, from
+ * blurTwins). A survey record has no mesh names, so there the best blur
+ * candidate is paired with the best plain one and no other, which keeps a
+ * blurred brake sheet among the candidates out. A twin that is not a
+ * candidate cannot be bound, and is named rather than left out quietly.
+ */
+function pairTwins(ranked, features, taken) {
+  const [pick] = ranked;
+  const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+  const bestPlain = ranked.find((f) => !f.blur);
+  const bestBlur = ranked.find((f) => f.blur);
+  const pairs = (b, p) => (Array.isArray(b.twins) ? b.twins.some((t) => same(t, p.file)) : b === bestBlur && p === bestPlain);
+  // One step each way: the pick's twins, then theirs, since the model may
+  // say a blur rim stands in for both a rim and an overlay drawn on it.
+  const first = pick.blur ? ranked.filter((f) => !f.blur && pairs(pick, f)) : [pick];
+  const blurs = ranked.filter((f) => f.blur && first.some((p) => pairs(f, p)));
+  const plains = ranked.filter((f) => !f.blur && (first.includes(f) || blurs.some((b) => pairs(b, f))));
+  const bound = ranked.filter((f) => f === pick || plains.includes(f) || blurs.includes(f));
+  const rest = ranked.filter((f) => !bound.includes(f));
+  const confidence = rest.length ? Math.round((pick.score - rest[0].score) / pick.score * 100) / 100 : 1;
+
+  const isBound = (f) => bound.some((b) => b.role === f.role);
+  const why = (f) => (taken.has(f.role) ? `it is bound to ${taken.get(f.role)}`
+    : VOCABULARY.rims.excludes(f) ?? (f.islands === 0 ? 'it has no islands' : 'it does not score as a rim'));
+  const notes = [];
+  for (const p of bound.filter((f) => !f.blur)) {
+    for (const b of features.filter((f) => f.blur && f.twins?.some((t) => same(t, p.file)) && !isBound(f))) {
+      notes.push(`${b.file}, the motion-blur twin of ${p.file}, is not bound: ${why(b)}`);
+    }
+  }
+  for (const b of bound.filter((f) => f.blur)) {
+    if (Array.isArray(b.twins) && !b.twins.length) {
+      notes.push(`${b.file} is a motion-blur rim with no drawn twin found in the model, so it is bound alone`);
+    }
+    for (const t of (b.twins ?? []).filter((t) => !bound.some((f) => same(f.file, t)))) {
+      const f = features.find((x) => same(x.file, t));
+      notes.push(`${t}, the rim ${b.file} is swapped with, is not bound: ${f ? why(f) : 'no texture role wears it'}`);
+    }
+    if (!Array.isArray(b.twins) && !plains.length) {
+      notes.push(`${b.file} is a motion-blur rim by its name, and no plain rim is a candidate to bind with it`);
+    }
+  }
+  return { bound, confidence, notes };
 }
 
 /**
@@ -486,6 +565,7 @@ export function proposeAll(features) {
 function proposeInOrder(features, until = null) {
   const bind = {};
   const taken = new Map();
+  const notes = [];
   for (const term of SCORABLE) {
     if (term === until) break;
     const p = propose(features, term, { taken });
@@ -495,8 +575,14 @@ function proposeInOrder(features, until = null) {
     if (!p) continue;
     bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
     for (const r of p.roles) taken.set(r, term);
+    for (const n of p.notes ?? []) notes.push(`${term}: ${n}`);
   }
-  return { bind, taken };
+  return { bind, taken, notes };
+}
+
+/** What the proposals could not bind and why, as lines for the generator to say. */
+export function proposalNotes(features) {
+  return proposeInOrder(features).notes;
 }
 
 const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
@@ -592,11 +678,17 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
     }
   } else {
     if (spec.bindsEvery) lines.push(`  No texture is drawn by ${spec.gate.source} alone, so the best candidate is proposed.`);
-    lines.push(`  proposal: ${proposal.role}  (confidence ${proposal.confidence}, margin over runner-up)`);
+    if (proposal.paired) {
+      lines.push(`  proposal: ${proposal.roles.join(', ')}  (a rim and the motion-blur rim it is swapped with; ` +
+        `confidence ${proposal.confidence}, margin over the best left unbound)`);
+    } else {
+      lines.push(`  proposal: ${proposal.role}  (confidence ${proposal.confidence}, margin over runner-up)`);
+    }
     if (proposal.confidence < 0.2) {
       lines.push('  ! The top two are close. Look at the car before accepting this.');
     }
   }
+  for (const n of proposal?.notes ?? []) lines.push(`  ! ${n}`);
   if (!ranked.some((f) => typeof f.visible === 'number')) {
     lines.push('  ! Visibility was not computed. It is the signal that separates bodywork');
     lines.push('    from engine bays and interior occlusion maps — 90% accurate without it,');
