@@ -92,7 +92,9 @@ const { values, positionals } = parseArgs({
     'advisory-critic': { type: 'boolean', default: false },
     views: { type: 'string', default: 'sheet' },
     looks: { type: 'string', default: '2' },
-    polish: { type: 'string', default: '1' },
+    // No default here: one would make --polish typed beside --replay
+    // indistinguishable from none. Applied below instead.
+    polish: { type: 'string' },
     'no-seed': { type: 'boolean', default: false },
     out: { type: 'string' },
     'no-propose': { type: 'boolean', default: false },
@@ -206,12 +208,18 @@ const replaying = Boolean(recording);
 if (replaying && values.rounds !== undefined) {
   fail(`--rounds does not apply to --replay, which runs the ${recording.rounds.length} round(s) the run recorded`);
 }
+// The same for --polish: a replay polishes as its run did, round for round,
+// and `--replay … --polish 0` used to be accepted and then replaced by the
+// recorded rounds.
+if (replaying && values.polish !== undefined) {
+  fail('--polish does not apply to --replay, which judges whatever polish rounds the run recorded');
+}
 const brief = replaying ? (recording.brief ?? '') : positionals.join(' ');
 const rounds = replaying ? recording.rounds.length : Number(values.rounds ?? '6');
 if (!Number.isInteger(rounds) || rounds < 1) fail(`--rounds must be a whole number above zero, not ${values.rounds}`);
 const looks = Number(values.looks);
 if (!Number.isInteger(looks) || looks < 0) fail(`--looks must be a whole number, not ${values.looks}`);
-const polish = Number(values.polish);
+const polish = Number(values.polish ?? '1');
 if (!Number.isInteger(polish) || polish < 0) fail(`--polish must be a whole number, not ${values.polish}`);
 // Refused rather than run. `--views ,` split to nothing, so nothing was
 // rendered, the critic was never asked, and no round could pass a gate that
