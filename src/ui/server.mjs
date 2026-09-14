@@ -1050,6 +1050,19 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     }
   };
 
+  // The profile as its file says it is now, for the Bindings panel and for
+  // Confirm. `profile` is what this editor renders with, loaded at startup.
+  // The panel used to show that copy, so after a regeneration renamed a role
+  // Confirm refused what the panel offered with "reload the page", and a
+  // reload asked the same server for the same stale copy.
+  const profileOnDisk = async () => {
+    const onDisk = JSON.parse(await readFile(profilePath, 'utf8'));
+    if (onDisk.id !== profile.id) {
+      throw Object.assign(new Error(`${profilePath} is now the profile for "${onDisk.id}", not "${profile.id}".`), { status: 409 });
+    }
+    return onDisk;
+  };
+
   const server = createServer(async (req, res) => {
     const send = (code, type, body) => {
       res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
@@ -1133,7 +1146,8 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       }
 
       if (req.method === 'GET' && url.pathname === '/api/bindings') {
-        return json(200, { car: profile.id, writable: !!profilePath, terms: bindingsReport(profile) });
+        const shown = profilePath ? await profileOnDisk() : profile;
+        return json(200, { car: profile.id, writable: !!profilePath, terms: bindingsReport(shown) });
       }
 
       // The one route by which this tool writes `source: "human"`, and the
@@ -1169,11 +1183,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         }
         const asked = await body();
         const done = confirming.then(async () => {
-          const onDisk = JSON.parse(await readFile(profilePath, 'utf8'));
-          if (onDisk.id !== profile.id) {
-            throw Object.assign(new Error(`${profilePath} is now the profile for "${onDisk.id}", not "${profile.id}".`), { status: 409 });
-          }
-          const next = confirmBinding(onDisk, asked, profilePath);
+          const next = confirmBinding(await profileOnDisk(), asked, profilePath);
           // Written beside the file and renamed over it, so a crash or a full
           // disk halfway through leaves the old profile rather than half of
           // the new one. A torn profile does not load, and that stops every
@@ -1197,16 +1207,25 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
             await rm(tmp, { force: true }).catch(() => {});
             throw e;
           }
-          profile.bind = next.bind;
+          // The editor's own copy takes the confirmation only where it binds
+          // the term to the same roles. Its textures are the startup ones, and
+          // taking a regenerated file's whole bind table, as this once did,
+          // points it at roles those textures do not have.
+          const mine = profile.bind?.[asked.term];
+          if (mine && JSON.stringify(mine.roles) === JSON.stringify(next.bind[asked.term].roles)) {
+            profile.bind = { ...profile.bind, [asked.term]: { ...mine, source: 'human' } };
+          }
+          return next;
         });
         confirming = done.catch(() => {});
+        let written;
         try {
-          await done;
+          written = await done;
         } catch (e) {
           return json(e.status ?? 500, { error: e.message });
         }
         log(`  confirmed "${asked.term}" in ${profilePath}`);
-        return json(200, { saved: profilePath, terms: bindingsReport(profile) });
+        return json(200, { saved: profilePath, terms: bindingsReport(written) });
       }
 
       // What each treatment takes, so the inspector can offer a control rather

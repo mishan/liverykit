@@ -244,6 +244,34 @@ test('Confirm writes "human" on that one term, and changes nothing else in the f
   }
 });
 
+test('the Bindings panel shows the profile file as it is now', async () => {
+  // A regeneration in another terminal renamed a role. The panel kept the
+  // startup copy's roles and files, so Confirm was refused with "reload the
+  // page", and reloading asked the same server for the same stale copy.
+  const e = await editor();
+  try {
+    const now = JSON.parse(e.text);
+    const file = now.textures.rims_3.file;
+    for (const block of ['textures', 'panels', 'adjacency', 'aliases']) {
+      if (now[block]?.rims_3 === undefined) continue;
+      now[block].brake_disc = now[block].rims_3;
+      delete now[block].rims_3;
+    }
+    now.bind.brakes.roles = ['brake_disc'];
+    await writeFile(e.profilePath, JSON.stringify(now, null, 2) + '\n');
+
+    const shown = (await (await fetch(`${e.at}/api/bindings`)).json()).terms.find((t) => t.term === 'brakes');
+    assert.deepEqual([shown.roles, shown.files], [['brake_disc'], [file]]);
+
+    const res = await e.confirm({ term: 'brakes', roles: ['brake_disc'] });
+    assert.equal(res.status, 200, (await res.clone().json()).error);
+    const after = (await res.json()).terms.find((t) => t.term === 'brakes');
+    assert.deepEqual([after.source, after.files], ['human', [file]]);
+  } finally {
+    await e.stop();
+  }
+});
+
 test('Confirm writes through a symlinked profile to the file it names', async () => {
   // rename() replaces whatever sits at the path. A linked profile became a
   // detached copy holding the confirmation, and the real file still said
