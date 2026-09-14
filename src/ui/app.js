@@ -549,7 +549,11 @@ async function refresh() {
   drawIdentity();
   drawDangling();
   drawAdders();
+  // Not a miss the design marked `optional`: the build does not print one and
+  // the "On another car" panel counts it as expected. Listed here with a "!",
+  // the portable design's piping read on the NSX as something to go and fix.
   $('#notes').innerHTML = out.notes
+    .filter((n) => n.status !== 'optional')
     .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Derived from the stacks rather than trusted from the markup, so there is
   // one source of truth for whether there is anything to go back to.
