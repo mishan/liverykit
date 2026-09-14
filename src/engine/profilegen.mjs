@@ -247,15 +247,25 @@ export async function profileFromKn5(path, {
 
   const paintable = [];
   // One entry per FILE, keyed as `boundAs` is. A texture the model names twice
-  // is kept under its first spelling, which is the spelling a build writes and,
-  // on Windows, overrides every spelling of it.
+  // is kept under one spelling, which is the spelling a build writes and, on
+  // Windows, overrides every spelling of it. On ext4, under Proton, it is one
+  // file of two: written as `body.dds` into a stock skin folder that holds
+  // `BODY.DDS`, the material asking for `BODY.DDS` drew the stock one, and half
+  // the body stayed stock with no error. So the spelling most of the car's
+  // skins use, when there are skins to ask, and the model's first otherwise.
+  const skinTally = skinsDir ? await countSkinOverrides(skinsDir).catch(() => null) : null;
+  const skinsUsing = (tex) => skinTally?.spellings?.get(tex.name.toLowerCase())?.get(tex.name) ?? 0;
   const spellings = new Map();
   for (const tex of model.textures) {
-    const h = headers.get(tex.name);
-    if (!h) continue;
+    if (!headers.get(tex.name)) continue;
     const key = tex.name.toLowerCase();
-    if (spellings.has(key)) { spellings.get(key).push(tex.name); continue; }
-    spellings.set(key, [tex.name]);
+    spellings.set(key, [...(spellings.get(key) ?? []), tex]);
+  }
+  const written = new Map();
+  for (const [key, all] of spellings) {
+    const tex = all.reduce((a, b) => (skinsUsing(b) > skinsUsing(a) ? b : a));
+    written.set(key, tex);
+    const h = headers.get(tex.name);
     const slots = boundAs.get(key);
 
     if (!slots) continue;                                  // shipped but never bound
@@ -272,8 +282,16 @@ export async function profileFromKn5(path, {
   const doubled = [...spellings.values()].filter((v) => v.length > 1);
   if (doubled.length) {
     log(`  ${doubled.length} texture(s) are named more than once in the model ` +
-        `(${doubled.slice(0, 3).map((v) => v.join(' = ')).join('; ')}${doubled.length > 3 ? '; …' : ''}); ` +
+        `(${doubled.slice(0, 3).map((v) => v.map((t) => t.name).join(' = ')).join('; ')}${doubled.length > 3 ? '; …' : ''}); ` +
         'each is one file on Windows, and one role here.');
+    for (const v of doubled) {
+      if (new Set(v.map((t) => t.name)).size < 2) continue;
+      const w = written.get(v[0].name.toLowerCase());
+      const n = skinsUsing(w);
+      log(`    ${w.name} is written: ${n ? `the spelling ${n} of ${skinTally.skinCount} skin(s) use`
+        : skinsDir ? 'the model\'s first, since no skin carries any spelling of it'
+          : 'the model\'s first; pass --skins to write the one the car\'s skins use'}.`);
+    }
   }
 
   // The textures embedded in a kn5 are the model's own defaults, and they are

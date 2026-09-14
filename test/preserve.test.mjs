@@ -242,6 +242,18 @@ test('two prior roles for one file become one, keeping the name and the hand-wor
   assert.deepEqual(Object.keys(other.textures), ['body']);
 });
 
+test('a file spelled another way in the prior profile is reported when the new spelling replaces it', () => {
+  // One file on Windows and two on Linux, so a person may well have respelled
+  // it to match the car's skins; a regeneration writes the model's spelling
+  // again, and that used to happen without a word.
+  const prior = { textures: { paint: { file: 'Body.dds' } } };
+  const fresh = { textures: { body: { file: 'body.dds' } }, panels: { body: {} } };
+  const report = preserveHandwork(fresh, prior);
+  assert.equal(fresh.textures.paint.file, 'body.dds', 'the role name is kept, the spelling is the new one');
+  assert.deepEqual(report.respelled, [{ role: 'paint', was: 'Body.dds', now: 'body.dds' }]);
+  assert.match(describeHandwork(report, 'old.json').join('\n'), /paint: Body\.dds -> body\.dds/);
+});
+
 test('a hand-set texture size survives while the model still says what it said', () => {
   // 256x256 over a 28x28 placeholder. Losing it did not fail quietly: a blur
   // sigma scaled to texture size came out at 0.19 and the renderer rejected it.

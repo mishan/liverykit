@@ -51,7 +51,7 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   const report = {
     roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
     name: null, skinOnly: [], dangling: [], textureNotes: [], notesMoved: [], notesLost: [],
-    folded: [],
+    folded: [], respelled: [],
   };
   if (!prior) return report;
 
@@ -186,6 +186,13 @@ function preserveRoleNames(profile, prior, report) {
   const renames = [];
   for (const [role, t] of Object.entries(profile.textures ?? {})) {
     const want = t?.file ? priorFor(t.file) : undefined;
+    // A spelling a person may have chosen, to match the car's skins, going back
+    // to the one the generator writes. Not kept, since which file the model
+    // and skins name is measurement; but said, where it used to go unnoticed,
+    // because on Linux the two spellings are two files.
+    if (want && prior.textures[want].file !== t.file) {
+      report.respelled.push({ role: want, was: prior.textures[want].file, now: t.file });
+    }
     if (!want || want === role || profile.textures[want]) continue;
     renames.push([role, want]);
   }
@@ -422,6 +429,11 @@ export function describeHandwork(report, source) {
     out.push(`  ${report.folded.length} role(s) in ${source} named a file another role names too, ` +
       'and are that role now, with their bindings, notes and aliases:');
     for (const f of report.folded) out.push(`    ${f.from} -> ${f.to}  (${f.file})`);
+  }
+  if (report.respelled.length) {
+    out.push(`  ${report.respelled.length} texture file(s) were spelled another way in ${source}, and are ` +
+      'written as spelled now: one file on Windows, but two in a skin folder on Linux:');
+    for (const r of report.respelled) out.push(`    ${r.role}: ${r.was} -> ${r.now}`);
   }
   for (const b of report.blocks) out.push(`  kept hand-written "${b}" from ${source}`);
   for (const s of report.sizes) {

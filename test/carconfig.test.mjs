@@ -426,3 +426,49 @@ test('a texture the model names twice is one role, and its profile loads', async
     assert.match(lines.join('\n'), /1 texture\(s\) are named more than once in the model/, `${label}: and it is said`);
   }
 });
+
+test('a texture the model names twice is written as most of the car\'s skins spell it', async () => {
+  // A build writes the one spelling the profile names. Dropped into a stock
+  // skin folder on ext4, under Proton, that holds the other spelling, it made
+  // two files, and the material asking for the other drew the stock one: half
+  // the body stock, and no error anywhere.
+  const N = 6;
+  const verts = [];
+  const indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) verts.push(vert(-0.3 + 0.1 * i, 0.5, -0.3 + 0.1 * j, 0.1 + 0.1 * i, 0.1 + 0.1 * j));
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-spelled-'));
+  const at = join(dir, 'fixture.kn5');
+  await writeFile(at, carKn5({
+    extraMeshes: [{ name: 'SECOND', verts, indices, materialId: 1 }],
+    materials: [{ name: 'BodyMat' }, { name: 'OtherMat', slots: { txDiffuse: 'BODY.DDS' } }],
+    extraTextures: [{ name: 'BODY.DDS' }],
+  }));
+  const dds = Buffer.alloc(128);
+  dds.write('DDS ', 0, 'ascii');
+  dds.writeUInt32LE(64, 12);
+  dds.writeUInt32LE(64, 16);
+  for (const [skin, file] of [['red', 'BODY.DDS'], ['blue', 'BODY.DDS'], ['green', 'body.dds']]) {
+    await mkdir(join(dir, 'skins', skin), { recursive: true });
+    await writeFile(join(dir, 'skins', skin, file), dds);
+  }
+  const bodyFiles = (profile) => Object.values(profile.textures).map((t) => t.file).filter((f) => f.toLowerCase() === 'body.dds');
+
+  const lines = [];
+  const skinned = await profileFromKn5(at, { id: 'c', visibility: false, skinsDir: join(dir, 'skins'), log: (s) => lines.push(s) });
+  assert.deepEqual(bodyFiles(skinned), ['BODY.DDS'], 'the spelling two of the three skins use');
+  assert.match(lines.join('\n'), /BODY\.DDS is written: the spelling 2 of 3 skin\(s\) use/);
+
+  // With no skins to ask, the model's first, and said so.
+  lines.length = 0;
+  const bare = await profileFromKn5(at, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+  assert.deepEqual(bodyFiles(bare), ['body.dds']);
+  assert.match(lines.join('\n'), /body\.dds is written: the model's first; pass --skins/);
+});
