@@ -948,6 +948,24 @@ test('a panel is tagged with every section and level its extent reaches', async 
   assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
 });
 
+test('a panel\'s reach is read the same way round on a car facing -Z', async () => {
+  // The same car as above, mirrored front to back, with the model saying so.
+  // An extent is stored as its min and max corners, so on a car facing -Z the
+  // corner nearer the nose is the first one; reading it the +Z way round would
+  // give the flank the sections behind it and the clip the ones in front.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const flip = ([x, y, z]) => [x, y, -z];
+  const box = ([a, b]) => [[a[0], a[1], -b[2]], [b[0], b[1], -a[2]]];
+  const t = computeTags(tagCar({ left: '+X', front: '-Z' }, {
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: flip([0, 1, 2]) },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: flip([0, 0, -2]) },
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: flip([1, 0.5, 0.5]), extent3d: box([[1, 0.2, -1.2], [1, 1.2, 1.2]]) },
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: flip([1, 0.2, -0.6]), extent3d: box([[1, 0.1, -0.8], [1, 0.3, -0.4]]) },
+  })).body;
+  assert.deepEqual(t.flank, ['left', 'front', 'mid', 'rear', 'upper', 'lower']);
+  assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
+});
+
 test('a generated profile records where each panel reaches, and a full-length flank is every section', async () => {
   const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
   const { carKn5 } = await import('./fixtures/kn5.mjs');
