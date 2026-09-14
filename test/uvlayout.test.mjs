@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { parseKn5Buffer, vertex } from '../src/engine/kn5.mjs';
 import { resolveTargets, expandRegions } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
 import { fitment } from '../src/fitment.mjs';
@@ -27,7 +28,7 @@ import '../src/index.mjs';   // registers the treatment packs
  * A flat cushion inside the car, on its own texture. `repeat` is how many times
  * the image tiles across it; `shift` moves the whole unwrap by whole sheets.
  */
-function cushion({ repeat = 1, shift = [0, 0] }) {
+function cushion({ repeat = 1, shift = [0, 0], name = 'SEAT_CUSHION' }) {
   const N = 6;
   const verts = [];
   const indices = [];
@@ -44,7 +45,7 @@ function cushion({ repeat = 1, shift = [0, 0] }) {
       indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
     }
   }
-  return { name: 'SEAT_CUSHION', verts, indices, materialId: 1 };
+  return { name, verts, indices, materialId: 1 };
 }
 
 async function profileWith(seat) {
@@ -110,17 +111,82 @@ test('a texture partly unwrapped and partly repeating is mixed, and artwork is p
   }
 });
 
-test('an unwrap shifted by a whole sheet is an unwrap, and the profile says where it is', async () => {
+test('an unwrap shifted by a whole sheet is an unwrap, measured where a livery paints it', async () => {
   const { profile, log, seat } = await profileWith({ repeat: 1, shift: [0, -1] });
   assert.equal(profile.textures[seat].uvLayout, 'unwrapped',
     'wrap addressing draws a sheet at v = -1 exactly as one at v = 0');
-  assert.deepEqual(profile.textures[seat].uvTile, [0, -1]);
-  assert.match(log, /1 texture\(s\) are unwraps shifted off the sheet by whole copies of it \(seat\.dds at \[0, -1\]\)/);
-  // The gap that log line exists to admit: findIslands clamps the island into
-  // [0, 1], where it collapses and is dropped. When islands are measured on
-  // their own copy of the sheet this becomes a panel, and this assertion is
-  // the one to change.
-  assert.equal(Object.keys(profile.panels[seat] ?? {}).length, 0);
+  assert.deepEqual(profile.textures[seat].uvTile, [0, -1], 'the model\'s own offset is still recorded');
+  assert.match(log, /1 texture\(s\) sit on other copies of the sheet \(seat\.dds at \[0, -1\]\); their islands are measured on the copy they sit on/);
+  // This used to be zero: findIslands clamped the island into [0, 1], where it
+  // collapsed and was dropped, and so did 13 cars' bodies.
+  const panels = Object.values(profile.panels[seat] ?? {});
+  assert.equal(panels.length, 1);
+  panels[0].rect.forEach((x, k) => assert.ok(Math.abs(x - [0.05, 0.05, 0.9, 0.9][k]) < 1e-3,
+    `rect ${JSON.stringify(panels[0].rect)} should be the cushion's own [0.05, 0.05, 0.9, 0.9]`));
+});
+
+test('an island is moved back onto the sheet only when it fits wholly on another copy', () => {
+  const model = parseKn5Buffer(carKn5({
+    extraMeshes: [
+      cushion({ name: 'SHIFTED', shift: [0, -1] }),
+      // Overhangs [0, 1] by 0.006, which an ordinary unwrap does; stays put.
+      cushion({ name: 'OVERHANG', shift: [-0.056, 0] }),
+      // A sliver hugging the sheet's right edge, u = 0.992 to 0.9965: on the
+      // sheet, and stays there. The first version of the rule sent islands
+      // like this one sheet the wrong way, where they collapsed.
+      cushion({ name: 'RIGHT_EDGE', repeat: 0.005, shift: [0.942, 0] }),
+      // Spans 36 sheets: a tiling material, with no one copy to move to.
+      cushion({ name: 'TILING', repeat: 40 }),
+      // Straddles v = 0, which the game wraps across the image's edge.
+      cushion({ name: 'STRADDLE', shift: [0, -0.5] }),
+    ],
+    materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+    extraTextures: [{ name: 'seat.dds' }],
+  }));
+  const first = (name) => vertex(model, model.meshes.find((m) => m.name === name), 0);
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+
+  assert.ok(near(first('SHIFTED').u, 0.05) && near(first('SHIFTED').v, 0.05),
+    `moved from v = -0.95 to the sheet: ${JSON.stringify(first('SHIFTED'))}`);
+  assert.ok(near(first('OVERHANG').u, -0.006), 'an overhang by a hair is not a shift');
+  assert.ok(near(first('RIGHT_EDGE').u, 0.992) && model.meshes.find((m) => m.name === 'RIGHT_EDGE').uvShift === undefined,
+    `an island at the sheet's far edge is on the sheet: ${JSON.stringify(first('RIGHT_EDGE'))}`);
+  assert.ok(near(first('TILING').v, 0.05) && model.meshes.find((m) => m.name === 'TILING').uvShift === undefined);
+  assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
+  assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
+    'a mesh with nothing to move reads exactly as stored');
+});
+
+test('a car unwrapped one sheet down profiles exactly like the same car unshifted', async () => {
+  // Every consumer of UVs — islands, seams, outlines, safe areas, wheels, the
+  // renderers — reads them through vertex(), so the whole profile is the check
+  // that none of them still sees the island somewhere else.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const profileOf = async (uvShift) => {
+      const file = join(dir, `car${uvShift[1]}.kn5`);
+      await writeFile(file, carKn5({ uvShift }));
+      return profileFromKn5(file, { id: 'c', visibility: true });
+    };
+    const [home, away] = [await profileOf([0, 0]), await profileOf([0, -1])];
+    assert.ok(Object.keys(home.panels.body ?? Object.values(home.panels)[0]).length >= 6);
+    // One allowance. A seam's `here` is a polyline started from its point
+    // farthest from the middle, and on a straight seam both ends tie, so which
+    // comes first is float noise — the shifted car stores v - 2, which rounds
+    // differently in float32. Its only reader walks the segments, which are the
+    // same either way round, so the ends are put in a fixed order before
+    // comparing. Everything else must match exactly.
+    const settle = (panels) => JSON.parse(JSON.stringify(panels), (k, v) =>
+      k === 'here' && Array.isArray(v) && JSON.stringify(v[0]) > JSON.stringify(v[v.length - 1])
+        ? [...v].reverse() : v);
+    assert.deepEqual(settle(away.panels), settle(home.panels));
+    assert.deepEqual(away.bind, home.bind);
+    const { uvTile, ...rest } = Object.values(away.textures)[0];
+    assert.deepEqual(uvTile, [0, -1]);
+    assert.deepEqual(rest, Object.values(home.textures)[0]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('placement on a tiled material is skipped and reported, and a fill still paints', async () => {

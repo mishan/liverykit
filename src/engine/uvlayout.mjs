@@ -56,8 +56,17 @@ export function uvLayout(model, meshes) {
   let area = 0;
   const byTile = new Map();
   for (const mesh of meshes) {
+    // On the UVs as the MODEL stores them. `vertex()` hands back each island on
+    // the copy of the sheet in [0, 1] (see placeOnSheet in kn5.mjs), and `tile`
+    // is here to say where the model itself put the sheet, so the shift is
+    // taken back out.
+    const s = mesh.uvShift;
+    const stored = (i) => {
+      const p = vertex(model, mesh, i);
+      return s ? { ...p, u: p.u - s[2 * i], v: p.v - s[2 * i + 1] } : p;
+    };
     for (const [a, b, c] of triangles(model, mesh)) {
-      const p = [vertex(model, mesh, a), vertex(model, mesh, b), vertex(model, mesh, c)];
+      const p = [stored(a), stored(b), stored(c)];
       const e1 = [p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z];
       const e2 = [p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z];
       const w = Math.hypot(

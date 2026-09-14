@@ -24,7 +24,9 @@ The sweep was first done by hand, and is now a script:
 
     node tools/sweep.mjs neon-grid-any --cars <install>/content/cars
 
-The figures below are the script's, on the engine at `d16e8a0`. Run on the
+The figures below are the script's, on the engine with the shifted-sheet fix
+described further down; where that fix moved one, the entry says what it was
+before. Run on the
 engine as it stood when this was first written (`1562ef1`), it reproduces the
 hand sweep's bindings exactly. It differs from the hand sweep in two places,
 both understood: it profiles `pm3dm_bmw_320i_stw`, whose only model is
@@ -47,11 +49,12 @@ follows is why, in the order worth fixing.
 
 ## A candidate with no islands is still eligible to be the body
 
-Of 26 cars, the body binding was confident (>= 0.7) on 21, shaky on 3, and a
-guess on 2: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04. They
-were 0.11 and 0.19 when first measured; the visibility changes of 2026-09-13
-narrowed both margins and changed neither pick. The second is the instructive
-one. It bound `body` to a role called `black` that
+Of 26 cars, the body binding was confident (>= 0.7) on 21, shaky on 2, and a
+guess on 3: `ks_mclaren_650_gt3` and `mclaren_mp412c_gt3`, both at 0.04, and
+`ac_legends_gt_porsche_906` at 0, which is the right texture tied with itself
+(see below). The McLarens were 0.11 and 0.19 when first measured; the
+visibility changes of 2026-09-13 narrowed both margins and changed neither
+pick. The mp412c is the instructive one. It bound `body` to a role called `black` that
 has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
 so the design painted a sheet with nothing mapped on it, and every tag
 selection then matched nothing.
@@ -80,50 +83,50 @@ round number: the same sweep can answer it.
 
 ## Tag selections that match nothing
 
-`[left, visible]` and `[right, visible]` found no panel on 5 of 26 cars each,
-and those five are every car whose body has no usable panels: the three whose
-body sheet is shifted off [0, 1] and lost its islands (below), the McLaren
-bound to a sheet with no panels, and the Porsche 906 bound to its window. On
-every car with a right body that kept its panels, the flank rules landed. The first
-write-up said 10 each, "about 40% of cars"; that counted the design's two
-`[left, visible]` regions, the piping and the number, as two misses per car.
+`[left, visible]` and `[right, visible]` found no panel on 1 of 26 cars each:
+the mp412c, whose body is a tiled material, and whose placed regions are now
+reported as `unplaceable`. Before the shifted-sheet fix below it was 5, every
+one a car whose body had no usable panels. The first write-up said 10 each,
+"about 40% of cars"; that counted the design's two `[left, visible]` regions,
+the piping and the number, as two misses per car.
 
-What genuinely misses is `mid`. Leaving those five cars out,
-`[left, mid, upper, visible]` matched nothing on 5 cars and
-`[right, mid, upper, visible]` on 4, and on six of those nine misses the tag
-that emptied the selection was `mid` — on `ks_mclaren_650_gt3`, `lotus_49`,
+What genuinely misses is `mid`. `[left, mid, upper, visible]` matched nothing
+on 7 cars with a right body and `[right, mid, upper, visible]` on 6, and on
+eight of those thirteen misses the tag that emptied the selection was `mid` —
+on `ac_legends_gt_porsche_906`, `ks_mclaren_650_gt3`, `lotus_49`,
 `lotus_exige_240` and `ks_audi_sport_quattro_s1`, only 3 to 13 body panels are
 `mid` at all. That is the centroid tagging: a flank that spans the middle of the
-car is `mid` only if its centroid happens to land there. `visible` was the tag
-that emptied a selection on none of them.
+car is `mid` only if its centroid happens to land there. `left` and `upper`
+emptied the other five, and `visible` none.
 
-`[shared, visible]` found nothing on 18, 13 of them cars with a correct body,
+`[shared, visible]` found nothing on 16, 15 of them cars with a correct body,
 and every one of those because the car has no instanced bodywork. `shared` is a
 tag a portable design should not lean on without saying the miss is expected.
 
-## A see-through sheet can outrank the paint on visibility
+## A texture listed under two spellings ties with itself
 
-`ac_legends_gt_porsche_906` binds `body` to `906_EXT_WINDOW_DIFF.dds` at 0.88:
-confident, and wrong. Its paint is `906_EXT_Body_Diff.DDS`, which every one of
-its 39 stock skins overrides and which covers 32% of the car — but its one
-panel measures 1% visible, while the window sheet, an alpha-tested
-`ksPerPixelMultiMap_AT` material that 23 skins override, measures 100%.
-Visibility is the classifier's decisive term, so the window wins.
+`ac_legends_gt_porsche_906` bound `body` to its window sheet at 0.88 — confident,
+and wrong — until the shifted-sheet fix below, and that bug was the whole cause.
+Its paint, `906_EXT_Body_Diff.DDS`, which every one of its 39 stock skins
+overrides, sits one sheet below [0, 1]. All but one of its islands were dropped,
+so its visibility was measured on the one left, at 1%, while the window sheet
+kept a panel measuring 100%. With its islands back the paint has 34 panels,
+56% visible, and wins.
 
-It was the same on the engine this section's sweep was first run on (0.77), so
-it predates the visibility changes of 2026-09-13, and the hand sweep counted it
-among the confident bindings. Nothing in the portability plan catches it: the
-window has a panel, so a rule against empty sheets passes it, and 0.88 clears
-any plausible floor. What the fix has to establish is what the rays aimed at
-the body are stopping on, and that the body ranks first once they stop on the
-right thing.
+It wins at confidence 0. The model binds the file under two spellings,
+`906_EXT_Body_Diff.DDS` and `906_EXT_Body_Diff.dds`, so the profile lists it
+as two roles with identical measurements, and the margin over the runner-up,
+which is itself, is nothing. A confidence floor, as the portability plan's
+step 3 proposes, would then refuse to paint the right answer. What the fix has
+to establish is that two roles naming one file on NTFS are ranked as one
+candidate; it sits beside the case-spelling entry further down.
 
-## An unwrap shifted by whole sheets loses every island
+## An unwrap shifted by whole sheets lost every island — fixed
 
 Three of the 26 — `tando_buddies_180sx` (2 panels from 66 textures),
-`btcc_toyota_avensis` (3) and `tc_legends_mazda_rx3` (7) — have essentially no
+`btcc_toyota_avensis` (3) and `tc_legends_mazda_rx3` (7) — had essentially no
 UV islands anywhere. This entry first put that down to seamless tiled
-materials. Measured, it is nothing of the kind, and `findIslands` is not
+materials. Measured, it was nothing of the kind, and `findIslands` was not
 returning nothing correctly.
 
 The Avensis body is one mesh of 13,562 vertices whose UVs run from v = -0.96 to
@@ -135,25 +138,44 @@ next line drops it as "collapsed to a line". The RX3's body is the same, one
 sheet down. The 180SX's sits 60 sheets down and straddles a sheet boundary, so
 only 54% of its surface lies on any one copy.
 
-It is not three cars. Across the fleet, 316 textures carrying real geometry,
-on 45 cars, are unwraps shifted by whole sheets, and on 13 cars it is the
+It was not three cars. Across the fleet, 316 textures carrying real geometry,
+on 45 cars, are unwraps shifted by whole sheets, and on 13 cars it was the
 texture the classifier proposes as the body: the Capri, the Corvette, the
 365 GTB, the Giulietta, the RS3, the Civic, the Avensis, the Mygale, the GTA,
-the A110, the 300 SEL, the 2002 and the RX3. Every one of those bodies has no
+the A110, the 300 SEL, the 2002 and the RX3. Every one of those bodies had no
 panels.
 
-Profiles now say so: a texture's `uvTile` records the offset, and the
-generator logs the shifted textures by name. What the fix has to establish is
-that an island is measured on its own copy of the sheet, with its rectangle,
-seams, outline and every other UV-derived figure shifted back by the same
-whole number; that a sheet straddling a boundary is either split where it
-wraps or reported as such; and that the Avensis's body comes out with panels
-while every unshifted profile comes out byte-identical.
+**The fix.** `placeOnSheet` in `src/engine/kn5.mjs` moves each island that fits
+wholly on another copy of the sheet back onto the copy in [0, 1], by whole
+sheets, when the model is parsed, and `vertex()` applies the move. Everything
+that reads UVs reads them through `vertex()` — islands, seams, outlines, safe
+areas, wheels, the software renderer, the geometry the editor draws — so they
+all see a moved island in the same place. An island already on the sheet, one
+that spans more than a sheet, and one straddling a boundary are left exactly
+as stored, and a texture's `uvTile` still records where the model put it.
+
+Checked against the sweep's 26 cars, profiled before and after: the profiler
+is deterministic, 14 profiles come out byte-identical, and every texture that
+changed on the other 12 is on a car where islands moved. The Avensis's body
+goes from 0 panels to 48 and binds at 0.79 rather than 0.5; the RX3's goes to
+13, the 180SX's to 30, and the Porsche 906's from 1 to 34. The first version
+of the rule read the tile off `floor(lo + slack)`, which sent islands lying
+against the sheet's far edge one sheet the wrong way; the before-and-after
+diff caught that at once, as four rim panels missing on the SF15T.
+
+One consequence to know before regenerating a profile: `minPanelArea` is a
+share of each texture's island area, so recovered islands can push slivers
+under it. The NSX's `ext_mechanics_colour` gains 5 islands, grows 74% in area,
+and loses 14 slivers of 0.09% to 0.12%, going from 64 panels to 55.
+
+**Still open.** An island straddling a sheet boundary, which the game wraps
+across the image's edge, cannot move whole and is left where it is; its panel
+stops at the edge. The generator counts such islands by texture.
 
 ## The design finds two of its fourteen surfaces bound
 
 The vocabulary has 20 terms and three of them can be proposed automatically:
-`body` (26/26, mean confidence 0.77), `tyres` (25/26, 0.96) and `brakes`
+`body` (26/26, mean confidence 0.75), `tyres` (25/26, 0.96) and `brakes`
 (23/26, 0.96). `neon-grid-any` paints 14 terms and `brakes` is not one of
 them, so on arrival it found two. The other twelve — `rims`, `interior`,
 `belts`, `steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`,

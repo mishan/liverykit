@@ -219,7 +219,12 @@ export const CAR = {
  * friends, the axes are derived from them, and a fixture without them exercises
  * only the fallback path.
  */
-export function carKn5(rest = {}) {
+export function carKn5({
+  // Moves the whole unwrap by whole sheets, as some exporters do. The game
+  // draws it exactly as it would unshifted, so a profile of it should be too.
+  uvShift = [0, 0],
+  ...rest
+} = {}) {
   const x0 = -CAR.width / 2, x1 = CAR.width / 2;
   const y0 = 0, y1 = CAR.height;
   const z0 = -CAR.length / 2, z1 = CAR.length / 2;
@@ -255,7 +260,7 @@ export function carKn5(rest = {}) {
         const s = i / N, t = j / N;
         const p = [0, 1, 2].map((k) =>
           c0[k] * (1 - s) * (1 - t) + c1[k] * s * (1 - t) + c2[k] * s * t + c3[k] * (1 - s) * t);
-        verts.push(vert(p[0], p[1], p[2], rx + s * rw, ry + t * rh, normal));
+        verts.push(vert(p[0], p[1], p[2], rx + s * rw + uvShift[0], ry + t * rh + uvShift[1], normal));
       }
     }
     for (let j = 0; j < N; j++) {
