@@ -907,6 +907,46 @@ test('a panel with no measured centroid gets the tags that need no geometry', as
   assert.deepEqual(t.p, ['visible', 'mirrored']);
 });
 
+test('a panel is tagged with every section and level its extent reaches', async () => {
+  // A centroid is where an island's vertices are densest, which is the
+  // unwrapper's business. A door running from the sill to the window line was
+  // `lower` on three fleet cars because its centroid sat just below half
+  // height, and a design asking for the upper middle of the flank found nothing.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    // Two centroids that fix the frame: length from z = -2 to 2, height 0 to 1.
+    nose: { rect: [0, 0, 0.1, 0.1], centroid3d: [0, 1, 2] },
+    tail: { rect: [0.2, 0, 0.1, 0.1], centroid3d: [0, 0, -2] },
+    // Reaches 0.2 to 0.8 of the length and 0.2 to 1.2 of the height, with its
+    // centroid at 0.625 and exactly half height: `front` and `lower` by centroid.
+    flank: { rect: [0.4, 0, 0.2, 0.2], centroid3d: [1, 0.5, 0.5], extent3d: [[1, 0.2, -1.2], [1, 1.2, 1.2]] },
+    // Reaches 0.30 to 0.40: a fifth of it in `mid`, which is clipping the band,
+    // not being in the middle of the car. The 906's rear quarters do this.
+    clip: { rect: [0.7, 0, 0.1, 0.1], centroid3d: [1, 0.2, -0.6], extent3d: [[1, 0.1, -0.8], [1, 0.3, -0.4]] },
+  })).body;
+  assert.deepEqual(t.flank, ['left', 'front', 'mid', 'rear', 'upper', 'lower']);
+  assert.deepEqual(t.clip, ['left', 'rear', 'lower']);
+});
+
+test('a generated profile records where each panel reaches, and a full-length flank is every section', async () => {
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { writeFile, mkdtemp } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-extent-'));
+  const file = join(dir, 'car.kn5');
+  await writeFile(file, carKn5());
+  const profile = await profileFromKn5(file, { id: 'c', visibility: false });
+  const flank = Object.values(profile.panels)[0].left_mid;
+  // The fixture's left face runs the car's whole length and height.
+  assert.deepEqual(flank.extent3d, [[0.95, 0, -1.85], [0.95, 1.5, 1.85]]);
+  for (const t of ['nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']) {
+    assert.ok(flank.tags.includes(t), `a flank the length of the car is ${t}: ${flank.tags}`);
+  }
+});
+
 test('selecting by tags is AND, and matching nothing is reported', async () => {
   const { panelsWithTags, expandRegions } = await import('../src/profile.mjs');
   const p = tagCar({ left: '+X', front: '+Z' }, {

@@ -558,6 +558,14 @@ export async function profileFromKn5(path, {
         confidence: 'measured',
         source: { mesh: i.mesh, vertices: i.vertexCount },
         centroid3d: [r3(i.centroid.x), r3(i.centroid.y), r3(i.centroid.z)],
+        // Where the island reaches on the car, as its box's min and max
+        // corners. The centroid says where its vertices are densest, which is
+        // the unwrapper's business; this says how far it runs, which is what
+        // decides whether a flank is in the middle of the car. See tags.mjs.
+        extent3d: [
+          [r3(i.box3d.x0), r3(i.box3d.y0), r3(i.box3d.z0)],
+          [r3(i.box3d.x1), r3(i.box3d.y1), r3(i.box3d.z1)],
+        ],
         // Which way +u and +v travel across the car. Needed to mirror a
         // placement onto the opposite flank: `mirrorOf` is measured from
         // geometry and says nothing about how each island was laid out, and
