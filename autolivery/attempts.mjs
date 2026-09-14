@@ -34,7 +34,7 @@ function verdictHtml(title, v) {
 }
 
 function roundHtml(h, { passedIn }) {
-  const head = `<h2>Round ${h.round} — ${h.passed ? '<span class="pass">passed</span>'
+  const head = `<h2>Round ${h.round}${h.polish ? ' (polish)' : ''} — ${h.passed ? '<span class="pass">passed</span>'
     : h.submitted === false ? '<span class="fail">not submitted</span>' : '<span class="fail">failed</span>'}</h2>`;
   if (h.submitted === false) {
     return `<section>${head}${list('why', h.failures ?? [])}` +
