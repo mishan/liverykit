@@ -10,12 +10,12 @@ What did not hold was the part that decides *where* a portable design lands:
 | what went wrong | on how many of 26 |
 |---|---|
 | body bound to a texture with no UV islands at all | 1 (`mclaren_mp412c_gt3`, confidence 0.04) |
-| body bound to the right texture, whose islands were all dropped | 2 (Avensis, RX3), and the 180SX's kept 2 panels; see step 1 |
-| body bound confidently to the wrong texture | 1 (`ac_legends_gt_porsche_906`, 0.88; see the backlog) |
+| body bound to the right texture, whose islands were all dropped | 0; 2 (Avensis, RX3) before the shifted-sheet fix, and the 180SX's kept 2 panels |
+| body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds the right texture at confidence 0 (see the backlog) |
 | an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
-| `[left, visible]` or `[right, visible]` matched no panel | 5 each, every one a car whose body has no usable panels |
-| a `mid` selection matched nothing on a car with a right body | 5 |
-| `[shared, visible]` matched no panel | 18 |
+| `[left, visible]` or `[right, visible]` matched no panel | 1 each, the mp412c, whose body is tiled |
+| a `[mid, upper, visible]` selection matched nothing on a car with a right body | 7 on the left, 6 on the right |
+| `[shared, visible]` matched no panel | 16 |
 | a body on a tiled material, not an unwrapped sheet | 1 (the mp412c's `black.dds`) |
 | surfaces the design paints that were bound on arrival | 2 of 14 |
 
@@ -25,7 +25,8 @@ showed: the flank misses were counted per region, twice per car, and the
 second "no islands" car had 47 panels on its body. A third was wrong in a way
 step 1's measurement showed: it listed three cars as painted with tiled
 materials, and none of the three is. Two are unwraps shifted off the sheet by
-a whole copy of it, and the third mostly is.
+a whole copy of it, and the third mostly is. The fix for that moved those
+cars' islands back onto the sheet, and the table is the sweep on that engine.
 
 Every one of these is a case of the tool doing something confidently that it
 had the information to doubt. The classifier had the island counts beside it.
@@ -42,7 +43,8 @@ the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
 *Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 and 1
-are built; steps 2 to 5 are not.*
+are built, and so is the shifted-sheet fix step 1 turned up; steps 2 to 5 are
+not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -106,7 +108,9 @@ as it now measures, the classifier scores 189/193 on the held-out label. Two of
 the four misses are the Evora labels `docs/naming.md` already explains; the
 other two are `mclaren_mp412c_gt3` and `tando_buddies_180sx`, which are steps 2
 and 1 of this plan. It was packed again from a second survey when step 1
-landed, so it carries each texture's `uvLayout` too.
+landed, so it carries each texture's `uvLayout` too, and again with the
+shifted-sheet fix, which gives 101 cars new island counts or visibility and
+leaves only 2 without visibility at all. The classifier still scores 189/193.
 
 Three places rebuild classifier features from records instead of from a model:
 `survey.mjs` itself, `tools/evaluate.mjs`, which reads the survey's raw output,
@@ -130,8 +134,8 @@ and RX3 bodies are ordinary unwraps one sheet below [0, 1]; the 180SX's sits
 60 sheets down and straddles a sheet boundary. What leaves them without panels
 is `findIslands` clamping each island into [0, 1], where an island on another
 copy of the sheet collapses and is dropped — not tiling. It reaches 316
-textures on 45 cars, 13 of them a proposed body, and has its own entry in the
-backlog. Genuine tiling exists too: 523 of the fleet's 4,026 measured textures
+textures on 45 cars, 13 of them a proposed body, has its own entry in the
+backlog, and is fixed by `placeOnSheet` in `src/engine/kn5.mjs`. Genuine tiling exists too: 523 of the fleet's 4,026 measured textures
 have less than half their surface on any one copy of the sheet, and one of
 them is a proposed body in the sweep, the mp412c's `black.dds`.
 
@@ -286,17 +290,16 @@ the floor is a number too.
 
 ## 4. Tag selections that match nothing
 
-**Symptom.** With the five cars whose body has no usable panels set aside,
-`[left, visible]` and
-`[right, visible]` landed on every car in the sweep. What misses is `mid`:
-`[left, mid, upper, visible]` matched nothing on 5 cars with a right body and
-`[right, mid, upper, visible]` on 4, and on six of those nine the tag that
-emptied the selection was `mid`. `[shared, visible]` matched nothing on 18, 13
-of them with a right body.
+**Symptom.** `[left, visible]` and `[right, visible]` landed on every car in
+the sweep but the mp412c, whose body is a tiled material. What misses is
+`mid`: `[left, mid, upper, visible]` matched nothing on 7 cars with a right
+body and `[right, mid, upper, visible]` on 6, and on eight of those thirteen
+the tag that emptied the selection was `mid`. `[shared, visible]` matched
+nothing on 16, 15 of them with a right body.
 
-**Causes.** The five cars whose body has no usable panels miss every tag rule,
-for reasons steps 1 to 3 and the backlog's shifted-sheet entry deal with; their
-misses say nothing about tagging. The rest are
+**Causes.** The mp412c misses every tag rule because its body is a tiled
+material, which steps 1 and 2 deal with; its misses say nothing about tagging.
+The rest are
 cars whose body panels genuinely lack a tag, and there are three ways that
 happens in `computeTags`:
 
@@ -373,7 +376,7 @@ happens in `computeTags`:
 **What it must establish.** The synthetic fixture gets an island spanning two
 sections; the tag test asserts it carries both. The picks test above passes,
 or every change it reports is resolved in the fit. The sweep's `mid` miss
-counts on cars with a right body, 5 and 4 today, are recorded before and after,
+counts on cars with a right body, 7 and 6 today, are recorded before and after,
 alongside the shipped profiles' baseline from step 0, and the backlog entry is
 rewritten with the new numbers rather than deleted.
 

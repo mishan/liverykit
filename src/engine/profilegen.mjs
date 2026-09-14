@@ -423,6 +423,7 @@ export async function profileFromKn5(path, {
 
   const panels = {};
   const adjacencyOut = {};
+  const straddling = new Map();
   // Measured once, from the whole car, and handed to every role. Naming is a
   // claim about where something sits on the CAR; deriving the extent per texture
   // makes it a claim about where it sits on that sheet, which is very nearly
@@ -450,6 +451,15 @@ export async function profileFromKn5(path, {
     const islands = findIslands(model, meshes, { minVertices });
     const total = islands.reduce((s, i) => s + i.uvArea, 0) || 1;
     const keep = islands.filter((i) => i.uvArea / total >= minPanelArea);
+    // An island that straddles a sheet boundary is drawn by the game wrapped
+    // across the image's edge, and it is the one kind placeOnSheet cannot bring
+    // back whole: its rect here stops at the edge, and one on another copy of
+    // the sheet has none. placeOnSheet lists them over every island, and those
+    // big enough for findIslands to measure are counted, to be said below.
+    // Counted over `keep`, the ones with no panel went unsaid; counted at any
+    // size, one brushed-metal sheet on the S14 Zenki buried them under 1,728.
+    const across = meshes.flatMap((m) => m.straddlers ?? []).filter((n) => n >= minVertices).length;
+    if (across) straddling.set(texName, across);
     nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
@@ -579,18 +589,24 @@ export async function profileFromKn5(path, {
   // bug in the profiler, not like a car painted with a seamless material.
   const measured = Object.values(textures).filter((t) => t.uvLayout);
   const tiled = measured.filter((t) => t.uvLayout === 'tiled');
-  // An unwrap shifted by whole sheets renders correctly in the game and loses
-  // its islands here: findIslands clamps each rectangle into [0, 1], an island
-  // lying wholly on another copy of the sheet clamps to nothing, and it is
-  // dropped as collapsed. The Avensis lost all 13,562 vertices of its body that
-  // way and profiled to three panels with no word about why. Until the islands
-  // are measured on their own copy of the sheet, the least this can do is say so.
+  // An unwrap shifted by whole sheets draws correctly in the game, and its
+  // islands are measured on the copy of the sheet a livery paints (placeOnSheet
+  // in kn5.mjs). Said anyway, because a profile whose rects sit in [0, 1] for a
+  // model whose UVs run at v = -59 is a puzzle to anyone comparing the two.
   const shifted = measured.filter((t) => t.uvTile && t.uvLayout !== 'tiled');
   if (shifted.length) {
-    log(`  ! ${shifted.length} texture(s) are unwraps shifted off the sheet by whole copies of it ` +
+    log(`  ${shifted.length} texture(s) sit on other copies of the sheet ` +
         `(${shifted.slice(0, 3).map((t) => `${t.file} at [${t.uvTile.join(', ')}]`).join(', ')}` +
-        `${shifted.length > 3 ? ', …' : ''}).`);
-    log('    The game draws them correctly; their islands are not measured yet, so they have few or no panels.');
+        `${shifted.length > 3 ? ', …' : ''}); their islands are measured on the copy they sit on.`);
+  }
+  // What still cannot be measured whole. Once such islands were silently
+  // clamped; now at least the count is said, by texture.
+  if (straddling.size) {
+    const n = [...straddling.values()].reduce((a, b) => a + b, 0);
+    log(`  ! ${n} island(s) straddle a sheet boundary (${[...straddling].slice(0, 3)
+      .map(([f, k]) => `${k} on ${f}`).join(', ')}${straddling.size > 3 ? ', …' : ''}).`);
+    log('    The game wraps them across the image\'s edge; their panels here stop at it,');
+    log('    and one lying wholly off [0, 1] has no panel at all.');
   }
   if (tiled.length) {
     log(`  ${tiled.length} of ${measured.length} paintable textures are tiled materials; nothing on them can be placed.`);

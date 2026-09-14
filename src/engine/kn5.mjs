@@ -217,7 +217,108 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     );
   }
 
-  return { version, textures, materials, meshes, dummies, buf, encrypted };
+  const model = { version, textures, materials, meshes, dummies, buf, encrypted };
+  for (const mesh of meshes) placeOnSheet(model, mesh);
+  return model;
+}
+
+/** How far past a sheet's edge an island may sit and still count as on it. */
+const SHEET_EDGE = 0.01;
+
+/**
+ * Bring each UV island that sits wholly on another copy of the sheet back onto
+ * the copy in [0, 1], by recording a whole-number shift that `vertex()` applies.
+ *
+ * Textures are sampled with wrap addressing, so an unwrap shifted by whole
+ * sheets draws exactly as one that is not, and exporters shift them freely: the
+ * Avensis's body sits one sheet below [0, 1], a 180SX's sixty below. Every
+ * measurement downstream compares UVs with places on the image — island
+ * rectangles, seams, outlines, safe areas, a renderer sampling the painted
+ * texture, the editor picking a point — and each of them used to see such an
+ * island somewhere no rectangle reaches. findIslands clamped it into [0, 1],
+ * where it collapsed and was dropped, and 13 cars' bodies profiled to nothing.
+ *
+ * Taken out once, here, rather than in each of those, so they cannot disagree
+ * about where an island is. An island moves only when it fits wholly on another
+ * copy, give or take a hair at either edge, and more of it lies there than on
+ * [0, 1]: one on [0, 1] stays put; one spanning more than a sheet is a tiling
+ * material with no single copy to move to; one straddling a boundary is wrapped
+ * across the image's edge by the game and cannot move whole. All three are left
+ * exactly as stored, so a model with nothing to move reads as it always did,
+ * and each straddler's vertex count is kept in `mesh.straddlers` for the
+ * generator to say.
+ *
+ * Islands here are what findIslands calls islands — triangles joined through
+ * shared vertex indices within one mesh — so a moved island moves whole and a
+ * seam in the unwrap is still a seam.
+ */
+function placeOnSheet(model, mesh) {
+  const n = mesh.vertexCount;
+  if (!n) return;
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
+  const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+  for (const [a, b, c] of triangles(model, mesh)) { union(a, b); union(b, c); }
+
+  const bounds = new Map();
+  const size = new Map();
+  for (let i = 0; i < n; i++) {
+    const o = mesh.vertexStart + i * mesh.stride;
+    const u = model.buf.readFloatLE(o + 24);
+    const v = 1 + model.buf.readFloatLE(o + 28);
+    const r = find(i);
+    size.set(r, (size.get(r) ?? 0) + 1);
+    const b = bounds.get(r);
+    if (!b) { bounds.set(r, [u, v, u, v]); continue; }
+    if (u < b[0]) b[0] = u; if (v < b[1]) b[1] = v;
+    if (u > b[2]) b[2] = u; if (v > b[3]) b[3] = v;
+  }
+
+  // The copy an island fits on, with a little slack at both edges, or null.
+  // Only a sliver near an edge fits two, and it goes to the one holding more of
+  // it, [0, 1] on a tie. Reading the tile off `floor(lo + slack)`, which keeps a
+  // -0.006 overhang home, sent an island lying at u = 0.991 to 0.999 one sheet
+  // the wrong way, where it collapsed — four rim panels on the SF15T and six
+  // trim panels on the Quattro. Asking [0, 1] first cured that and kept an
+  // island lying wholly in the slack past an edge, at u = 1.003 to 1.008, where
+  // findIslands clamped it to nothing; it also split a body one sheet down from
+  // the flange strip along its edge, at v = -0.006 to 0, moving only the body.
+  const tileOf = (lo, hi) => {
+    let best = null, least = Infinity;
+    for (let k = Math.ceil(hi - 1 - SHEET_EDGE); k <= Math.floor(lo + SHEET_EDGE); k++) {
+      const off = Math.max(0, k - lo) + Math.max(0, hi - k - 1);
+      if (off < least || (off === least && k === 0)) { best = k; least = off; }
+    }
+    return best;
+  };
+  const moves = new Map();
+  // Straddlers are listed here, over every island, because this is where it
+  // is decided that they cannot move. Listed from the panels instead, one
+  // straddling on another copy of the sheet was never among them: it clamps to
+  // nothing in findIslands and is dropped. Each by its vertex count, so the
+  // generator can leave out what findIslands would not measure anywhere; a
+  // line in UV is left out here, as findIslands drops that as collapsed.
+  const straddlers = [];
+  const sheetSized = (lo, hi) => hi - lo > 1e-5 && hi - lo <= 1 + 2 * SHEET_EDGE;
+  for (const [r, [u0, v0, u1, v1]] of bounds) {
+    const ku = tileOf(u0, u1), kv = tileOf(v0, v1);
+    if (ku === null || kv === null) {
+      if (sheetSized(u0, u1) && sheetSized(v0, v1)) straddlers.push(size.get(r));
+      continue;
+    }
+    if (ku === 0 && kv === 0) continue;
+    moves.set(r, [-ku, -kv]);
+  }
+  if (straddlers.length) mesh.straddlers = straddlers;
+  if (!moves.size) return;
+
+  const shift = new Float32Array(2 * n);
+  for (let i = 0; i < n; i++) {
+    const m = moves.get(find(i));
+    if (m) { shift[2 * i] = m[0]; shift[2 * i + 1] = m[1]; }
+  }
+  mesh.uvShift = shift;
 }
 
 /**
@@ -281,6 +382,7 @@ function multiply(a, b) {
 export function vertex(model, mesh, i) {
   const o = mesh.vertexStart + i * mesh.stride;
   const b = model.buf;
+  const s = mesh.uvShift;
   const x = b.readFloatLE(o), y = b.readFloatLE(o + 4), z = b.readFloatLE(o + 8);
   const nx = b.readFloatLE(o + 12), ny = b.readFloatLE(o + 16), nz = b.readFloatLE(o + 20);
   const m = mesh.world;
@@ -314,10 +416,13 @@ export function vertex(model, mesh, i) {
     z: x * m[2] + y * m[6] + z * m[10] + m[14],
     nx: rx / rl, ny: ry / rl, nz: rz / rl,
     tx, ty, tz,
-    u: b.readFloatLE(o + 24),
+    // On the copy of the sheet in [0, 1], for an island stored on another one:
+    // see placeOnSheet. A mesh with nothing to move has no `uvShift` and reads
+    // exactly as stored.
+    u: s ? b.readFloatLE(o + 24) + s[2 * i] : b.readFloatLE(o + 24),
     // AC stores V negative; texture-space y is 1 + v. Get this wrong and every
     // panel is flipped vertically, which looks plausible enough to ship.
-    v: 1 + b.readFloatLE(o + 28),
+    v: s ? 1 + b.readFloatLE(o + 28) + s[2 * i + 1] : 1 + b.readFloatLE(o + 28),
   };
 }
 
