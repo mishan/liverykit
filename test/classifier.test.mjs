@@ -264,4 +264,25 @@ test('tyres and brakes bind every texture their names say they are, across the f
   const brakes = score('brakes', /disc|disk|rotor/i, /_nm|normal|_map|blur|glow|cal/i);
   assert.ok(tyres.n > 150 && tyres.right / tyres.n >= 0.97, `tyres ${tyres.right}/${tyres.n}`);
   assert.ok(brakes.n > 150 && brakes.right / brakes.n >= 0.93, `brakes ${brakes.right}/${brakes.n}`);
+
+  // What they bind that a label calls something else, which "binds every
+  // labelled texture" cannot see. The Civic's author drew its disc with
+  // ksTyres, and nothing measured tells that disc from a tyre, so it is
+  // known and listed here; a new one is a change to look at.
+  const is = {
+    body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
+    tyres: (f) => /tyre|tire|tread/i.test(f.file) && !/_nm|normal|_map|blur|glow|_ao|rim/i.test(f.file),
+    brakes: (f) => /disc|disk|rotor/i.test(f.file) && !/_nm|normal|_map|blur|glow|cal/i.test(f.file),
+  };
+  const over = [];
+  for (const car of cars) {
+    for (const term of ['tyres', 'brakes']) {
+      for (const r of propose(car.features, term)?.roles ?? []) {
+        const f = car.features.find((x) => x.role === r);
+        const as = Object.keys(is).filter((t) => is[t](f));
+        if (as.length && !as.includes(term)) over.push(`${car.id}: ${term} bound ${f.file}, labelled ${as.join(', ')}`);
+      }
+    }
+  }
+  assert.deepEqual(over, ['jtc_honda_civic_eg_gra: tyres bound disk_d_1.dds, labelled brakes']);
 });
