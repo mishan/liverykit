@@ -749,6 +749,25 @@ test('an unbound driver-kit term is sent to the skins folder, not to --explain',
   }
 });
 
+test('an unbound term the classifier does not score is sent to the profile, not to --explain', async () => {
+  // --explain throws for a term with no scoring rule, and `floor` has none:
+  // the note sent people to a command that could only refuse them.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { SCORABLE } = await import('../src/engine/classify.mjs');
+  const scored = SCORABLE.find((t) => t !== 'body');
+  assert.ok(scored && !SCORABLE.includes('floor'), 'the test needs one scored term and floor unscored');
+  const { notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, floor: spec, [scored]: spec } },
+  );
+  const floor = notes.find((n) => n.term === 'floor').text;
+  assert.doesNotMatch(floor, /--explain/);
+  assert.match(floor, /bind it by hand in cars\/car\.json/);
+  const ranked = notes.find((n) => n.term === scored).text;
+  assert.match(ranked, /--explain <kn5> --all/, scored);
+  assert.match(ranked, /Bindings panel/, scored);
+});
+
 test('an unconfirmed binding is used, and said out loud', async () => {
   const { resolveTargets } = await import('../src/profile.mjs');
   const { targets, notes } = resolveTargets(

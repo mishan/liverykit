@@ -21,7 +21,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { VOCABULARY, DRIVER_KIT } from './engine/classify.mjs';
+import { VOCABULARY, DRIVER_KIT, SCORABLE } from './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -278,15 +278,21 @@ export function resolveTargets(profile, livery) {
       continue;
     }
     if (b.status === 'unbound') {
-      // Not --explain for the driver kit: nothing measures a helmet, so it has
-      // nothing to rank and throws. The four are named from the files a car's
-      // skins carry, which a profile generated without --skins never saw.
+      // Advice that can be taken. --explain ranks only the terms the classifier
+      // scores, and throws for the rest: the driver kit is named from the files
+      // a car's skins carry, which a profile generated without --skins never
+      // saw, and every other term is bound by hand. One line sent all three to
+      // --explain, so two of them met a refusal.
       notes.push({
         term, status: 'unbound',
         text: Object.hasOwn(DRIVER_KIT, term)
           ? `${term}: not bound on this car — it is named from the skins folder's filenames, ` +
             'so regenerate the profile with --skins, or record it under "bind" by hand'
-          : `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
+          : SCORABLE.includes(term)
+            ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
+              `editor's Bindings panel, and record it under "bind" in cars/${profile.id}.json`
+            : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
+              `cars/${profile.id}.json under "bind"`,
       });
       continue;
     }
