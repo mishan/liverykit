@@ -55,7 +55,7 @@ import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
-import { findSpace, largestSpace, groupLayout, stripeLayout, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayout, aeroLayout, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -1032,6 +1032,20 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // refuse about the result. Shared by the inbox and by the endpoints that
   // measure a proposal without offering it, so the two cannot disagree about
   // what is acceptable.
+  // A design the editor could not load again: two regions sharing an id.
+  // Taken as the working design, it broke every later request for the
+  // editor's state, so the page would not load until the server restarted:
+  // a tab still holding the design from before a restart applied a proposal
+  // on top of it and doubled every region the proposal added.
+  const unloadable = (d) => {
+    try {
+      regionIds(d ?? {});
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
   const stage = (prop) => {
     try {
       const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
@@ -1398,6 +1412,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
         const { fit: working, design } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         return json(200, editorState({
@@ -1411,6 +1428,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         // render has to be of what is being edited rather than of what is on
         // disk. Nothing here writes it.
         const { fit: working, design, role, seed } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         return json(200, renderSurface({
@@ -1423,6 +1443,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
         const { fit: working, design, seed } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         const state = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit });
@@ -1447,7 +1470,14 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       if (req.method === 'GET' && url.pathname === '/api/model' && url.searchParams.get('all')) {
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
-        const files = editorState({ livery, profile, fit })
+        // The WORKING design's surfaces, as every other render here takes. From
+        // the livery on disk, a surface the working design paints and the disk
+        // does not came down merged into whatever group its material fell in:
+        // the NSX's rims, on a two-layer material, landed in one group with
+        // every other part whose diffuse is not its surface, with no file of
+        // its own for the page to re-role, and the wheels stayed stock however
+        // the design painted them. The page fetches again when that set changes.
+        const files = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit })
           .surfaces.map((s) => ({ role: s.role, file: s.file }));
         const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
@@ -1547,6 +1577,16 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           return json(400, { error: 'stripe lays a band along the whole car, as wide as stripe.widthMm: ' +
             'ask it without layout, largest, widthMm or heightMm.' });
         }
+        // A ground-effect kit is the same kind of question as a stripe, round
+        // the bottom of the car. Refused beside one before either is answered.
+        const aero = q.aero ?? null;
+        if (aero !== null && (typeof aero !== 'object' || Array.isArray(aero))) {
+          return json(400, { error: `aero is { heightMm, name }, how far up the car the kit reaches; got ${JSON.stringify(aero)}.` });
+        }
+        if (aero && (stripe || layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'aero lays out the car\'s lowest panels all round, as high as aero.heightMm: ' +
+            'ask it without stripe, layout, largest, widthMm or heightMm.' });
+        }
         if (stripe) {
           const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
           // Keyed on what the design hides and paints too: that decides what
@@ -1555,6 +1595,17 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
           try {
             remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
+            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          } catch (e) {
+            return json(400, { error: e.message });
+          }
+        }
+        if (aero) {
+          const ask = { heightMm: num(aero.heightMm, NaN), name: aero.name ?? 'aero' };
+          const design = workingDesign ?? livery;
+          const key = JSON.stringify(['aero', where.role, ask, drawnBy(profile, design)]);
+          try {
+            remember(spaces, key, spaces.get(key) ?? aeroLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
             return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });

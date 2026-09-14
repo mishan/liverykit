@@ -105,7 +105,7 @@ async function ask(client, params, { trace, parent, name, fallback, budget = nul
  * API requires every tool call to be answered, and this way the answer and
  * the verdict arrive together.
  */
-export function createPlanner({ client, model, effort, trace, fallback = true, budget = null, maxTurns = 30, maxNudges = 3 }) {
+export function createPlanner({ client, model, effort, trace, fallback = true, budget = null, maxTurns = 30, maxNudges = 3, system = PLANNER_SYSTEM }) {
   const messages = [];
   let owed = [];
   return {
@@ -137,7 +137,7 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
         const res = await ask(client, {
           model,
           max_tokens: 16000,
-          system: [{ type: 'text', text: PLANNER_SYSTEM }],
+          system: [{ type: 'text', text: system }],
           tools,
           messages,
           output_config: { effort },
@@ -188,14 +188,14 @@ export function createPlanner({ client, model, effort, trace, fallback = true, b
 
 export function createCritic({ client, model, effort, trace, fallback = true, budget = null }) {
   return {
-    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null }) {
+    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null, stripes = [] }) {
       const content = [];
       for (const im of images) {
         content.push({ type: 'text', text: `${im.view} view:` });
         content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: im.data } });
       }
       content.push({ type: 'text', text: `The brief:\n${brief}\n\nWhat the designer says it is:\n${summary || '(nothing)'}` });
-      const note = measuredNote(measured);
+      const note = measuredNote(measured, stripes);
       if (note) content.push({ type: 'text', text: note });
       if (recheck) content.push({ type: 'text', text: recheckOf(recheck) });
       const res = await ask(client, {

@@ -35,7 +35,8 @@ const state = {
   viewer: null,      // created lazily; a UV-only session never touches WebGL
   view: 'uv',
   hover: null,       // a panel being looked at, which must never become a change
-  wholeGeometry: null, // the whole car, fetched once; only its textures change
+  wholeGeometry: null, // the whole car, fetched again only when the sheets the design paints change
+  wholeGeometryPainted: null, // which sheets it was fetched for
   // Pairs the person has deliberately separated. Session-only on purpose: it is
   // a statement about how you are working right now, not about the design, and
   // the fit file has no business recording an editor mode. Once the two sides
@@ -3041,19 +3042,30 @@ async function ensureWholeCar() {
     state.viewer = createViewer($('#carview'));
     state.viewer.attach({ claim: claimCarPointer });
   }
-  if (!state.wholeGeometry) {
+  // The WORKING design, like every other render in this editor. Without it the
+  // preview came from the livery on disk, so a region added since the last save
+  // was simply absent from the one view whose job is to show the whole thing —
+  // and an adopted surface, which is unsaved by definition, could never appear.
+  // Asked first, because it is also how the server learns the working design,
+  // which the geometry below is grouped by.
+  const { surfaces } = await api('/api/preview', { fit: state.fit, design: state.design });
+
+  // Fetched again when the sheets the design paints change. A part the design
+  // did not paint when the geometry came down is grouped by its material, and
+  // on a two-layer material that group has no file to re-role it by: the
+  // NSX's rims shared one with every such part, so a proposal that painted
+  // `rims` rendered them orange and the view drew them stock. Rare, and worth
+  // the megabytes when it happens.
+  const painted = surfaces.map((sf) => String(sf.file).toLowerCase()).sort().join('\n');
+  if (!state.wholeGeometry || state.wholeGeometryPainted !== painted) {
     const res = await fetch('/api/model?all=1');
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({}));
       throw new Error(error ?? 'no model for this car');
     }
     state.wholeGeometry = unpackModel(await res.arrayBuffer());
+    state.wholeGeometryPainted = painted;
   }
-  // The WORKING design, like every other render in this editor. Without it the
-  // preview came from the livery on disk, so a region added since the last save
-  // was simply absent from the one view whose job is to show the whole thing —
-  // and an adopted surface, which is unsaved by definition, could never appear.
-  const { surfaces } = await api('/api/preview', { fit: state.fit, design: state.design });
 
   // Re-roled HERE, from the surfaces the design paints now.
   //

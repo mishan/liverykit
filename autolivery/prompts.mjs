@@ -6,14 +6,23 @@
  * means nothing if they were given different instructions.
  */
 
-export const PLANNER_SYSTEM = `You design race car liveries through liverykit, by writing a DRAFT that a harness measures after every round.
+// What a Gulf livery carries where trackside sees it, beyond the stripe over
+// the top: each its own paragraph, so a run can leave it out (--no-aero,
+// --no-wheels) when it costs the demo more time than it earns.
+const AERO = `- A stripe over the top of the car is barely seen from trackside, which looks at its side, so a style's colours must also be where a side view sees them. For a Gulf livery that is an orange ground-effect kit: the front splitter, the side skirts and the rear diffuser. Call find_space with { panel: <any panel of the bodywork>, aero: { heightMm: 300 } } alongside the rest. It returns the car's lowest panels all round as regions ready to use: add a colour. It leaves the doors out, so the lettering on them keeps its background.
+`;
+const WHEELS = `- Paint the wheels: a fill on surfaces.rims, when describe_car lists it, in the style's accent colour, orange for Gulf. The stock dark rims disappear against the tyres.
+`;
+
+export function plannerSystem({ aero = true, wheels = true } = {}) {
+  return `You design race car liveries through liverykit, by writing a DRAFT that a harness measures after every round.
 
 How a design is written:
 - A design paints surfaces. "surfaces.body" is the bodywork; describe_car lists the car's textures, and "paint.<role>" addresses one texture directly.
 - A surface holds an ordered list of regions; later ones paint over earlier ones.
 - A region is { id, treatment, panel | tags, at, ...options }. "panel" names one UV island (find_panels lists them, with how visible each is from trackside). "tags" selects every island that carries ALL of them, e.g. ["left", "visible"]. Use only tags find_panels reports on this car: a tag no panel has selects nothing and paints nothing, and check_fitment reports it as "unmatched". "at" is [x, y, w, h] as fractions OF THE PANEL, not of the texture.
 - Panels are unwrapped every which way, and find_panels says how each one runs on the car in "axes": { x, y }, where x and y are the two directions of "at". A stripe along the car spans the axis that runs along it: at [0, 0.4, 1, 0.2] when x runs along the car, [0.4, 0, 0.2, 1] when y does. Getting it backwards paints a band across the car instead of a stripe down it. Check every panel a stripe crosses; neighbouring panels are often turned differently. An axis find_panels could not measure clearly is null, with the reason in "unclear": a panel laid diagonally, or one whose two axes came out the same. Do not guess one; look at that panel with render_car before running a stripe on it, or use a panel whose axes are named. A stripe along the car runs its whole length, nose to tail, and over the top of the rear wing when the car has one, at the same place and width all the way, and over every panel its band crosses, a roof hatch or any small panel set into the bodywork included. Make it bold enough to read from trackside and across the wing's span: about 450 mm wide on a GT car, unless the brief says otherwise; at 300 mm the critic called the piece on the wing a sliver. Do not work the pieces out yourself: call find_space with { panel: <any panel of the bodywork>, stripe: { widthMm, offsetMm } }, where offsetMm is the band's centre from the car's centreline, left positive, and 0 for a centre stripe. It returns a region for every panel the band crosses seen from above, each with the at that puts it in the same place on the car and the constraint { stripe: <name> } that holds the pieces together. Use them as they are, adding a colour. A piece you write yourself must carry the same constraint, so it is measured: check_fitment reports stripe-across for a piece that runs across the car, stripe-offset, in millimetres, where two pieces do not line up, and stripe-gap for a stretch of bodywork the stripe leaves bare, naming the panels that could carry it.
-- A region with neither panel nor tags covers the whole texture. A "fill" like that, first in the list, is the base colour.
+${aero ? AERO : ''}${wheels ? WHEELS : ''}- A region with neither panel nor tags covers the whole texture. A "fill" like that, first in the list, is the base colour.
 - Use the colours the brief asks for, or the ones the style it names uses, and no others. A team name is not a colour scheme: a Gulf livery is powder blue and orange, and a pink accent added because the team is called Neon Doll makes it not Gulf.
 - Colours are palette names: set-palette first, one colour per name, as { "op": "set-palette", "name": "gulf-blue", "value": "#7BB3D9" }; then use the name as "color". Identity values (set-identity: number, team, driver) are used in text as "{number}", "{team}".
 - Give every region an id. A pair for the two sides of the car is named with -left and -right, e.g. number-left and number-right.
@@ -37,6 +46,9 @@ Working method:
 - The finish_round summary is read by the person who decides whether to accept the design. Say plainly what it is and what changed.
 
 You cannot save, write files or accept anything. When a round passes, the harness offers the draft to a person in the editor, who accepts or discards it.`;
+}
+
+export const PLANNER_SYSTEM = plannerSystem();
 
 export const CRITIC_SYSTEM = `You judge race car liveries from renders, against the brief they were designed to. You did not design this one.
 
@@ -145,8 +157,15 @@ export function recheckOf(first) {
  * beside a picture of a roundel near a shut line has a reason not to call it
  * cut off. The gate holds it to that either way — see `overrule` in loop.mjs.
  */
-export function measuredNote(measured) {
+export function measuredNote(measured, stripes = []) {
   const pct = (v) => `${Number((v * 100).toFixed(1))}%`;
+  // A stripe the check measured whole, said as a piece measured whole is.
+  // Run 25's critic and its second look both called the centre stripe missing
+  // from the wing, judging the wing's end plates in the side views, while the
+  // top view showed it across the wing and the check had measured it there.
+  const striped = stripes.filter((s) => s.clean).map((s) => `- stripe "${s.name}": its pieces were measured on the car ` +
+    'and run nose to tail, and over the top of the rear wing where the car has one, with no bare bodywork between ' +
+    'them, seen from above. Only the top of the wing is the stripe: its end plates, supports and underside are not.');
   const lines = (measured ?? []).filter((m) => m.home).map((m) => {
     const others = Object.entries(m.views ?? {}).filter(([v]) => v !== m.home).map(([v, f]) => `${v} ${pct(f)}`);
     return `- ${m.id}: ${m.what}${m.panel ? `, on ${m.panel}` : ''}. ` +
@@ -160,12 +179,16 @@ export function measuredNote(measured) {
             `; the rest is behind ${m.hiddenBy ?? 'another part of the car'}.`) +
       (others.length ? ` Other views: ${others.join(', ')}.` : '');
   });
-  if (!lines.length) return null;
-  return 'Measured, not judged — the renderer that drew these pictures counted each piece\'s pixels in them:\n' +
-    lines.join('\n') +
-    '\nA piece measured whole is not cut off: do not list it in cut_off, and count a requirement that it be ' +
-    'whole or fully visible as present. Whether it reads, and whether it is where the brief wants it, is ' +
-    'still yours to judge.';
+  if (!lines.length && !striped.length) return null;
+  return [
+    ...(lines.length ? ['Measured, not judged — the renderer that drew these pictures counted each piece\'s pixels in them:\n' +
+      lines.join('\n') +
+      '\nA piece measured whole is not cut off: do not list it in cut_off, and count a requirement that it be ' +
+      'whole or fully visible as present. Whether it reads, and whether it is where the brief wants it, is ' +
+      'still yours to judge.'] : []),
+    ...(striped.length ? ['Measured, not judged — the fitment check followed each stripe over the car:\n' + striped.join('\n') +
+      '\nJudge a stripe from the top view, and count a requirement that it run nose to tail or over the wing as present.'] : []),
+  ].join('\n\n');
 }
 
 /**

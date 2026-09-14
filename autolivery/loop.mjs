@@ -141,6 +141,23 @@ function constraintsById(design) {
 }
 
 /**
+ * Each stripe a design declares, and whether the check found it whole: no
+ * high stripe-across, stripe-offset or stripe-gap. Told to the critic, as a
+ * piece measured whole is (see `measuredNote`). A low one is a panel too small
+ * to measure, and says nothing about the stripe the pictures show.
+ */
+function stripesOf(design, findings) {
+  const names = new Set();
+  for (const group of ['surfaces', 'paint']) {
+    for (const spec of Object.values(design?.[group] ?? {})) {
+      for (const r of spec.regions ?? []) if (typeof r?.constraints?.stripe === 'string') names.add(r.constraints.stripe);
+    }
+  }
+  return [...names].map((name) => ({ name,
+    clean: !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-') && f.severity !== 'low') }));
+}
+
+/**
  * What got looser between two sets of constraints. Every constraint in the
  * vocabulary is a floor (a number the placement must reach), a requirement
  * (true), or a name (a region to sit with, a stripe to be part of), so going
@@ -408,7 +425,22 @@ async function runRounds({
         case 'draft_design':
         case 'draft_fit': {
           const key = name === 'draft_design' ? 'design' : 'fit';
-          const ops = args?.[key];
+          let ops = args?.[key];
+          // The operations sent as a JSON string, as run 26's planner sent its
+          // whole first draft, wrapped in { "design": [...] }. Refused, it
+          // wrote the same 3,000 tokens again, a 27 s turn. Taken when the
+          // string is exactly that and nothing else; anything else is refused.
+          let parsed = false;
+          if (typeof ops === 'string') {
+            try {
+              const v = JSON.parse(ops);
+              const list = Array.isArray(v) ? v : Array.isArray(v?.[key]) ? v[key] : null;
+              if (list) {
+                ops = list;
+                parsed = true;
+              }
+            } catch { /* refused below */ }
+          }
           if (!Array.isArray(ops) || !ops.length) {
             return refuse(`${name} needs a non-empty "${key}" array of operations.`);
           }
@@ -416,7 +448,9 @@ async function runRounds({
           const r = await mcp.callTool('check_fitment', { proposal: candidate });
           if (r.isError) return refuse(`Refused, and the draft is unchanged: ${textOf(r)}`);
           draft[key] = candidate[key];
-          return ok(`Accepted ${ops.length} operation(s). The draft holds ${draft.design.length} design ` +
+          return ok(`Accepted ${ops.length} operation(s)` +
+            (parsed ? `, sent as a JSON string rather than an array; send "${key}" as the array itself next time` : '') +
+            `. The draft holds ${draft.design.length} design ` +
             `and ${draft.fit.length} fit operation(s). check_fitment on it now: ${JSON.parse(textOf(r)).verdict}`);
         }
         case 'reset_draft':
@@ -706,6 +740,7 @@ async function runRounds({
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
     const whole = wholeFor(measured, fitment?.findings ?? [], views);
+    const stripes = stripesOf(effective, fitment?.findings ?? []);
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
@@ -713,7 +748,7 @@ async function runRounds({
     let criticPass = false;
     if (images.length) {
       try {
-        verdict = overrule(await critic.judge({ brief: theBrief, summary, images, parent: span, measured }), whole);
+        verdict = overrule(await critic.judge({ brief: theBrief, summary, images, parent: span, measured, stripes }), whole);
         // Every requirement, not only the summary: a critic answered
         // matches_brief: true while its own notes said the team name was
         // nowhere on the car. And every cut-off piece, listed as data for the
@@ -755,7 +790,7 @@ async function runRounds({
         try {
           second = overrule(await (referee ?? critic).judge({
             brief: theBrief, summary, images: [...images, ...closeImages], parent: span, recheck: verdict, name: 'referee',
-            measured,
+            measured, stripes,
           }), whole);
           criticPass = passes(second);
         } catch (e) {

@@ -22,7 +22,7 @@
 // the editor, the MCP and a test all read the same ones.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, resolveRect, texture, metresNarrowest, metresAcross, spanPlacements, panel as panelOf, panelName, axesOf } from './profile.mjs';
+import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresNarrowest, metresAcross, spanPlacements, panel as panelOf, panelName, axesOf } from './profile.mjs';
 import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
@@ -1059,7 +1059,7 @@ function ringOverflow(placed, t, say) {
  */
 function outsideSafe(placed, profile, t, say) {
   for (const p of placed) {
-    if (p.region.safe === false) continue;
+    if (p.region.safe === false || wholeFill(p.region)) continue;
     const pan = p.frac.panel;
     if (!pan?.safe) continue;
     const inside = intersect(p.frac, rectOf(pan.safe));
@@ -2219,14 +2219,18 @@ const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, 
  * is seen through a hole is not: a stretch enclosed along the car by one
  * panel that dips more than OPENING_DEPTH below it, as the NSX's bonnet vent
  * does, is that panel's hole and gets no piece.
+ *
+ * With `side` 1 or -1 the band runs along the car's left or right flank
+ * instead, seen from that side, and `across` is [from, to] in millimetres up:
+ * a side skirt, where the stripe check holds a band along a flank too.
  */
-export function stripePanels(model, profile, role, across, { hide = [], painted = [] } = {}) {
+export function stripePanels(model, profile, role, across, { hide = [], painted = [], side = 0 } = {}) {
   const draw = drawing(profile, hide, [...painted, role]);
   const { F, L, noseZ } = carFrame(model, profile, draw);
-  const env = envelope(model, profile, 1, 1, draw);
+  const env = side ? envelope(model, profile, 0, side * L, draw) : envelope(model, profile, 1, 1, draw);
   const file = texture(profile, role).file.toLowerCase();
   const panels = seenPanels(profile, role);
-  const [lo, hi] = across.map((mm) => (mm / 1000) * L).sort((a, b) => a - b);
+  const [lo, hi] = across.map((mm) => (mm / 1000) * (side ? 1 : L)).sort((a, b) => a - b);
   const cols = [];
   for (let i = 0; i < env.cols; i++) {
     const c = env.c0 + (i + 0.5) * ENVELOPE_CELL;
@@ -2235,7 +2239,7 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
   const order = [...Array(env.rows).keys()];
   if (F > 0) order.reverse();
   const rows = order.map((j) => {
-    const row = { j, cells: [], h: 0, top: null };
+    const row = { j, cells: [], h: 0, top: null, hi: new Map() };
     const count = new Map();
     for (const i of cols) {
       const k = j * env.cols + i, m = env.M[k];
@@ -2243,6 +2247,7 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
       const pan = panelAtUv(panels, env.U[k], env.V[k], model.meshes[m].name);
       if (!pan) continue;
       row.cells.push(pan);
+      row.hi.set(pan, Math.max(row.hi.get(pan) ?? -Infinity, env.c0 + (i + 1) * ENVELOPE_CELL));
       row.h += env.H[k];
       count.set(pan, (count.get(pan) ?? 0) + 1);
     }
@@ -2280,9 +2285,10 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
     const here = new Map();
     for (const pan of r.cells) here.set(pan, (here.get(pan) ?? 0) + 1);
     for (const [pan, n] of here) {
-      const s = byPanel.get(pan) ?? { rows: [], widest: 0 };
+      const s = byPanel.get(pan) ?? { rows: [], widest: 0, tops: [] };
       s.rows.push(x);
       s.widest = Math.max(s.widest, n);
+      s.tops.push(r.hi.get(pan));
       byPanel.set(pan, s);
     }
   });
@@ -2293,6 +2299,14 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
       behindNose: [edgeMm(env.r0 + (rows[s.rows[0]].j + (F > 0 ? 1 : 0)) * ENVELOPE_CELL),
         edgeMm(env.r0 + (rows[s.rows.at(-1)].j + (F > 0 ? 0 : 1)) * ENVELOPE_CELL)],
       carriesMm: Math.round(s.widest * ENVELOPE_CELL * 1000),
+      // Seen from a side, how high the panel shows at its front end and its
+      // back one, the highest over the first and last 200 mm of it: where
+      // another panel stands in front of its top edge, lower than the panel
+      // reaches. Not the first few rows alone: on the NSX the curl of the
+      // front wing stands in front of the sill's first 60 mm, and read there
+      // the sill showed 100 mm lower than it does beside the door.
+      ...(side ? { seenTopMm: { front: Math.round(Math.max(...s.tops.slice(0, SEEN_TOP_ROWS)) * 1000),
+        back: Math.round(Math.max(...s.tops.slice(-SEEN_TOP_ROWS)) * 1000) } } : {}),
       // More than one cell of the grid each way, as a notch must be to be one.
       // Less is still a panel the band crosses, and was once filtered out
       // here, so a layout neither laid a piece on it nor said it had not.
@@ -2303,6 +2317,42 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
         : s.rows.length >= 2 && s.widest >= 2 ? {} : { measured: false }),
     }));
 }
+
+/** The car's length nose to tail in millimetres, over everything the picture draws. */
+export function carLength(model, profile) {
+  const env = envelope(model, profile, 1, 1);
+  return Math.round((env.r1 - env.r0) * 1000);
+}
+
+/**
+ * How far up the car its bodywork on `role`'s sheet begins, seen from its
+ * left (`side` 1) or right (-1), in millimetres: where a side skirt's band is
+ * measured up from. The lowest seen panel's cell of each stretch along the
+ * car, and the low end of those rather than the lowest, so one stray fitting
+ * hung under the sill does not move the band.
+ */
+export function flankBottom(model, profile, role, side, { hide = [], painted = [] } = {}) {
+  const draw = drawing(profile, hide, [...painted, role]);
+  const { L } = carFrame(model, profile, draw);
+  const env = envelope(model, profile, 0, side * L, draw);
+  const file = texture(profile, role).file.toLowerCase();
+  const panels = seenPanels(profile, role);
+  const lows = [];
+  for (let j = 0; j < env.rows; j++) {
+    for (let i = 0; i < env.cols; i++) {
+      const k = j * env.cols + i, m = env.M[k];
+      if (m < 0 || sheetOf(model, m) !== file || !panelAtUv(panels, env.U[k], env.V[k], model.meshes[m].name)) continue;
+      lows.push(env.c0 + i * ENVELOPE_CELL);
+      break;
+    }
+  }
+  if (!lows.length) return null;
+  lows.sort((a, b) => a - b);
+  return Math.round(lows[Math.floor(lows.length * 0.05)] * 1000);
+}
+
+/** How many rows of the side view, at the end of a panel, its seen top is read over: 200 mm. */
+const SEEN_TOP_ROWS = 10;
 
 /**
  * How far below the stripe a surface may be seen and still be the car's skin
