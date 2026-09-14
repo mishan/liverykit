@@ -215,6 +215,37 @@ test('an island just past an edge of the sheet is moved onto it, and a shifted b
   assert.ok(near(first('FLANGE').v, 0.994), `and its flange beside it: ${JSON.stringify(first('FLANGE'))}`);
 });
 
+test('every island straddling a sheet boundary is counted, including one no panel is left of', async () => {
+  // The count was taken over the panels. An island straddling a boundary on
+  // another copy of the sheet — the 180SX's, 60 sheets down — clamps to
+  // nothing in findIslands and never becomes one, so the log said nothing of
+  // exactly the islands that were lost.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [
+        cushion({ name: 'ON_SHEET', shift: [0, -0.5] }),     // v = -0.45 to 0.45
+        cushion({ name: 'OFF_SHEET', shift: [0, -1.5] }),    // v = -1.45 to -0.55
+        // A bolt head across v = 0, too few vertices to be measured as an
+        // island anywhere, so not one to count: a brushed-metal sheet on the
+        // S14 Zenki has 1,728 of them, and they buried the islands that matter.
+        {
+          name: 'BOLT', materialId: 1, indices: [0, 1, 2, 0, 2, 3],
+          verts: [vert(0, 0.5, 0, 0.3, -0.05), vert(0.1, 0.5, 0, 0.4, -0.05), vert(0.1, 0.5, 0.1, 0.4, 0.05), vert(0, 0.5, 0.1, 0.3, 0.05)],
+        },
+      ],
+      materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+      extraTextures: [{ name: 'seat.dds', width: 64, height: 64 }],
+    }));
+    const lines = [];
+    await profileFromKn5(file, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+    assert.match(lines.join('\n'), /! 2 island\(s\) straddle a sheet boundary \(2 on seat\.dds\)/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('placement on a tiled material is skipped and reported, and a fill still paints', async () => {
   const { profile, seat } = await profileWith({ repeat: 40 });
   const notes = [];
