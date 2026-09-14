@@ -2,26 +2,33 @@
 
 ## The problem
 
-`docs/backlog.md` opens with a measurement: `neon-grid-any` resolved against 25
+`docs/backlog.md` opens with a measurement: `neon-grid-any` resolved against 26
 cars it had never seen, profiled from scratch with no hand-work. The format
 held, the fit machinery held, and the fitment checker reported nothing fatal.
 What did not hold was the part that decides *where* a portable design lands:
 
-| what went wrong | on how many of 25 |
+| what went wrong | on how many of 26 |
 |---|---|
-| body bound to a texture with no UV islands at all | 2 (confidence 0.11 and 0.19) |
-| an `auto` binding painted with the same conviction at 0.19 as at 0.95 | every car with an auto body |
-| `[left, visible]` or `[right, visible]` matched no panel | 10 each |
+| body bound to a texture with no UV islands at all | 1 (`mclaren_mp412c_gt3`, confidence 0.04), and the 3 tiled cars |
+| body bound confidently to the wrong texture | 1 (`ac_legends_gt_porsche_906`, 0.88; see the backlog) |
+| an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
+| `[left, visible]` or `[right, visible]` matched no panel | 5 each, every one a car with a wrong body |
+| a `mid` selection matched nothing on a car with a right body | 5 |
 | `[shared, visible]` matched no panel | 18 |
 | a car whose paint is a tiled material, not an unwrapped sheet | 3 |
 | surfaces the design paints that were bound on arrival | 2 of 14 |
+
+These are the output of `tools/sweep.mjs` (step 0). The first version of this
+table was the hand sweep's, and two of its rows were wrong in ways the script
+showed: the flank misses were counted per region, twice per car, and the
+second "no islands" car had 47 panels on its body.
 
 Every one of these is a case of the tool doing something confidently that it
 had the information to doubt. The classifier had the island counts beside it.
 The resolver had the confidence in its hand. The tagger had the island's 3D
 extent and threw it away for a centroid. This plan is about making each of
 those pieces use what it already knows, and about making the number at the top
-of this table re-measurable, so that each fix is checked against the same 25
+of this table re-measurable, so that each fix is checked against the same 26
 cars rather than against an impression.
 
 The order below is deliberate. The harness comes first because nothing else can
@@ -30,8 +37,8 @@ cheap and the classifier fix depends on it. The two classifier items come before
 the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
-*Last checked against the code on 2026-09-13, at `d16e8a0`. None of it is built
-yet.*
+*Last checked against the code on 2026-09-13, at `d16e8a0`. Step 0 is built;
+steps 1 to 5 are not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -51,12 +58,21 @@ true.
   fine: it is statuses and counts, not assets.
 
 Two things it must establish. First, that it reproduces the backlog's figures
-on the same sample, or the difference is understood. The backlog sampled 26
-cars and profiled 25; the 26th had only a `<id>_LODA.kn5`, which the sampler's
-"not a LOD" filter threw away. The harness should either take a lone LOD model
-or name the car it skipped, not drop it the way the hand sweep did. Second,
-that it runs without a model on the machine for cars whose profile already
-exists, so that the checked-in profiles are part of the sweep too.
+on the same sample, or the difference is understood. Second, that it runs
+without a model on the machine for cars whose profile already exists, so that
+the checked-in profiles are part of the sweep too.
+
+**What it established.** Run on the engine as it stood when the backlog was
+written (`1562ef1`), the script reproduces the hand sweep's bindings exactly:
+20 confident bodies, 3 shaky, guesses at 0.11 and 0.19, tyres on 24 and brakes
+on 22. It differs in two places, both understood. It takes a lone
+`_LODA.kn5`, so `pm3dm_bmw_320i_stw` is swept and the sample is 26 cars, not
+25. And the hand sweep's "10 of 25" for the flank rules counted regions: the
+design has two `[left, visible]` regions, and five cars miss both. On today's
+engine the tag rules miss on the same cars, bar one — `ks_ferrari_sf15t` now
+has a visible shared panel — and the McLarens' margins fall to 0.04. The shipped
+profiles sweep with no model on the machine, and `test/sweep.test.mjs` does so
+in CI.
 
 Those three profiles give a baseline that needs no game content. Counting
 panels on each car's `body` binding, today:
@@ -79,6 +95,14 @@ only in the commit that introduced the fixture. That script has to come into
 carry `panels` and the `uvLayout` from step 1. Regenerating the fixture is the
 only step in this plan that needs the fleet on disk, so it should be done once,
 early, and the result committed.
+
+That script is now `tools/pack-fleet.mjs`, and the fixture was regenerated on
+2026-09-13 from a fresh survey of 252 cars (two ship no kn5). With visibility
+as it now measures, the classifier scores 189/193 on the held-out label. Two of
+the four misses are the Evora labels `docs/naming.md` already explains; the
+other two are `mclaren_mp412c_gt3` and `tando_buddies_180sx`, which are steps 2
+and 1 of this plan. `uvLayout` does not exist yet, so the fixture is packed
+again when step 1 lands; the survey takes a quarter of an hour.
 
 Three places rebuild classifier features from records instead of from a model:
 `survey.mjs` itself, `tools/evaluate.mjs`, which reads the survey's raw output,
@@ -171,10 +195,10 @@ and `--explain` builds a full profile before it explains.
   the ranking sees why a large, visible, symmetric texture is not on it.
 
 **What it must establish.** Re-run the survey and `tools/evaluate.mjs` with
-islands as an input. The figure to hold is 172/175 as the evaluator counts it,
-which is also what `test/classifier.test.mjs` was measured at. `docs/naming.md`
-quotes 174/175 after correcting two wrong labels, and that number is
-downstream of this one. It must not fall, and the two McLarens must move. Then
+islands as an input. The figure to hold is 189/193 as the evaluator counts it on
+the fixture regenerated in step 0; the old fixture measured 172/175.
+`docs/naming.md` quotes the figure after correcting two wrong labels, and that
+number is downstream of this one. It must not fall, and the two McLarens must move. Then
 `test/classifier.test.mjs` gets a third test: a feature set copied from one of
 the two, in which the correct answer is now ranked first. The synthetic
 fixture covers the mechanism with a car whose largest, most visible texture
@@ -239,14 +263,17 @@ the floor is a number too.
 
 ## 4. Tag selections that match nothing
 
-**Symptom.** `[left, visible]` and `[right, visible]` matched no panel on 10
-of 25 cars each, so a portable design's flank lettering landed nowhere on 40%
-of the fleet. `[shared, visible]` matched nothing on 18.
+**Symptom.** With the wrong-body cars set aside, `[left, visible]` and
+`[right, visible]` landed on every car in the sweep. What misses is `mid`:
+`[left, mid, upper, visible]` matched nothing on 5 cars with a right body and
+`[right, mid, upper, visible]` on 4, and on six of those nine the tag that
+emptied the selection was `mid`. `[shared, visible]` matched nothing on 18, 13
+of them with a right body.
 
-**Causes, which want separating before any of them is chased.** Some of these
-cars are the wrong-body cases fixed above. The rest are cars whose body panels
-genuinely carry neither tag, and there are at least three ways that happens in
-`computeTags`:
+**Causes.** The five cars with a wrong body miss every tag rule, and steps 1
+to 3 are what fix them; their misses say nothing about tagging. The rest are
+cars whose body panels genuinely lack a tag, and there are three ways that
+happens in `computeTags`:
 
 - **Section and level are read off the centroid.** `mid` is the band from 0.38
   to 0.62 of the car's length, and a panel is `mid` only if its centroid falls
@@ -259,7 +286,9 @@ genuinely carry neither tag, and there are at least three ways that happens in
 - **`visible` is a threshold at 0.5.** A low, wide car whose flank curls under
   can score 0.45 and lose the tag while being the most visible thing on the
   car. The number is a fraction of sampled viewpoints, which is not the same
-  question as "can a spectator read it".
+  question as "can a spectator read it". But in the sweep `visible` was the
+  tag that emptied a selection on no car at all, so this is a possible cause
+  with no case behind it yet.
 - **`shared` is a fact about instancing, not a side.** The portable design uses
   it as a third side, to catch a road car whose flanks are mirrored onto the
   same texels. On a car with no instanced bodywork it matches nothing, which is
@@ -292,16 +321,16 @@ genuinely carry neither tag, and there are at least three ways that happens in
   both fits that records which panel every tag-selected region resolves to,
   written before the tagging changes. Where a pick changes, the fit gets an
   explicit `panel` or is re-fitted by eye; it is never left to drift.
-- **Diagnose a miss before changing `visible`.** The sweep in step 0 records,
-  for every `no-match`, the count of panels matching each subset of the tags:
-  `left` 14, `visible` 22, both 0. That is the nearest-miss explanation, and
-  it says whether the missing tag was `mid`, `visible` or `left` on each of
-  the 10 cars. Put the same line in the `no-match` note text and in the
+- **Give every miss its near-miss explanation.** The sweep already records
+  one for each `no-match`, from `nearMiss` in `src/profile.mjs`: how many
+  panels carry each tag alone, how many match with each tag dropped, and which
+  tag emptied the selection. That is how the sweep knows it was `mid` and not
+  `visible`. Put the same line in the `no-match` note text and in the
   portability report, whose `why` today says only that no panel carries the
   tags, because a person hitting this on a car of their own needs the same
-  answer. Only after that is read should the visibility threshold be touched,
-  and if it is, it should be re-measured on the same 10 cars rather than
-  nudged.
+  answer. Leave the visibility threshold alone until a sweep shows `visible`
+  emptying a selection, and then re-measure it on those cars rather than
+  nudging it.
 - **Let a region say a miss is expected.** `optional: true` on a region turns
   its `no-match` from a reported skip in the build into a silent one. The
   portable example's `[shared, visible]` rule is exactly this: it exists for
@@ -318,10 +347,10 @@ genuinely carry neither tag, and there are at least three ways that happens in
 
 **What it must establish.** The synthetic fixture gets an island spanning two
 sections; the tag test asserts it carries both. The picks test above passes,
-or every change it reports is resolved in the fit. The sweep's `[left,
-visible]` miss count is recorded before and after, per cause, alongside the
-shipped profiles' baseline from step 0, and the backlog entry is rewritten
-with the new numbers rather than deleted.
+or every change it reports is resolved in the fit. The sweep's `mid` miss
+counts on cars with a right body, 5 and 4 today, are recorded before and after,
+alongside the shipped profiles' baseline from step 0, and the backlog entry is
+rewritten with the new numbers rather than deleted.
 
 ## 5. Binding more of the vocabulary
 
