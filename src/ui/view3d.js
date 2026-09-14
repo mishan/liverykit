@@ -1729,6 +1729,9 @@ export function createViewer(canvas) {
         ...g, centre: centreOf(g, model.positions, model.indices),
       }));
       if (!groups.length) groups = null;
+      // The hover focus was chosen on the groups just replaced. Carried
+      // across, it put the new view in shadow with nothing hovered.
+      focus = null;
       draw();
       // Handed back rather than logged, so the caller can put it on screen. A
       // viewer that cannot draw part of the car should say so where the person

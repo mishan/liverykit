@@ -3604,6 +3604,19 @@ test('an emissive sheet adds light instead of covering what is behind it', async
   assert.match(pass, /else gl\.blendFunc\(gl\.SRC_ALPHA, gl\.ONE_MINUS_SRC_ALPHA\);/);
 });
 
+test('a new whole-car view does not keep the last one\'s hover dim', async () => {
+  // `focus` is the files a Bindings row lit on the groups that were showing.
+  // setWholeCar replaces the groups, and a focus carried across put the new
+  // view in shadow with nothing hovered to explain it.
+  //
+  // Read out of the source because the alternative is a GPU.
+  const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
+  const whole = src.slice(src.indexOf('async setWholeCar('), src.indexOf('setFocus(files) {'));
+  const after = whole.slice(whole.indexOf('groups = (model.groups ?? [])'));
+  assert.match(after.slice(0, after.indexOf('draw();')), /focus = null;/,
+    'the focus goes with the groups it was chosen on, before the new ones are drawn');
+});
+
 test('the car is drawn on an opaque canvas, not a translucent one', async () => {
   // Fragment alpha in this viewer means "composite me over what is behind me
   // IN THE SCENE" — glass over bodywork, a plate's emissive twin over the
