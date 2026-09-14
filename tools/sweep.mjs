@@ -240,6 +240,7 @@ function sweepOne(profile) {
     role: g.role,
     kind: g.kind,
     ...(g.tags ? { tags: g.tags } : {}),
+    ...(g.optional ? { optional: true } : {}),
     status: g.status,
     panels: g.panels.length,
     ...(g.status === 'missing' && g.kind === 'tags' ? { nearMiss: nearMiss(profile, g.role, g.tags) } : {}),
