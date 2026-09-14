@@ -235,6 +235,7 @@ async function checkAgainst(car) {
   const matched = r.regions.filter((x) => x.status === 'matched');
   const absent = (r.surfaces ?? []).filter((s) => s.status === 'absent');
   const invalid = (r.surfaces ?? []).filter((s) => s.status === 'invalid');
+  const optional = r.regions.filter((x) => x.status === 'optional');
 
   el.innerHTML = [
     `<div class="hint">${matched.length} of ${r.regions.length} regions land on
@@ -251,6 +252,14 @@ async function checkAgainst(car) {
     absolute.length
       ? `<div class="hint">${absolute.length} placed by coordinate, so they land somewhere on
          every car and nothing here can say whether it is the right somewhere.</div>`
+      : '',
+    // Counted rather than named: the design said these may find nothing, so
+    // they are not something to go and change, but they are part of what the
+    // design does on this car, and leaving them out would make the count above
+    // look like the whole story.
+    optional.length
+      ? `<div class="hint">${optional.length} optional region${optional.length === 1 ? '' : 's'} found
+         nothing here, as the design allows.</div>`
       : '',
   ].join('');
 }
@@ -2246,6 +2255,7 @@ async function setPlacement(id, mode) {
     remember(`pin ${id}`);
     delete region.tags;
     delete region.limit;
+    delete region.optional;
     region.panel = panel;
     said = `${id} is pinned to ${panel} — exact here, absent on any other car`;
   } else {

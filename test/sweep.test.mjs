@@ -385,21 +385,30 @@ test('the sweep runs on the shipped profiles with no model on the machine', () =
   }
 
   // A road car mirrors its flanks onto shared texels; the NSX does not, so
-  // the design's `[shared, visible]` rule finds nothing there — and the near
-  // miss has to say it was `shared`, not `visible`, that did it.
+  // the design's `[shared, visible]` rule finds nothing there — which the
+  // design marks optional, so it is expected, and counted apart from a miss.
   const rule = (id, tags) => records.find((r) => r.id === id).regions
     .filter((g) => g.kind === 'tags' && String(g.tags) === String(tags));
   assert.ok(rule('abarth500', ['shared', 'visible']).some((g) => g.status === 'matched'));
   const nsx = rule('ac_friends_honda_nsx_gt3_evo', ['shared', 'visible']);
-  assert.ok(nsx.length && nsx.every((g) => g.status === 'missing'));
-  assert.equal(nsx[0].nearMiss.each.shared, 0);
-  assert.equal(nsx[0].nearMiss.blocking, 'shared');
+  assert.ok(nsx.length && nsx.every((g) => g.status === 'optional'));
 
   assert.match(stdout, /shipped profiles, as they stand/);
-  assert.match(stdout, /surfaces\.body \[shared, visible\] matched nothing on \d of 3 — blocked by shared/);
+  assert.match(stdout, /surfaces\.body \[shared, visible\] found nothing on 2 of 3, as its design allows \(optional\)/);
 
   // And the table can be read back without sweeping again.
   const table = (s) => s.slice(s.indexOf('neon-grid-any on')).trim();
   const again = await run(process.execPath, [tool('sweep.mjs'), 'neon-grid-any', '--out', out, '--summary']);
   assert.equal(table(again.stdout), table(stdout));
 }));
+
+test('the summary counts an optional miss apart from a real one', () => {
+  const car = (id, status) => ({
+    id, from: 'kn5', textures: 30, panels: 40,
+    bindings: { body: { roles: ['b'], source: 'auto', confidence: 0.9, panels: 20 } },
+    surfaces: [{ from: 'surfaces.body', status: 'present' }],
+    regions: [{ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], status }],
+  });
+  const lines = summarise([car('a', 'matched'), car('b', 'optional'), car('c', 'optional')]).join('\n');
+  assert.match(lines, /\[shared, visible\] found nothing on 2 of 3, as its design allows \(optional\)/);
+});

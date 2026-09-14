@@ -120,15 +120,19 @@ export function summarise(records) {
     for (const g of r.regions ?? []) {
       if (g.kind !== 'tags') continue;
       const key = `${g.from} [${g.tags.join(', ')}]`;
-      const seen = mine.get(key) ?? { matched: false, blocking: new Set() };
+      const seen = mine.get(key) ?? { matched: false, optional: false, blocking: new Set() };
       if (g.status === 'matched') seen.matched = true;
+      else if (g.status === 'optional') seen.optional = true;
       else seen.blocking.add(g.status === 'unplaceable' ? 'a tiled material' : blockedBy(g.nearMiss));
       mine.set(key, seen);
     }
     for (const [key, seen] of mine) {
-      const rule = rules.get(key) ?? { cars: 0, missed: [], blocking: new Map() };
+      const rule = rules.get(key) ?? { cars: 0, missed: [], expected: 0, blocking: new Map() };
       rule.cars++;
-      if (!seen.matched) {
+      // A miss the design marked optional is counted apart: it is what the
+      // design says it will do on that car, not a failure of the tagger.
+      if (!seen.matched && seen.optional && !seen.blocking.size) rule.expected++;
+      else if (!seen.matched) {
         rule.missed.push(r.id);
         for (const b of seen.blocking) rule.blocking.set(b, (rule.blocking.get(b) ?? 0) + 1);
       }
@@ -136,6 +140,10 @@ export function summarise(records) {
     }
   }
   for (const [key, rule] of [...rules].sort(([a], [b]) => a.localeCompare(b))) {
+    if (rule.expected && !rule.missed.length) {
+      lines.push(`${key} found nothing on ${rule.expected} of ${rule.cars}, as its design allows (optional)`);
+      continue;
+    }
     if (!rule.missed.length) { lines.push(`${key} matched on all ${rule.cars}`); continue; }
     const why = [...rule.blocking].sort((a, b) => b[1] - a[1]).map(([t, c]) => `${t} ${c}`).join(', ');
     lines.push(`${key} matched nothing on ${rule.missed.length} of ${rule.cars} — blocked by ${why}`);
