@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { parseKn5Buffer, vertex } from '../src/engine/kn5.mjs';
+import { safeWithin } from '../src/engine/visibility.mjs';
 import { resolveTargets, expandRegions } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
 import { fitment } from '../src/fitment.mjs';
@@ -155,6 +156,27 @@ test('an island is moved back onto the sheet only when it fits wholly on another
   assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
   assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
     'a mesh with nothing to move reads exactly as stored');
+});
+
+test('a readable area never reaches off its panel', () => {
+  // The two real cases: the 458 GT2's rear glass overhangs the sheet at the
+  // top, and the MX-5 Cup's belts left a degenerate area off it entirely. Both
+  // profiles were refused by validateProfile.
+  assert.deepEqual(safeWithin([0.6278, -0.0133, 0.2922, 0.239], [0.6278, 0, 0.2997, 0.2289]),
+    [0.6278, 0, 0.2922, 0.2257]);
+  assert.equal(safeWithin([-0.6216, 0.9981, 0, 0], [0, 0.7615, 1, 0.2366]), null);
+  // And the Morgan's steering wheel, 0.0003 off the sheet: inside the rounding
+  // slack of its panel, and still refused until it is clamped onto the sheet.
+  assert.deepEqual(safeWithin([-0.0003, 0.0005, 0.999, 0.9689], [0, 0.0005, 0.9987, 0.999]),
+    [0, 0.0005, 0.9987, 0.9689]);
+  // And an area already on its panel is returned as it came, so no profile
+  // whose islands sit on the sheet changes by a digit.
+  const inside = [0.1, 0.2, 0.3, 0.4];
+  assert.equal(safeWithin(inside, [0.1, 0.2, 0.30004, 0.4]), inside);
+  // Including one that only rounding puts past its panel's edge, which the
+  // Abarth's rims have: 0.3895 tall against a panel ending 0.0001 short of it.
+  const rounded = [0.1, 0.2, 0.3002, 0.4];
+  assert.equal(safeWithin(rounded, [0.1, 0.2, 0.3, 0.4]), rounded);
 });
 
 test('a car unwrapped one sheet down profiles exactly like the same car unshifted', async () => {
