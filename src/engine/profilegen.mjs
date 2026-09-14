@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
-import { uvLayout } from './uvlayout.mjs';
+import { uvLayout, SHEET_SPAN } from './uvlayout.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, propose, SCORABLE } from './classify.mjs';
@@ -493,7 +493,17 @@ export async function profileFromKn5(path, {
     }
 
     const islands = findIslands(model, meshes, { minVertices });
-    const total = islands.reduce((s, i) => s + i.uvArea, 0) || 1;
+    // `minPanelArea` is a share of the sheet's island area, and an island that
+    // spans more than one sheet is not sheet: it repeats the image, and its UV
+    // area counts every repeat. One 111-vertex strip on the mp412c's chassis
+    // runs 1,222 sheets wide, carries 11,123 of the texture's 11,124 units of
+    // UV area, and left the car's paint with one panel of 102 — measured 14%
+    // visible on that one, so the classifier passed the paint over. Such
+    // islands stay out of the total. A texture made of nothing else keeps the
+    // old total, so a pure tiling material reads as it always did.
+    const repeats = (i) => i.uv.u1 - i.uv.u0 > SHEET_SPAN || i.uv.v1 - i.uv.v0 > SHEET_SPAN;
+    const onSheet = islands.filter((i) => !repeats(i)).reduce((s, i) => s + i.uvArea, 0);
+    const total = onSheet || islands.reduce((s, i) => s + i.uvArea, 0) || 1;
     const keep = islands.filter((i) => i.uvArea / total >= minPanelArea);
     // An island that straddles a sheet boundary is drawn by the game wrapped
     // across the image's edge, and it is the one kind placeOnSheet cannot bring
@@ -622,7 +632,7 @@ export async function profileFromKn5(path, {
     if (vals.length) visibleByFile.set(textures[role].file, vals.reduce((a, b) => a + b, 0) / vals.length);
   }
 
-  const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile });
+  const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile, panels });
   const bind = {};
   for (const term of SCORABLE) {
     const p = propose(features, term);
