@@ -97,6 +97,21 @@ test('every nth car starts with the first, so the sample is stable', () => {
   assert.deepEqual(everyNth(['a', 'b', 'c', 'd', 'e'], 2), ['a', 'c', 'e']);
 });
 
+const sweep = (...args) => run(process.execPath, [tool('sweep.mjs'), ...args]);
+
+test('the summary refuses a sweep it cannot find, rather than printing an empty table', () => inTmp(async (dir) => {
+  // A mistyped --out printed nothing and exited 0, which reads as a sweep of
+  // no cars rather than as no sweep at all.
+  const missing = join(dir, 'swep.json');
+  await assert.rejects(sweep('neon-grid-any', '--out', missing, '--summary'), /no sweep at .*swep\.json/);
+  const empty = join(dir, 'empty.json');
+  await writeFile(empty, '[]');
+  await assert.rejects(sweep('neon-grid-any', '--out', empty, '--summary'), /holds no sweep records/);
+  await writeFile(empty, '{}');
+  await assert.rejects(sweep('neon-grid-any', '--out', empty, '--summary'), /not a sweep/);
+  await assert.rejects(sweep('neon-grid-any', '--out', empty, '--summary', '--fresh'), /--summary.*--fresh/);
+}));
+
 test('the summary counts a rule as missed only where it landed nowhere', () => {
   const car = (id, body, regions) => ({
     id, from: 'kn5', textures: 30, panels: 40,
