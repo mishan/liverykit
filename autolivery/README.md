@@ -23,8 +23,13 @@ export ANTHROPIC_API_KEY=...
 export AGENTOPS_API_KEY=...              # optional
 
 node bin/liverykit.mjs autolivery-nsx --ui          # the editor, in another terminal
-node autolivery/bin.mjs "Gulf-style, number 85, Neon Doll Racing, number readable from trackside"
+node autolivery/bin.mjs "Gulf-style, number 85, Neon Doll Racing, number readable from trackside" \
+  --critic-model claude-sonnet-5
 ```
+
+The critic is the planner's model unless told otherwise. On the critic eval
+below, Sonnet 5 agreed with a person as often as Opus 5 at half the price, so
+the example asks for it.
 
 `autolivery-nsx` is the Honda NSX GT3 Evo in grey primer and nothing else. The
 editor needs the car's own `.kn5` for the 3D views, and so does the loop, because
@@ -181,7 +186,9 @@ paid run finds a new one. The renders stay in `runs/`, which is not committed, s
 case whose pictures are missing is skipped, and a run that judged none fails. On
 its first run the local critic agreed with the person on 2 of 8. It called a whole
 roundel "cut off" in 4 of the 6 cases that had one, and those false alarms account
-for most of the wasted rounds.
+for most of the wasted rounds. Claude as the critic (`--critic-backend anthropic`)
+agreed on 7 of 8, Opus 5 and Sonnet 5 alike; both missed a stripe drawn across the
+car where the brief meant one along it.
 
 ## The trust boundary
 
