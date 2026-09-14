@@ -776,6 +776,7 @@ export function bindingsReport(profile) {
       status: b.status,
       source: b.source,
       confidence: b.confidence,
+      evidence: b.evidence ?? null,
       roles: b.roles,
       files: b.roles.map((r) => profile.textures?.[r]?.file).filter(Boolean),
     };

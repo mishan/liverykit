@@ -427,6 +427,14 @@ export function rank(features, term = 'body') {
       `Unknown vocabulary term "${term}". Known terms: ${Object.keys(VOCABULARY).join(', ')}.`
     );
   }
+  // The kit is not ranked either, but it is proposed, by name. Telling a
+  // person to bind it by hand stopped being true once --skins named it.
+  if (Object.hasOwn(DRIVER_KIT, term)) {
+    throw new Error(
+      `Vocabulary term "${term}" is not ranked: it is named from the skins folder by AC's exact filenames ` +
+      `(${DRIVER_KIT[term].join(', ')}), so pass --skins <car>/skins.`
+    );
+  }
   // Distinct from "no such term": this one is real, it just has no measurement
   // behind it yet, and inventing one would be worse than saying so.
   if (!spec.score) {
@@ -596,6 +604,51 @@ export function proposalNotes(features) {
   return proposeInOrder(features).notes;
 }
 
+/**
+ * The driver's and the pit crew's kit, by the exact filenames AC ships.
+ *
+ * These live in separate kn5 files, not the car's, so nothing about them can be
+ * measured from the car; the only evidence is which files its skins carry. The
+ * names are AC's own, fixed spellings rather than a modder's choice, so for
+ * these four a name is acceptable evidence. It has to be the exact name, not a
+ * pattern: guessRole in scan.mjs calls anything with "driver" in it a suit and
+ * anything with "pit" in it crew, which names a role well enough and would bind
+ * crew_helmet_color.dds as a helmet and Lumirank_Driver_ID.dds as a suit.
+ *
+ * On the 252 surveyed cars: ac_crew.dds on 213, a suit on 45, gloves on 41, a
+ * helmet on 43. A car that ships two (a 2016 suit and an older one) gets both
+ * bound, since whichever driver model it loads, that one should be painted.
+ */
+export const DRIVER_KIT = {
+  helmet: ['helmet_2012.dds', 'helmet_1975.dds', 'helmet_1969.dds', 'helmet_1985.dds', 'helmet_2019.dds'],
+  suit: ['2016_suit_diff.dds', 'driver_suit2.dds', 'driver_suit.dds'],
+  gloves: ['2016_gloves_diff.dds', 'driver_gloves.dds'],
+  crew: ['ac_crew.dds'],
+};
+
+/**
+ * Bindings for the driver kit, from a profile's `textures`.
+ *
+ * `evidence: "name"` in place of a confidence, because nothing was ranked and a
+ * made-up number beside measured ones would read as a measurement. The resolver
+ * and the Bindings panel say "named" where they would print a confidence.
+ */
+export function proposeDriverKit(textures = {}) {
+  const bind = {};
+  for (const [term, names] of Object.entries(DRIVER_KIT)) {
+    const roles = Object.entries(textures)
+      .filter(([, t]) => names.includes(String(t?.file).toLowerCase()))
+      .map(([role]) => role);
+    if (roles.length) bind[term] = { roles, source: 'auto', evidence: 'name' };
+  }
+  return bind;
+}
+
+/** Everything a profile proposes: the measured terms, then the named kit. */
+export function proposeBindings(features, textures) {
+  return { ...proposeAll(features), ...proposeDriverKit(textures) };
+}
+
 const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
 
 /**
@@ -606,6 +659,7 @@ const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
  * without them.
  */
 export function explain(features, term = 'body', { limit = 8 } = {}) {
+  if (Object.hasOwn(DRIVER_KIT, term)) return explainKit(features, term);
   const ranked = rank(features, term);
   const spec = VOCABULARY[term];
   const lines = [];
@@ -706,6 +760,27 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
     lines.push('  ! Visibility was not computed. It is the signal that separates bodywork');
     lines.push('    from engine bays and interior occlusion maps — 90% accurate without it,');
     lines.push('    98% with. Regenerate with visibility enabled before trusting this.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * --explain for a driver-kit term, which is named rather than ranked: what it
+ * looks for, and what on this car it found. Every role in `features` carries
+ * its file, a skin-only one included, so this names what the generator would.
+ */
+function explainKit(features, term) {
+  const named = proposeDriverKit(Object.fromEntries(features.map((f) => [f.role, { file: f.file }])))[term];
+  const lines = [
+    `${term} — ${VOCABULARY[term].describes}`,
+    '  Not ranked: named from the skins folder by AC\'s exact filenames, which --skins scans.',
+    `  It looks for: ${DRIVER_KIT[term].join(', ')}.`,
+  ];
+  if (named) {
+    lines.push(`  named here: ${named.roles.map((r) => `${r} (${features.find((f) => f.role === r).file})`).join(', ')}`);
+  } else {
+    lines.push('  none of this car\'s textures has one of those names. If this was run without');
+    lines.push('  --skins <car>/skins, the skins\' own files were not seen; pass it.');
   }
   return lines.join('\n');
 }

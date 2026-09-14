@@ -592,6 +592,38 @@ here tells apart. The sweep's cars now arrive with 3 to 4 of `neon-grid-any`'s
 14 surfaces bound, a mean of 4.0 where it was 2.0. Nothing else in the sweep
 moved.
 
+**Built, the driver kit.** `DRIVER_KIT` in `classify.mjs` holds AC's exact
+filenames, lowercased. `proposeDriverKit` binds every texture role whose file
+is one of them, which comes to:
+- `ac_crew.dds` on 213 of the 252 surveyed cars;
+- a suit on 45;
+- gloves on 41;
+- a helmet on 43.
+
+A car shipping two suits for two driver models gets both, since whichever
+model it loads should be painted. The binding carries `evidence: "name"` in
+place of a confidence, and `validateBind` accepts no other value. The
+resolver's note, the Bindings panel and the fleet summary each say "named"
+where they would print a confidence, and the summary keeps named terms out of
+its confidence means. The generator and `--explain --all` share
+`proposeBindings`, so the pasted block still matches a regeneration.
+
+On the RSS4, whose four kit bindings a person made by hand, the rule names
+the same four files. It is exact-name only, not a pattern: the tests bind
+none of `crew_helmet_color.dds`, `Helmet_2012_Glass.dds` or the NSX's
+`Lumirank_Driver_ID.dds`.
+
+With it, `portability()` now separates `unbound` from `absent`. A design
+surface this car will not paint was reported `absent` either way, so a car
+nobody had bound read as a car without rims. Now `absent` is only what a
+person confirmed, and `unbound` carries a `why` pointing at `--explain --all`
+and the Bindings panel. The editor's "On another car" panel says which.
+
+In the sweep, `crew` is named on 20 of the 26 cars. `gloves`, `helmet` and
+`suit` are each named on 4. `neon-grid-any` now arrives with 3 to 8 of its 14
+surfaces bound, a mean of 5.2, where it was 4.0 with the scorers alone and 2.0
+before step 5. Nothing else in the summary moved.
+
 **Built, the one-pass half.** `--explain --all` prints the three scored terms'
 rankings, names the seventeen that are bound by hand, and ends with the `bind`
 block. The block is the generator's own proposal, from `proposeAll` in
@@ -689,7 +721,7 @@ updated. Sweep before and after.
 proposed from exact skin filenames, `--explain --all`, the editor's Bindings
 panel on a route of its own. The last two went in first, as the paragraph
 below said they should. The scorers followed, measured at 91% and 74% on
-held-out labels.
+held-out labels, and then the driver kit, named from AC's own filenames.
 
 Steps 1 through 4 are each a day or two, and they run in order: step 2 reads
 step 1's `uvLayout`, and step 3's measurement meant something only once step 2

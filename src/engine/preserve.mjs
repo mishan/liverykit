@@ -27,6 +27,8 @@
 // alias names texels, not a generated string.
 // ---------------------------------------------------------------------------
 
+import { proposeDriverKit } from './classify.mjs';
+
 /** Blocks that are pure human judgement, with nothing for a model to say. */
 const HANDWRITTEN_BLOCKS = ['leaveStock', 'notes'];
 
@@ -52,6 +54,7 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
     roles: [], blocks: [], sizes: [], panels: [], aliases: 0, moved: [], gone: [],
     name: null, skinOnly: [], dangling: [], textureNotes: [], notesMoved: [], notesLost: [],
     folded: [], respelled: [],
+    kitNamed: [], autoDropped: [],
   };
   if (!prior) return report;
 
@@ -60,12 +63,14 @@ export function preserveHandwork(profile, prior, { skinsGiven = false } = {}) {
   // BEFORE the panels and the aliases, both of which skip a role the profile
   // does not define — a role restored after them would come back bare.
   preserveSkinOnlyRoles(profile, prior, report, skinsGiven);
+  nameKitOnRestored(profile, report);
   preserveBlocks(profile, prior, report);
   preserveTextureSizes(profile, prior, report);
   preserveTextureNotes(profile, prior, report);
   preserveUnmeasuredPanels(profile, prior, report);
   preserveAliases(profile, prior, report);
   dropDanglingBindings(profile, report);
+  reportDroppedAuto(profile, prior, report);
   return report;
 }
 
@@ -105,6 +110,45 @@ function preserveSkinOnlyRoles(profile, prior, report, skinsGiven) {
     if (panels && Object.keys(panels).length) (profile.panels ??= {})[role] = structuredClone(panels);
     else (profile.panels ??= {})[role] ??= {};
     report.skinOnly.push({ role, file: was.file });
+  }
+}
+
+/**
+ * The driver kit, named again on the roles just put back.
+ *
+ * A kit binding is named from the skins' filenames, so a run without --skins
+ * names none, and the merge keeps only what a person confirmed. The prior's
+ * `crew`, named from ac_crew.dds, was dropped while the role it named was
+ * put back above, and the car stopped painting its crew with nothing said
+ * but "kept 1 role(s)". The roles put back still carry their filenames, which
+ * are the whole of the evidence, so the same rule names them again. A term
+ * the merge already holds is left as it is.
+ */
+function nameKitOnRestored(profile, report) {
+  if (!report.skinOnly.length) return;
+  const restored = Object.fromEntries(report.skinOnly.map(({ role }) => [role, profile.textures[role]]));
+  for (const [term, entry] of Object.entries(proposeDriverKit(restored))) {
+    if (profile.bind?.[term]) continue;
+    (profile.bind ??= {})[term] = entry;
+    report.kitNamed.push(term);
+  }
+  // In the merge's order, so the file reads the same as one written with --skins.
+  if (report.kitNamed.length) {
+    profile.bind = Object.fromEntries(Object.entries(profile.bind).sort(([a], [b]) => a.localeCompare(b)));
+  }
+}
+
+/**
+ * Automatic bindings the prior had and this run did not propose again.
+ *
+ * Measurement wins, so they go. But a term that was bound and now is not is a
+ * surface a design stops painting, and the kit above went exactly this way
+ * without a word, so each is named with the roles it held.
+ */
+function reportDroppedAuto(profile, prior, report) {
+  for (const [term, entry] of Object.entries(prior.bind ?? {})) {
+    if (entry?.source === 'human' || profile.bind?.[term]) continue;
+    report.autoDropped.push({ term, roles: Array.isArray(entry?.roles) ? [...entry.roles] : [] });
   }
 }
 
@@ -471,6 +515,9 @@ export function describeHandwork(report, source) {
     out.push(`  kept ${report.skinOnly.length} role(s) only a skins folder knows about, ` +
       'because this run had none to look at:');
     for (const s of report.skinOnly) out.push(`    ${s.role}  (${s.file})`);
+    if (report.kitNamed.length) {
+      out.push(`    and named the driver kit on them again from AC's filenames: ${report.kitNamed.join(', ')}`);
+    }
     out.push('    Pass --skins <car>/skins to measure them again instead.');
   }
   if (report.dangling.length) {
@@ -479,6 +526,10 @@ export function describeHandwork(report, source) {
     for (const d of report.dangling) {
       out.push(`    ${d.term} -> ${d.roles.join(', ')}${d.source === 'human' ? '  (confirmed by hand — worth a look)' : ''}`);
     }
+  }
+  if (report.autoDropped.length) {
+    out.push(`  ${report.autoDropped.length} automatic binding(s) in ${source} were not proposed this time, and are gone:`);
+    for (const d of report.autoDropped) out.push(`    ${d.term} -> ${d.roles.join(', ')}`);
   }
   return out;
 }

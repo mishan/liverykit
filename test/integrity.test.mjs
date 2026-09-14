@@ -733,6 +733,41 @@ test('asking for a surface the car lacks is a reported no-op, not a failure', as
   assert.match(notes.find((n) => n.term === 'floor').text, /not bound on this car/);
 });
 
+test('an unbound driver-kit term is sent to the skins folder, not to --explain', async () => {
+  // --explain throws for the kit: nothing measures a helmet, and the four are
+  // named from the files AC's skins carry. The note sent people there anyway.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, helmet: spec, crew: spec } },
+  );
+  for (const term of ['helmet', 'crew']) {
+    const n = notes.find((x) => x.term === term);
+    assert.equal(n.status, 'unbound');
+    assert.doesNotMatch(n.text, /--explain/, term);
+    assert.match(n.text, /skins folder's filenames.*--skins.*by hand/, term);
+  }
+});
+
+test('an unbound term the classifier does not score is sent to the profile, not to --explain', async () => {
+  // --explain throws for a term with no scoring rule, and `floor` has none:
+  // the note sent people to a command that could only refuse them.
+  const { resolveTargets } = await import('../src/profile.mjs');
+  const { SCORABLE } = await import('../src/engine/classify.mjs');
+  const scored = SCORABLE.find((t) => t !== 'body');
+  assert.ok(scored && !SCORABLE.includes('floor'), 'the test needs one scored term and floor unscored');
+  const { notes } = resolveTargets(
+    carWith({ body: { roles: ['chassis'], source: 'human' } }),
+    { name: 'L', surfaces: { body: spec, floor: spec, [scored]: spec } },
+  );
+  const floor = notes.find((n) => n.term === 'floor').text;
+  assert.doesNotMatch(floor, /--explain/);
+  assert.match(floor, /bind it by hand in cars\/car\.json/);
+  const ranked = notes.find((n) => n.term === scored).text;
+  assert.match(ranked, /--explain <kn5> --all/, scored);
+  assert.match(ranked, /Bindings panel/, scored);
+});
+
 test('an unconfirmed binding is used, and said out loud', async () => {
   const { resolveTargets } = await import('../src/profile.mjs');
   const { targets, notes } = resolveTargets(

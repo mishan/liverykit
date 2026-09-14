@@ -398,6 +398,44 @@ test('a regeneration without --skins keeps the roles only skins know about', () 
   assert.deepEqual(said.skinOnly, []);
 });
 
+test('a regeneration without --skins names the driver kit again on the roles it kept', async () => {
+  // Without --skins the fresh profile has no kit roles, so nothing named the
+  // kit, and the merge keeps only what a person confirmed: the prior's crew,
+  // named from ac_crew.dds, was dropped while the crew ROLE was put back, and
+  // surfaces.crew went from bound to unbound with nothing said. 213 of the
+  // surveyed cars ship ac_crew.dds.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { mergeBindings, validateProfile } = await import('../src/profile.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-kit-'));
+  try {
+    await writeFile(join(dir, 'car.kn5'), carKn5());
+    const generate = () => profileFromKn5(join(dir, 'car.kn5'), { id: 'c', visibility: false, log: () => {} });
+    const prior = await generate();
+    const body = prior.bind.body.roles[0];
+    prior.textures.crew = { file: 'ac_crew.dds', width: 512, height: 512, sizeFrom: 'skin', inModel: false };
+    prior.panels.crew = {};
+    prior.bind.crew = { roles: ['crew'], source: 'auto', evidence: 'name' };
+    // And an automatic binding this run has no way to propose again.
+    prior.bind.wing = { roles: [body], source: 'auto', confidence: 0.5 };
+
+    // As the command line does it: the merge, then the hand-work.
+    const fresh = await generate();
+    fresh.bind = mergeBindings(prior.bind, fresh.bind);
+    const report = preserveHandwork(fresh, prior, { skinsGiven: false });
+    assert.deepEqual(fresh.bind.crew, { roles: ['crew'], source: 'auto', evidence: 'name' });
+    validateProfile(fresh);
+    // What it does drop is said by name.
+    assert.deepEqual(report.autoDropped, [{ term: 'wing', roles: [body] }]);
+    assert.match(describeHandwork(report, 'cars/c.json').join('\n'), new RegExp(`wing -> ${body}`));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a skin-only role carried across says no mesh in the model wears it', async () => {
   // Carried across as it was, and a prior written before `inModel` existed
   // did not say so: the hide check then sent `hide: ['crew']` to "regenerate

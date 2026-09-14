@@ -442,6 +442,12 @@ the ones wearing that term's textures, and **Confirm** writes `"source": "human"
 for that term straight into the profile. That button is the only way the tool
 writes `human`, and an agent's proposal cannot (see [docs/mcp.md](docs/mcp.md)).
 
+The driver's helmet, suit and gloves and the pit crew's kit live in separate
+models, so nothing about them can be measured from the car. With `--skins`,
+they are proposed from AC's own exact filenames (`ac_crew.dds`,
+`2016_suit_diff.dds`, `helmet_2012.dds` and so on) and marked
+`"evidence": "name"` instead of given a confidence.
+
 ### Fitting a portable design to one car
 
 A portable design places its artwork on the largest visible panel of the right
