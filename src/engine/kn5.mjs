@@ -239,12 +239,12 @@ const SHEET_EDGE = 0.01;
  * where it collapsed and was dropped, and 13 cars' bodies profiled to nothing.
  *
  * Taken out once, here, rather than in each of those, so they cannot disagree
- * about where an island is. An island moves only when it fits wholly on one
- * other copy: one that fits on [0, 1], give or take a hair at either edge, stays
- * put; one spanning more than a sheet is a tiling material with no single copy
- * to move to; one straddling a boundary is wrapped across the image's edge by
- * the game and cannot move whole. All three are left exactly as stored, so a
- * model with nothing to move reads as it always did.
+ * about where an island is. An island moves only when it fits wholly on another
+ * copy, give or take a hair at either edge, and more of it lies there than on
+ * [0, 1]: one on [0, 1] stays put; one spanning more than a sheet is a tiling
+ * material with no single copy to move to; one straddling a boundary is wrapped
+ * across the image's edge by the game and cannot move whole. All three are left
+ * exactly as stored, so a model with nothing to move reads as it always did.
  *
  * Islands here are what findIslands calls islands — triangles joined through
  * shared vertex indices within one mesh — so a moved island moves whole and a
@@ -272,18 +272,21 @@ function placeOnSheet(model, mesh) {
   }
 
   // The copy an island fits on, with a little slack at both edges, or null.
-  // The copy in [0, 1] is asked first, so an island already on the sheet never
-  // moves. That order is not a nicety: reading the tile off `floor(lo + slack)`
-  // alone, which keeps a -0.006 overhang home, sent an island lying at u = 0.991
-  // to 0.999 one sheet the wrong way, where it collapsed — four rim panels on
-  // the SF15T and six trim panels on the Quattro, gone to the cure.
-  const fits = (lo, hi, k) => lo >= k - SHEET_EDGE && hi <= k + 1 + SHEET_EDGE;
+  // Only a sliver near an edge fits two, and it goes to the one holding more of
+  // it, [0, 1] on a tie. Reading the tile off `floor(lo + slack)`, which keeps a
+  // -0.006 overhang home, sent an island lying at u = 0.991 to 0.999 one sheet
+  // the wrong way, where it collapsed — four rim panels on the SF15T and six
+  // trim panels on the Quattro. Asking [0, 1] first cured that and kept an
+  // island lying wholly in the slack past an edge, at u = 1.003 to 1.008, where
+  // findIslands clamped it to nothing; it also split a body one sheet down from
+  // the flange strip along its edge, at v = -0.006 to 0, moving only the body.
   const tileOf = (lo, hi) => {
-    if (fits(lo, hi, 0)) return 0;
-    const k = Math.floor(lo);
-    if (fits(lo, hi, k)) return k;
-    if (fits(lo, hi, k + 1)) return k + 1;
-    return null;
+    let best = null, least = Infinity;
+    for (let k = Math.ceil(hi - 1 - SHEET_EDGE); k <= Math.floor(lo + SHEET_EDGE); k++) {
+      const off = Math.max(0, k - lo) + Math.max(0, hi - k - 1);
+      if (off < least || (off === least && k === 0)) { best = k; least = off; }
+    }
+    return best;
   };
   const moves = new Map();
   for (const [r, [u0, v0, u1, v1]] of bounds) {

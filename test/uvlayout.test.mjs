@@ -189,6 +189,32 @@ test('a car unwrapped one sheet down profiles exactly like the same car unshifte
   }
 });
 
+test('an island just past an edge of the sheet is moved onto it, and a shifted body keeps its flange', () => {
+  // Slivers lying wholly in the slack past an edge used to count as on the
+  // sheet, because the sheet was asked first; findIslands then clamped them to
+  // nothing and dropped them. And a body one sheet down whose flange strip is
+  // an island of its own, along v = -0.006 to 0, was split: the body moved onto
+  // the sheet and the strip stayed where it was, a whole sheet away from it.
+  const sliver = 0.005 / 0.9;
+  const model = parseKn5Buffer(carKn5({
+    extraMeshes: [
+      cushion({ name: 'PAST_RIGHT', repeat: sliver, shift: [0.953, 0] }),     // u = 1.003 to 1.008
+      cushion({ name: 'PAST_LEFT', repeat: sliver, shift: [-0.058, 0] }),     // u = -0.008 to -0.003
+      cushion({ name: 'BODY', repeat: 0.944 / 0.9, shift: [0, -1] }),         // v = -0.95 to -0.006
+      cushion({ name: 'FLANGE', repeat: 0.006 / 0.9, shift: [0.2, -0.056] }), // v = -0.006 to 0
+    ],
+    materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
+    extraTextures: [{ name: 'seat.dds' }],
+  }));
+  const first = (name) => vertex(model, model.meshes.find((m) => m.name === name), 0);
+  const near = (a, b) => Math.abs(a - b) < 1e-5;
+
+  assert.ok(near(first('PAST_RIGHT').u, 0.003), `past the right edge: ${JSON.stringify(first('PAST_RIGHT'))}`);
+  assert.ok(near(first('PAST_LEFT').u, 0.992), `past the left edge: ${JSON.stringify(first('PAST_LEFT'))}`);
+  assert.ok(near(first('BODY').v, 0.05), `the body is on the sheet: ${JSON.stringify(first('BODY'))}`);
+  assert.ok(near(first('FLANGE').v, 0.994), `and its flange beside it: ${JSON.stringify(first('FLANGE'))}`);
+});
+
 test('placement on a tiled material is skipped and reported, and a fill still paints', async () => {
   const { profile, seat } = await profileWith({ repeat: 40 });
   const notes = [];
