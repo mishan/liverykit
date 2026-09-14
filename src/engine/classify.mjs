@@ -377,7 +377,26 @@ export function propose(features, term = 'body') {
   };
 }
 
-const pct = (n) => `${Math.round(n * 100)}%`.padStart(4);
+/**
+ * Every scorable term's proposal, as the `bind` block a profile carries.
+ *
+ * One function for the generator and for `--explain --all`, so the block a
+ * person is handed to paste is the block a regeneration would have written. Two
+ * loops over the same terms would be two answers the day one of them changes.
+ */
+export function proposeAll(features) {
+  const bind = {};
+  for (const term of SCORABLE) {
+    const p = propose(features, term);
+    // A term with no candidate is left OUT rather than bound to an empty array.
+    // An empty array means "this car has no such surface", which is a claim, and
+    // the classifier is not entitled to make it — only a person is.
+    if (p) bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
+  }
+  return bind;
+}
+
+const pct =(n) => `${Math.round(n * 100)}%`.padStart(4);
 
 /**
  * A human-readable ranking, for `liverykit --explain`.
@@ -407,7 +426,7 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   };
   if (!ranked.length) {
     lines.push('  No candidate scored above zero. This car may genuinely lack the surface;');
-    lines.push('  bind it to null in the profile to say so explicitly.');
+    lines.push('  bind it to an empty "roles" array in the profile to say so explicitly.');
     sayExcluded();
     return lines.join('\n');
   }

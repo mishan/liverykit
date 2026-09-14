@@ -264,6 +264,115 @@ async function checkAgainst(car) {
   ].join('');
 }
 
+// --- which textures each surface name means ----------------------------------
+//
+// A binding proposed by measurement stays `auto` until a person looks, and this
+// is where they look. Hovering a term keeps the parts wearing its textures lit
+// while the rest of the car goes dark, and Confirm records that somebody saw
+// it. That click is the only way this tool writes `source: "human"`, and a
+// click after a picture is exactly what the field claims happened. An agent's
+// proposal still cannot say it; see /api/bindings/confirm.
+$('#bindings').onclick = (e) => {
+  const term = e.target.closest?.('button[data-confirm]')?.dataset?.confirm;
+  if (term) return confirmTerm(term);
+};
+$('#bindings').onpointerover = (e) => {
+  const term = e.target.closest?.('li[data-term]')?.dataset?.term;
+  if (term) focusTerm(term);
+};
+$('#bindings').onpointerout = (e) => {
+  // As for #panels: only once the pointer has left the list, or the car
+  // flickers between lit and dark on every move from one row to the next.
+  if (!e.relatedTarget || !$('#bindings').contains?.(e.relatedTarget)) focusTerm(null);
+};
+
+async function loadBindings() {
+  // Every way this can fail ends as `fatal`, in one place, as for the
+  // portability panel above: an answer without `terms` would otherwise reach
+  // drawBindings and throw, and the panel would stay blank with no reason.
+  const r = await fetch('/api/bindings').then(async (x) => {
+    const body = await x.json().catch(() => ({}));
+    if (!x.ok) return { fatal: body.error ?? `the editor answered ${x.status}` };
+    if (!Array.isArray(body.terms)) return { fatal: 'the answer had no terms in it' };
+    return body;
+  }).catch((e) => ({ fatal: e.message }));
+  drawBindings(r);
+}
+
+function drawBindings(r) {
+  const el = $('#bindings');
+  if (r.fatal) {
+    state.bindings = null;
+    el.innerHTML = `<li class="note">! ${esc(r.fatal)}</li>`;
+    return;
+  }
+  state.bindings = r;
+  const rows = r.terms.filter((t) => t.status !== 'unbound').map((t) => {
+    const what = t.status === 'absent' ? 'none on this car' : t.files.join(', ');
+    // What stands behind a proposal, since that is what the person is being
+    // asked to check. A close margin and a rule nobody has measured are both
+    // reasons to look harder, so both are said here, not only in --explain.
+    let how = 'confirmed';
+    if (t.source !== 'human') {
+      how = typeof t.confidence === 'number' ? `proposed, ${t.confidence}` : 'proposed';
+      if (typeof t.confidence === 'number' && t.confidence < 0.2) how += ', close call';
+      if (t.scored && !t.validated) how += ', unmeasured rule';
+    }
+    const button = t.source !== 'human' && r.writable
+      ? `<button data-confirm="${esc(t.term)}">Confirm</button>` : '';
+    return `
+      <li data-term="${esc(t.term)}" title="${esc(`${t.term}: ${t.describes}`)}">
+        <span class="id">${esc(t.term)}</span>
+        <span class="meta">${esc(what)} · ${esc(how)}</span>${button}
+      </li>`;
+  });
+  // Named, so the list does not look like the whole vocabulary when it is not.
+  const unbound = r.terms.filter((t) => t.status === 'unbound').map((t) => t.term);
+  if (unbound.length) {
+    rows.push(`<li class="head">not bound: ${esc(unbound.join(', '))}</li>`);
+  }
+  if (!r.writable && r.terms.some((t) => t.source === 'auto')) {
+    rows.push('<li class="note">This editor was started without the profile\'s file, so nothing here can be confirmed.</li>');
+  }
+  el.innerHTML = rows.join('');
+}
+
+/**
+ * Light the parts wearing a term's textures. Only the whole-car views have
+ * parts to light. The UV view is already one texture, and there the viewer
+ * answers null and nothing is said.
+ */
+function focusTerm(term) {
+  if (!state.viewer?.setFocus) return;
+  const t = term ? state.bindings?.terms.find((x) => x.term === term) : null;
+  const lit = state.viewer.setFocus(t?.files.length ? t.files : null);
+  // Nothing wears it: a helmet is a separate kn5, and a binding can name a
+  // file this model never draws. Said, because a car that stays fully lit
+  // reads as "hover does nothing".
+  if (t && t.files.length && lit === 0) {
+    status(`${term}: nothing on this car's model wears ${t.files.join(', ')}`);
+  }
+}
+
+async function confirmTerm(term) {
+  const t = state.bindings?.terms.find((x) => x.term === term);
+  if (!t) return;
+  try {
+    // The roles as shown, so the server can refuse if the file on disk now
+    // says something else. Otherwise the person would confirm a binding they
+    // never saw.
+    const r = await api('/api/bindings/confirm', { term, roles: t.roles });
+    drawBindings({ ...state.bindings, terms: r.terms });
+    status(`confirmed ${term} in the car's profile`);
+  } catch (e) {
+    status(`could not confirm ${term}: ${e.message}`);
+    return;
+  }
+  // The render's notes say which bindings are unconfirmed, and one just
+  // stopped being.
+  await refresh();
+}
+
 // --- what is wrong with this design ON THIS car ------------------------------
 //
 // The panel above asks whether the placements FIND anything somewhere else.
@@ -3252,3 +3361,7 @@ await showView('3d');
 // when there is nothing to list, because a second opinion is not a prerequisite
 // for editing.
 await loadOtherCars();
+// Last for the same reason. The profile is already in memory, so it answers
+// at once, but a car does not need its bindings confirmed before it can be
+// edited.
+await loadBindings();

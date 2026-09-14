@@ -117,6 +117,7 @@ uniform vec4 panel;       // its host panel, the boundary it is clamped to
 uniform vec4 twin;        // its opposite number, which moves with it
 uniform vec4 twinPanel;   // and where that one lives
 uniform float border;     // border thickness, in UV units
+uniform float dim;        // 1 = not what the Bindings panel is pointing at
 uniform float lit;        // 0 = true colour, 1 = shaded like a car
 uniform float glass;      // 1 = this group is reflective glass
 // 1 = take this group's transparency from the texture's alpha channel.
@@ -349,6 +350,11 @@ void main() {
       c = mix(c, dark, 0.82);
     }
   }
+  // Which parts wear a texture, for the Bindings panel: everything else goes
+  // into shadow. After the shading for the same reason as the highlight above.
+  // It is UI, and a part that went dark when it turned from the light would
+  // look like one the texture does not reach.
+  if (dim > 0.5) c = mix(c, vec3(0.02, 0.03, 0.04), 0.82);
   gl_FragColor = vec4(c, alpha);
 }`;
 
@@ -502,6 +508,16 @@ export function unpack(buffer) {
  * deciding what it is told — what counts as no selection, how thick an edge a
  * given rectangle gets — is ordinary code and testable as such.
  */
+/**
+ * Whether a whole-car group goes into shadow while the Bindings panel points at
+ * `focus`, a Set of lowercased texture files, or at nothing. By file,
+ * case-blind, because that is what a group and a profile both know a texture
+ * by, and a car's own spelling of a name is not consistent between the two.
+ */
+export function dimmed(group, focus) {
+  return !!focus && !focus.has(String(group.file).toLowerCase());
+}
+
 export function highlightUniforms({ region, panel, twin, twinPanel } = {}) {
   const usable = (r) => Array.isArray(r) && r.length === 4
     && r.every(Number.isFinite) && r[2] > 0 && r[3] > 0;
@@ -698,6 +714,7 @@ export function createViewer(canvas) {
     twin: gl.getUniformLocation(prog, 'twin'),
     twinPanel: gl.getUniformLocation(prog, 'twinPanel'),
     border: gl.getUniformLocation(prog, 'border'),
+    dim: gl.getUniformLocation(prog, 'dim'),
     lit: gl.getUniformLocation(prog, 'lit'),
     glass: gl.getUniformLocation(prog, 'glass'),
     texAlpha: gl.getUniformLocation(prog, 'texAlpha'),
@@ -751,6 +768,8 @@ export function createViewer(canvas) {
   // with a full chain for the second.
   const byDetail = new Map();
   let groups = null;
+  // The texture files the Bindings panel is pointing at, lowercased, or null.
+  let focus = null;
   // Kept on the CPU as well as uploaded, because picking needs to intersect it.
   // A body is a megabyte of floats; holding it is cheaper than a round trip to
   // the server on every pointer event.
@@ -883,6 +902,9 @@ export function createViewer(canvas) {
       // so no relief of its own. Left set from the whole-car pass this would
       // emboss one part's seams onto every surface in the picker.
       gl.uniform1f(loc.hasBaseNormal, 0);
+      // One sheet is all this pass draws, so there is nothing to dim it
+      // against. A 1 left over from the last group would black it out.
+      gl.uniform1f(loc.dim, 0);
       // The surface being edited has no material behind it — it is one sheet,
       // not a part — so it keeps the tuned defaults.
       const flat = lightingFor(null);
@@ -956,6 +978,7 @@ export function createViewer(canvas) {
       // the time. Not drawing it is the honest answer. The plate behind is
       // real; the grey never was.
       if (!tex && g.blend && !g.glass) return;
+      gl.uniform1f(loc.dim, dimmed(g, focus) ? 1 : 0);
 
       // The tiling layer, and only when its bake actually arrived: half of a
       // two-layer material is not a surface. A carbon weave multiplied over
@@ -1733,6 +1756,25 @@ export function createViewer(canvas) {
      * four, which is the clearest possible statement of a fact the UV view can
      * only make in a footnote.
      */
+    /**
+     * Light only the parts wearing these texture files, and put the rest of
+     * the car in shadow. Pass null to light everything again.
+     *
+     * Answers how many groups it lit, or null when there are no groups (the
+     * single-surface view). A zero is refused rather than drawn: dimming
+     * every part says "this texture is on nothing", which for a helmet (a
+     * separate kn5) is true of the model and says nothing about the binding.
+     * The caller says that in words instead.
+     */
+    setFocus(files) {
+      const next = files?.length ? new Set(files.map((f) => String(f).toLowerCase())) : null;
+      if (!groups) { focus = null; return null; }
+      const lit = next ? groups.filter((g) => !dimmed(g, next)).length : groups.length;
+      focus = next && lit ? next : null;
+      draw();
+      return lit;
+    },
+
     setHighlight(rects) {
       ({ region, panel, twin, twinPanel, border } = highlightUniforms(rects));
       draw();

@@ -33,14 +33,15 @@
 // ---------------------------------------------------------------------------
 
 import { createServer } from 'node:http';
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile } from '../profile.mjs';
+import { VOCABULARY, SCORABLE, VALIDATED } from '../engine/classify.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
@@ -754,7 +755,76 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
 
 export { applyDesignOp, applyFitOp, applyProposalDiff };
 
-export async function startUi({ livery: openedWith, profile, fitPath, liveryId, liveryPath = null, decals = new Map(), modelPath = null, port = 7391, log = console.log }) {
+/**
+ * Every vocabulary term and what this profile binds it to, for the editor's
+ * Bindings panel.
+ *
+ * All twenty, bound or not, so the panel can say which ones nobody has bound
+ * rather than leave them out and let the list look complete. `files` are what
+ * the viewer lights up on the car: a role is this profile's name for a texture,
+ * and the meshes only know the file.
+ */
+export function bindingsReport(profile) {
+  return Object.entries(VOCABULARY).map(([term, spec]) => {
+    const b = binding(profile, term);
+    return {
+      term,
+      describes: spec.describes,
+      scored: SCORABLE.includes(term),
+      validated: VALIDATED.has(term),
+      status: b.status,
+      source: b.source,
+      confidence: b.confidence,
+      roles: b.roles,
+      files: b.roles.map((r) => profile.textures?.[r]?.file).filter(Boolean),
+    };
+  });
+}
+
+/**
+ * The profile as it will be once a person confirms one term's binding.
+ *
+ * `onDisk` is the profile as the file holds it NOW, not the copy this editor
+ * loaded at startup: a regeneration in another terminal since then is the
+ * file's current truth, and writing the editor's copy back would undo it.
+ * `roles` are the roles the person was shown. If the file binds the term to
+ * anything else, what they looked at is not what would be confirmed, so it is
+ * refused rather than confirmed on their behalf.
+ *
+ * Only `source` changes. The roles, and the confidence they were proposed
+ * with, stay as the record of what was confirmed. Throws an Error carrying the
+ * HTTP `status` the route should answer with.
+ */
+export function confirmBinding(onDisk, { term, roles } = {}, source = '<inline>') {
+  const refuse = (status, message) => { throw Object.assign(new Error(message), { status }); };
+  if (typeof term !== 'string' || !Object.hasOwn(VOCABULARY, term)) {
+    refuse(400, `"${term}" is not a vocabulary term. Known terms: ${Object.keys(VOCABULARY).join(', ')}.`);
+  }
+  if (!Array.isArray(roles) || !roles.every((r) => typeof r === 'string')) {
+    refuse(400, 'A confirmation names the roles it saw, as an array of role names.');
+  }
+  const entry = Object.hasOwn(onDisk.bind ?? {}, term) ? onDisk.bind[term] : undefined;
+  if (!entry) {
+    refuse(409, `${source} does not bind "${term}", so there is nothing to confirm. ` +
+      'A binding nobody proposed is written by hand in the profile.');
+  }
+  if (JSON.stringify(entry.roles) !== JSON.stringify(roles)) {
+    refuse(409, `${source} binds "${term}" to [${(entry.roles ?? []).join(', ')}], not the ` +
+      `[${roles.join(', ')}] shown here. The file changed after the editor read it; reload the page.`);
+  }
+  const next = structuredClone(onDisk);
+  next.bind[term] = { ...entry, source: 'human' };
+  try {
+    // A copy, because validation is not promised to leave its input alone,
+    // and what is written should be the file with one field changed.
+    validateProfile(structuredClone(next), source);
+  } catch (e) {
+    refuse(409, e.message);
+  }
+  return next;
+}
+
+export async function startUi({ livery: openedWith, profile, profilePath = null, fitPath, liveryId, liveryPath = null, decals = new Map(), modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
@@ -764,6 +834,10 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
   let livery = openedWith;
   if (!liveryId) throw new Error('startUi needs liveryId — the name a fit knows this design by (see fitLiveryId).');
   const identity = { livery: liveryId, car: profile.id };
+  // Confirmations one at a time. Each reads the file, changes one field and
+  // writes it back, and two clicks in flight together would each write the
+  // file the other had not seen, so the first confirmation would be lost.
+  let confirming = Promise.resolve();
 
   // Parsed on first request rather than at startup: a 45 MB kn5 takes a second
   // or two, and the UV editor is useful without it. A missing model is not an
@@ -1036,6 +1110,59 @@ export async function startUi({ livery: openedWith, profile, fitPath, liveryId, 
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
         return json(200, editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId }));
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/bindings') {
+        return json(200, { car: profile.id, writable: !!profilePath, terms: bindingsReport(profile) });
+      }
+
+      // The one route by which this tool writes `source: "human"`, and the
+      // Bindings panel's Confirm button is the only thing meant to call it:
+      // a person clicking after the part lit up on the car is the confirmation
+      // the field records.
+      //
+      // Its own route, not a proposal. `applyProposalDiff` refuses any
+      // proposal that says "human", and the MCP tools refuse it too; routing
+      // Confirm through there would mean relaxing that refusal, and an agent's
+      // proposal would then be one string away from the same write.
+      //
+      // The Origin check keeps it to this editor's own page. A browser sets
+      // Origin itself on a POST, so another site cannot pass as this one, and
+      // the MCP client and a stray script send none. A local process willing
+      // to forge the header could get past it. That process can also write
+      // the file directly, so it is no worse off; the point is that nothing
+      // reaches this route by accident.
+      if (req.method === 'POST' && url.pathname === '/api/bindings/confirm') {
+        if (!profilePath) {
+          return json(409, { error: 'This editor was not given the profile\'s file, so there is nowhere to write a confirmation.' });
+        }
+        if (req.headers.origin !== `http://${req.headers.host}`) {
+          return json(403, { error: 'A binding is confirmed from the editor\'s Bindings panel, by a person, and nowhere else.' });
+        }
+        const asked = await body();
+        const done = confirming.then(async () => {
+          const onDisk = JSON.parse(await readFile(profilePath, 'utf8'));
+          if (onDisk.id !== profile.id) {
+            throw Object.assign(new Error(`${profilePath} is now the profile for "${onDisk.id}", not "${profile.id}".`), { status: 409 });
+          }
+          const next = confirmBinding(onDisk, asked, profilePath);
+          // Written beside the file and renamed over it, so a crash or a full
+          // disk halfway through leaves the old profile rather than half of
+          // the new one. A torn profile does not load, and that stops every
+          // build of every design on this car.
+          const tmp = `${profilePath}.${process.pid}.tmp`;
+          await writeFile(tmp, JSON.stringify(next, null, 2) + '\n');
+          await rename(tmp, profilePath);
+          profile.bind = next.bind;
+        });
+        confirming = done.catch(() => {});
+        try {
+          await done;
+        } catch (e) {
+          return json(e.status ?? 500, { error: e.message });
+        }
+        log(`  confirmed "${asked.term}" in ${profilePath}`);
+        return json(200, { saved: profilePath, terms: bindingsReport(profile) });
       }
 
       // What each treatment takes, so the inspector can offer a control rather
