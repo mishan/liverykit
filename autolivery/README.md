@@ -217,10 +217,22 @@ What the agent cannot do is enforced by the MCP server, not by this directory. I
 cannot save, write files, confirm a binding, or send a proposal the editor would
 refuse. See [docs/mcp.md](../docs/mcp.md).
 
-## Nothing in the loop knows it's a car
+## The loop doesn't know it's a car
 
 `loop.mjs` knows about a draft, a set of tools, a measurement that passes or
-fails, and a critic that looks at pictures. Cars, liveries and race numbers are in
-the prompts and in the comments that record what went wrong, and nowhere in the
-loop's logic. A plane, a bottle or a
-jersey would be the same problem with a different profile.
+fails, and a critic that looks at pictures. Cars, liveries and race numbers are
+not in the loop's logic. The car lives in three places plugged into it:
+
+- **The model and its profile.** The reader is Assetto Corsa's kn5, and the
+  profile names panels, wheels and the car's frame, which is taken from where
+  its wheels are.
+- **The checks.** Fitment measures in millimetres against that model, and
+  several checks are about cars: a race number's minimum capital height, a
+  stripe that runs nose to tail and over the rear wing, a ground-effect kit
+  laid out from the car's lowest panels.
+- **The prompts.** They are about GT cars and, in places, about Gulf and the
+  NSX, in the runs they cite.
+
+Painting something else means replacing those three. The loop that drafts,
+measures, gets judged and proposes would stay as it is, and so would the trust
+boundary above.
