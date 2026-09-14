@@ -48,6 +48,7 @@
 // ---------------------------------------------------------------------------
 
 import { meshesUsingTexture, triangles, vertex } from './kn5.mjs';
+import { rectGroups } from './tags.mjs';
 
 /** Terms whose scoring has been measured against the fleet. */
 export const VALIDATED = new Set(['body']);
@@ -128,6 +129,11 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       if (b[4] < z0) z0 = b[4]; if (b[5] > z1) z1 = b[5];
     }
     const bound = ms.length > 0 && x0 <= x1;
+    const ps = panels ? Object.values(panels[role] ?? {}) : [];
+    // Mean cockpit visibility over the panels that measured it, unweighted
+    // like trackside `visible` (see tools/survey.mjs for why unweighted). It
+    // is measured only where a steering wheel was found to stand behind.
+    const seen = ps.map((p) => p.visibleFromCockpit).filter((v) => typeof v === 'number');
 
     out.push({
       role,
@@ -151,6 +157,17 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       // always in hand when bindings are proposed or explained. A caller
       // without one gets neither, and nothing is excluded on their account.
       ...(panels ? { islands: Object.keys(panels[role] ?? {}).length } : {}),
+      // What measureWheels found: islands at a wheel centre, how many of
+      // those face along the axle, and the most islands sharing one rectangle
+      // (four wheels drawn from one rim face are four islands on one rect).
+      // Rims are told apart from tyres and discs by these, since a rim has no
+      // shader of its own to be gated on.
+      ...(panels ? {
+        wheelIslands: ps.filter((p) => p.wheel).length,
+        sidewalls: ps.filter((p) => p.wheel?.part === 'sidewall').length,
+        instances: Math.max(0, ...[...rectGroups(panels[role] ?? {}).values()].map((g) => g.length)),
+      } : {}),
+      ...(seen.length ? { cockpit: r3(seen.reduce((a, b) => a + b, 0) / seen.length) } : {}),
       ...(typeof tex === 'object' && tex.uvLayout ? { uvLayout: tex.uvLayout } : {}),
     });
   }
@@ -182,6 +199,9 @@ export function featuresFromRecord(car, { shaderNames = [] } = {}) {
     shaders: t.shaders ?? t.sh.map((i) => shaderNames[i]),
     ...(typeof t.visible === 'number' ? { visible: t.visible } : {}),
     ...(typeof t.panels === 'number' ? { islands: t.panels } : {}),
+    ...(typeof t.wheelIslands === 'number'
+      ? { wheelIslands: t.wheelIslands, sidewalls: t.sidewalls, instances: t.instances } : {}),
+    ...(typeof t.cockpit === 'number' ? { cockpit: t.cockpit } : {}),
     ...(t.uvLayout ? { uvLayout: t.uvLayout } : {}),
   }));
 }
@@ -218,6 +238,39 @@ export const VOCABULARY = {
     bindsEvery: true,
     score: (f) => (f.shaders.some((s) => /ksBrakeDisc/i.test(s)) ? f.area : 0),
   },
+  // A rim has no shader of its own to be gated on, but AC requires every car
+  // to name its wheel centres, and measureWheels marks the islands there. On
+  // the fleet every labelled rim texture has all its islands at a wheel and at
+  // least four sharing a rectangle; other textures near a wheel have a median
+  // of a fifth of their islands there. Measured in docs/naming.md: the top pick
+  // is a labelled rim on 225 of 246 cars. Most misses are an ambient-occlusion
+  // overlay on the same meshes, which no measurement here tells apart.
+  rims: {
+    describes: 'Wheel faces. Usually one texture shared by all four.',
+    score: (f) => {
+      if (!f.islands || !f.wheelIslands) return 0;
+      if (f.shaders.some((s) => /ksTyres|ksBrakeDisc/i.test(s))) return 0;
+      if (f.wheelIslands / f.islands < 0.9) return 0;
+      // Fewer than four copies is kept, at a discount, rather than excluded:
+      // a car with a separate texture per axle is still a car with rims.
+      return f.area * (f.instances >= 4 ? 1 : 0.3);
+    },
+  },
+  // Seen from the seat and not from the track. Cockpit visibility is the
+  // deciding term here the way trackside visibility is for the body, and it is
+  // measured only where a steering wheel was found, so a car without one gets
+  // no interior proposal rather than a guess. 124 of 168 labelled cars: the
+  // misses are mostly the cockpit's occlusion overlay, which shares the
+  // cabin's meshes and so its area.
+  interior: {
+    describes: 'Cabin surfaces — tub, dash, trim.',
+    score: (f) => {
+      if (!f.islands || typeof f.cockpit !== 'number' || !f.cockpit) return 0;
+      if (f.shaders.some((s) => /ksTyres|ksBrakeDisc/i.test(s))) return 0;
+      if ((f.wheelIslands ?? 0) / f.islands >= 0.2) return 0;
+      return f.area * f.cockpit * (1 - (f.visible ?? 0));
+    },
+  },
 
   // Terms with no `score` are never proposed automatically, but they are valid
   // targets for a livery and for a human binding. That split matters: the
@@ -225,10 +278,8 @@ export const VOCABULARY = {
   // limited to whatever a classifier currently happens to be good at.
   wing: { describes: 'Aerodynamic wings and their endplates.' },
   floor: { describes: 'Underfloor, diffuser, splitter.' },
-  rims: { describes: 'Wheel faces. Usually one texture shared by all four.' },
   glass: { describes: 'Windows and windscreen. Tintable in principle, easy to ruin.' },
   mirror: { describes: 'Mirror housings.' },
-  interior: { describes: 'Cabin surfaces — tub, dash, trim.' },
   seat: { describes: 'Seat shell and cushions, where separable from the interior.' },
   belts: { describes: 'Harness straps. Usually an atlas of strips running down the texture.' },
   steeringWheel: { describes: 'Steering wheel rim and spokes.' },
@@ -424,6 +475,12 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
       lines.push(`  not a candidate: ${f.file} — ${excludedWhy(f)}, ${pct(f.area).trim()} of the car's area`);
     }
   };
+  // Said before anything else, because without it the interior has no
+  // candidates at all, and "no candidate" would otherwise read as "no cabin".
+  if (term === 'interior' && !features.some((f) => typeof f.cockpit === 'number')) {
+    lines.push('  ! Cockpit visibility was not measured: no steering wheel was found to stand');
+    lines.push('    behind, or visibility was skipped. The interior is not scored without it.');
+  }
   if (!ranked.length) {
     lines.push('  No candidate scored above zero. This car may genuinely lack the surface;');
     lines.push('  bind it to an empty "roles" array in the profile to say so explicitly.');
@@ -432,15 +489,22 @@ export function explain(features, term = 'body', { limit = 8 } = {}) {
   }
 
   lines.push('');
+  // The evidence each scorer reads beyond the common columns, so the table
+  // shows what decided the ranking and not only what decides the body's.
+  const extra = {
+    rims: { head: '  whl  inst', cell: (f) => '  ' + (f.islands ? pct((f.wheelIslands ?? 0) / f.islands) : '   ?') + '  ' + String(f.instances ?? '?').padStart(4) },
+    interior: { head: '  ckpt', cell: (f) => '  ' + (typeof f.cockpit === 'number' ? pct(f.cockpit) : '   ?') },
+  }[term];
   lines.push('  ' + 'role'.padEnd(24) + 'file'.padEnd(30) +
-    'area  seen  skins  sym  isl  shader');
+    'area  seen  skins  sym  isl' + (extra?.head ?? '') + '  shader');
   for (const f of ranked.slice(0, limit)) {
     const sym = f.straddles ? ' yes' : '  no';
     const seen = typeof f.visible === 'number' ? pct(f.visible) : '   ?';
     const isl = typeof f.islands === 'number' ? String(f.islands).padStart(3) : '  ?';
     const shader = f.shaders.find((s) => /damage_dirt|ksTyres|ksBrakeDisc/i.test(s)) ?? f.shaders[0] ?? '';
     lines.push('  ' + f.role.slice(0, 23).padEnd(24) + f.file.slice(0, 29).padEnd(30) +
-      pct(f.area) + '  ' + seen + '  ' + pct(f.skinFraction) + ' ' + sym + '  ' + isl + '  ' + shader.slice(0, 28));
+      pct(f.area) + '  ' + seen + '  ' + pct(f.skinFraction) + ' ' + sym + '  ' + isl +
+      (extra ? extra.cell(f) : '') + '  ' + shader.slice(0, 28));
   }
   if (notCandidates.length) lines.push('');
   sayExcluded();

@@ -99,6 +99,39 @@ for (const floor of [0.05, 0.1, 0.2]) {
     `${under.filter((r) => !r.right).length} it does not`);
 }
 
+// Terms a car may draw from several textures that are all rightly called by
+// the name, a rim face and its motion-blur twin, or a cockpit split across two
+// sheets. Right is the proposal landing on one of them. `pick` is kept apart
+// from TERM_LABELS because "bind every labelled texture" would mark the rims
+// scorer wrong on every car that ships a blur rim.
+// The interior label is the cabin's main sheet, named as such. `int_` alone
+// also names the decals, the windscreen, the nets and the pedals, up to eleven
+// textures on one car, and landing on any one of those would say nothing. The
+// rims label leaves out metal_detail_rim.dds, a shared metal sheet on 21 cars
+// that only carries the word.
+const PICK_LABELS = {
+  rims: { looks: /rim|wheel|cerchi|felg/i, not: /_nm|normal|_map|glow|_ao|steer|logo|tyre|tire|bolt|nut|disc|brake|cal|lod|detail/i },
+  interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
+};
+for (const [term, { looks, not }] of Object.entries(PICK_LABELS)) {
+  let right = 0, n = 0, none = 0;
+  const misses = [];
+  for (const car of fleet) {
+    const features = featuresFromRecord(car);
+    const labels = features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
+    if (!labels.length) continue;
+    n++;
+    const p = propose(features, term);
+    if (!p) { none++; misses.push({ id: car.id, bound: '(nothing)', label: labels.join(', ') }); continue; }
+    const bound = p.roles.map((r) => features.find((f) => f.role === r).file);
+    if (bound.some((b) => labels.includes(b))) right++;
+    else misses.push({ id: car.id, bound: bound.join(', '), label: labels.join(', ') });
+  }
+  console.log(`\n  ${term}: ${right}/${n} land on a labelled texture (${none} proposed nothing)`);
+  for (const m of misses.slice(0, 12)) console.log(`    ${m.id.padEnd(34)} bound ${m.bound.slice(0, 38).padEnd(40)} label ${m.label}`);
+  if (misses.length > 12) console.log(`    and ${misses.length - 12} more`);
+}
+
 for (const [term, { looks, not }] of Object.entries(TERM_LABELS)) {
   let right = 0, n = 0;
   const misses = [];

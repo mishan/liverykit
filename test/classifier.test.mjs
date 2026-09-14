@@ -29,7 +29,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
-import { rank, explain, propose, featuresFromRecord } from '../src/engine/classify.mjs';
+import { rank, explain, propose, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
+import { parseKn5Buffer } from '../src/engine/kn5.mjs';
+import { carKn5 } from './fixtures/kn5.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
@@ -49,6 +51,77 @@ async function fleet() {
     features: featuresFromRecord(car, { shaderNames: doc.shaders }),
   }));
 }
+
+// Held-out labels for the two scorers measured in step 5, copied from
+// tools/evaluate.mjs as the body's are. Right is the top pick landing on a
+// labelled texture: a rim face and its blur twin are both rightly "the rims".
+const PICK_LABELS = {
+  rims: { looks: /rim|wheel|cerchi|felg/i, not: /_nm|normal|_map|glow|_ao|steer|logo|tyre|tire|bolt|nut|disc|brake|cal|lod|detail/i },
+  interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
+};
+
+// Measured on 2026-09-13: rims 225/246, interior 124/168. The floors sit a
+// few points under, so a change that costs the fleet a handful of cars fails
+// here rather than surfacing months later as unpainted wheels.
+test('rims and interior land on a labelled texture on most of the fleet', async () => {
+  const cars = await fleet();
+  for (const [term, floor, least] of [['rims', 0.9, 230], ['interior', 0.7, 160]]) {
+    const { looks, not } = PICK_LABELS[term];
+    let n = 0, right = 0;
+    for (const car of cars) {
+      const labels = car.features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
+      if (!labels.length) continue;
+      n++;
+      const p = propose(car.features, term);
+      if (p && p.roles.some((r) => labels.includes(car.features.find((f) => f.role === r).file))) right++;
+    }
+    assert.ok(n >= least, `${term}: only ${n} labelled cars; the fixture may have lost its wheel or cockpit evidence`);
+    assert.ok(right / n >= floor, `${term}: ${right}/${n} = ${(right / n).toFixed(3)}, below ${floor}`);
+  }
+});
+
+test('the rims and interior scorers leave out what their evidence rules out', () => {
+  const f = (o) => ({ role: o.file, area: 0.05, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, ...o });
+  const rim = f({ file: 'rim.dds', wheelIslands: 8, instances: 4 });
+  const tyre = f({ file: 'tyre.dds', wheelIslands: 8, instances: 4, shaders: ['ksTyres'], area: 0.2 });
+  const bodyNearWheel = f({ file: 'body.dds', wheelIslands: 2, area: 0.4, visible: 0.8, cockpit: 0.1 });
+  const cabin = f({ file: 'cabin.dds', area: 0.15, visible: 0.03, cockpit: 0.25 });
+  assert.deepEqual(rank([rim, tyre, bodyNearWheel], 'rims').map((x) => x.file), ['rim.dds'],
+    'a tyre has its own shader and a body is mostly not at a wheel');
+  assert.equal(rank([cabin, bodyNearWheel], 'interior')[0].file, 'cabin.dds', 'seen from the seat, not the track');
+  // No cockpit measurement, no interior: a zero is not "unseen from the seat".
+  assert.deepEqual(rank([{ ...cabin, cockpit: undefined }], 'interior'), []);
+  assert.match(explain([{ ...cabin, cockpit: undefined }], 'interior'), /Cockpit visibility was not measured/);
+  assert.match(explain([rim], 'rims'), /whl  inst/);
+});
+
+test('the wheel and cockpit evidence is counted from the profile\'s panels', () => {
+  // What the rims and interior scorers read. Four wheels drawn from one rim
+  // face are four islands on one rectangle, so `instances` is the largest
+  // group of panels sharing a rect, not a count of panels.
+  const model = parseKn5Buffer(carKn5());
+  const shared = [0.1, 0.1, 0.2, 0.2];
+  const panels = {
+    body: {
+      a: { rect: shared, wheel: { part: 'sidewall' }, visibleFromCockpit: 0.4 },
+      b: { rect: shared, wheel: { part: 'tread' }, visibleFromCockpit: 0.2 },
+      c: { rect: shared, wheel: { part: 'sidewall' } },
+      d: { rect: [0.6, 0.6, 0.1, 0.1] },
+    },
+  };
+  const [f] = textureFeatures(model, { roles: { body: 'body.dds' }, panels });
+  assert.deepEqual([f.islands, f.wheelIslands, f.sidewalls, f.instances], [4, 3, 2, 3]);
+  assert.equal(f.cockpit, 0.3, 'the mean over the panels that measured it');
+
+  // Nothing measured from the cockpit says nothing, rather than a zero that
+  // would read as "unseen from the seat".
+  const [bare] = textureFeatures(model, { roles: { body: 'body.dds' }, panels: { body: { d: { rect: [0, 0, 1, 1] } } } });
+  assert.equal(bare.cockpit, undefined);
+  assert.deepEqual([bare.wheelIslands, bare.instances], [0, 1]);
+  // And without a profile, no island evidence at all, as before.
+  const [none] = textureFeatures(model, { roles: { body: 'body.dds' } });
+  assert.equal(none.wheelIslands, undefined);
+});
 
 function labelled(cars) {
   const out = [];
