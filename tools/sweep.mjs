@@ -289,8 +289,12 @@ for (const item of todo) {
     // and one refused on a tiled texture. Counting only the first, the mp412c,
     // whose regions were all refused, read "0 region(s) missing".
     const missed = record.regions.filter((g) => g.status === 'missing' || g.status === 'unplaceable').length;
+    // A miss the design marked optional is not painted either, and is said
+    // apart, as the summary says it: it is what the design means to do here.
+    const optional = record.regions.filter((g) => g.status === 'optional').length;
     const body = record.bindings.body;
-    console.log(`  ${record.id.padEnd(40)} ${record.panels} panels, ${missed} region(s) not placed, ` +
+    console.log(`  ${record.id.padEnd(40)} ${record.panels} panels, ${missed} region(s) not placed` +
+      (optional ? ` (and ${optional} optional, as the design allows)` : '') + ', ' +
       `body ${body ? `${body.roles.join('+') || '(none)'} ${body.source}${body.confidence !== undefined ? ` ${body.confidence}` : ''}` : 'unbound'}`);
   }
   await writeFile(outPath, JSON.stringify(records, null, 2));   // checkpoint every car
