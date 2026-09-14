@@ -348,7 +348,8 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
  * validateProfile refuses that, and two fleet cars, the 458 GT2 and the MX-5
  * Cup, wrote profiles that would not load for it. Returned unchanged when it
  * already lies on the panel, so every other profile is written exactly as
- * before; null when nothing readable is left on the sheet.
+ * before; null when what is left has no area, whether it lies off the panel or
+ * is a line on it, since neither is anywhere to read.
  *
  * `slack` is rounding, not tolerance. Both rects are rounded to four places,
  * so an edge made of a rounded origin plus a rounded width can land 2e-4 past
@@ -359,6 +360,7 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
 export function safeWithin(safe, rect, slack = 5e-4) {
   const [x, y, w, h] = safe;
   const [rx, ry, rw, rh] = rect;
+  if (w < 1e-5 || h < 1e-5) return null;
   // The slack excuses rounding past the PANEL, never a value off the SHEET,
   // which is the one validateProfile refuses. The Morgan's steering wheel sat
   // 0.0003 left of u = 0 — inside the slack, and still a profile that would
@@ -434,7 +436,19 @@ export function computeSafeAreas(model, islands, {
     }
 
     const safe = safeWithin([round(u0), round(v0), round(u1 - u0), round(v1 - v0)], isl.rect);
-    if (!safe) continue;
+    // Nothing readable on the panel: what can be seen of the island lies off
+    // the sheet, as on the MX-5 Cup's belts, or is a line. Skipped, the island
+    // had no `safe`, which says the whole panel may be painted — the opposite
+    // of what was measured. So it is hidden, as one too little of which is
+    // visible is, and `visible` goes to 0 with it, because that and not
+    // `hidden` is what the tags and fitment read.
+    if (!safe) {
+      isl.visibleFraction = 0;
+      isl.hidden = true;
+      log(`  - ${isl.name}: ${(fraction * 100).toFixed(0)}% of it is visible, but no readable ` +
+          'area of that lies on its panel — treated as hidden');
+      continue;
+    }
     const shrankX = (isl.rect[2] - safe[2]) / (isl.rect[2] || 1);
     const shrankY = (isl.rect[3] - safe[3]) / (isl.rect[3] || 1);
     if (shrankX > shrinkThreshold || shrankY > shrinkThreshold) {

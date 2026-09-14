@@ -179,6 +179,54 @@ test('a readable area never reaches off its panel', () => {
   assert.equal(safeWithin(rounded, [0.1, 0.2, 0.3, 0.4]), rounded);
 });
 
+test('a panel with nothing readable on it is hidden, not readable all over', async () => {
+  // A missing `safe` means the whole panel may be painted, so a safe area that
+  // came back empty and was skipped said the opposite of what was measured.
+  // Empty is empty whether it lies off the panel or on it.
+  assert.equal(safeWithin([0.2, 0.5, 0, 0.1], [0, 0, 1, 1]), null, 'no width, on the panel');
+
+  // A lip beside the car, unwrapped across u = 0. The part on the sheet is
+  // folded under, facing the ground that no view comes from, so what can be
+  // seen of the lip is the part on top, and all of that lies left of u = 0:
+  // off the panel, which is the part of the island on the sheet. The MX-5
+  // Cup's belts, in miniature.
+  const N = 6;
+  const verts = [];
+  const indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) {
+      verts.push(vert(1.2 + i / N, 0.75, -0.3 + 0.6 * j / N, 0.4 - 0.9 * i / N, 0.2 + 0.4 * j / N,
+        i < N / 2 ? [0, -1, 0] : [0, 1, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-uv-'));
+  try {
+    const file = join(dir, 'car.kn5');
+    await writeFile(file, carKn5({
+      extraMeshes: [{ name: 'PLATE', verts, indices, materialId: 1 }],
+      materials: [{ name: 'BodyMat' }, { name: 'PlateMat', slots: { txDiffuse: 'plate.dds' } }],
+      extraTextures: [{ name: 'plate.dds' }],
+    }));
+    const lines = [];
+    const profile = await profileFromKn5(file, { id: 'c', visibility: true, log: (s) => lines.push(s) });
+    const role = Object.entries(profile.textures).find(([, t]) => t.file === 'plate.dds')[0];
+    const [[name, plate]] = Object.entries(profile.panels[role]);
+    assert.equal(plate.safe, undefined);
+    assert.equal(plate.hidden, true, `nothing readable is on it: ${JSON.stringify(plate)}`);
+    assert.equal(plate.visible, 0, 'and it is not tagged as a place to read');
+    assert.ok(!plate.tags?.includes('visible'), `tags ${plate.tags}`);
+    assert.match(lines.join('\n'), new RegExp(`- ${name}: .*no readable area of that lies on its panel — treated as hidden`));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a car unwrapped one sheet down profiles exactly like the same car unshifted', async () => {
   // Every consumer of UVs — islands, seams, outlines, safe areas, wheels, the
   // renderers — reads them through vertex(), so the whole profile is the check
