@@ -541,10 +541,11 @@ is right on open-wheelers and wrong on road cars is worse than none.
 job actually goes.
 
 - `liverykit --explain <kn5> --all` prints every scorable term with its top
-  candidates and evidence, then a ready-to-paste `bind` block with every entry
-  at `source: "auto"`. A person reads it, changes the ones that are wrong,
-  flips `auto` to `human` on the ones they looked at, and pastes it once. The
-  tool still never writes `human`.
+  candidates and evidence, then the ready-to-paste `bind` block a regeneration
+  would write: the proposal at `source: "auto"`, with anything already
+  confirmed in `cars/<id>.json` kept at `human`. A person reads it, changes the
+  ones that are wrong, flips `auto` to `human` on the ones they looked at, and
+  pastes it once. The tool still never writes `human` of its own accord.
 - In the editor, a **Bindings** panel that lists each term with its proposal,
   highlights the candidate texture's meshes on the car when a row is hovered,
   and has one **Confirm** button per row that writes `source: "human"` to the
@@ -558,6 +559,51 @@ job actually goes.
   Confirm went through the proposal path, the refusal would have to be relaxed
   for it, and an agent's proposal would then be one string away from the same
   write.
+
+**Built, the one-pass half.** `--explain --all` prints the three scored terms'
+rankings, names the seventeen that are bound by hand, and ends with the `bind`
+block. The block is the generator's own proposal, from `proposeAll` in
+`classify.mjs`, with the existing profile's human bindings and role names
+merged in by the same `mergeBindings` and `preserveHandwork` calls
+`--from-kn5` makes, so what a person pastes is what a regeneration would have
+written. Tests check that against the generator on the fixture car with and
+without a prior profile, and `proposeAll` against the old per-term loop on
+every car in the fleet fixture.
+
+The editor's Bindings panel lists every bound term, with its files and what
+stands behind it: the confidence, "close call" under 0.2, "unmeasured rule" for
+a scorer not in `VALIDATED`. It names the unbound terms in one line, so the
+list does not pass for the whole vocabulary. Hovering a row in the whole-car or
+cockpit view darkens every part not wearing that term's textures, by a
+per-group `dim` uniform. A term whose files are on no part of the model, a
+helmet say, is said in the status line rather than drawn as a car gone dark.
+Confirm posts to `/api/bindings/confirm`. Four things the text above did not
+say, each because the first version without it could have lost work:
+
+- The route re-reads the profile from disk rather than writing back the copy
+  the editor loaded, and refuses (409) unless the file still binds the term to
+  the roles the person was shown.
+- Only `source` changes. The file is validated and then written beside the
+  real file, through any symlink and with its permissions, and renamed over
+  it, so a failed write leaves the old profile and no temporary file.
+- Confirmations are queued, so two clicks cannot each write a file the other
+  has not seen.
+- "Reachable only from the button" is three checks. The server answers only a
+  Host of 127.0.0.1 or localhost at its own port, which shuts out a page on a
+  rebound name; Confirm's Origin must be one of those two; and it takes only
+  `application/json`, which another origin cannot send without a preflight.
+  The first version compared Origin with the request's own Host, which a
+  rebound page sets to match. A local process forging the headers could get
+  through, and could equally write the file itself.
+
+The route answers 409 when the editor was started without a profile file, and
+the panel then offers no button and says why. The proposal refusal is
+unchanged, and a test checks it still refuses with the route in place, and
+that a regeneration's merge keeps what the route wrote. Removing the Origin
+check, the roles check or the proposal refusal each fails its test.
+
+Not measured: the timed sitting. Only a person confirming a fresh car can
+measure that.
 
 **What it must establish.** For `rims` and `interior`, an accuracy figure on a
 held-out label, recorded in `docs/naming.md` beside the body's. For the
@@ -609,7 +655,8 @@ updated. Sweep before and after.
 
 **5. Vocabulary.** `rims` and `interior` scored and validated, driver kit
 proposed from exact skin filenames, `--explain --all`, the editor's Bindings
-panel on a route of its own.
+panel on a route of its own. The last two are in, first, as the paragraph
+below said they should be.
 
 Steps 1 through 4 are each a day or two, and they run in order: step 2 reads
 step 1's `uvLayout`, and step 3's measurement meant something only once step 2

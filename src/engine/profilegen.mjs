@@ -24,7 +24,7 @@ import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, is
 import { uvLayout } from './uvlayout.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
-import { textureFeatures, propose, SCORABLE } from './classify.mjs';
+import { textureFeatures, proposeAll } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
 import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
 import { measureWheels } from './wheels.mjs';
@@ -633,14 +633,7 @@ export async function profileFromKn5(path, {
   }
 
   const features = textureFeatures(model, { roles: textures, skinCounts, skinCount, visibleByFile, panels });
-  const bind = {};
-  for (const term of SCORABLE) {
-    const p = propose(features, term);
-    // A term with no candidate is left OUT rather than bound to an empty array.
-    // An empty array means "this car has no such surface", which is a claim, and
-    // the classifier is not entitled to make it — only a person is.
-    if (p) bind[term] = { roles: p.roles, confidence: p.confidence, source: 'auto' };
-  }
+  const bind = proposeAll(features);
   if (!visibility) {
     log('  ! bindings were proposed without visibility, which is the signal that separates');
     log('    bodywork from engine bays and interior occlusion maps. 90% accurate, not 98%.');
