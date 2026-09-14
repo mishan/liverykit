@@ -198,6 +198,50 @@ test('a role rename never collides with a name the new profile already uses', ()
   assert.equal(fresh.textures.body.file, 'First.dds');
 });
 
+test('two prior roles for one file become one, keeping the name and the hand-work of both', () => {
+  // A profile from before a file had one role gave the 906's paint `body` and
+  // `body_2`, one per spelling. Keyed by file, the last of them won, so the one
+  // `body` a regeneration makes was renamed `body_2`, and the bindings naming
+  // `body` went to a role the profile no longer had.
+  const prior = {
+    textures: {
+      body: { file: '906_EXT_Body_Diff.dds', notes: 'The paint.' },
+      body_2: { file: '906_EXT_Body_Diff.DDS', notes: 'Spelled as the rear clip names it.' },
+    },
+    panels: {
+      body: { left_mid: { rect: [0.1, 0.1, 0.3, 0.3] } },
+      body_2: { left_mid: { rect: [0.1, 0.1, 0.3, 0.3] } },
+    },
+    aliases: { body: { flankLeft: 'left_mid' }, body_2: { doorLeft: 'left_mid' } },
+  };
+  const fresh = {
+    textures: { body: { file: '906_EXT_Body_Diff.dds' } },
+    panels: { body: { left_mid: { rect: [0.1, 0.1, 0.3, 0.3] } } },
+    // As mergeBindings leaves it: the human entries of the prior, as they were.
+    bind: {
+      body: { roles: ['body'], source: 'human' },
+      bodyRear: { roles: ['body_2'], source: 'human' },
+    },
+  };
+  const report = preserveHandwork(fresh, prior);
+
+  assert.deepEqual(report.roles, [], 'the role whose spelling the model uses keeps its name');
+  assert.deepEqual(Object.keys(fresh.textures), ['body']);
+  assert.deepEqual(fresh.bind.body.roles, ['body']);
+  assert.deepEqual(fresh.bind.bodyRear.roles, ['body'], 'a binding to the other role follows its file');
+  assert.deepEqual(report.dangling, []);
+  assert.deepEqual(fresh.textures.body.notes, ['The paint.', 'Spelled as the rear clip names it.'],
+    'both notes are kept');
+  assert.deepEqual(fresh.aliases, { body: { flankLeft: 'left_mid', doorLeft: 'left_mid' } });
+  assert.match(describeHandwork(report, 'old.json').join('\n'),
+    /body_2 -> body {2}\(906_EXT_Body_Diff\.DDS\)/);
+
+  // Neither spelling the model's: the first of them, in the prior's order.
+  const other = { textures: { body_3: { file: '906_ext_body_diff.dds' } }, panels: { body_3: {} } };
+  preserveHandwork(other, prior);
+  assert.deepEqual(Object.keys(other.textures), ['body']);
+});
+
 test('a hand-set texture size survives while the model still says what it said', () => {
   // 256x256 over a 28x28 placeholder. Losing it did not fail quietly: a blur
   // sigma scaled to texture size came out at 0.19 and the renderer rejected it.
