@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { nearMiss } from '../src/profile.mjs';
 import { featuresFromRecord } from '../src/engine/classify.mjs';
 import { everyNth, summarise } from '../tools/fleet.mjs';
+import { carKn5 } from './fixtures/kn5.mjs';
 
 const run = promisify(execFile);
 const tool = (name) => fileURLToPath(new URL(`../tools/${name}`, import.meta.url));
@@ -123,6 +124,48 @@ test('the sweep refuses a --limit it cannot read, rather than sweeping a differe
   await assert.rejects(sweep('neon-grid-any', '--limit', '1', '--out'), /--out wants a value/);
   const { stdout } = await sweep('neon-grid-any', '--out', out, '--limit', '1');
   assert.match(stdout, /3 planned, 0 already done, 1 this pass/);
+}));
+
+const repoFile = (path) => readFile(fileURLToPath(new URL(`../${path}`, import.meta.url)), 'utf8');
+
+test('a resumed sweep retries what failed, and refuses records swept another way', () => inTmp(async (dir) => {
+  const out = join(dir, 'sweep.json');
+  const profiles = join(dir, 'profiles');
+  await mkdir(profiles);
+  const abarth = await repoFile('cars/abarth500.json');
+  await writeFile(join(profiles, 'abarth500.json'), abarth);
+  await writeFile(join(profiles, 'broken.json'), '{');
+  const livery = join(dir, 'neon-grid-any.mjs');
+  const design = await repoFile('liveries/neon-grid-any.mjs');
+  await writeFile(livery, design);
+
+  await sweep(livery, '--profiles', profiles, '--out', out);
+  assert.ok(JSON.parse(await readFile(out, 'utf8')).find((r) => r.id === 'broken').error);
+
+  // A car that failed counted as done, so it was never tried again short of
+  // --fresh, which throws away every car that worked.
+  await writeFile(join(profiles, 'broken.json'), JSON.stringify({ ...JSON.parse(abarth), id: 'broken' }));
+  const { stdout } = await sweep(livery, '--profiles', profiles, '--out', out);
+  assert.match(stdout, /2 planned, 1 already done, 1 this pass \(1 failed last time\)/);
+  const records = JSON.parse(await readFile(out, 'utf8'));
+  assert.deepEqual(records.map((r) => [r.id, r.error]), [['abarth500', undefined], ['broken', undefined]]);
+
+  // The key is the car and the design's name, so other profiles, or the same
+  // design edited, used to reuse these records without a word.
+  await assert.rejects(sweep(livery, '--out', out), /2 of them with --profiles .*profiles.*--fresh/s);
+  await writeFile(livery, design.replace('cell: 30', 'cell: 31'));
+  await assert.rejects(sweep(livery, '--profiles', profiles, '--out', out), /a different version of the design.*--fresh/s);
+  // Summarising reads what is there, but says when the design has moved on.
+  const summary = await sweep(livery, '--out', out, '--summary');
+  assert.match(summary.stdout, /2 record\(s\) were swept from a different version of the design/);
+
+  // And the models' options: visibility changes every tag a profile carries.
+  const cars = join(dir, 'cars');
+  await mkdir(join(cars, 'boxcar'), { recursive: true });
+  await writeFile(join(cars, 'boxcar', 'boxcar.kn5'), carKn5());
+  const kn5Out = join(dir, 'kn5.json');
+  await sweep(livery, '--cars', cars, '--no-profiles', '--no-visibility', '--out', kn5Out, 'boxcar');
+  await assert.rejects(sweep(livery, '--cars', cars, '--no-profiles', '--out', kn5Out, 'boxcar'), /visibility off, not on.*--fresh/s);
 }));
 
 test('the summary counts a rule as missed only where it landed nowhere', () => {
