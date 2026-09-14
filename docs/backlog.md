@@ -108,8 +108,10 @@ side panel in the middle of the car, and the Morgan 3-Wheeler has two panels
 on its left to choose from. `visible` emptied no selection, before or after.
 
 `[shared, visible]` found nothing on 16, every one of them because the car has
-no instanced bodywork. `shared` is a
-tag a portable design should not lean on without saying the miss is expected.
+no instanced bodywork. `shared` is a tag a portable design should not lean on
+without saying the miss is expected, and the portable example now says so: the
+rule is `optional`, so on those cars the build says nothing and the portability
+report lists it as expected. Every other miss now says which tag emptied it.
 
 ## A texture listed under two spellings tied with itself — fixed
 

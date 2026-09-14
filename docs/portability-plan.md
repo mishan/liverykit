@@ -16,7 +16,7 @@ What did not hold was the part that decides *where* a portable design lands:
 | `tyres` bound to one of a car's two tyre textures | 0; 11 of 176 labelled cars before step 3, which binds both |
 | `[left, visible]` or `[right, visible]` matched no panel | 0; 1 each, the mp412c, before step 2 |
 | a `[mid, upper, visible]` selection matched nothing on a car with a right body | 3 on the left, 2 on the right; 7 and 6 before tags read each panel's extent |
-| `[shared, visible]` matched no panel | 16 |
+| `[shared, visible]` matched no panel | 16, every one a car without instanced flanks; the rule is `optional` now, so these are expected (step 4) |
 | a body on a tiled material, not an unwrapped sheet | 0; the mp412c's `black.dds` before step 2 |
 | surfaces the design paints that were bound on arrival | 2 of 14 |
 
@@ -47,8 +47,7 @@ effect, and the tag numbers cannot be read until that noise is out of them.
 
 *Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 to 3
 are done — step 3 by measuring that its floor is not needed — and so are the
-shifted-sheet fix step 1 turned up and the first two parts of step 4; step 5
-and the rest of step 4 are not.*
+shifted-sheet fix step 1 turned up and all of step 4; step 5 is not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -429,7 +428,8 @@ happens in `computeTags`:
   shipped fits now name the panel of every placement on a `limit` selection, a
   test requires that of every fit, and `limit` ranks a panel centred in the
   section before one that only reaches it.
-- **Give every miss its near-miss explanation.** The sweep already records
+- **Give every miss its near-miss explanation.** *Done, as `missExplanation`
+  in `src/profile.mjs`.* The sweep already records
   one for each `no-match`, from `nearMiss` in `src/profile.mjs`: how many
   panels carry each tag alone, how many match with each tag dropped, and which
   tag emptied the selection. That is how the sweep knows it was `mid` and not
@@ -439,7 +439,7 @@ happens in `computeTags`:
   answer. Leave the visibility threshold alone until a sweep shows `visible`
   emptying a selection, and then re-measure it on those cars rather than
   nudging it.
-- **Let a region say a miss is expected.** `optional: true` on a region turns
+- **Let a region say a miss is expected.** *Done.* `optional: true` on a region turns
   its `no-match` from a reported skip in the build into a silent one. The
   portable example's `[shared, visible]` rule is exactly this: it exists for
   cars that have instanced flanks and should say nothing on cars that do not.
@@ -460,7 +460,7 @@ counts on cars with a right body, 7 and 6 today, are recorded before and after,
 alongside the shipped profiles' baseline from step 0, and the backlog entry is
 rewritten with the new numbers rather than deleted.
 
-**What the first two parts established.** `test/fitpicks.test.mjs` pins where
+**What it established.** `test/fitpicks.test.mjs` pins where
 the portable design lands on the three shipped profiles and passes unchanged,
 since none of them carries `extent3d` until it is regenerated. The tag tests
 give a flank running 0.2 to 0.8 of the car every section it reaches and both
@@ -471,6 +471,18 @@ the Exige, the Quattro, the 650 GT3 and the RX3 now match. What is left is the
 906, whose visible mid-length flank is wholly below the midline; the Lotus 49,
 which has no visible side panel in the middle of the car; and the Morgan's
 left side, with two panels on it. No other rule's count moved.
+
+A miss now says which tag emptied it, in the build's note and in the
+portability report alike: "Dropping `mid` would match 5 (left 14, mid 0, upper
+9, visible 23)", followed by the texture's own tags, which is what someone
+guessing at the vocabulary needs. And a region may say `optional: true`. Its
+miss is noted under its own status, which the build does not print, fitment
+does not turn into a finding, and the portability report and the editor list
+as expected rather than as `missing`; it must be a boolean, and a fit or the
+editor that pins the region to a panel drops it, since there is no selection
+left to miss. The portable example's `[shared, visible]` rule is the first
+user, and on the sweep it now reads "found nothing on 16 of 26, as its design
+allows" rather than as 16 misses; every other figure is as step 3 left it.
 
 ## 5. Binding more of the vocabulary
 
