@@ -12,7 +12,8 @@ What did not hold was the part that decides *where* a portable design lands:
 | body bound to a texture with no UV islands at all | 0; 1 (`mclaren_mp412c_gt3`) before step 2, which now binds its paint at 0.82 |
 | body bound to the right texture, whose islands were all dropped | 0; 2 (Avensis, RX3) before the shifted-sheet fix, and the 180SX's kept 2 panels |
 | body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds its paint at 0.79 |
-| an `auto` binding painted with the same conviction at 0.04 as at 0.97 | every car with an auto body |
+| an `auto` body proposal below 0.2 that is wrong | none; the three there are right, so no floor is set (step 3) |
+| `tyres` bound to one of a car's two tyre textures | 0; 11 of 176 labelled cars before step 3, which binds both |
 | `[left, visible]` or `[right, visible]` matched no panel | 0; 1 each, the mp412c, before step 2 |
 | a `[mid, upper, visible]` selection matched nothing on a car with a right body | 3 on the left, 2 on the right; 7 and 6 before tags read each panel's extent |
 | `[shared, visible]` matched no panel | 16 |
@@ -44,9 +45,10 @@ cheap and the classifier fix depends on it. The two classifier items come before
 the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
-*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0, 1 and 2
-are built, and so are the shifted-sheet fix step 1 turned up and the first two
-parts of step 4; steps 3 and 5, and the rest of step 4, are not.*
+*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 to 3
+are done — step 3 by measuring that its floor is not needed — and so are the
+shifted-sheet fix step 1 turned up and the first two parts of step 4; step 5
+and the rest of step 4 are not.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -279,10 +281,10 @@ visibility. The three it gets wrong are the two Evora labels and the 180SX,
 whose label names a LOD texture with no islands while the pick is the paint
 nine skins override — the label, most likely, again.
 
-## 3. A guess below a floor is not painted
+## 3. A guess below a floor is not painted — measured, and not needed
 
 **Symptom.** `resolveTargets` files an `unconfirmed` note for an `auto`
-binding and then paints it. On the two cars above that put artwork on the
+binding and then paints it. On the two McLarens that put artwork on the
 wrong sheet, reported in a note nobody reads before looking at the car.
 
 **Cause.** `binding()` returns `confidence` and the resolver reads it only to
@@ -295,46 +297,62 @@ catches a close call, and it cannot catch a candidate that wins alone and is
 wrong, because a field of one scores 1. Removing the wrong lone candidates is
 step 2's job, which is one more reason it comes first.
 
-**Fix.**
+**The plan, as first written.** An `uncertain` status for an `auto` binding
+below a floor, treated like `unbound`: nothing painted, a note naming the term,
+the role it would have picked, its confidence and the `--explain` command that
+settles it, reported by the build and by `portability()`. A human binding never
+subject to it. And the floor measured, not picked: the highest confidence at
+which a proposal was wrong, from a table the evaluator would gain, with the
+trade stated if it also refused right answers.
 
-- Add a status, `uncertain`, returned by `binding()` when `source` is `auto`
-  and `confidence` is below a floor. `resolveTargets` treats it exactly like
-  `unbound`: nothing painted, a note that names the term, the role it would
-  have picked, the confidence, and the `--explain` command that confirms or
-  corrects it. `build.mjs` adds it to `MISSING`.
-- `portability()` reports it as a surface status of its own, so the editor's
-  **On another car** panel shows it before anyone builds. That needs a change
-  to how `portability()` works out surface statuses. Today it lists every
-  surface the design wanted and `resolveTargets` did not return as `absent`,
-  so a term the car confirmably lacks and a term nobody has bound already
-  read the same, and `uncertain` would join them. It should take the status
-  from `resolveTargets`' notes, keeping `absent`, `unbound` and `uncertain`
-  apart, since each asks the person for something different.
-- A human binding is never subject to the floor. `source: "human"` at any
-  confidence paints. That is what the field is for.
-- **Where the floor sits is measured, not picked.** `tools/evaluate.mjs` gains a
-  table: for every labelled car, the proposal's confidence and whether it was
-  right. The floor is the highest confidence at which a proposal was wrong,
-  after step 2 has removed the no-island cases, rounded up to two places. If
-  that turns out to be a number that also excludes many right answers, say so
-  in the doc and choose the trade explicitly; the point is that the number has
-  a provenance. The backlog's own guess is that 0.2 is roughly where it lands,
-  since `explain` already warns below that, but a guess is what this step
-  exists to replace.
-- `tyres` and `brakes` are shader-gated and scored 0.95 and 0.96 across the
-  sweep. They are not in `VALIDATED`, and this plan does not add them, but the
-  floor will apply to them, so the evaluation table has to cover them too.
-  Today the evaluator only has a label for `body`. They need one of the same
-  kind: filenames that plainly say tyre or disc, which the scorer never sees.
+**What the measurement said.** `tools/evaluate.mjs` now prints that table, and
+after steps 1 and 2 it leaves nothing for a floor to catch. The body is wrong
+on no labelled car at low confidence. The proposals it is least sure of are the
+BAC Mono at 0.03, the 650 GT3 at 0.04 and the McLaren P1 at 0.10, and all three
+are right. A floor at 0.05 or 0.1 would refuse two right bodies and nothing
+else; at 0.2, three. The one car the label disagrees with, the 180SX, it
+disagrees with at 0.8, and there the label names a LOD texture with no islands.
+The wrong low-confidence picks this step was written against were the mp412c's,
+and step 2 removed them. So no floor is set: by the step's own rule there is
+none to set, and one set anyway would only refuse correct bindings.
 
-**What it must establish.** A test in `test/integrity.test.mjs` with a
-profile whose `body` is `auto` at 0.1: the build reports `body` as uncertain,
-paints nothing on it, and the same profile with `source: "human"` paints. A
-test on `portability()` that an unbound and an uncertain term come back as
-their own statuses, not as `absent`. And the sweep: after steps 2 and 3, no
-car in the 25 has artwork on a sheet the classifier was guessing about, and
-the count of cars where the body was painted is recorded, so that the cost of
-the floor is a number too.
+The table found a different problem. `tyres` was wrong on 11 of 176 labelled
+cars, all at 0.45 to 0.58, and all the same case: a car with two tyre textures,
+a tread and a sidewall, where the tread was bound and the sidewall, where the
+lettering goes, was not. Every tyre proposal under 0.6 was one of the 17 cars
+with two such textures. A floor would have left all 17 unpainted rather than
+half-painted. That is not what a floor is for.
+
+**What was built instead.**
+
+- `tyres` and `brakes` bind every texture that only their own shader draws
+  (`bindsEvery` and `gate` in `VOCABULARY`), at confidence 1, since no such
+  texture is left out. A texture another shader also draws is a swatch shared
+  with other parts and stays out: the Morgan's tyres had been bound to a
+  `white.dds` its body materials use, and are now bound to its three tyre
+  textures. A car with no texture only the shader draws keeps the single best
+  candidate. Every car with one candidate binds exactly as before.
+- `tools/evaluate.mjs` scores `tyres` and `brakes` against filenames that
+  plainly say tyre or tread, disc or rotor, and prints the body's confidence
+  table and what floors at 0.05, 0.1 and 0.2 would refuse, so the question can
+  be asked again on any survey.
+- Not built: `portability()` still reports a term nobody has bound as `absent`,
+  the same as one the car confirmably lacks. The plan meant to separate them
+  for `uncertain`'s sake; they are worth separating anyway, and that is small.
+
+**What it established.** Tyres now bind every labelled texture on 182 of 184
+cars, from 165 of 176 binding the labelled one. Of the two left, the Morgan has
+a rear sidewall its tyre materials do not draw, and the 180SX's tyres are not
+drawn with the tyre shader at all. Brakes bind every labelled disc on 193 of
+202; seven of the nine misses are discs no brake-disc material draws, which no
+rule that reads the shader can reach, and are a scoring gap for step 5. The
+body is unchanged at 192/195. `test/classifier.test.mjs` holds both terms to
+their measured figures across the fleet fixture, and a hand-built case to the
+shared-swatch rule; both fail with the change reverted. On the sweep's 26
+cars, profiled before and after, only two change, and only in their tyres: the
+Avensis binds its tread and its sidewall, and the Morgan its three tyre
+textures instead of the shared swatch. The other 24 are byte-identical, and
+tyres are proposed at a mean confidence of 1.00, from 0.96.
 
 ## 4. Tag selections that match nothing
 
@@ -496,10 +514,9 @@ acceptable evidence. But the evidence is the fixed spelling, not a pattern:
 anything with `pit` in it crew, which is fine for naming a role and too loose
 to bind one. Match the exact filenames and propose them from the skins scan at
 `source: "auto"`. Their `confidence` cannot be a margin, because nothing was
-ranked, so the floor from step 3 is the wrong gate for them. Record the
-binding as named, not measured, in a field of its own, and let the resolver
-state that in its note instead of comparing a made-up number to a measured
-one.
+ranked. Record the binding as named, not measured, in a field of its own, and
+let the resolver state that in its note rather than print a made-up number
+beside measured ones. Step 3 found no floor to compare it with in any case.
 
 `wing`, `floor`, `metalTrim`, `heatShield`, `belts`, `steeringWheel`,
 `numberPlate`, `glass`, `mirror`, `seat` and `wheelLogo` stay human. Nothing
@@ -557,18 +574,19 @@ one feature reader shared by the evaluator and the classifier test. Needs the
 fleet on disk once.
 
 **1. Tiled materials.** `uvLayout` per texture, measured per island before the
-island filter, `uvTile` for a shifted sheet, the log lines,
-the `tiled` caveat and `unplaceable` notes, placement refused and fill allowed.
-Synthetic fixture case.
+island filter, `uvTile` for a shifted sheet, the log lines, the `tiled` caveat
+and `unplaceable` notes, placement refused and fill allowed. Synthetic fixture
+case.
 
 **2. Islands as a classifier input.** `islands` and `uvLayout` in
 `textureFeatures` at every call site, zero score without islands, repeating
 islands out of the panel threshold, the column in `explain`. Fleet accuracy
 re-measured; the mp412c as a regression test.
 
-**3. The confidence floor.** `uncertain` status, measured floor, evaluation
-table with labels for `tyres` and `brakes`, reported in build and, as its own
-status, in portability. Integrity test.
+**3. The confidence floor, measured.** The evaluator's confidence table and its
+labels for `tyres` and `brakes`; no floor, since the table shows none is
+justified; `tyres` and `brakes` binding every texture only their own shader
+draws, which is what the table showed was wrong instead.
 
 **4. Tags.** `extent3d` in the profile, overlap-based section and level, a
 test pinning which panel every fitted region resolves to, nearest-miss
@@ -580,7 +598,7 @@ proposed from exact skin filenames, `--explain --all`, the editor's Bindings
 panel on a route of its own.
 
 Steps 1 through 4 are each a day or two, and they run in order: step 2 reads
-step 1's `uvLayout`, and step 3's floor is measured after step 2 has removed
-the no-island cases. Step 5's second half, the one-pass confirmation, depends
+step 1's `uvLayout`, and step 3's measurement meant something only once step 2
+had removed the no-island cases. Step 5's second half, the one-pass confirmation, depends
 on none of them, and is worth doing before its first half, because it makes
 every car cheap to bind by hand whether or not the scorers arrive.
