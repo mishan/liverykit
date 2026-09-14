@@ -19,7 +19,7 @@ description of the surface that another program can reason about.
 
 **A design as data, with a checker.** A region names a panel or a tag set in
 panel-relative coordinates. A binding maps a fixed vocabulary onto whatever a
-car calls its textures, proposed by a classifier that scores 172 of 175 on a
+car calls its textures, proposed by a classifier that scores 189 of 193 on a
 held-out label and confirmed by a person. A fit holds the per-pair
 adjustments and nothing else. `fitment` reports what is wrong with a
 placement in millimetres. Together these are what let one design travel and
