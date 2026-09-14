@@ -143,13 +143,23 @@ export async function profileFromKn5(path, {
 
   // Which slot each texture is bound to, across every material. A texture the
   // model ships but never binds is not paintable in any useful sense.
+  //
+  // This map, `shadersOf` and `coverage` are keyed by the LOWERCASED name. A
+  // material's slot may spell a texture differently from the texture's own
+  // entry, and a model may list one texture under two spellings, or the same
+  // spelling twice; nothing in the format forbids any of it, and on the Windows
+  // filesystem a skin is read from they are all one file. Keyed by spelling, a
+  // mismatched slot filed its texture as never bound and it vanished, and a
+  // doubled one became two roles measuring the same meshes, which tied with
+  // itself for the body at confidence 0 and made a profile that would not load.
   const boundAs = new Map();
   for (const mesh of model.meshes) {
     const mat = model.materials[mesh.materialId];
     if (!mat) continue;
     for (const [slot, tex] of Object.entries(mat.slots)) {
-      if (!boundAs.has(tex)) boundAs.set(tex, new Set());
-      boundAs.get(tex).add(slot);
+      const k = tex.toLowerCase();
+      if (!boundAs.has(k)) boundAs.set(k, new Set());
+      boundAs.get(k).add(slot);
     }
   }
   const diffuseUsed = new Set([...boundAs].filter(([, s]) => s.has('txDiffuse')).map(([t]) => t));
@@ -160,7 +170,7 @@ export async function profileFromKn5(path, {
   const shadersOf = new Map();
   for (const mesh of model.meshes) {
     const mat = model.materials[mesh.materialId];
-    const t = mat?.slots?.txDiffuse;
+    const t = mat?.slots?.txDiffuse?.toLowerCase();
     if (!t) continue;
     if (!shadersOf.has(t)) shadersOf.set(t, new Set());
     shadersOf.get(t).add(mat.shader);
@@ -205,7 +215,7 @@ export async function profileFromKn5(path, {
   // whichever happened to appear first in the file.
   const coverage = new Map();
   for (const mesh of model.meshes) {
-    const t = model.materials[mesh.materialId]?.slots?.txDiffuse;
+    const t = model.materials[mesh.materialId]?.slots?.txDiffuse?.toLowerCase();
     if (t) coverage.set(t, (coverage.get(t) ?? 0) + mesh.vertexCount);
   }
 
@@ -236,10 +246,27 @@ export async function profileFromKn5(path, {
   }
 
   const paintable = [];
+  // One entry per FILE, keyed as `boundAs` is. A texture the model names twice
+  // is kept under one spelling, which is the spelling a build writes and, on
+  // Windows, overrides every spelling of it. On ext4, under Proton, it is one
+  // file of two: written as `body.dds` into a stock skin folder that holds
+  // `BODY.DDS`, the material asking for `BODY.DDS` drew the stock one, and half
+  // the body stayed stock with no error. So the spelling most of the car's
+  // skins use, when there are skins to ask, and the model's first otherwise.
+  const skinTally = skinsDir ? await countSkinOverrides(skinsDir).catch(() => null) : null;
+  const skinsUsing = (tex) => skinTally?.spellings?.get(tex.name.toLowerCase())?.get(tex.name) ?? 0;
+  const spellings = new Map();
   for (const tex of model.textures) {
+    if (!headers.get(tex.name)) continue;
+    const key = tex.name.toLowerCase();
+    spellings.set(key, [...(spellings.get(key) ?? []), tex]);
+  }
+  const written = new Map();
+  for (const [key, all] of spellings) {
+    const tex = all.reduce((a, b) => (skinsUsing(b) > skinsUsing(a) ? b : a));
+    written.set(key, tex);
     const h = headers.get(tex.name);
-    if (!h) continue;
-    const slots = boundAs.get(tex.name);
+    const slots = boundAs.get(key);
 
     if (!slots) continue;                                  // shipped but never bound
     if (!slots.has('txDiffuse')) {
@@ -251,7 +278,21 @@ export async function profileFromKn5(path, {
     }
     paintable.push({ tex, h });
   }
-  paintable.sort((a, b) => (coverage.get(b.tex.name) ?? 0) - (coverage.get(a.tex.name) ?? 0));
+  paintable.sort((a, b) => (coverage.get(b.tex.name.toLowerCase()) ?? 0) - (coverage.get(a.tex.name.toLowerCase()) ?? 0));
+  const doubled = [...spellings.values()].filter((v) => v.length > 1);
+  if (doubled.length) {
+    log(`  ${doubled.length} texture(s) are named more than once in the model ` +
+        `(${doubled.slice(0, 3).map((v) => v.map((t) => t.name).join(' = ')).join('; ')}${doubled.length > 3 ? '; …' : ''}); ` +
+        'each is one file on Windows, and one role here.');
+    for (const v of doubled) {
+      if (new Set(v.map((t) => t.name)).size < 2) continue;
+      const w = written.get(v[0].name.toLowerCase());
+      const n = skinsUsing(w);
+      log(`    ${w.name} is written: ${n ? `the spelling ${n} of ${skinTally.skinCount} skin(s) use`
+        : skinsDir ? 'the model\'s first, since no skin carries any spelling of it'
+          : 'the model\'s first; pass --skins to write the one the car\'s skins use'}.`);
+    }
+  }
 
   // The textures embedded in a kn5 are the model's own defaults, and they are
   // routinely far smaller than what skins actually ship — 512x512 in the model
@@ -279,7 +320,7 @@ export async function profileFromKn5(path, {
 
     const skin = realSize.get(tex.name.toLowerCase());
     const entry = { file: tex.name, width: h.width, height: h.height, alpha: h.alpha };
-    const shaders = [...(shadersOf.get(tex.name) ?? [])].sort();
+    const shaders = [...(shadersOf.get(tex.name.toLowerCase()) ?? [])].sort();
     if (shaders.length) entry.shaders = shaders;
 
     // Whether this sheet is a BAKE rather than artwork: shading that a MultiMap
@@ -407,10 +448,13 @@ export async function profileFromKn5(path, {
   }
 
   // Case collisions among everything the model references.
+  // Distinct spellings only. A model that lists the same name twice has one
+  // file under one name, which is not a collision; recorded as a pair, it made
+  // validateProfile refuse a profile for shipping "both" of one spelling.
   const byLower = new Map();
   for (const t of model.textures) {
     const k = t.name.toLowerCase();
-    byLower.set(k, [...(byLower.get(k) ?? []), t.name]);
+    byLower.set(k, [...new Set([...(byLower.get(k) ?? []), t.name])]);
   }
   const caseCollisions = [...byLower.values()].filter((v) => v.length > 1);
 
@@ -419,7 +463,7 @@ export async function profileFromKn5(path, {
   // and cable trim — all real, none paintable in any meaningful sense, and
   // collectively they bury the panels somebody actually wants. Only textures
   // carrying a real share of the car's geometry get decomposed.
-  const totalCoverage = [...roleOf.keys()].reduce((s, t) => s + (coverage.get(t) ?? 0), 0) || 1;
+  const totalCoverage = [...roleOf.keys()].reduce((s, t) => s + (coverage.get(t.toLowerCase()) ?? 0), 0) || 1;
 
   const panels = {};
   const adjacencyOut = {};
@@ -430,7 +474,7 @@ export async function profileFromKn5(path, {
   // no claim at all. See nameIslands.
   const bounds = carBounds(model);
   for (const [texName, role] of roleOf) {
-    const share = (coverage.get(texName) ?? 0) / totalCoverage;
+    const share = (coverage.get(texName.toLowerCase()) ?? 0) / totalCoverage;
     if (share < minCoverage) { panels[role] = {}; continue; }
 
     const meshes = meshesUsingTexture(model, texName);

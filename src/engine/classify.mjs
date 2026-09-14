@@ -28,15 +28,15 @@
 //   visible    ray-cast trackside visibility. The decisive one, and the
 //              expensive one.
 //
-// MEASURED ACCURACY. Scored against a held-out label — the 193 fleet cars whose
+// MEASURED ACCURACY. Scored against a held-out label — the 195 fleet cars whose
 // filename is unambiguous, which this code never sees — the first four signals
-// pick the right body on 173/193 (90%). The failures are a coherent group:
+// pick the right body on 175/195 (90%). The failures are a coherent group:
 // interior occlusion maps, engine bays and undertrays, all large, all symmetric,
-// all invisible. Adding visibility takes it to 189/193 (97.9%), and two of the
+// all invisible. Adding visibility takes it to 191/195 (97.9%), and two of the
 // four remaining misses are the LABEL being wrong: on the Evora GTE and its
 // carbon variant this picks Carpaint_D, which every stock skin overrides and
 // which is 79% visible, over a labelled Skin_soft that no skin overrides and
-// that is 0.1% visible. Counted properly, 191/193.
+// that is 0.1% visible. Counted properly, 193/195.
 //
 // Re-measure with `node tools/survey.mjs cars --all --visibility` after any
 // change to the weights. That number is the thing to defend.
@@ -104,8 +104,11 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
     const mat = model.materials[mesh.materialId];
     if (!mat) continue;
     for (const tex of Object.values(mat.slots)) {
-      if (!shadersFor.has(tex)) shadersFor.set(tex, new Set());
-      shadersFor.get(tex).add(mat.shader);
+      // Lowercased, as meshesUsingTexture compares: a slot may spell the file
+      // differently from the role that names it, and they are one file.
+      const k = tex.toLowerCase();
+      if (!shadersFor.has(k)) shadersFor.set(k, new Set());
+      shadersFor.get(k).add(mat.shader);
     }
   }
 
@@ -139,7 +142,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       ] : null,
       straddles: bound && x0 < -0.08 * halfWidth && x1 > 0.08 * halfWidth,
       skinFraction: skinCount ? (skinCounts.get(file.toLowerCase()) ?? 0) / skinCount : 0,
-      shaders: [...(shadersFor.get(file) ?? [])],
+      shaders: [...(shadersFor.get(file.toLowerCase()) ?? [])],
       ...(visibleByFile.has(file) ? { visible: visibleByFile.get(file) } : {}),
     });
   }

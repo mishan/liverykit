@@ -83,11 +83,17 @@ export async function countSkinOverrides(dir) {
 
   const TEXTURE = /\.(dds|png)$/i;
   const counts = new Map();
+  // And by exact spelling, under the lowercased name: which of a file's
+  // spellings a stock skin folder holds is the one a build should write, since
+  // on Linux the other is a second file beside it.
+  const spellings = new Map();
   const tally = (files) => {
     for (const f of files) {
       if (!TEXTURE.test(f)) continue;
       const k = f.toLowerCase();
       counts.set(k, (counts.get(k) ?? 0) + 1);
+      if (!spellings.has(k)) spellings.set(k, new Map());
+      spellings.get(k).set(f, (spellings.get(k).get(f) ?? 0) + 1);
     }
   };
 
@@ -97,7 +103,7 @@ export async function countSkinOverrides(dir) {
   // skin overrides anything", and quietly costs the classifier a whole signal.
   if (entries.some((e) => e.isFile() && TEXTURE.test(e.name))) {
     tally(entries.filter((e) => e.isFile()).map((e) => e.name));
-    return { skinCount: 1, counts };
+    return { skinCount: 1, counts, spellings };
   }
 
   let skinCount = 0;
@@ -108,7 +114,7 @@ export async function countSkinOverrides(dir) {
     skinCount++;
     tally(files);
   }
-  return { skinCount, counts };
+  return { skinCount, counts, spellings };
 }
 
 /**

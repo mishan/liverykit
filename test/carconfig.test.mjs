@@ -372,16 +372,103 @@ test('a bake is recorded from the name AND the structure, whatever the spelling'
     material: { shader: 'ksPerPixelMultiMap', slots: { txDetail: 'carbon.dds' } },
   }), undefined, 'useDetail is what says the second layer is real');
 
-  // A texture whose material spells the slot in a different case is not merely
-  // un-baked, it is ABSENT: profilegen keys `boundAs` by the slot's spelling
-  // and looks it up by the texture entry's, so the texture is filed as "shipped
-  // but never bound" and never reaches the loop this test is about. Asserted as
-  // it behaves rather than as it should, because pretending otherwise here
-  // would hide it — see docs/backlog.md.
+  // A texture whose material spells the slot in a different case is the same
+  // file on Windows, and is kept. It used to be ABSENT: profilegen keyed
+  // `boundAs` by the slot's spelling and looked it up by the texture entry's,
+  // so the texture was filed as "shipped but never bound" and never reached the
+  // loop this test is about.
   const dir = await mkdtemp(join(tmpdir(), 'lk-cased-'));
   const at = join(dir, 'fixture.kn5');
   await writeFile(at, buildKn5({ textureName: BAKE, material: twoLayer(BAKE.toLowerCase()) }));
   const cased = await profileFromKn5(at, { id: 'fixture_car', log: () => {} });
-  assert.deepEqual(Object.values(cased.textures).map((t) => t.file), [],
-    'a case-mismatched slot loses the texture entirely — which is the bug above this one');
+  const kept = Object.values(cased.textures).filter((t) => t.file === BAKE);
+  assert.equal(kept.length, 1, 'a case-mismatched slot keeps its texture');
+  assert.equal(kept[0].bake, true, 'and it is still recognised as a bake');
+});
+
+test('a texture the model names twice is one role, and its profile loads', async () => {
+  // The Porsche 906 lists its paint as 906_EXT_Body_Diff.DDS and .dds, and
+  // three fleet cars list a texture under the SAME spelling twice. Either way
+  // it became two roles measuring the same meshes: the body tied with itself at
+  // confidence 0, and validateProfile refused the profile, because a profile
+  // naming one file twice ships it twice to a filesystem that holds it once.
+  const { validateProfile } = await import('../src/profile.mjs');
+  // A second mesh on a second material, which names the texture its own way,
+  // so both spellings are really bound — as they are on the 906.
+  const N = 6;
+  const verts = [];
+  const indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) verts.push(vert(-0.3 + 0.1 * i, 0.5, -0.3 + 0.1 * j, 0.1 + 0.1 * i, 0.1 + 0.1 * j));
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+
+  for (const [label, other] of [['two spellings', 'BODY.DDS'], ['one spelling twice', 'body.dds']]) {
+    const dir = await mkdtemp(join(tmpdir(), 'lk-twice-'));
+    const at = join(dir, 'fixture.kn5');
+    await writeFile(at, carKn5({
+      extraMeshes: [{ name: 'SECOND', verts, indices, materialId: 1 }],
+      materials: [{ name: 'BodyMat' }, { name: 'OtherMat', slots: { txDiffuse: other } }],
+      extraTextures: [{ name: other }],
+    }));
+    const lines = [];
+    const profile = await profileFromKn5(at, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+    const roles = Object.values(profile.textures).filter((t) => t.file.toLowerCase() === 'body.dds');
+    assert.equal(roles.length, 1, `${label}: one file, one role`);
+    assert.doesNotThrow(() => validateProfile(profile, label), `${label}: the profile loads`);
+    assert.ok(profile.bind.body.confidence > 0,
+      `${label}: the body no longer ties with itself (confidence ${profile.bind.body.confidence})`);
+    assert.match(lines.join('\n'), /1 texture\(s\) are named more than once in the model/, `${label}: and it is said`);
+  }
+});
+
+test('a texture the model names twice is written as most of the car\'s skins spell it', async () => {
+  // A build writes the one spelling the profile names. Dropped into a stock
+  // skin folder on ext4, under Proton, that holds the other spelling, it made
+  // two files, and the material asking for the other drew the stock one: half
+  // the body stock, and no error anywhere.
+  const N = 6;
+  const verts = [];
+  const indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) verts.push(vert(-0.3 + 0.1 * i, 0.5, -0.3 + 0.1 * j, 0.1 + 0.1 * i, 0.1 + 0.1 * j));
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-spelled-'));
+  const at = join(dir, 'fixture.kn5');
+  await writeFile(at, carKn5({
+    extraMeshes: [{ name: 'SECOND', verts, indices, materialId: 1 }],
+    materials: [{ name: 'BodyMat' }, { name: 'OtherMat', slots: { txDiffuse: 'BODY.DDS' } }],
+    extraTextures: [{ name: 'BODY.DDS' }],
+  }));
+  const dds = Buffer.alloc(128);
+  dds.write('DDS ', 0, 'ascii');
+  dds.writeUInt32LE(64, 12);
+  dds.writeUInt32LE(64, 16);
+  for (const [skin, file] of [['red', 'BODY.DDS'], ['blue', 'BODY.DDS'], ['green', 'body.dds']]) {
+    await mkdir(join(dir, 'skins', skin), { recursive: true });
+    await writeFile(join(dir, 'skins', skin, file), dds);
+  }
+  const bodyFiles = (profile) => Object.values(profile.textures).map((t) => t.file).filter((f) => f.toLowerCase() === 'body.dds');
+
+  const lines = [];
+  const skinned = await profileFromKn5(at, { id: 'c', visibility: false, skinsDir: join(dir, 'skins'), log: (s) => lines.push(s) });
+  assert.deepEqual(bodyFiles(skinned), ['BODY.DDS'], 'the spelling two of the three skins use');
+  assert.match(lines.join('\n'), /BODY\.DDS is written: the spelling 2 of 3 skin\(s\) use/);
+
+  // With no skins to ask, the model's first, and said so.
+  lines.length = 0;
+  const bare = await profileFromKn5(at, { id: 'c', visibility: false, log: (s) => lines.push(s) });
+  assert.deepEqual(bodyFiles(bare), ['body.dds']);
+  assert.match(lines.join('\n'), /body\.dds is written: the model's first; pass --skins/);
 });
