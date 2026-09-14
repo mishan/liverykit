@@ -11,7 +11,7 @@ import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
-import { textureFeatures, explain } from '../src/engine/classify.mjs';
+import { textureFeatures, explain, proposeAll, SCORABLE, VOCABULARY } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import { loadDecals } from '../src/decals.mjs';
 import '../src/index.mjs'; // registers the built-in packs
@@ -47,6 +47,8 @@ Options
   --scan <path>       point at a car's skins/ directory
   --explain <kn5>     rank candidates for a vocabulary term and show why
   --term <name>       which term to explain (default: body)
+  --all               with --explain: every scored term, then a bind block
+                      to paste, every entry at "auto"
   --no-visibility     skip the ray casting; faster, and 90% accurate not 98%
   --assume-size <px>  for ENCRYPTED models only: paint textures whose real size
                       cannot be measured at this size. A choice, not a fact.
@@ -81,6 +83,7 @@ const { values, positionals } = parseArgs({
     scan: { type: 'string' },
     explain: { type: 'string' },
     term: { type: 'string', default: 'body' },
+    all: { type: 'boolean', default: false },
     'no-visibility': { type: 'boolean', default: false },
     'assume-size': { type: 'string' },
     'from-kn5': { type: 'string' },
@@ -217,8 +220,23 @@ if (values.explain) {
   // The profile's panels too, as the generator passes them, so the ranking
   // printed here is the one that proposed the binding.
   const features = textureFeatures(model, { roles: profile.textures, skinCounts, skinCount, visibleByFile, panels: profile.panels });
-  console.log(explain(features, values.term));
-  console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
+  if (!values.all) {
+    console.log(explain(features, values.term));
+    console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
+    process.exit(0);
+  }
+
+  // Every scored term, then one block to paste. Confirming a car used to be a
+  // run per term, twelve for a design like neon-grid-any, and that is the
+  // part people skip. The block is at "auto" throughout: this tool may
+  // propose, and only the person who read the evidence above may say "human".
+  for (const term of SCORABLE) console.log(explain(features, term) + '\n');
+  const byHand = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t));
+  console.log(`  Not scored, so bound by hand or not at all: ${byHand.join(', ')}.\n`);
+  console.log('  The proposal, ready to paste. Change any roles that are wrong, set "source"');
+  console.log('  to "human" on each entry you checked, and leave the rest at "auto".\n');
+  console.log(`"bind": ${JSON.stringify(proposeAll(features), null, 2)}`);
+  console.log(`\n  Nothing was written. Paste it into cars/${profile.id}.json.`);
   process.exit(0);
 }
 
@@ -359,6 +377,9 @@ if (values.ui) {
   const { url } = await startUi({
     livery,
     profile,
+    // For the Bindings panel's Confirm, which writes this file and nothing
+    // else. See /api/bindings/confirm.
+    profilePath,
     fitPath,
     liveryId: liveryName,
     liveryPath,

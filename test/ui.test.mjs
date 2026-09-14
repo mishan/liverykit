@@ -17,7 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-import { editorState, renderSurface } from '../src/ui/server.mjs';
+import { editorState, renderSurface, bindingsReport } from '../src/ui/server.mjs';
 import { loadProfile, binding } from '../src/profile.mjs';
 import { loadFit } from '../src/fit.mjs';
 import '../src/index.mjs';
@@ -73,7 +73,7 @@ function fakeDom() {
  * deleting a copy shows up nowhere until the server is asked again, and asked
  * with the working fit rather than the saved one.
  */
-async function runApp({ state, render, server = null }) {
+async function runApp({ state, render, server = null, routes = {} }) {
   const dom = fakeDom();
   const calls = [];
   const g = globalThis;
@@ -96,6 +96,9 @@ async function runApp({ state, render, server = null }) {
     const sent = init?.body ? JSON.parse(init.body) : null;
     calls.push({ path, method: init?.method ?? 'GET', body: sent });
     const answer = () => {
+      // A path the test answers itself, for routes that are neither the state
+      // nor a render.
+      if (Object.hasOwn(routes, path)) return routes[path](sent);
       if (!server) return path === '/api/state' ? state : render;
       const fit = sent?.fit ?? server.fit ?? null;
       // The working DESIGN is honoured exactly as the real server honours it. A
@@ -165,6 +168,47 @@ test('the editor escapes what it puts in the page', async () => {
   assert.doesNotMatch(html, /<script>/, 'a panel name must not become a tag');
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /evil&quot;\.dds/, 'a quote in a filename must not end the attribute');
+});
+
+test('the Bindings panel offers Confirm on a proposal and sends the roles it showed', async () => {
+  // The panel is the one place a person can confirm a binding. It must offer
+  // the button only where there is something to confirm, and send back the
+  // roles it displayed, or the server has no way to see that the person
+  // confirmed something other than what the file now says.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
+  const render = renderSurface({ livery, profile, fit: null, role: binding(profile, 'body').roles[0] });
+  const terms = bindingsReport(profile);
+  terms.find((t) => t.term === 'brakes').files = ['evil".dds'];
+
+  let confirmed = null;
+  const { dom } = await runApp({ state, render, routes: {
+    '/api/bindings': () => ({ car: profile.id, writable: true, terms }),
+    '/api/bindings/confirm': (sent) => {
+      confirmed = sent;
+      return { terms: terms.map((t) => (t.term === sent.term ? { ...t, source: 'human' } : t)) };
+    },
+  } });
+
+  const list = () => dom.querySelector('#bindings').innerHTML;
+  assert.match(list(), /data-confirm="brakes"/, 'the Abarth\'s brakes are a proposal');
+  assert.doesNotMatch(list(), /data-confirm="body"/, 'its body is already confirmed');
+  assert.match(list(), /not bound: [^<]*helmet/, 'and the terms nobody bound are named');
+  assert.match(list(), /evil&quot;\.dds/, 'a filename is escaped like everywhere else');
+
+  const button = { dataset: { confirm: 'brakes' } };
+  await dom.querySelector('#bindings').onclick({ target: { closest: (s) => (s.startsWith('button') ? button : null) } });
+  assert.deepEqual(confirmed, { term: 'brakes', roles: ['rims_3'] });
+  assert.doesNotMatch(list(), /data-confirm="brakes"/, 'and once confirmed it is not offered again');
+
+  // Started without the file: nothing is offered, and the panel says why.
+  const readOnly = await runApp({ state, render, routes: {
+    '/api/bindings': () => ({ car: profile.id, writable: false, terms: bindingsReport(profile) }),
+  } });
+  const html = readOnly.dom.querySelector('#bindings').innerHTML;
+  assert.doesNotMatch(html, /data-confirm/);
+  assert.match(html, /without the profile's file/);
 });
 
 test('app.js declares its helpers before the boot await reaches them', async () => {
