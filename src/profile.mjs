@@ -21,7 +21,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { VOCABULARY } from './engine/classify.mjs';
+import { VOCABULARY, DRIVER_KIT, SCORABLE } from './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -154,6 +154,13 @@ function validateBind(p, err) {
         (typeof entry.confidence !== 'number' || entry.confidence < 0 || entry.confidence > 1)) {
       err(`bind."${term}".confidence must be a number in 0..1, got ${JSON.stringify(entry.confidence)}`);
     }
+    // How a proposal was reached when nothing was measured. One value today:
+    // "name", for the driver kit, proposed from AC's own filenames. A closed
+    // set, so a typo cannot quietly make a binding look measured.
+    if (entry.evidence !== undefined && entry.evidence !== 'name') {
+      err(`bind."${term}".evidence may only be "name" (proposed from AC's own filename), ` +
+          `got ${JSON.stringify(entry.evidence)}`);
+    }
     for (const role of entry.roles) {
       // The whole point of the layer is that a livery stops guessing at names.
       // A binding pointing at a role that does not exist would reintroduce the
@@ -191,6 +198,7 @@ export function binding(profile, term) {
     roles,
     source: entry.source ?? null,
     confidence: entry.confidence,
+    ...(entry.evidence ? { evidence: entry.evidence } : {}),
     status: roles.length ? 'bound' : 'absent',
   };
 }
@@ -270,9 +278,21 @@ export function resolveTargets(profile, livery) {
       continue;
     }
     if (b.status === 'unbound') {
+      // Advice that can be taken. --explain ranks only the terms the classifier
+      // scores, and throws for the rest: the driver kit is named from the files
+      // a car's skins carry, which a profile generated without --skins never
+      // saw, and every other term is bound by hand. One line sent all three to
+      // --explain, so two of them met a refusal.
       notes.push({
         term, status: 'unbound',
-        text: `${term}: not bound on this car — run "liverykit --explain" and record it under "bind"`,
+        text: Object.hasOwn(DRIVER_KIT, term)
+          ? `${term}: not bound on this car — it is named from the skins folder's filenames, ` +
+            'so regenerate the profile with --skins, or record it under "bind" by hand'
+          : SCORABLE.includes(term)
+            ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
+              `editor's Bindings panel, and record it under "bind" in cars/${profile.id}.json`
+            : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
+              `cars/${profile.id}.json under "bind"`,
       });
       continue;
     }
@@ -299,8 +319,13 @@ export function resolveTargets(profile, livery) {
     if (b.source === 'auto') {
       notes.push({
         term, status: 'unconfirmed',
-        text: `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
-              (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
+        // A named proposal says so instead of printing a confidence: nothing
+        // was ranked, and a number beside the measured ones would pass for one.
+        text: b.evidence === 'name'
+          ? `${term} -> ${b.roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
+            'nothing was measured, and nobody has confirmed it'
+          : `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
+            (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
       });
     }
   }

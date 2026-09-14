@@ -17,7 +17,7 @@
 // clean here is one that the build will genuinely paint.
 // ---------------------------------------------------------------------------
 
-import { resolveTargets, expandRegions, placementRefusal, missExplanation, panel as findPanel } from './profile.mjs';
+import { resolveTargets, expandRegions, placementRefusal, missExplanation, binding, panel as findPanel } from './profile.mjs';
 
 /**
  * How a region says where it goes, which is the whole subject.
@@ -71,10 +71,23 @@ export function portability(design, profile) {
     ...Object.keys(design.surfaces ?? {}).map((t) => `surfaces.${t}`),
   ]);
   for (const t of targets) wanted.delete(t.from);
-  // A surface the design paints and this car does not have. The design is not
-  // wrong and neither is the car; the pairing simply leaves something unpainted,
-  // and that is worth seeing before you build it.
-  for (const from of wanted) surfaces.push({ from, status: 'absent' });
+  // A surface the design paints and this car will not, for one of two reasons
+  // that call for different things. `absent`: somebody confirmed the car has no
+  // such surface, and the pairing simply leaves it unpainted. `unbound`: nobody
+  // has said which texture it is, which is work to do on the car's profile, not
+  // a fact about the car. Reported as one status, the second read as the
+  // first, and a car nobody had bound looked like a car without rims.
+  for (const from of wanted) {
+    const term = from.startsWith('surfaces.') ? from.slice('surfaces.'.length) : null;
+    if (term !== null && binding(profile, term).status === 'unbound') {
+      surfaces.push({
+        from, status: 'unbound',
+        why: `nobody has bound "${term}" on this car yet; see --explain --all, or the editor's Bindings panel`,
+      });
+    } else {
+      surfaces.push({ from, status: 'absent' });
+    }
+  }
 
   for (const t of targets) {
     surfaces.push({ from: t.from, role: t.role, status: 'present' });

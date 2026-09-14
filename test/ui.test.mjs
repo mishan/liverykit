@@ -181,6 +181,9 @@ test('the Bindings panel offers Confirm on a proposal and sends the roles it sho
   const render = renderSurface({ livery, profile, fit: null, role: binding(profile, 'body').roles[0] });
   const terms = bindingsReport(profile);
   terms.find((t) => t.term === 'brakes').files = ['evil".dds'];
+  Object.assign(terms.find((t) => t.term === 'helmet'), {
+    status: 'bound', source: 'auto', evidence: 'name', confidence: undefined, roles: ['helmet'], files: ['helmet_2012.dds'],
+  });
 
   let confirmed = null;
   const { dom } = await runApp({ state, render, routes: {
@@ -198,7 +201,9 @@ test('the Bindings panel offers Confirm on a proposal and sends the roles it sho
   assert.match(list(), /evil&quot;\.dds · proposed, [\d.]+, measured, not validated/);
   assert.doesNotMatch(list(), /unmeasured rule/);
   assert.doesNotMatch(list(), /data-confirm="body"/, 'its body is already confirmed');
-  assert.match(list(), /not bound: [^<]*helmet/, 'and the terms nobody bound are named');
+  assert.match(list(), /not bound: [^<]*suit/, 'and the terms nobody bound are named');
+  assert.match(list(), /helmet_2012\.dds · named by AC&#39;s filename, not measured/,
+    'a named proposal says so, with no confidence beside it');
   assert.match(list(), /evil&quot;\.dds/, 'a filename is escaped like everywhere else');
 
   const button = { dataset: { confirm: 'brakes' } };
@@ -2865,7 +2870,8 @@ test('the other-car check reports misses by name, and does not call absolutes fi
   const { dom, calls } = await runApp({ server });
   const report = {
     car: 'other', name: 'Some Other Car',
-    surfaces: [{ from: 'surfaces.wing', status: 'absent' }],
+    surfaces: [{ from: 'surfaces.wing', status: 'absent' }, { from: 'surfaces.rims', status: 'unbound',
+      why: 'nobody has bound <b>rims</b> on this car yet; see --explain --all, or the Bindings panel' }],
     regions: [
       { id: 'flank', from: 'surfaces.body', kind: 'tags', status: 'matched', panels: ['a', 'b'] },
       { id: 'nose-badge', from: 'surfaces.body', kind: 'panel', status: 'missing',
@@ -2890,7 +2896,11 @@ test('the other-car check reports misses by name, and does not call absolutes fi
   assert.match(shown, /1 of 3 regions land on\s+Some Other Car/);
   assert.match(shown, /nose-badge/, 'a miss is named, because the next action is to go and fix that one');
   assert.match(shown, /no panel called/);
-  assert.match(shown, /surfaces\.wing/, 'and a surface the car lacks is worth seeing too');
+  assert.match(shown, /surfaces\.wing — this car has no such surface/, 'and a surface the car lacks is worth seeing too');
+  // With the report's own why, which is where it says what to do about it —
+  // and escaped, like every other string the report carries.
+  assert.match(shown, /surfaces\.rims — nothing would be painted there: nobody has bound &lt;b&gt;rims&lt;\/b&gt; on this car yet; see --explain --all/,
+    'told apart from one the car lacks, and saying what to do');
 
   // The one that would be easiest to get wrong: an absolute placement always
   // resolves, which is exactly why it is the most likely to be quietly wrong on
