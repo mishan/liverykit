@@ -43,6 +43,16 @@ const TERM_LABELS = {
   brakes: { looks: /disc|disk|rotor/i, not: /_nm|normal|_map|blur|glow|cal/i },
 };
 
+// "Binds every labelled texture" cannot see a binding that holds too much:
+// the Civic's tyres bind its brake disc, which the author drew with ksTyres,
+// and still count as right. Nothing measured tells that disc from a tyre, so
+// it is reported below rather than excluded. Only the body's and these terms'
+// labels are read.
+const labelledAs = (f) => [
+  ...(LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles ? ['body'] : []),
+  ...Object.entries(TERM_LABELS).filter(([, l]) => l.looks.test(f.file) && !l.not.test(f.file)).map(([t]) => t),
+];
+
 const path = process.argv[2] ?? 'fleet.json';
 const fleet = JSON.parse(await readFile(path, 'utf8')).filter((r) => !r.error);
 
@@ -92,17 +102,27 @@ for (const floor of [0.05, 0.1, 0.2]) {
 for (const [term, { looks, not }] of Object.entries(TERM_LABELS)) {
   let right = 0, n = 0;
   const misses = [];
+  const over = [];
   for (const car of fleet) {
     const features = featuresFromRecord(car);
+    const p = propose(features, term);
+    const boundTo = (p?.roles ?? []).map((r) => features.find((f) => f.role === r));
+    for (const f of boundTo) {
+      const as = labelledAs(f);
+      if (as.length && !as.includes(term)) over.push({ id: car.id, file: f.file, as: as.join(', ') });
+    }
     const labels = features.filter((f) => f.area > 0 && looks.test(f.file) && !not.test(f.file)).map((f) => f.file);
     if (!labels.length) continue;
     n++;
-    const p = propose(features, term);
-    const bound = new Set((p?.roles ?? []).map((r) => features.find((f) => f.role === r).file));
+    const bound = new Set(boundTo.map((f) => f.file));
     if (labels.every((l) => bound.has(l))) right++;
     else misses.push({ id: car.id, bound: [...bound].join(', ') || '(nothing)', label: labels.join(', ') });
   }
   console.log(`\n  ${term}: ${right}/${n} bind every labelled texture`);
   for (const m of misses.slice(0, 8)) console.log(`    ${m.id.padEnd(34)} bound ${m.bound.padEnd(40)} label ${m.label}`);
   if (misses.length > 8) console.log(`    and ${misses.length - 8} more`);
+  console.log(`  ${term}: ${over.length} bound texture(s) labelled as another term, painted as ${term} ` +
+    '(not counted against the figure above)');
+  for (const o of over.slice(0, 8)) console.log(`    ${o.id.padEnd(34)} ${o.file}  (labelled ${o.as})`);
+  if (over.length > 8) console.log(`    and ${over.length - 8} more`);
 }
