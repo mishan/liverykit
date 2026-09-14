@@ -522,6 +522,40 @@ export function nearMiss(profile, role, tags) {
 }
 
 /**
+ * A tag selection's miss, in words a person can act on.
+ *
+ * The sweep reads `nearMiss` to know whether `mid` or `visible` emptied a
+ * selection, and the person who hits the same miss on a car of their own
+ * deserves the same answer rather than a bare "no panel tagged [...]": the fix
+ * for a missing `mid` and the fix for a missing `left` are different fixes. The
+ * texture's own tags follow, because a selection naming a tag that exists
+ * nowhere here — `body`, written by someone guessing at the vocabulary — is
+ * best answered by the list of what does.
+ *
+ * Only "dropping X" when dropping X is advice somebody can take. On a single
+ * tag it advised `tags: []`, which the expander refuses; and when no single
+ * drop recovers anything it said "no single tag empties it", which is the
+ * opposite of true when two tags each match nothing on their own.
+ */
+export function missExplanation(profile, role, tags) {
+  const near = nearMiss(profile, role, tags);
+  if (!near.panels) return 'This texture has no panels, so no tag selection can match on it.';
+  const known = [...new Set(Object.values(profile.panels?.[role] ?? {}).flatMap((p) => p.tags ?? []))].sort();
+  if (!known.length) return 'No panel on this texture has tags.';
+  const counts = `(${tags.map((t) => `${t} ${near.each[t]}`).join(', ')})`;
+  const code = (ts) => ts.map((t) => `\`${t}\``);
+  const and = (ts) => (ts.length > 1 ? `${ts.slice(0, -1).join(', ')} and ${ts.at(-1)}` : ts[0]);
+  const zeros = tags.filter((t) => !near.each[t]);
+  const closest = tags.length === 1 ? `No panel on this texture is tagged \`${tags[0]}\`.`
+    : near.blocking ? `Dropping \`${near.blocking}\` would match ${near.without[near.blocking]} ${counts}.`
+    : near.tied.length ? `Dropping ${code(near.tied).join(' or ')} would match ${near.without[near.tied[0]]} each ${counts}.`
+    : zeros.length > 1 ? `${and(code(zeros))} each match no panel here, so dropping any one tag still leaves nothing ${counts}.`
+    : zeros.length ? `\`${zeros[0]}\` matches no panel here, and the other tags never meet on one panel either ${counts}.`
+    : `No single tag dropped recovers it: at least two of them never meet on one panel ${counts}.`;
+  return `${closest} Tags on this texture: ${known.join(', ')}`;
+}
+
+/**
  * Why a region cannot be placed on this texture, or null if it can.
  *
  * On a tiled material the UVs repeat across the surface instead of mapping it
@@ -547,7 +581,25 @@ export function placementRefusal(profile, role, region) {
 
 /** Throw if a region's placement fields are malformed, whatever texture it is on. */
 function checkRegionShape(role, region) {
-  if (region.tags === undefined) return;
+  const name = region.id ?? region.__key ?? region.treatment ?? 'region';
+  if (region.optional !== undefined && typeof region.optional !== 'boolean') {
+    throw new Error(
+      `"${name}" on role "${role}" has optional: ` +
+      `${JSON.stringify(region.optional)}. It must be true or false.`
+    );
+  }
+  if (region.tags === undefined) {
+    // It says a tag selection may find nothing. On a panel or a rectangle there
+    // is no selection to miss, and checked only on tag regions it passed there
+    // and did nothing, which reads as a promise and keeps none.
+    if (region.optional !== undefined) {
+      throw new Error(
+        `"${name}" on role "${role}" has optional, which applies only to a tag selection: ` +
+        'it says the tags may find nothing here. Remove it, or select by "tags".'
+      );
+    }
+    return;
+  }
   // An empty array would match EVERY panel, because `every` on an empty list
   // is vacuously true — so `tags: []` would silently paint the whole texture
   // instead of nothing. A non-array fails inside `every` with "tags.every is
@@ -610,18 +662,31 @@ export function expandRegions(profile, role, regions = []) {
 
     const matches = panelsWithTags(profile, role, region.tags, { limit: region.limit ?? Infinity });
     if (!matches.length) {
-      // With the tags this texture DOES have. "no panel tagged [left, body]"
-      // says what went wrong and nothing about what to write instead, and the
-      // one reading it — a person or an agent — was guessing at the vocabulary
-      // in the first place, or it would not have written `body`.
-      const known = [...new Set(Object.values(profile.panels?.[role] ?? {})
-        .flatMap((p) => p.tags ?? []))].sort();
+      // A miss the design said to expect. The portable example's
+      // `[shared, visible]` rule exists for cars whose flanks are instanced and
+      // finds nothing on the 16 of 26 that are not; reporting that as a skip
+      // on every one of them buried the misses that mean something. The note
+      // is still made, under its own status, so the portability report can
+      // list it as expected; the build does not print it.
+      if (region.optional) {
+        notes.push({
+          status: 'optional',
+          id: region.id ?? region.__key,
+          text: `${role}: "${region.treatment ?? 'region'}" found no panel tagged ` +
+                `[${region.tags.join(', ')}], which its design marks as optional`,
+        });
+        continue;
+      }
+      // With the near miss and the tags this texture DOES have. "no panel
+      // tagged [left, body]" says what went wrong and nothing about what to
+      // write instead, and the one reading it — a person or an agent — was
+      // guessing at the vocabulary in the first place, or it would not have
+      // written `body`.
       notes.push({
         status: 'no-match',
         id: region.id ?? region.__key,
         text: `${role}: no panel tagged [${region.tags.join(', ')}] — ` +
-              `"${region.treatment ?? 'region'}" was skipped. ` +
-              (known.length ? `Tags on this texture: ${known.join(', ')}` : 'No panel on this texture has tags.'),
+              `"${region.treatment ?? 'region'}" was skipped. ${missExplanation(profile, role, region.tags)}`,
       });
       continue;
     }

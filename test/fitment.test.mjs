@@ -964,6 +964,19 @@ test('drop on a design region is reported, because only a fit reads it', () => {
   assert.match(unk[0].why, /drop belongs in a fit/);
 });
 
+test('optional on a tag selection is read, so it is not an unknown field', () => {
+  // The expander reads `optional` and the portability report lists its misses
+  // as expected, but this check did not know the field, and called the shipped
+  // portable design's piping a high finding on every car it was pointed at.
+  const r = fitment(design([
+    { id: 'twin', treatment: 'fill', tags: ['shared', 'visible'], optional: true, color: 'ink' },
+    { id: 'wash', treatment: 'fill', tags: ['left'], optional: true, color: 'ink' },
+  ]), profile);
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'unknown-field'), [], JSON.stringify(r.findings));
+  // And the miss its design allows is not turned into one either.
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'unmatched'), [], JSON.stringify(r.findings));
+});
+
 test('a region can say how much of it must be seen, and a slice behind something is reported', () => {
   // A roundel measured 99% on the door, and the strip along its top 44%
   // visible — tucked under the window frame. It is on the car and it is cut

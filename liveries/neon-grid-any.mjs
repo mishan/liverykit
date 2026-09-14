@@ -89,7 +89,11 @@ export default {
         // open-wheeler unwraps each flank separately for asymmetric aero and
         // sponsor space. The Abarth has five, because a mass-produced road car
         // mirrors its sides to halve the texture.
-        { treatment: 'piping', tags: ['shared', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false },
+        //
+        // `optional` because of that: on a car with no instanced bodywork —
+        // 16 of the 26 in the fleet sweep — finding nothing is this rule
+        // working, and the build should not report it as a skip.
+        { treatment: 'piping', tags: ['shared', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false, optional: true },
 
         { treatment: 'halftone', tags: ['upper', 'visible'], color: 'hot', cell: 30, dot: 0.10, opacity: 0.30, safe: false },
 
