@@ -112,7 +112,7 @@ export function measureWheels(model, islands) {
   return out;
 }
 
-function wheelCentres(model) {
+export function wheelCentres(model) {
   const dummies = model.dummies ?? [];
   const out = [];
   for (const which of ['LF', 'RF', 'LR', 'RR']) {

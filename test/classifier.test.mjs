@@ -31,7 +31,7 @@ import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import { rank, explain, propose, proposeAll, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
 import { parseKn5Buffer } from '../src/engine/kn5.mjs';
-import { carKn5 } from './fixtures/kn5.mjs';
+import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
@@ -395,4 +395,58 @@ test('no role is bound to two terms anywhere in the fleet', async () => {
       }
     }
   }
+});
+
+test('rims say the wheels were not measured, rather than that the car has none', async () => {
+  // A model with no WHEEL_xx node gets no island marked as a wheel part, and
+  // counting those gave every texture zero wheel islands: the measurement
+  // the rims are scored on, read as having been taken and found nothing.
+  const panels = { rim: { a: { rect: [0.1, 0.1, 0.8, 0.8] } } };
+  const [unmeasured] = textureFeatures(parseKn5Buffer(buildKn5()), { roles: { rim: 'body.dds' }, panels });
+  assert.equal(unmeasured.wheelIslands, undefined, 'not a count of zero');
+  const text = explain([unmeasured], 'rims');
+  assert.match(text, /Wheel positions were not measured/);
+  assert.doesNotMatch(text, /may genuinely lack/);
+  // The synthetic car has its wheels, so there none at a wheel is a zero.
+  const [measured] = textureFeatures(parseKn5Buffer(carKn5()), { roles: { rim: 'body.dds' }, panels });
+  assert.equal(measured.wheelIslands, 0);
+  assert.match(explain([measured], 'rims'), /may genuinely lack/);
+
+  // And the generator says so as it proposes, not only --explain.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const N = 8, verts = [], indices = [];
+  for (let j = 0; j <= N; j++) {
+    for (let i = 0; i <= N; i++) verts.push(vert(i / N - 0.5, 0.5, j / N - 0.5, 0.05 + 0.9 * i / N, 0.05 + 0.9 * j / N));
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const dir = await mkdtemp(join(tmpdir(), 'lk-nowheels-'));
+  try {
+    await writeFile(join(dir, 'car.kn5'), buildKn5({ bodyMesh: { name: 'PANEL', verts, indices } }));
+    const said = [];
+    const profile = await profileFromKn5(join(dir, 'car.kn5'), { id: 'c', visibility: false, log: (l) => said.push(l) });
+    assert.ok(Object.keys(Object.values(profile.panels)[0]).length, 'the panel is measured');
+    assert.equal(profile.bind.rims, undefined);
+    assert.ok(said.some((l) => /rims were not proposed/.test(l) && /wheel/i.test(l)), said.join('\n'));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a texture the cockpit pass did not measure is left out of the interior by name', () => {
+  // Excluded by a stated reason, and not by NaN: area times an undefined
+  // cockpit is NaN, and a ranking that drops NaN would drop it just the same
+  // with the rule gone, which is how the rule came to have no test.
+  const f = (o) => ({ role: o.file, area: 0.05, box: null, straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, visible: 0.1, ...o });
+  const cabin = f({ file: 'cabin.dds', cockpit: 0.3 });
+  const tub = f({ file: 'tub.dds', area: 0.3 });
+  assert.deepEqual(rank([cabin, tub], 'interior').map((x) => x.file), ['cabin.dds']);
+  assert.match(explain([cabin, tub], 'interior'), /not a candidate: tub\.dds — cockpit visibility was not measured/);
 });
