@@ -251,7 +251,7 @@ const brief = (f) => Object.fromEntries(
 export async function run({
   brief: theBrief, mcp, planner, critic, trace, out,
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
-  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {},
+  criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1,
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
@@ -269,10 +269,30 @@ export async function run({
   let summary = '';
   let passedIn = null;
   let stopped = null;
+  // A pass held while the planner polishes it, and what came of the polish.
+  //
+  // A pass ended the run, and the critic's advice with it: run 22 passed in
+  // one round with a name the critic called thin and a stripe it said broke
+  // over the roof, and neither could fail anything. So a pass that came with
+  // advice gets one more round to act on it. The pass is kept whole, and it
+  // is what a person is offered unless the polished draft passes the same
+  // gate: a polish that breaks something costs a round and nothing else.
+  let kept = null;
+  let polishLeft = polish;
+  let polished = null;
+  const restore = (n, why) => {
+    draft.design = [...kept.design];
+    draft.fit = [...kept.fit];
+    summary = kept.summary;
+    passedIn = kept.round;
+    polished = { round: n, passed: false, from: kept.round, why };
+    log(`  round ${n}, the polish, is not offered: ${why}. Round ${kept.round}'s draft is.`);
+  };
   // `base` identifies the working design and fit the run started from, which
   // its operations were written against: a replay onto another is not one.
   const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), passed: passedIn !== null, passedIn,
-    rounds: history.length, summary, draft, history, ...(stopped ? { stopped } : {}) });
+    rounds: history.length, summary, draft, history, ...(stopped ? { stopped } : {}),
+    ...(polished ? { polish: polished } : {}) });
   // Whole or not at all. Written in place, a crash mid-write left half a file
   // where the last round's had been, and nothing could replay or propose it.
   const save = async (result) => {
@@ -428,7 +448,20 @@ export async function run({
       return r;
     };
 
-    const said = await planner.round({ n, rounds, brief: theBrief, feedback, tools, call, parent: round, facts });
+    let said;
+    try {
+      said = await planner.round({ n, rounds, brief: theBrief, feedback, tools, call, parent: round, facts });
+    } catch (e) {
+      // A polish round that cannot finish — the budget spent, the planner
+      // declining — costs the pass nothing. A dead server is still the end.
+      if (!kept || e instanceof ServerGone) throw e;
+      history.push({ round: n, passed: false, polish: true, gates: { render: 'not run', fitment: 'not run', critic: 'not run' },
+        failures: [`round ${n} could not be finished: ${e.message}`] });
+      restore(n, `it could not be finished (${clip(e.message, 200)})`);
+      await round.end({ ok: false, error: clip(e.message, 300), attrs: { 'round.passed': false, 'round.polish': true } });
+      await save({ ...snapshot(), finished: false });
+      break;
+    }
 
     // A round that did not call finish_round was not submitted, whatever the
     // planner last wrote. Its last prose used to become the summary and the
@@ -445,7 +478,7 @@ export async function run({
         const e = JSON.parse(textOf(rd));
         design = JSON.stringify({ palette: e.palette, identity: e.identity, surfaces: e.surfaces, paint: e.paint });
       } catch { /* said in the notice below */ }
-      history.push({ round: n, passed: false, submitted: false, said: words,
+      history.push({ round: n, passed: false, submitted: false, said: words, ...(kept ? { polish: true } : {}),
         gates: { render: 'not run', fitment: 'not run', critic: 'not run' },
         failures: [`round ${n} ended without finish_round, so it was not gated`] });
       log(`  round ${n} ended without finish_round, so it was not gated` +
@@ -453,6 +486,11 @@ export async function run({
       await round.end({ ok: false, error: `round ${n} ended without finish_round`,
         attrs: { 'round.passed': false, 'round.submitted': false, 'round.said': clip(words) } });
       await trace.flush();
+      if (kept) {
+        restore(n, 'it ended without finish_round');
+        await save({ ...snapshot(), finished: false });
+        break;
+      }
       feedback = {
         submitted: false,
         text: `Round ${n} ended without finish_round, so it was not submitted: the gate did not judge it, ` +
@@ -476,7 +514,16 @@ export async function run({
       attrs: { 'round.passed': gate.passed, 'round.fitment': gate.record.gates.fitment, 'round.critic': gate.record.gates.critic },
     });
     await trace.flush();
+    if (kept) gate.record.polish = true;
+    // A polish that did not pass, or broke the gate, hands back the pass it
+    // was polishing: nothing about it makes the kept draft any less measured.
+    if (kept && (!gate.passed || gate.stop)) {
+      restore(n, gate.stop ? `the gate broke (${clip(gate.stop, 200)})` : 'it did not pass the gate');
+      await save({ ...snapshot(), finished: false });
+      break;
+    }
     if (gate.passed) passedIn = n;
+    if (kept) polished = { round: n, passed: true, from: kept.round };
     if (gate.stop) {
       stopped = gate.stop;
       log(`  stopped: ${stopped}`);
@@ -485,7 +532,28 @@ export async function run({
     // several times on 2026-09-12, and run 15's round-2 draft went with it.
     // A run that dies leaves the rounds it finished, and says it did not.
     await save({ ...snapshot(), finished: false });
-    if (gate.passed || gate.stop) break;
+    if (gate.stop) break;
+    if (gate.passed) {
+      if (!(polishLeft > 0 && n < rounds && gate.advice.length)) break;
+      polishLeft--;
+      kept = { round: n, design: [...draft.design], fit: [...draft.fit], summary };
+      log(`  round ${n} passed, with advice: one more round to act on it, keeping round ${n}'s draft unless that passes too`);
+      feedback = {
+        ...gate.feedback,
+        text: JSON.stringify({
+          passed: `Round ${n} passed the gate. Its draft is kept, and it is what a person is offered unless this ` +
+            'round\'s draft passes the gate too.',
+          polish: 'This round is for polish: act on the advice below where it makes the design better, and change ' +
+            'nothing it does not name. Keep every element the brief asks for, every constraint as it stands, and ' +
+            'the number group as it is unless the advice names it. A draft that does not pass costs only this ' +
+            'round, since the kept one is offered instead.',
+          advice: gate.advice,
+          roundsLeft: rounds - n,
+        }, null, 2),
+        ask: 'Polish it',
+      };
+      continue;
+    }
     feedback = gate.feedback;
   }
 
@@ -746,6 +814,7 @@ export async function run({
       broke,
       stop,
       record,
+      advice,
       feedback: {
         text: JSON.stringify({ mustFix, advice, roundsLeft: rounds - n, ...forPlanner }, null, 2),
         images: images.map(({ view, data }) => ({ view, data })),
@@ -813,7 +882,10 @@ async function syncDir(dir) {
  * from there. `send` makes the call, so each caller traces it its own way.
  */
 export async function proposeDesign(result, send) {
-  const last = result.history.at(-1);
+  // The round whose draft this is. Not the last: a polish round after it that
+  // did not pass is last, and its verdict described a draft nobody is offered.
+  const last = result.history.find((h) => h.round === result.passedIn) ?? result.history.at(-1);
+  const p = result.polish;
   const unmeasured = last.fitment?.unsupported ?? [];
   const why = `${result.summary}\n\nMeasured before it was offered: in round ${result.passedIn}, every fitment ` +
     `check ${unmeasured.length ? 'this car\'s profile supports ' : ''}ran with no high or fatal finding` +
@@ -827,7 +899,10 @@ export async function proposeDesign(result, send) {
     (unmeasured.length
       ? `\n\nNot measured, because this car's profile cannot: ` +
         `${unmeasured.map((u) => `${u.check} for ${u.ids.join(', ')} (${u.why})`).join('; ')}.`
-      : '');
+      : '') +
+    (p ? (p.passed
+      ? `\n\nIt is round ${p.from}'s passing draft, polished in round ${p.round} on the critic's advice, and measured again.`
+      : `\n\nA polish round after it, round ${p.round}, was not offered: ${p.why}.`) : '');
   const r = await send({ why, design: result.draft.design, fit: result.draft.fit });
   return r.isError ? { proposalError: textOf(r) } : { proposalId: JSON.parse(textOf(r)).proposalId };
 }

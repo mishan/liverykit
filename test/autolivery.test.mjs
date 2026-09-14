@@ -173,6 +173,90 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
   }
 });
 
+test('a pass with advice gets a round to act on it, and is offered itself when that round does not pass', async () => {
+  // Run 22 passed in round 1 with a name the critic called thin and a stripe
+  // it said broke over the roof, and the run ended there: advice failed nothing.
+  const ed = await fixtureEditor();
+  try {
+    const go = async ({ second = null, notes = [['make the number bolder'], []], polish } = {}) => {
+      const pending = (await get(ed.url, 'api/proposal')).proposal;
+      if (pending) {
+        await fetch(new URL('api/proposal/ack', ed.url).href, { method: 'POST',
+          headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: pending.id, status: 'discarded' }) });
+      }
+      const feedbacks = [];
+      let judged = 0;
+      const planner = {
+        async round({ n, feedback, call }) {
+          feedbacks.push(feedback);
+          const { panels } = JSON.parse((await call('find_panels', { tag: 'left' })).content[0].text);
+          if (n > 1) return second(call, panels[0].panel);
+          await call('reset_draft');
+          await call('draft_design', { design: [
+            { op: 'set-palette', name: 'ink', value: '#101014' },
+            { op: 'add-region', surface: 'surfaces.body', region: { id: 'number-left', treatment: 'text', text: '85',
+              panel: panels[0].panel, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
+          ] });
+          await call('finish_round', { summary: 'a number' });
+        },
+      };
+      const critic = { async judge() {
+        return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+          notes: notes[judged++] ?? [] };
+      } };
+      const out = join(ed.dir, `run-${feedbacks.length}-${Math.random().toString(36).slice(2)}`);
+      const result = await run({ brief: 'number 85', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir: out }),
+        out, rounds: 3, views: ['left'], shot: { width: 200, height: 150 }, ...(polish === undefined ? {} : { polish }) });
+      return { result, feedbacks, proposal: (await get(ed.url, 'api/proposal')).proposal };
+    };
+
+    // The polish passes, and it is what is offered.
+    const bolder = await go({ second: async (call) => {
+      await call('draft_design', { design: [{ op: 'set-option', id: 'number-left', key: 'weight', value: 900 }] });
+      await call('finish_round', { summary: 'bolder' });
+    } });
+    assert.equal(bolder.result.passedIn, 2);
+    assert.deepEqual(bolder.result.polish, { round: 2, passed: true, from: 1 });
+    assert.match(bolder.feedbacks[1].text, /make the number bolder/, 'round 2 heard the advice');
+    assert.match(bolder.feedbacks[1].text, /polish/);
+    assert.equal(bolder.feedbacks[1].ask, 'Polish it');
+    assert.deepEqual(bolder.proposal.design, bolder.result.draft.design);
+    assert.ok(bolder.result.draft.design.some((o) => o.op === 'set-option'), 'the polished draft');
+    assert.match(bolder.proposal.why, /polished in round 2/);
+    assert.equal(bolder.result.history[1].polish, true);
+
+    // The polish breaks the number: round 1's draft is offered, measured as it was.
+    const broken = await go({ second: async (call, panel) => {
+      await call('draft_design', { design: [{ op: 'set-region', id: 'number-left', region: { id: 'number-left',
+        treatment: 'text', text: '85', panel, at: [0.3, 0.45, 0.4, 0.005], color: 'ink' } }] });
+      await call('finish_round', { summary: 'smaller' });
+    } });
+    assert.equal(broken.result.passed, true);
+    assert.equal(broken.result.passedIn, 1);
+    assert.equal(broken.result.rounds, 2, 'the polish round is in the record');
+    assert.deepEqual(broken.result.draft.design, broken.result.history[0].draft.design, 'round 1\'s draft, restored');
+    assert.deepEqual(broken.proposal.design, broken.result.history[0].draft.design);
+    assert.match(broken.proposal.why, /in round 1, every fitment check/, 'the why is round 1\'s, not the polish\'s');
+    assert.match(broken.proposal.why, /round 2, was not offered: it did not pass the gate/);
+
+    // A polish the planner cannot finish, the budget spent, keeps the pass.
+    const spent = await go({ second: async () => { throw new Error('stopped before another model call: $1.00 spent'); } });
+    assert.equal(spent.result.passedIn, 1);
+    assert.equal(spent.result.polish.passed, false);
+    assert.match(spent.result.polish.why, /could not be finished/);
+    assert.deepEqual(spent.proposal?.design, spent.result.history[0].draft.design, 'and it still reaches the inbox');
+
+    // No advice, no polish; and none when it is switched off.
+    const quiet = await go({ notes: [[], []] });
+    assert.equal(quiet.result.rounds, 1);
+    assert.equal(quiet.result.polish, undefined);
+    const off = await go({ polish: 0 });
+    assert.equal(off.result.rounds, 1);
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('finish_round needs a summary, and is never refused for the call limit it is the way out of', async () => {
   // Past the limit, every call was refused with "call finish_round now",
   // finish_round included, so the round could never end. And a finish_round
