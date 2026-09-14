@@ -41,8 +41,10 @@ has ZERO panels, on a car whose `interior` has 90 and whose `rims` have 84 —
 so the design painted a sheet with nothing mapped on it, and every tag
 selection then matched nothing.
 
-The classifier ranks candidates on name, size, alpha and how many stock skins
-override them. It does not ask whether a candidate has any paintable islands,
+The classifier ranks candidates on surface area, whether they straddle the
+centreline, how many stock skins override them, shader, how much of the car's
+length and height they span, and visibility — never on the name. It does not
+ask whether a candidate has any paintable islands,
 which is the one piece of evidence that would have moved both of these. A
 texture no island lives on cannot be the thing a livery paints, and that is a
 measurement already sitting in the profile beside the binding.
@@ -85,16 +87,19 @@ unwrapped, and therefore nothing to map. A car like that may simply not be
 paintable by this approach, and finding that out should take a line of output
 rather than an afternoon.
 
-## The vocabulary binds three terms of fourteen
+## The design finds two of its fourteen surfaces bound
 
+The vocabulary has 20 terms and three of them can be proposed automatically:
 `body` (25/25, mean confidence 0.78), `tyres` (24/25, 0.95) and `brakes`
-(22/25, 0.96) are proposed automatically. `rims`, `interior`, `belts`,
-`steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`, `gloves`
-and `crew` came back unbound on every car in the sweep.
+(22/25, 0.96). `neon-grid-any` paints 14 terms and `brakes` is not one of
+them, so on arrival it found two. The other twelve — `rims`, `interior`,
+`belts`, `steeringWheel`, `wing`, `metalTrim`, `heatShield`, `helmet`, `suit`,
+`gloves`, `crew` and `numberPlate` — came back unbound on every car in the
+sweep.
 
 That is the ceiling on "portable": everything past the body and the tyres is a
 per-car `--explain` and a human confirmation, which is a thirty-second job
-repeated eleven times per car. Both halves are worth attention — teaching the
+repeated twelve times per car. Both halves are worth attention — teaching the
 classifier the regular ones (`rims` and `interior` look highly patterned across
 the fleet), and making confirming the rest one pass rather than eleven.
 
