@@ -433,6 +433,15 @@ Change the entry to `"source": "human"` once you agree. Regenerating the profile
 preserves everything marked `human` and replaces everything marked `auto`, the
 same way `aliases` are preserved.
 
+Two ways to do a whole car at once. `--explain <kn5> --all` prints every scored
+term's ranking and then a `"bind"` block to paste: the proposal at `auto`, with
+anything already confirmed in `cars/<id>.json` kept at `human`, so pasting it
+loses nothing. You set `human` on the ones you checked. Or open the editor (`--ui`) and use its
+**Bindings** panel. Hovering a row in the whole-car view darkens every part but
+the ones wearing that term's textures, and **Confirm** writes `"source": "human"`
+for that term straight into the profile. That button is the only way the tool
+writes `human`, and an agent's proposal cannot (see [docs/mcp.md](docs/mcp.md)).
+
 ### Fitting a portable design to one car
 
 A portable design places its artwork on the largest visible panel of the right
@@ -850,6 +859,7 @@ rather type `liverykit`. `--help` is authoritative.
 --explain <car>.kn5               rank which texture is the bodywork, with the
                                   evidence, so you can confirm the binding
   --term rims                       explain a different vocabulary term
+  --all                             every scored term, then a bind block to paste
   --no-visibility                   skip the ray casting: faster, less accurate
 --scan <skins dir>                classify textures without a model
 --mcp                             start the MCP stdio protocol server (attaches to running --ui)

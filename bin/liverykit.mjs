@@ -11,12 +11,20 @@ import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
 import { parseKn5 } from '../src/engine/kn5.mjs';
-import { textureFeatures, explain } from '../src/engine/classify.mjs';
+import { textureFeatures, explain, SCORABLE, VOCABULARY } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import { loadDecals } from '../src/decals.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Where --from-kn5 and --explain --all find the profile whose hand-work a
+// regeneration keeps. One function, so the block --all prints and the file
+// the generator writes cannot be merged against different priors. The
+// variable lets a test supply a prior without writing into cars/, where a
+// stray one would pass for a shipped car.
+const priorProfilePath = (id) => join(process.env.LIVERYKIT_PRIOR_DIR
+  ? resolve(process.env.LIVERYKIT_PRIOR_DIR) : join(ROOT, 'cars'), `${id}.json`);
 
 const USAGE = `
 liverykit — generate Assetto Corsa liveries from code
@@ -47,6 +55,8 @@ Options
   --scan <path>       point at a car's skins/ directory
   --explain <kn5>     rank candidates for a vocabulary term and show why
   --term <name>       which term to explain (default: body)
+  --all               with --explain: every scored term, then the bind block
+                      a regeneration would write, ready to paste
   --no-visibility     skip the ray casting; faster, and 90% accurate not 98%
   --assume-size <px>  for ENCRYPTED models only: paint textures whose real size
                       cannot be measured at this size. A choice, not a fact.
@@ -64,6 +74,11 @@ Options
   --mcp               start Model Context Protocol (MCP) server for editor
   --editor <url>      editor URL for --mcp (default: http://127.0.0.1:7391/)
   --pack <module>     load an extra treatment pack (repeatable)
+
+Environment
+  LIVERYKIT_PRIOR_DIR where --from-kn5 and --explain --all look for the car's
+                      existing <id>.json, whose hand-work they keep
+                      (default: cars/ in this checkout)
 `;
 
 const { values, positionals } = parseArgs({
@@ -81,6 +96,7 @@ const { values, positionals } = parseArgs({
     scan: { type: 'string' },
     explain: { type: 'string' },
     term: { type: 'string', default: 'body' },
+    all: { type: 'boolean', default: false },
     'no-visibility': { type: 'boolean', default: false },
     'assume-size': { type: 'string' },
     'from-kn5': { type: 'string' },
@@ -144,7 +160,7 @@ if (values['from-kn5']) {
   // Regenerating must never cost hand-checked work. If a profile for this car
   // already exists, anything a human confirmed in its `bind` block survives; the
   // machine's own earlier guesses are replaced by the current ones.
-  const priorPath = join(ROOT, 'cars', `${profile.id}.json`);
+  const priorPath = priorProfilePath(profile.id);
   const prior = await readFile(priorPath, 'utf8').then(JSON.parse).catch(() => null);
   if (prior?.bind) {
     const kept = Object.entries(prior.bind).filter(([, e]) => e?.source === 'human').length;
@@ -191,6 +207,11 @@ if (values.explain) {
     id: values['car-id'],
     skinsDir: values.skins ? resolve(values.skins) : null,
     visibility: useVisibility,
+    // As the generator passes it. Left out, an encrypted car's candidates and
+    // block were not the ones a generation with the flag would produce.
+    assumeSize: values['assume-size']
+      ? num(values['assume-size'], 'assume-size', { min: 8, max: 8192, integer: true })
+      : null,
     log: () => {},
   });
   const model = await parseKn5(src, { keepTextureData: false });
@@ -217,8 +238,51 @@ if (values.explain) {
   // The profile's panels too, as the generator passes them, so the ranking
   // printed here is the one that proposed the binding.
   const features = textureFeatures(model, { roles: profile.textures, skinCounts, skinCount, visibleByFile, panels: profile.panels });
-  console.log(explain(features, values.term));
-  console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
+  if (!values.all) {
+    console.log(explain(features, values.term));
+    console.log(`\n  Nothing was written. Record the binding in cars/${profile.id}.json under "bind".`);
+    process.exit(0);
+  }
+
+  // Every scored term, then one block to paste. Confirming a car used to be a
+  // run per term, twelve for a design like neon-grid-any, and that is the
+  // part people skip. Everything this tool proposes is "auto": only the
+  // person who read the evidence above may say "human".
+  for (const term of SCORABLE) console.log(explain(features, term) + '\n');
+  const byHand = Object.keys(VOCABULARY).filter((t) => !SCORABLE.includes(t));
+  console.log(`  Not scored, so bound by hand or not at all: ${byHand.join(', ')}.\n`);
+
+  // The block a regeneration would write: the generator's proposal with the
+  // existing profile's hand-work merged in, by the same two calls and from
+  // the same file as --from-kn5 above. The bare proposal was printed before,
+  // so pasting it over cars/<id>.json put every confirmation back to "auto"
+  // and dropped the terms bound by hand. On a copy, so the rankings above
+  // keep the role names they were printed with.
+  const regenerated = structuredClone(profile);
+  const priorPath = priorProfilePath(profile.id);
+  let prior = null;
+  try {
+    prior = JSON.parse(await readFile(priorPath, 'utf8'));
+  } catch (e) {
+    console.log(e.code === 'ENOENT'
+      ? `  No ${priorPath}, so this block has no confirmed bindings merged in. If this\n` +
+        '  car has a profile under another name, pass --car-id <that name> to keep them.'
+      : `  ! ${priorPath} would not parse (${e.message}),\n` +
+        '    so this block has none of its confirmed bindings; --from-kn5 would ignore it too.');
+  }
+  if (prior?.bind) {
+    const kept = Object.entries(prior.bind).filter(([, e]) => e?.source === 'human').length;
+    regenerated.bind = mergeBindings(prior.bind, regenerated.bind);
+    if (kept) console.log(`  kept ${kept} human-confirmed binding(s) from ${priorPath}`);
+  }
+  if (prior) {
+    const report = preserveHandwork(regenerated, prior, { skinsGiven: !!values.skins });
+    for (const line of describeHandwork(report, priorPath)) console.log(line);
+  }
+  console.log('\n  The proposal, ready to paste. Change any roles that are wrong, set "source"');
+  console.log('  to "human" on each entry you checked, and leave the rest at "auto".\n');
+  console.log(`"bind": ${JSON.stringify(regenerated.bind, null, 2)}`);
+  console.log(`\n  Nothing was written. Paste it into cars/${profile.id}.json.`);
   process.exit(0);
 }
 
@@ -359,6 +423,9 @@ if (values.ui) {
   const { url } = await startUi({
     livery,
     profile,
+    // For the Bindings panel's Confirm, which writes this file and nothing
+    // else. See /api/bindings/confirm.
+    profilePath,
     fitPath,
     liveryId: liveryName,
     liveryPath,
