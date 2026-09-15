@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Autolivery — an agent that paints race cars</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #17203a;
+    --muted: #5b647a;
+    --paper: #f7f6f2;
+    --line: #cfd4de;
+    --gulf: #7bb3d9;
+    --gulf-deep: #3d7fb0;
+    --orange: #f26522;
+    --card: #ffffff;
+  }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .deck { height: 100%; overflow: hidden; }
+  .slide { display: none; box-sizing: border-box; height: 100%; padding: 5vh 6vw;
+    flex-direction: column; justify-content: center; }
+  .slide.on { display: flex; }
+  h1 { font-size: 7.5vh; margin: 0 0 2vh; letter-spacing: -0.01em; }
+  h2 { font-size: 5vh; margin: 0 0 3vh; letter-spacing: -0.01em; }
+  p, li { font-size: 3.1vh; line-height: 1.4; margin: 0 0 1.6vh; }
+  .lead { font-size: 4vh; max-width: 70vw; }
+  .muted { color: var(--muted); }
+  .accent { color: var(--orange); }
+  .foot { position: absolute; bottom: 3vh; left: 6vw; right: 6vw; display: flex;
+    justify-content: space-between; font-size: 2vh; color: var(--muted); }
+  .bar { height: 1.2vh; width: 18vw; background: linear-gradient(90deg, var(--gulf) 0 60%, var(--orange) 60% 100%);
+    border-radius: 0.6vh; margin-bottom: 4vh; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 4vw; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 1.5vh; padding: 3vh 2.5vw; }
+  .card h3 { margin: 0 0 1.5vh; font-size: 3.4vh; }
+  .card h3 span { display: inline-block; width: 1.6vh; height: 1.6vh; border-radius: 50%; margin-right: 1vh; vertical-align: middle; }
+  ul { padding-left: 2.6vh; margin: 0; }
+  li { margin-bottom: 1vh; }
+  svg { width: 88vw; max-height: 74vh; display: block; margin: 0 auto; }
+  .punch { text-align: center; font-size: 3.6vh; margin-top: 1vh; }
+  .help { position: fixed; right: 1.2vw; top: 1.2vh; font-size: 1.8vh; color: var(--muted); opacity: 0.7; }
+  @media print {
+    .deck { height: auto; overflow: visible; }
+    .slide { display: flex; height: 100vh; page-break-after: always; position: relative; }
+    .help { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="help">← → to move · F for full screen · 1–4 jump</div>
+<div class="deck">
+
+<section class="slide on" id="s1">
+  <div class="bar"></div>
+  <h1>Autolivery</h1>
+  <p class="lead">An agent that paints race cars.</p>
+  <p class="lead muted">Give it a brief. It designs a livery, fits it to the car's real 3D model, and revises until the checks pass. A person accepts it.</p>
+  <p class="lead">Fitment is a verification tool the agent <span class="accent">cannot talk its way past</span>: millimetres, against the car's geometry.</p>
+  <div class="foot"><span>liverykit · autolivery</span><span>AI Infra Summit hackathon · September 2026</span></div>
+</section>
+
+<section class="slide" id="s2">
+  <svg viewBox="0 0 1600 790" xmlns="http://www.w3.org/2000/svg" font-family="Inter, Helvetica Neue, Helvetica, Arial, sans-serif">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#17203a"/>
+      </marker>
+      <marker id="arrow-o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#f26522"/>
+      </marker>
+      <marker id="arrow-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#3d7fb0"/>
+      </marker>
+    </defs>
+
+    <!-- the loop: a rounded track with four stations joined in a circuit -->
+    <rect x="450" y="140" width="740" height="470" rx="100" fill="none" stroke="#17203a" stroke-width="4"/>
+    <text x="820" y="118" text-anchor="middle" font-size="26" fill="#5b647a">the loop · six rounds at most · every call traced</text>
+
+    <path d="M590,305 L590,220 L692,220" stroke="#17203a" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+    <path d="M940,220 L1050,220 L1050,297" stroke="#17203a" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+    <path d="M1050,435 L1050,520 L948,520" stroke="#17203a" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+    <path d="M700,520 L590,520 L590,443" stroke="#17203a" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+    <g id="draft">
+      <rect x="490" y="305" width="200" height="130" rx="16" fill="#ffffff" stroke="#17203a" stroke-width="3"/>
+      <text x="590" y="355" text-anchor="middle" font-size="34" font-weight="700" fill="#17203a">draft</text>
+      <text x="590" y="391" text-anchor="middle" font-size="21" fill="#5b647a">the planner writes</text>
+      <text x="590" y="417" text-anchor="middle" font-size="21" fill="#5b647a">a design as data</text>
+    </g>
+    <g id="measure">
+      <rect x="700" y="165" width="240" height="110" rx="16" fill="#ffffff" stroke="#17203a" stroke-width="3"/>
+      <text x="820" y="212" text-anchor="middle" font-size="34" font-weight="700" fill="#17203a">measure</text>
+      <text x="820" y="248" text-anchor="middle" font-size="21" fill="#5b647a">fitment, in millimetres</text>
+    </g>
+    <g id="judge">
+      <rect x="950" y="305" width="200" height="130" rx="16" fill="#ffffff" stroke="#17203a" stroke-width="3"/>
+      <text x="1050" y="355" text-anchor="middle" font-size="34" font-weight="700" fill="#17203a">judge</text>
+      <text x="1050" y="391" text-anchor="middle" font-size="21" fill="#5b647a">a critic looks at</text>
+      <text x="1050" y="417" text-anchor="middle" font-size="21" fill="#5b647a">six rendered views</text>
+    </g>
+    <g id="revise">
+      <rect x="700" y="465" width="240" height="110" rx="16" fill="#ffffff" stroke="#17203a" stroke-width="3"/>
+      <text x="820" y="512" text-anchor="middle" font-size="34" font-weight="700" fill="#17203a">revise</text>
+      <text x="820" y="548" text-anchor="middle" font-size="21" fill="#5b647a">both verdicts, as data</text>
+    </g>
+
+    <!-- pass: out to a person -->
+    <path d="M1192,375 L1300,375" stroke="#f26522" stroke-width="5" fill="none" marker-end="url(#arrow-o)"/>
+    <text x="1245" y="356" text-anchor="middle" font-size="22" fill="#f26522" font-weight="700">passes</text>
+    <rect x="1310" y="305" width="250" height="140" rx="16" fill="#ffffff" stroke="#f26522" stroke-width="4"/>
+    <text x="1435" y="358" text-anchor="middle" font-size="32" font-weight="700" fill="#17203a">a person</text>
+    <text x="1435" y="396" text-anchor="middle" font-size="21" fill="#5b647a">Accept or Discard</text>
+    <text x="1435" y="422" text-anchor="middle" font-size="21" fill="#5b647a">in the editor's inbox</text>
+    <text x="1435" y="478" text-anchor="middle" font-size="20" fill="#5b647a">the agent never commits</text>
+
+    <!-- brief in -->
+    <path d="M300,375 L448,375" stroke="#17203a" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+    <rect x="60" y="325" width="240" height="100" rx="16" fill="#ffffff" stroke="#17203a" stroke-width="3"/>
+    <text x="180" y="366" text-anchor="middle" font-size="30" font-weight="700" fill="#17203a">a brief</text>
+    <text x="180" y="402" text-anchor="middle" font-size="19" fill="#5b647a">"Gulf-style, number 85 …"</text>
+
+    <!-- the three plug-ins, along the bottom -->
+    <g id="plugs">
+      <path d="M330,655 L560,616" stroke="#3d7fb0" stroke-width="4" fill="none" marker-end="url(#arrow-b)" stroke-dasharray="10 8"/>
+      <path d="M820,655 L820,616" stroke="#3d7fb0" stroke-width="4" fill="none" marker-end="url(#arrow-b)" stroke-dasharray="10 8"/>
+      <path d="M1290,655 L1080,616" stroke="#3d7fb0" stroke-width="4" fill="none" marker-end="url(#arrow-b)" stroke-dasharray="10 8"/>
+
+      <rect x="110" y="655" width="440" height="125" rx="16" fill="#e7f1f9" stroke="#3d7fb0" stroke-width="3"/>
+      <text x="330" y="700" text-anchor="middle" font-size="30" font-weight="700" fill="#17203a">the car's profile</text>
+      <text x="330" y="733" text-anchor="middle" font-size="21" fill="#5b647a">its panels, and what each view sees,</text>
+      <text x="330" y="759" text-anchor="middle" font-size="21" fill="#5b647a">read from the car's own 3D model</text>
+
+      <rect x="600" y="655" width="440" height="125" rx="16" fill="#e7f1f9" stroke="#3d7fb0" stroke-width="3"/>
+      <text x="820" y="700" text-anchor="middle" font-size="30" font-weight="700" fill="#17203a">the checks</text>
+      <text x="820" y="733" text-anchor="middle" font-size="21" fill="#5b647a">sizes, margins, contrast, stripes,</text>
+      <text x="820" y="759" text-anchor="middle" font-size="21" fill="#5b647a">and how much of each piece is in view</text>
+
+      <rect x="1070" y="655" width="440" height="125" rx="16" fill="#e7f1f9" stroke="#3d7fb0" stroke-width="3"/>
+      <text x="1290" y="700" text-anchor="middle" font-size="30" font-weight="700" fill="#17203a">the prompts</text>
+      <text x="1290" y="733" text-anchor="middle" font-size="21" fill="#5b647a">what a GT livery is, where a number</text>
+      <text x="1290" y="759" text-anchor="middle" font-size="21" fill="#5b647a">goes, what "Gulf" means</text>
+    </g>
+  </svg>
+  <p class="punch">The loop doesn't know it's a car. <span class="accent">The car is in what you plug into it.</span></p>
+</section>
+
+<section class="slide" id="s3">
+  <div class="bar"></div>
+  <h2>Measured, not judged</h2>
+  <div class="cols">
+    <div class="card">
+      <h3><span style="background:var(--gulf-deep)"></span>Fitment measures, in millimetres</h3>
+      <ul>
+        <li>Letter height on the car: a number at least 140 mm, a name 45 mm</li>
+        <li>Margin from every edge, shut line and door handle</li>
+        <li>A name's contrast against what is under it, 6:1</li>
+        <li>A stripe's direction, alignment and gaps, panel to panel</li>
+        <li>How much of each piece every view actually shows</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span style="background:var(--orange)"></span>The critic judges, from pictures</h3>
+      <ul>
+        <li>Does it read as the style the brief named</li>
+        <li>Is each thing the brief asked for present, and where</li>
+        <li>Composition and taste, which is what a model is for</li>
+        <li>A second look, closer, when the two disagree</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:4vh">When they disagreed, the measurement was right every time. So each judgment the critic kept getting wrong was moved into measurement, and the critic was left with taste.</p>
+</section>
+
+<section class="slide" id="s4">
+  <div class="bar"></div>
+  <h2>What was built this week</h2>
+  <div class="cols">
+    <div class="card">
+      <h3><span style="background:var(--gulf)"></span>liverykit, over the summer</h3>
+      <ul>
+        <li>Reads a car's model to find where each texture lands on the bodywork</li>
+        <li>Liveries as code, fitted per car; a fitting editor</li>
+        <li>Tools over MCP that propose and never commit</li>
+        <li>Profiled 26 cars it had never seen, from one script</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span style="background:var(--orange)"></span>Autolivery, this week</h3>
+      <ul>
+        <li>The loop: draft, measure, judge, revise, propose</li>
+        <li>Drafts measured and rendered without ever being adopted</li>
+        <li>The critic, its eval against a person's verdicts, and the second look</li>
+        <li>New checks: what each view shows, letter sizes, contrast, stripes, layouts by search</li>
+        <li>Every call traced: rounds, tool calls, latency, cost</li>
+      </ul>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:4vh">The same loop passed on a GT3, an Abarth and a Formula 4, first round, under two minutes, under a dollar.</p>
+</section>
+
+</div>
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  let i = Math.max(0, slides.findIndex((s) => '#' + s.id === location.hash));
+  const show = (n) => {
+    i = Math.min(slides.length - 1, Math.max(0, n));
+    slides.forEach((s, k) => s.classList.toggle('on', k === i));
+    history.replaceState(null, '', '#' + slides[i].id);
+  };
+  show(i);
+  addEventListener('keydown', (e) => {
+    if (['ArrowRight', ' ', 'PageDown', 'Enter'].includes(e.key)) show(i + 1);
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) show(i - 1);
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (/^[1-9]$/.test(e.key)) show(Number(e.key) - 1);
+    else if (e.key.toLowerCase() === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    else return;
+    e.preventDefault();
+  });
+  addEventListener('click', (e) => { if (!e.target.closest('a')) show(i + (e.clientX > innerWidth / 3 ? 1 : -1)); });
+</script>
+</body>
+</html>

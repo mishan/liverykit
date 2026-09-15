@@ -8,6 +8,7 @@ liveries/*.local.mjs
 
 # Personal working notes.
 HANDOFF.md
+autolivery/hackathon/notes/
 
 # What an autolivery run leaves behind: renders, the trace, the result.
 autolivery/runs/
@@ -29,3 +30,6 @@ content/
 cars/*/
 *.zip
 keys.env
+
+# Agent worktrees a coding session leaves under .claude/.
+.claude/worktrees/

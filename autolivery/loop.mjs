@@ -336,9 +336,13 @@ async function runRounds({
   };
   // `base` identifies the working design and fit the run started from, which
   // its operations were written against: a replay onto another is not one.
-  const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), passed: passedIn !== null, passedIn,
-    rounds: history.length, summary, draft, history, ...(stopped ? { stopped } : {}),
-    ...(polished ? { polish: polished } : {}) });
+  // The AgentOps link goes in too, when the trace is exported: it was only
+  // ever printed at the end, so a run shown again from its directory (the
+  // attempts page, --propose) had no way back to its trace.
+  const traceLink = trace.summary?.().link ?? null;
+  const snapshot = () => ({ brief: theBrief, ...(base ? { base } : {}), ...(traceLink ? { trace: traceLink } : {}),
+    passed: passedIn !== null, passedIn, rounds: history.length, summary, draft, history,
+    ...(stopped ? { stopped } : {}), ...(polished ? { polish: polished } : {}) });
   // Whole or not at all. Written in place, a crash mid-write left half a file
   // where the last round's had been, and nothing could replay or propose it.
   const save = async (result) => {
