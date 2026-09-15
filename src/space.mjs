@@ -1015,6 +1015,19 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
         continue;
       }
       const near = kit.reduce((best, p) => (!best || gapTo(p.behindNoseMm, c.behindNose) < gapTo(best.behindNoseMm, c.behindNose) ? p : best), null);
+      // Over the kit along the car rather than beside it — a door above its
+      // sill — is not where the kit's line runs on: it would paint a band
+      // along the door's foot, as it did on the Abarth's right side, whose sill
+      // panel starts further forward than its left and so drew the line from
+      // the sill's clear rear end.
+      if (near) {
+        const over = Math.min(c.behindNose[1], near.behindNoseMm[1]) - Math.max(c.behindNose[0], near.behindNoseMm[0]);
+        if (over > 0.5 * (c.behindNose[1] - c.behindNose[0])) {
+          skipped.push({ panel: c.panel, upMm: on.up, why: `${c.panel} lies over ${near.panel} along the car, above the ` +
+            'kit rather than running on from it, so the kit leaves it alone' });
+          continue;
+        }
+      }
       // The kit panel's top as the side view shows it at the end facing this
       // one, which is lower than its top where something stands in front of
       // it: on the NSX the door hangs over the sill's top edge, and a front

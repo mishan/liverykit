@@ -28,7 +28,7 @@ import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, sampleRects } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
-import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer } from './engine/kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurOnly, damageOnly } from './engine/kn5.mjs';
 import { cockpitLod } from './engine/geometry.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
@@ -2885,6 +2885,11 @@ function stacked(model, profile, targets, say, { design = {} } = {}) {
   const byFile = new Map();
   for (const mesh of model.meshes ?? []) {
     if (carHides.has(mesh.name)) continue;
+    // Nor a part the game swaps in rather than draws over: a motion-blur rim
+    // at speed, a crack after a crash. The renderers leave them out for that
+    // reason (see wholeModelGeometry), and counted here the Abarth's blurred
+    // rims failed every design that painted its wheels.
+    if (motionBlurOnly(mesh.name) || damageOnly(model.materials?.[mesh.materialId]?.shader)) continue;
     const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
     if (!file || designHides.has(file)) continue;
     if (!byFile.has(file)) byFile.set(file, []);

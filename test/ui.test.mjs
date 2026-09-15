@@ -4049,13 +4049,14 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
   // two blurred stand-ins it swaps in with speed — and all three are in the
   // model at once, co-planar. Drawn together they z-fight into a mess.
-  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF']) {
+  // The Abarth joins it to the part and numbers it.
+  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF', 'GEO_rimblur1_SUB0', 'GEO_rimblur_SUB1']) {
     assert.equal(motionBlurOnly(yes), true, `${yes} is an alternate`);
   }
   // And it must not eat a part whose name merely CONTAINS the letters. This is
   // the half that goes wrong: a pattern loose enough to catch the rims is
   // loose enough to delete a blurred-glass panel or a "Blurton" sponsor decal.
-  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', '', null]) {
+  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', 'rimblurred', '', null]) {
     assert.equal(motionBlurOnly(no), false, `${JSON.stringify(no)} is a real part`);
   }
 

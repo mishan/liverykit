@@ -430,6 +430,9 @@ try {
     closer: refereeMode === 'none' ? [] : undefined,
     seed: !values['no-seed'],
     base,
+    // The wheels, held to the draft as well as asked for in the prompt. A
+    // replay's planner is the recording, which nothing can remind.
+    mustPaint: !replaying && extras.wheels ? ['surfaces.rims'] : [],
   });
 } catch (e) {
   await trace.finish({ ok: false, attrs: { error: e.message } });

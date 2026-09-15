@@ -148,6 +148,39 @@ test('a draft is rendered as drafted, and nothing is proposed by looking at it',
   }
 });
 
+test('a draft that leaves a surface the run asked for unpainted is handed back once, then goes through', async () => {
+  // Run 29's planner left the RSS4's wheels stock though the prompt asked for
+  // them. The run holds the draft to it: finish_round hands the draft back
+  // once a round, and the next goes through, so a car without the surface can
+  // still submit.
+  const ed = await fixtureEditor();
+  try {
+    const said = [];
+    const planner = {
+      async round({ call }) {
+        await call('draft_design', { design: [
+          { op: 'set-palette', name: 'ink', value: '#101014' },
+          { op: 'add-region', surface: 'surfaces.body', region: { id: 'base', treatment: 'fill', color: 'ink' } },
+        ] });
+        const first = await call('finish_round', { summary: 'a black car' });
+        said.push(first);
+        const again = await call('finish_round', { summary: 'a black car; this car has no rims surface' });
+        said.push(again);
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [{ asked: 'a car', present: true, where: 'all of it' }], cut_off: [], unreadable: [], notes: [] }) };
+    const dir = join(ed.dir, 'run');
+    await run({ brief: 'a black car', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir }), out: dir,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, closer: [], propose: false, mustPaint: ['surfaces.rims'] });
+    assert.ok(said[0].isError, 'the first finish_round is handed back');
+    assert.match(said[0].content[0].text, /this run asks you to paint surfaces\.rims, and the draft paints nothing there/);
+    assert.ok(!said[1].isError, 'and the second goes through');
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('the loop gates on its own measurement, and only a passing draft reaches the inbox', async () => {
   const ed = await fixtureEditor();
   try {

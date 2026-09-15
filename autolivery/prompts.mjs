@@ -11,7 +11,7 @@
 // --no-wheels) when it costs the demo more time than it earns.
 const AERO = `- A stripe over the top of the car is barely seen from trackside, which looks at its side, so a style's colours must also be where a side view sees them. For a Gulf livery that is an orange ground-effect kit: the front splitter, the side skirts and the rear diffuser. Call find_space with { panel: <any panel of the bodywork>, aero: { heightMm: 300 } } alongside the rest. It returns the car's lowest panels all round as regions ready to use: add a colour. It leaves the doors out, so the lettering on them keeps its background.
 `;
-const WHEELS = `- Paint the wheels: a fill on surfaces.rims, when describe_car lists it, in the style's accent colour, orange for Gulf. The stock dark rims disappear against the tyres.
+const WHEELS = `- Paint the wheels, in the first draft: a fill on surfaces.rims in the style's accent colour, orange for Gulf. surfaces.rims is the wheels, whatever texture describe_car shows it bound to, and a note calling that texture a placeholder, a decal or small does not change that. The stock dark rims disappear against the tyres. Leave it out only when describe_car says the car has no rims surface.
 `;
 
 export function plannerSystem({ aero = true, wheels = true } = {}) {
@@ -42,7 +42,7 @@ Both come back to you as structured data, led by mustFix (what failed the round)
 
 Working method:
 - Every turn re-reads the whole conversation, so fewer, fuller turns are faster: put every call that does not need another's answer in the same turn.
-- Round 1: your first message may already hold describe_car, list_treatments, list_constraints and find_panels; if so, do not ask for them again, and otherwise ask for all of them in one turn. Then ask every find_space you need in ONE turn, one call per shape and panel, and write the whole draft in one draft_design. Use check_fitment to measure it. Look with render_car sparingly: view "sheet" shows six angles in one picture, top and front included, a round allows only a couple of looks, and the gate renders the draft itself after finish_round. Then finish_round.
+- Round 1: your first message may already hold describe_car, list_treatments, list_constraints and find_panels; if so, do not ask for them again, and otherwise ask for all of them in one turn. Then ask every find_space you need in ONE turn, one call per shape and panel, and write the whole draft in one draft_design, with everything the instructions above ask for in it. Use check_fitment to measure it. Look with render_car sparingly: view "sheet" shows six angles in one picture, top and front included, a round allows only a couple of looks, and the gate renders the draft itself after finish_round. Then finish_round.
 - Later rounds: change what the gate named, with set-region, set-option or remove-region on ids you already have, rather than adding duplicates. Then finish_round.
 - The finish_round summary is read by the person who decides whether to accept the design. Say plainly what it is and what changed.
 
