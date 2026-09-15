@@ -3217,6 +3217,24 @@ test('the whole-car view is re-roled from the design, not from the cached geomet
   assert.deepEqual(reRole(undefined, undefined), []);
 });
 
+test('a two-layer part whose base sheet is clear everywhere is drawn opaque, and a sticker keeps its alpha', async () => {
+  // The RSS4's rims wear a 28x28 placeholder with alpha 0 on every texel,
+  // under a MultiMap material that blends. The game draws them on every stock
+  // skin; both renderers drew nothing. The NSX's interior stickers are a
+  // blended MultiMap too, and need their alpha.
+  const { clearBasesOpaque } = await import('../src/engine/shot.mjs');
+  const sheet = (...alphas) => ({ w: alphas.length, h: 1, data: Buffer.from(alphas.flatMap((a) => [255, 255, 255, a])) });
+  const sheets = new Map([['csw.png', sheet(0, 0)], ['decals.dds', sheet(0, 255)], ['plate.dds', sheet(0, 0)]]);
+  const groups = [
+    { role: null, file: null, detail: { diffuse: 'csw.png', detail: 'plastic.dds' }, blend: true },   // the rim
+    { role: null, file: null, detail: { diffuse: 'decals.dds', detail: 'x.dds' }, blend: true },      // stickers
+    { role: null, file: 'plate.dds', blend: true },                                                    // one layer, clear
+    { role: 'rims', file: 'csw.png', detail: { diffuse: 'csw.png' }, blend: true },                    // painted
+    { role: null, file: null, detail: { diffuse: 'missing.dds' }, blend: true },                       // no sheet to ask
+  ];
+  assert.deepEqual(clearBasesOpaque(groups, sheets).map((g) => g.blend), [false, true, true, true, true]);
+});
+
 test('a surface bound to two textures is painted on both in the whole car and its preview', async () => {
   // The RSS4's body is body AND bodyRear. The whole-car geometry and the
   // preview took their textures from the editor's surface list, which holds
