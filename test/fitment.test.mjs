@@ -1962,12 +1962,16 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
 
   const got = aeroLayout({ profile, model, role: 'body', heightMm: 300 });
   assert.deepEqual(got.upMm, [100, 400], 'measured up from the bottom of the bodywork');
-  // The diffuser is 25% visible, seen from behind only, and is part of the
-  // kit; the liner, which nothing sees, is not, and neither is the nose.
-  assert.deepEqual(got.parts, { front: ['aero-splitter'], left: ['aero-wing', 'aero-sill'], rear: ['aero-diffuser'] }, JSON.stringify(got));
+  // The liner, which the profile says nothing sees, is not in the kit, and
+  // neither is the nose. Nor is the diffuser: the profile calls its panel 25%
+  // visible, but this one is a plate facing the ground, and measured as
+  // check_fitment measures it none of it is seen. Left out with why, rather
+  // than handed to the planner as a high finding in its first check.
+  assert.deepEqual(got.parts, { front: ['aero-splitter'], left: ['aero-wing', 'aero-sill'] }, JSON.stringify(got));
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'diffuser')?.why ?? '', /^left out of the kit: aero-diffuser is 0% visible/);
   const at = Object.fromEntries(got.regions.map((r) => [r.panel, r.at]));
   // Filled whole, which is a region with no `at`, and to its edge.
-  for (const p of ['splitter', 'sill', 'diffuser']) assert.equal(at[p], undefined, `${p} is filled whole`);
+  for (const p of ['splitter', 'sill']) assert.equal(at[p], undefined, `${p} is filled whole`);
   assert.ok(got.regions.every((r) => r.treatment === 'fill' && r.id === `aero-${r.panel}` && r.safe === false), JSON.stringify(got.regions));
   // The wing is drawn to the sill's line, 300 mm up, and not to the kit's
   // 400: two sevenths of its 700 mm from the bottom.
@@ -1979,6 +1983,29 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   assert.match(door?.why ?? '', /door begins (29\d|30\d) mm up, and the kit's line at (29\d|30\d) mm would leave a sliver/, JSON.stringify(got.skipped));
 
   assert.throws(() => aeroLayout({ profile, model, role: 'body', heightMm: 0 }), /heightMm/);
+});
+
+test('a stripe wider than a narrow nose is not offset where it runs on over a wider bonnet', async () => {
+  // A formula car's nose is narrower than the stripe and its bonnet and
+  // wings wider, so the nose's piece covers the nose edge to edge and the
+  // next piece runs on past it. The RSS4's layout was reported as seven high
+  // offsets for that, which is the car's shape; the check now leaves an edge
+  // alone where the narrower piece stops because its own panel does. A piece
+  // drawn narrow in the middle of its panel is still offset: see the test
+  // above, where the roof's is.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const flat = (name, front, back, x0, x1, uv) => ({ name, front, back, y0: 1.0, y1: 1.0, x0, x1, uv });
+  const nose = flat('nose', 2.0, 1.5, -0.1, 0.1, [0.02, 0.02, 0.2, 0.1]);
+  const bonnet = flat('bonnet', 1.5, 0.3, -0.8, 0.8, [0.02, 0.2, 0.3, 0.4]);
+  const model = carOf([quadOf(nose), quadOf(bonnet)]);
+  const profile = { ...stripedProfile, panels: { body: Object.fromEntries([nose, bonnet].map((q) => {
+    const [x, y, w, h] = q.uv;
+    return [q.name, { rect: q.uv, anisotropy: 1, metresPerUv: [4, 4], visible: 0.9, tags: ['centre', 'visible'],
+      uAxis: alongOf(q), vAxis: [1, 0, 0], outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }];
+  })) } };
+  const laid = stripeLayout({ profile, model, role: 'body', widthMm: 300 });
+  assert.deepEqual(laid.regions.map((r) => r.panel), ['nose', 'bonnet'], JSON.stringify(laid.pieces));
+  assert.deepEqual(laid.findings, [], 'the nose\'s 200 mm and the bonnet\'s 300 mm are one stripe');
 });
 
 test('a panel is measured on its own mesh, not on another island laid out inside its outline', () => {
