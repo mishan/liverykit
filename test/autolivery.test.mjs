@@ -70,7 +70,7 @@ test('the planner is told to take the number group from find_space\'s layout, wh
   // cleared its floor: run 21 spent most of a round finding that out. The
   // layout is measured by the server now; the prompt and the tool must agree
   // on how it is asked for.
-  assert.match(PLANNER_SYSTEM, /find_space with \{ panel, layout: \{ number, name \}, marginMm: 30 \}/);
+  assert.match(PLANNER_SYSTEM, /find_space with \{ layout: \{ number, name \}, side: "left", marginMm: 30 \}/);
   assert.doesNotMatch(PLANNER_SYSTEM, /aspect 0\.85|55% of the group/, 'and no recipe is left beside it');
   const tools = await createToolHandler({}).listTools();
   const schema = tools.find((t) => t.name === 'find_space').inputSchema.properties;
@@ -1269,7 +1269,8 @@ test('text on a panel the profile cannot measure can pass, and is said to be unm
         if (n === 1) {
           const [left, right] = [await side('left'), await side('right')];
           await call('draft_design', { design: [
-            { op: 'set-palette', name: 'ink', value: '#101014' },
+            // Black: a name on the grey primer needs 6:1, and near-black is 5.7.
+            { op: 'set-palette', name: 'ink', value: '#000000' },
             { op: 'set-identity', key: 'driver', value: 'Ada Vance' },
             { op: 'add-region', surface: 'surfaces.body', region: {
               id: 'driver-left', treatment: 'text', text: '{driver}', panel: left, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
@@ -1818,7 +1819,7 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     // And a stripe along the car, as regions ready to use, which the planner
     // is told to take rather than work out: on this car the roof is the only
     // panel seen from above, across it in x and 1.9 m wide.
-    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ widthMm, offsetMm \} \}/);
+    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ offsetMm \} \}/);
     const roof = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'centre' })).content[0].text).panels
       .find((p) => p.axes?.y === 'along the car').panel;
     const laid = await ed.mcp.callTool('find_space', { panel: roof, stripe: { widthMm: 300 } });

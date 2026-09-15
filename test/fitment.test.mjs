@@ -1422,7 +1422,12 @@ test('a surface bound to two textures is asked about on the one that has the pan
   };
   assert.deepEqual(spaceRole(two, {}, 'surfaces.body', 'tail'), { role: 'bodyRear' });
   assert.deepEqual(spaceRole(two, {}, 'body', 'L'), { role: 'body' });
-  assert.match(spaceRole(two, {}, 'surfaces.body', 'shared').error, /on body and bodyRear.*pass paint\.body or paint\.bodyRear/);
+  // On both, it is measured on the one where it is largest and most seen,
+  // and said: refused, the RSS4's planner spent seven calls asking again.
+  const shared = spaceRole(two, {}, 'surfaces.body', 'shared');
+  assert.equal(shared.role, 'body');
+  assert.deepEqual(shared.roles, ['body', 'bodyRear']);
+  assert.match(shared.chosen, /"shared" is a panel on body and bodyRear, which "surfaces.body" paints alike; measured on body/);
   assert.deepEqual(spaceRole(two, {}, 'paint.body', 'shared'), { role: 'body' }, 'a texture named outright is that texture');
   assert.deepEqual(spaceRole(two, {}, 'bodyRear', 'shared'), { role: 'bodyRear' });
   assert.match(spaceRole(two, {}, 'surfaces.body', 'nowhere').error, /none of them has a panel called "nowhere"/);
@@ -1565,7 +1570,7 @@ test('lettering too close in colour to what is under it is measured, not left to
   // Round one of three runs in a row failed on the team name for this alone:
   // white on Gulf blue, then thin orange on Gulf blue, each found a whole round
   // later by looking at a picture. The design knows both colours.
-  const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5' };
+  const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5', black: '#000000' };
   const low = (regions) => fitment({ ...design(regions), palette: gulf }, profile)
     .findings.filter((f) => f.kind === 'low-contrast');
   const base = { id: 'base', treatment: 'fill', color: 'blue' };
@@ -1577,8 +1582,11 @@ test('lettering too close in colour to what is under it is measured, not left to
   assert.match(white[0].why, /white on blue \(base\): a contrast of 2\.\d:1/);
   assert.equal(low([base, name('orange')]).length, 1, 'orange on Gulf blue');
   assert.deepEqual(low([base, name('navy')]), [], 'navy on the blue reads');
-  assert.deepEqual(low([base, { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' },
-    name('white')]), [], 'white on an orange band behind it reads');
+  // What is under the letters is the band behind them. A name on Gulf orange
+  // needs black to clear 6:1; white on it is 3.2.
+  const band = { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' };
+  assert.deepEqual(low([base, band, name('black')]), [], 'black on an orange band behind it reads');
+  assert.match(low([base, band, name('white')])[0]?.why ?? '', /white on orange \(band\): a contrast of 3\.\d:1/);
   // A fill that names no colour wears the core treatment's own pink.
   const onDefault = low([{ id: 'plain', treatment: 'fill' }, name('white')]);
   assert.equal(onDefault.length, 1, 'white on the pink a fill wears by default');
@@ -2026,6 +2034,75 @@ test('a stripe wider than a narrow nose is not offset where it runs on over a wi
   const laid = stripeLayout({ profile, model, role: 'body', widthMm: 300 });
   assert.deepEqual(laid.regions.map((r) => r.panel), ['nose', 'bonnet'], JSON.stringify(laid.pieces));
   assert.deepEqual(laid.findings, [], 'the nose\'s 200 mm and the bonnet\'s 300 mm are one stripe');
+});
+
+test('a name is held to 6:1 against what is under it, and other lettering to 4.5:1', () => {
+  // The critic failed a team name at 5.9:1 (run 29, deep blue on Gulf blue)
+  // and at 4.8:1 (run 30's polish), and passed it at 6.2, 6.5 and 8.3, while
+  // this check, at 3:1, passed them all. Not WCAG's 7:1 for small text,
+  // under which no name could sit on Gulf orange, black included.
+  const text = (t) => ({ id: 'x', treatment: 'text', panel: 'L', at: [0.2, 0.6, 0.6, 0.1], text: t, color: 'ink' });
+  const base = { id: 'base', treatment: 'fill', color: 'blue' };
+  const on = (ink, t) => fitment({ ...design([base, text(t)]), palette: { blue: '#7BB3D9', ink },
+    identity: { number: '85', team: 'NEON DOLL RACING' } }, profile).findings.filter((f) => f.kind === 'low-contrast');
+  const deep = on('#14304F', '{team}');
+  assert.equal(deep.length, 1, 'run 29 round 1, 5.9:1');
+  assert.match(deep[0].why, /a team or driver name needs at least 6:1 to read from trackside/);
+  assert.deepEqual(on('#071321', '{team}'), [], 'near-black navy clears it');
+  assert.deepEqual(on('#14304F', '{number}'), [], 'a race number is large, and 5.9:1 clears 4.5');
+  assert.match(on('#3A6FA0', '{number}')[0]?.why ?? '', /lettering needs at least 4.5:1/);
+});
+
+test('find_space measures the texture a panel is largest and most seen on, and picks a side\'s main panel', async () => {
+  // The RSS4's body is two textures, each with a left_mid, and find_space
+  // refused the question until the planner said which: seven refused calls
+  // in run 29's first round.
+  const { spaceRole, flankPanel } = await import('../src/space.mjs');
+  const panel = (w, visible, tags = ['left', 'mid', 'visible']) => ({ rect: [0, 0, w, w], metresPerUv: [2, 2], visible, tags });
+  const two = {
+    id: 'two', textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+    panels: {
+      body: { left_mid: panel(0.5, 0.9), left_rear: panel(0.6, 0.9, ['left', 'rear', 'visible']) },
+      bodyRear: { left_mid: panel(0.2, 0.9) },
+    },
+  };
+  const design = { name: 'D', surfaces: { body: { regions: [] } } };
+  const named = spaceRole(two, design, 'surfaces.body', 'left_mid');
+  assert.equal(named.role, 'body');
+  assert.deepEqual(named.roles, ['body', 'bodyRear']);
+  assert.match(named.chosen, /measured on body, where it is largest and most seen/);
+  assert.equal(spaceRole(two, design, undefined, 'left_mid').role, 'body', 'and with no surface named');
+  // The middle of the car, not the larger rear quarter: a door, or a sidepod.
+  assert.deepEqual(flankPanel(two, ['body', 'bodyRear'], 'left'), { role: 'body', panel: 'left_mid' });
+  assert.equal(flankPanel(two, ['body'], 'right'), null);
+});
+
+test('a stripe over a surface of two textures is laid and measured as one, and sized to the bodywork', async () => {
+  // The bonnet on a texture of its own, as a formula car's rear bodywork is:
+  // each piece keeps the texture it was laid on, and the check sees them all.
+  const { stripeLayoutAcross } = await import('../src/space.mjs');
+  const model = carOf([
+    { ...quadOf(striped[0], 2.0, 1.5), materialId: 2 }, { ...quadOf(striped[0], 1.3, 0.8), materialId: 2 },
+    ...striped.slice(1).map((q) => quadOf(q)),
+    { name: 'GLASS', materialId: 1, uv: [0.5, 0.5, 0.2, 0.2], normal: [0, 0.8, 0.6],
+      corners: [[-0.8, 1.0, 0.8], [-0.8, 1.3, 0.4], [0.8, 1.3, 0.4], [0.8, 1.0, 0.8]] },
+  ], [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }, { slots: { txDiffuse: 'r.dds' } }]);
+  const { bonnet, ...rest } = stripedProfile.panels.body;
+  const profile = { ...stripedProfile,
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 }, bodyRear: { file: 'r.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+    panels: { body: rest, bodyRear: { bonnet } } };
+  const got = stripeLayoutAcross({ profile, model, roles: ['body', 'bodyRear'], widthMm: 300 });
+  const on = Object.fromEntries(got.regions.map((r) => [r.panel, r.role]));
+  assert.equal(on.bonnet, 'bodyRear', JSON.stringify(got.regions));
+  assert.equal(on.roof, 'body');
+  assert.deepEqual(got.findings, [], 'measured together, the two textures are one stripe');
+
+  // No width asked: a third of the bodywork's width, between 200 and 450 mm.
+  const sized = stripeLayoutAcross({ profile, model, roles: ['body', 'bodyRear'] });
+  assert.ok(sized.bodyWidthMm > 0 && sized.widthMm >= 200 && sized.widthMm <= 450, JSON.stringify({ w: sized.widthMm, body: sized.bodyWidthMm }));
+  assert.equal(sized.widthMm, Math.max(200, Math.min(450, Math.round((0.3 * sized.bodyWidthMm) / 10) * 10)));
 });
 
 test('a panel is measured on its own mesh, not on another island laid out inside its outline', () => {

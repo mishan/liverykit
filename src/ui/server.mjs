@@ -55,7 +55,7 @@ import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
-import { findSpace, largestSpace, groupLayout, stripeLayout, aeroLayout, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -1577,6 +1577,29 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         const q = await body();
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
+        // A side instead of a panel, for the number group: the side's main
+        // panel on the body, a door or a formula car's sidepod (flankPanel).
+        // The prompt used to say doors, and the RSS4's planner had to work out
+        // for itself that a car with none carries its number on the sidepods.
+        const side = q.side ?? null;
+        let sideChosen = null;
+        if (side !== null) {
+          if (side !== 'left' && side !== 'right') {
+            return json(400, { error: `side is "left" or "right", the side of the car to lay the group on; got ${JSON.stringify(side)}.` });
+          }
+          if (!q.layout) return json(400, { error: 'side picks the panel for a layout: ask it with layout: { number, name }.' });
+          if (q.panel === undefined || q.panel === null || q.panel === '') {
+            let bodyRoles = [];
+            try {
+              bodyRoles = resolveTargets(profile, workingDesign ?? livery).targets.filter((t) => t.from === 'surfaces.body').map((t) => t.role);
+            } catch { /* a design that does not resolve is refused below */ }
+            const pick = flankPanel(profile, bodyRoles, side);
+            if (!pick) return json(400, { error: `No panel of the bodywork on the car's ${side} side is tagged mid and seen from trackside; name one with panel.` });
+            q.panel = pick.panel;
+            q.role ??= `paint.${pick.role}`;
+            sideChosen = `${pick.panel} on ${pick.role}: the ${side} side's main panel, the largest and most seen in the middle of the car.`;
+          }
+        }
         const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
         if (where.error) return json(400, { error: where.error });
         // On a car whose surface paints several textures, each region says which
@@ -1585,7 +1608,18 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         // number laid out on one sidepod landed on the floor too. See drawnOn.
         const shared = Object.values(profile.bind ?? {})
           .some((b) => Array.isArray(b?.roles) && b.roles.length > 1 && b.roles.includes(where.role));
-        const pin = (r) => (shared && r && typeof r === 'object' ? { ...r, role: where.role } : r);
+        const pin = (r) => (shared && r && typeof r === 'object' && !r.role ? { ...r, role: where.role } : r);
+        // Every texture of the surface this panel's texture is painted by: what
+        // a stripe or a kit runs over, where the panel only says which surface.
+        const surfaceRoles = (design) => {
+          try {
+            const targets = resolveTargets(profile, design).targets;
+            const from = targets.find((t) => t.role === where.role)?.from;
+            return from ? targets.filter((t) => t.from === from).map((t) => t.role) : [where.role];
+          } catch {
+            return [where.role];
+          }
+        };
         const pinLayout = (l) => (l?.regions ? { ...l, regions: { ...l.regions, roundel: pin(l.regions.roundel),
           number: pin(l.regions.number), name: (l.regions.name ?? []).map(pin) } } : l);
         const pinned = (res) => (!shared || !res ? res : {
@@ -1633,14 +1667,15 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
             'ask it without stripe, layout, largest, widthMm or heightMm.' });
         }
         if (stripe) {
-          const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
+          const ask = { widthMm: num(stripe.widthMm, undefined), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
           // Keyed on what the design hides and paints too: that decides what
           // stands over the band, so the same ask can have two answers.
           const design = workingDesign ?? livery;
-          const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
+          const roles = surfaceRoles(design);
+          const key = JSON.stringify(['stripe', roles, ask, drawnBy(profile, design)]);
           try {
-            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
-            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+            remember(spaces, key, spaces.get(key) ?? stripeLayoutAcross({ profile, model: m, roles, ...ask, design }), 256);
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });
           }
@@ -1648,10 +1683,11 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (aero) {
           const ask = { heightMm: num(aero.heightMm, NaN), name: aero.name ?? 'aero' };
           const design = workingDesign ?? livery;
-          const key = JSON.stringify(['aero', where.role, ask, drawnBy(profile, design)]);
+          const roles = surfaceRoles(design);
+          const key = JSON.stringify(['aero', roles, ask, drawnBy(profile, design)]);
           try {
-            remember(spaces, key, spaces.get(key) ?? aeroLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
-            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+            remember(spaces, key, spaces.get(key) ?? aeroLayoutAcross({ profile, model: m, roles, ...ask, design }), 256);
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });
           }
@@ -1682,7 +1718,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           // Said about THIS request, not cached with the answer: the same
           // question asked with the role spelled out and with it inferred gets
           // the same spots, and only the second was chosen for anybody.
-          return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
         } catch (e) {
           return json(400, { error: e.message });
         }

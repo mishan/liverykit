@@ -880,6 +880,8 @@ test('every tool reads what its schema declares, and declares what it reads', as
     // for a ground-effect kit.
     stripe: null,
     aero: null,
+    // A side picks the panel for a layout, and is refused without one.
+    side: null,
   };
   const drift = [];
   try {

@@ -938,16 +938,23 @@ function ringOnText(ring, text, size, identity = {}) {
  * on Gulf blue, each reported by the critic a whole round after it was
  * drafted. The design says what colour the letters are and what is painted
  * beneath them, so the contrast is arithmetic, and a planner told while it is
- * still drafting fixes it before it submits. 3:1 is WCAG's floor for large
- * text: Gulf orange on Gulf blue is 1.4, white on it 2.3; white on the orange,
- * or navy on the blue, clears it.
+ * still drafting fixes it before it submits.
+ *
+ * A name is held to 6:1 and a race number or any other lettering to 4.5:1,
+ * WCAG's floor for ordinary text. It was 3:1 for all of it, and the critic
+ * failed a team name at 5.9:1 (run 29, deep blue on Gulf blue) and at 4.8:1
+ * (run 30's polish, which darkened the base), and passed it at 6.2, 6.5 and
+ * 8.3: a name is small at trackside distance. Not WCAG's 7:1 for small text,
+ * under which no name could sit on Gulf orange at all, black included (6.7).
+ * Gulf orange on Gulf blue is 1.4 and white on it 2.3; navy close to black on
+ * it clears 6.
  *
  * What is under the letters is the last region painted before them that
  * covers their centre. If that is a treatment whose colour at that point is
  * not one known colour (a halftone, a gradient, a logo), nothing is said:
  * a guess would be a finding somebody learns to ignore.
  */
-const CONTRAST_FLOOR = 3;
+const CONTRAST_FLOOR = { name: 6, other: 4.5 };
 
 function luminance({ r, g, b }) {
   const lin = (c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -1007,14 +1014,17 @@ function contrast(placed, t, design, say, size) {
     const under = underName ? rgb(underName) : null;
     if (!under) continue;
     const ratio = contrastRatio(ink, under);
-    if (ratio >= CONTRAST_FLOOR) continue;
+    const isName = textIs(p.region, design.identity ?? {}) === 'name';
+    const floor = isName ? CONTRAST_FLOOR.name : CONTRAST_FLOOR.other;
+    if (ratio >= floor) continue;
     say({
       kind: 'low-contrast', severity: 'high', surface: t.from, panel: p.region.panel,
       ids: [p.id], contrast: round(ratio),
       why: `${name(t, p.id)} is ${inkName} on ${underName} (${what}): a contrast of ${ratio.toFixed(1)}:1, and ` +
-        `lettering needs at least ${CONTRAST_FLOOR}:1 to read from trackside. Use a dark colour on a light base ` +
-        'or white on a dark one. Lettering may sit on a stripe that runs the car\'s whole length, but not on a ' +
-        'patch or band of its own, which reads as amateur.',
+        `${isName ? 'a team or driver name needs' : 'lettering needs'} at least ${floor}:1 to read from ` +
+        'trackside. Use a dark colour on a light base, close to black (navy near black on Gulf blue, not a mid ' +
+        'navy), or white on a dark one. Lettering may sit on a stripe that runs the car\'s whole length, but not ' +
+        'on a patch or band of its own, which reads as amateur.',
     });
   }
 }
@@ -2360,6 +2370,31 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
             'check it in a picture of the car meanwhile' }
         : s.rows.length >= 2 && s.widest >= 2 ? {} : { measured: false }),
     }));
+}
+
+/**
+ * How wide a car's bodywork on these textures is, seen from above, in
+ * millimetres: the middle one of the widths across the middle half of its
+ * length. What a stripe along the car is sized to, where a design does not
+ * say: 450 mm reads on a GT car and covers a formula car's nose and cockpit
+ * edge to edge.
+ */
+export function bodyWidthMm(model, profile, roles, { hide = [], painted = [] } = {}) {
+  const draw = drawing(profile, hide, [...painted, ...roles]);
+  const env = envelope(model, profile, 1, 1, draw);
+  const files = new Set(roles.map((r) => texture(profile, r).file.toLowerCase()));
+  const widths = [];
+  for (let j = Math.floor(env.rows * 0.25); j < Math.ceil(env.rows * 0.75); j++) {
+    let n = 0;
+    for (let i = 0; i < env.cols; i++) {
+      const m = env.M[j * env.cols + i];
+      if (m >= 0 && files.has(sheetOf(model, m))) n++;
+    }
+    if (n) widths.push(n);
+  }
+  if (!widths.length) return null;
+  widths.sort((a, b) => a - b);
+  return Math.round(widths[widths.length >> 1] * ENVELOPE_CELL * 1000);
 }
 
 /** The car's length nose to tail in millimetres, over everything the picture draws. */
