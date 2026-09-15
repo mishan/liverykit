@@ -134,7 +134,7 @@ const BLEED_IS_FINE_BELOW = 0.15;
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'limit', 'optional', 'constraints', '__key',
+  'span', 'once', 'role', 'limit', 'optional', 'constraints', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */
@@ -439,7 +439,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
   // silently skipped and this module checked the design's own coordinates while
   // claiming to check the fitted ones.
   const fitted = applyFit(spec.regions ?? [], fit, {
-    profile, role: t.role, surfaceKey: t.from,
+    profile, role: t.role, surfaceKey: t.from, primary: t.primary !== false,
   }).regions;
   // No try/catch. An invalid design is a finding, not an absence of them, and
   // swallowing this here made a livery that cannot be resolved at all look

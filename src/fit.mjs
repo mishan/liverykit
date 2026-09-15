@@ -182,6 +182,29 @@ export function copiesOf(fit) {
  * remedy — give the region an `id` in the livery — is one line. Being able to
  * work at all beats being unable to start.
  */
+/**
+ * Whether a region of a surface is drawn on one of the textures that surface
+ * paints. A term can cover several — `body` on the RSS4 is two chassis
+ * textures, each with its own panel called `left_mid` — and a region is drawn
+ * on every one of them unless it says otherwise:
+ *
+ * - `role` names the one texture it is drawn on. Panel names are the
+ *   texture's own, so a region placed on one texture's `left_mid` also landed
+ *   on the other's, and a number measured on one sidepod was painted on the
+ *   floor as well. find_space says which texture it measured on.
+ * - `once` keeps it on the term's PRIMARY texture: a pattern belongs on all of
+ *   them, a car number on the car once.
+ *
+ * The one rule for every path that draws or measures regions — the build, the
+ * editor, fitment, the in-view count — so what is checked is what ships. `once`
+ * was honoured by the build alone, and the editor and fitment drew it on every
+ * texture.
+ */
+export function drawnOn(region, role, primary = true) {
+  if (typeof region?.role === 'string') return region.role === role;
+  return !(region?.once && !primary);
+}
+
 export function regionKey(surfaceKey, region, index) {
   return region.id ?? `${surfaceKey}#${index}`;
 }
@@ -251,7 +274,7 @@ export function regionIds(livery) {
  * the one option not on the table — a fit quietly doing nothing is this
  * project's oldest bug wearing yet another costume.
  */
-export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [], reserved = null } = {}) {
+export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [], reserved = null, primary = true } = {}) {
   // Keys are stamped even with no fit at all. A car nobody has tuned is the
   // common case, and the editor still has to be able to name every region in
   // order to let you start tuning one.
@@ -260,6 +283,9 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   const out = [];
   for (const [i, region] of regions.entries()) {
     const key = regionKey(surfaceKey, region, i);
+    // After the key, so a region left off this texture does not move the
+    // positional key of every region after it.
+    if (!drawnOn(region, role, primary)) continue;
     // Stamped on every region, overridden or not, so everything downstream —
     // the overlay, the placement report — can name it without recomputing the
     // index it came from.

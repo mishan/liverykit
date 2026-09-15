@@ -241,6 +241,36 @@ test('artwork outside the readable part of a panel is reported', () => {
   assert.deepEqual(fields.map((f) => f.ids[0]), ['part']);
 });
 
+test('a region on a surface of several textures is drawn on the one it names, and no key moves', async () => {
+  // The RSS4's body is two textures, each with its own panel called left_mid,
+  // and a region on surfaces.body was drawn on both: run 28's number, laid out
+  // on one sidepod, landed on the floor too, and the planner spent the round
+  // finding out why. `role` names the one texture; `once`, the first.
+  const { applyFit, drawnOn } = await import('../src/fit.mjs');
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.equal(drawnOn({ role: 'bodyRear' }, 'body'), false);
+  assert.equal(drawnOn({ role: 'bodyRear' }, 'bodyRear', false), true);
+  assert.equal(drawnOn({ once: true }, 'bodyRear', false), false);
+  assert.equal(drawnOn({}, 'bodyRear', false), true);
+
+  // Left off a texture after its key is stamped, so an unnamed region after it
+  // keeps the positional key the editor and a fit know it by.
+  const regions = [{ treatment: 'fill' }, { id: 'floor', treatment: 'fill', role: 'bodyRear' },
+    { treatment: 'fill', once: true }, { treatment: 'text', text: 'x' }];
+  const on = (role, primary) => applyFit(regions, null, { role, surfaceKey: 'body', primary }).regions.map((r) => r.__key);
+  assert.deepEqual(on('body', true), ['body#0', 'body#2', 'body#3']);
+  assert.deepEqual(on('bodyRear', false), ['body#0', 'floor', 'body#3']);
+
+  // Pinned to a texture the surface does not paint here, it would be drawn
+  // nowhere, and is refused saying which it could be on.
+  const two = { id: 'two', textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } }, panels: {} };
+  const livery = (role) => ({ name: 'T', surfaces: { body: { regions: [{ id: 'x', treatment: 'fill', role }] } } });
+  assert.deepEqual(resolveTargets(two, livery('bodyRear')).targets.map((t) => t.role), ['body', 'bodyRear']);
+  assert.throws(() => resolveTargets(two, livery('glass')),
+    /region "x" on surfaces\.body is pinned to texture role "glass", which surfaces\.body does not paint on this car; it paints body, bodyRear/);
+});
+
 test('a band that cannot span is a finding, not an exception', () => {
   // A spanning region on a profile with no seam maps is clipped to its home
   // panel and reported — see spanPlacements. It used to throw from inside
