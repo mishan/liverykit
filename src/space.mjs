@@ -1013,6 +1013,23 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
           : got.why });
     }
   }
+  // Measured as check_fitment measures them, and a piece it would call unseen
+  // left out: a panel's visibility is the whole island's, and on the RSS4 the
+  // floor's rear panel is 18% visible while the part the kit fills, under the
+  // engine cover, is 8% — a high finding in the planner's first check.
+  if (pieces.length) {
+    const regions = pieces.map((p) => ({ id: p.id, treatment: 'fill', panel: p.panel, ...(p.whole ? {} : { at: p.at }), safe: false, color: 'ink' }));
+    const found = fitment({ name: 'aero', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+      paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])), [role]: { regions } } }, profile, null, { model }).findings;
+    const unseen = new Map();
+    for (const f of found) if (f.kind === 'unseen' && f.severity === 'high') for (const id of f.ids ?? []) unseen.set(id, f.why);
+    for (let i = pieces.length - 1; i >= 0; i--) {
+      const why = unseen.get(pieces[i].id);
+      if (!why) continue;
+      skipped.push({ panel: pieces[i].panel, why: `left out of the kit: ${why}` });
+      pieces.splice(i, 1);
+    }
+  }
   pieces.sort((a, b) => a.behindNoseMm[0] - b.behindNoseMm[0]);
   const parts = {};
   for (const p of pieces) (parts[p.part] ??= []).push(p.id);

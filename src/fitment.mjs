@@ -1659,8 +1659,27 @@ function stripeJoins(byName, profile, seen, say, draw) {
       }
       steps.push({ pieces: [piece], points: piece.points, c: piece.c, n: piece.n, z: [zlo, zhi] });
     }
+    // Across the stripe is fixed by the view the stripe is seen in, as the
+    // coverage check has it: across the car for one seen from above or down
+    // the face of a nose, up and down for one along a flank. Asked of each
+    // join, the RSS4's sloping nose had the check comparing heights where a
+    // stripe from above has edges left and right.
+    let all = [];
+    for (const piece of onCar) all = all.concat(piece.points);
+    const { n: facing } = meanOf(all);
+    const view = [1, 2].reduce((b, i) => (Math.abs(facing[i]) > Math.abs(facing[b]) ? i : b), 0);
+    const k = view === 0 ? 1 : 0;
+    // Each piece's own island, sampled once, for where its panel ends.
+    const islands = new Map();
+    const islandOf = (piece) => {
+      const panel = piece.p.region.panel;
+      if (!panel) return [];
+      const key = `${piece.t.role}\u0000${panel}`;
+      if (!islands.has(key)) islands.set(key, panelSamples(seen.model, profile, piece.t.role, panel, [0, 0, 1, 1]).points);
+      return islands.get(key);
+    };
     for (let i = 0; i + 1 < steps.length; i++) {
-      stripeJoin(steps[i], steps[i + 1], { stripe, say, F, L });
+      stripeJoin(steps[i], steps[i + 1], { stripe, say, F, L, k, islandOf });
     }
     if (onCar.length) stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L, draw });
   }
@@ -1677,7 +1696,7 @@ function meanOf(points) {
   return { c: c.map((v) => v / points.length), n: n.map((v) => v / nl) };
 }
 
-function stripeJoin(A, B, { stripe, say, F, L }) {
+function stripeJoin(A, B, { stripe, say, F, L, k: across = null, islandOf = () => [] }) {
   const dl = Math.hypot(B.c[0] - A.c[0], B.c[1] - A.c[1], B.c[2] - A.c[2]) || 1;
   const d = [0, 1, 2].map((k) => (B.c[k] - A.c[k]) / dl);
   const nl = Math.hypot(A.n[0] + B.n[0], A.n[1] + B.n[1], A.n[2] + B.n[2]) || 1;
@@ -1685,7 +1704,7 @@ function stripeJoin(A, B, { stripe, say, F, L }) {
   // Across the stripe: the car's own axis that lies least along the stripe
   // and least out of the paint. Across the car over a roof, up and down on a
   // flank, and across the car again down the face of the nose.
-  const k = [1, 2].reduce((best, i) => (Math.abs(d[i]) + Math.abs(n[i]) < Math.abs(d[best]) + Math.abs(n[best]) ? i : best), 0);
+  const k = across ?? [1, 2].reduce((best, i) => (Math.abs(d[i]) + Math.abs(n[i]) < Math.abs(d[best]) + Math.abs(n[best]) ? i : best), 0);
   const s = (q) => q.x * d[0] + q.y * d[1] + q.z * d[2];
   const lat = (q) => (k === 0 ? q.x * L : k === 1 ? q.y : q.z * F);
 
@@ -1711,7 +1730,30 @@ function stripeJoin(A, B, { stripe, say, F, L }) {
     { hi: 'top edge', lo: 'bottom edge', more: 'higher', less: 'lower', at: (v) => `${mm(v)} mm up` },
     { hi: 'front edge', lo: 'rear edge', more: 'further forward', less: 'further back', at: (v) => `${mm(v)} mm along` },
   ][k];
-  const dHi = hiB - hiA, dLo = loB - loA;
+  // An edge where the narrower piece stops because its own panel stops there
+  // is the car's shape, not an offset: a formula car's nose is narrower than
+  // the stripe and the wing beneath it wider, so the nose's piece covers the
+  // nose edge to edge and the wing's runs on past it. Each piece's panel, near
+  // the join, is where the band could have gone.
+  const islandSpan = (list, keep) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const piece of list) {
+      for (const q of islandOf(piece)) {
+        if (!keep(q)) continue;
+        const v = lat(q);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    return [lo, hi];
+  };
+  const [iloA, ihiA] = islandSpan(endA, (q) => Math.abs(s(q) - sA) <= end);
+  const [iloB, ihiB] = islandSpan(endB, (q) => Math.abs(s(q) - sB) <= end);
+  const tol = STRIPE_STEP_MM / 1000;
+  const bodyEdge = (inner, edge) => Number.isFinite(edge) && Math.abs(inner - edge) <= tol;
+  const hiShape = hiA < hiB ? bodyEdge(hiA, ihiA) : bodyEdge(hiB, ihiB);
+  const loShape = loA > loB ? bodyEdge(loA, iloA) : bodyEdge(loB, iloB);
+  const dHi = hiShape ? 0 : hiB - hiA, dLo = loShape ? 0 : loB - loA;
   const worst = Math.max(Math.abs(dHi), Math.abs(dLo)) * 1000;
   if (worst > STRIPE_STEP_MM) {
     const step = (dv, edge) => `${edge} ${Math.abs(mm(dv))} mm ${dv > 0 ? words.more : words.less}`;
