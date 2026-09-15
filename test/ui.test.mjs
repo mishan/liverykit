@@ -3265,6 +3265,21 @@ test('a surface bound to two textures is painted on both in the whole car and it
       'the second texture of the surface comes down painted');
     const preview = JSON.parse((await call('/api/preview', {})).body.toString());
     assert.deepEqual(preview.surfaces.map((x) => x.role).sort(), [bodyRole, rearRole].sort(), 'and the preview renders both');
+
+    // A region pinned to the second texture is not drawn on the first, which
+    // is the one the editor lists and edits: said and locked there.
+    const pinned = { ...livery, surfaces: { body: { background: 'primer', regions: [
+      { id: 'rear-fill', treatment: 'fill', role: rearRole }, { id: 'both', treatment: 'fill' }] } } };
+    const st = JSON.parse((await call('/api/state', { design: pinned })).body.toString());
+    const listed = st.surfaces.find((x) => x.from === 'surfaces.body').regions;
+    assert.deepEqual(listed.map((r) => [r.id, r.editable, r.drawnOn ?? null]), [['rear-fill', false, rearRole], ['both', true, null]]);
+
+    // Pinned to a texture its surface does not paint, the design cannot be
+    // loaded: refused, and the editor keeps the one it had.
+    const bad = await call('/api/state', { design: { ...livery, surfaces: { body: { regions: [{ id: 'x', treatment: 'fill', role: 'glass' }] } } } });
+    assert.equal(bad.status, 400);
+    assert.match(JSON.parse(bad.body.toString()).error, /kept its working design.*pinned to texture role "glass"/);
+    assert.equal((await call('/api/state')).status, 200, 'and still serves its state');
   } finally {
     if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
     await new Promise((ok) => server.close(ok));

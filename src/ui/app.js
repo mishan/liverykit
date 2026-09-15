@@ -3056,7 +3056,10 @@ async function ensureWholeCar() {
   // NSX's rims shared one with every such part, so a proposal that painted
   // `rims` rendered them orange and the view drew them stock. Rare, and worth
   // the megabytes when it happens.
-  const painted = surfaces.map((sf) => String(sf.file).toLowerCase()).sort().join('\n');
+  // And the parts it hides, which the geometry leaves out as well: a proposal
+  // that changed only `hide` left the hidden part standing.
+  const hidden = Array.isArray(state.design?.hide) ? [...state.design.hide].map(String).sort() : [];
+  const painted = [...surfaces.map((sf) => String(sf.file).toLowerCase()).sort(), `hide:${JSON.stringify(hidden)}`].join('\n');
   if (!state.wholeGeometry || state.wholeGeometryPainted !== painted) {
     const res = await fetch('/api/model?all=1');
     if (!res.ok) {
@@ -3078,8 +3081,9 @@ async function ensureWholeCar() {
   //
   // Keyed by file, which is what both sides agree on: a group carries the
   // texture its meshes use, and a surface carries the texture it writes.
-  // From the preview's list, which holds every painted texture: the state's
-  // holds one a term, and a formula car's bodyRear was left roleless.
+  // From the preview's list, which holds every painted texture. The editor
+  // state holds one entry per term, and a formula car's bodyRear was left
+  // roleless.
   const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, surfaces) };
   const drew = await state.viewer.setWholeCar(g, surfaces);
   return { g, drew };

@@ -1953,6 +1953,7 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   ];
   const model = carOf(quads.map((q) => ({ ...q, name: q.name.toUpperCase() })));
   const seen = { sill: 0.9, door: 0.9, wing: 0.9, liner: 0.05, splitter: 0.8, nose: 0.9, diffuser: 0.25 };
+  const ghost = { rect: [0.9, 0.9, 0.05, 0.05], anisotropy: 1, metresPerUv: [5, 5], visible: 0.9, tags: ['visible'] };
   const profile = {
     id: 'kit', name: 'Kit', calibration: { axes: { left: '+X', front: '+Z' } },
     textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
@@ -1961,6 +1962,8 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
       rect: [x, y, w, h], anisotropy: 1, metresPerUv: [5, 5], visible: seen[name], tags: ['visible'],
       outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }])) },
   };
+  // A panel the profile has and the model does not: a profile out of step.
+  profile.panels.body.ghost = ghost;
 
   const got = aeroLayout({ profile, model, role: 'body', heightMm: 300 });
   assert.deepEqual(got.upMm, [100, 400], 'measured up from the bottom of the bodywork');
@@ -1976,6 +1979,7 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   assert.match((got.skipped ?? []).find((s) => s.panel === 'plate')?.why ?? '',
     /plate lies within the kit's height, but the profile has no measured visibility/, JSON.stringify(got.skipped));
   assert.equal((got.skipped ?? []).filter((s) => s.panel === 'plate').length, 1, 'and said once');
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'ghost')?.why ?? '', /ghost lands on no geometry/, JSON.stringify(got.skipped));
   const at = Object.fromEntries(got.regions.map((r) => [r.panel, r.at]));
   // Filled whole, which is a region with no `at`, and to its edge.
   for (const p of ['splitter', 'sill']) assert.equal(at[p], undefined, `${p} is filled whole`);

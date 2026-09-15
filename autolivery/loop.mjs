@@ -149,7 +149,9 @@ function constraintsById(design) {
  * tell which way a piece runs says nothing about that, and the RSS4's
  * diagonal cockpit panels would otherwise keep every stripe on it unvouched.
  */
-export function stripesOf(design, findings) {
+export function stripesOf(design, findings, unrun = []) {
+  // A stripe check that did not run found nothing, and nothing is not clean.
+  const unmeasured = unrun.includes('stripe-offset') || unrun.includes('stripe-gap');
   const names = new Set();
   for (const group of ['surfaces', 'paint']) {
     for (const spec of Object.values(design?.[group] ?? {})) {
@@ -157,7 +159,7 @@ export function stripesOf(design, findings) {
     }
   }
   return [...names].map((name) => ({ name,
-    clean: !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-')
+    clean: !unmeasured && !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-')
       && (f.severity !== 'low' || (f.measured === false && f.kind !== 'stripe-across'))) }));
 }
 
@@ -746,7 +748,11 @@ async function runRounds({
     const whole = wholeFor(measured, fitment?.findings ?? [], views);
     // Only from a measurement: a draft check_fitment refused has no findings,
     // and no findings would read as a clean stripe.
-    const stripes = fitment ? stripesOf(effective, fitment.findings ?? []) : [];
+    // And only from checks that ran: without the model, stripe-offset and
+    // stripe-gap are listed as not checked and find nothing. A check the
+    // car's profile cannot support is excused, as it is from the gate.
+    const stripes = fitment ? stripesOf(effective, fitment.findings ?? [], (fitment.notChecked ?? [])
+      .filter((c) => !(fitment.unsupported ?? []).some((u) => u.notChecked === c))) : [];
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
