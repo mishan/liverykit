@@ -622,6 +622,39 @@ test('a dead MCP server ends the run at once, and the rounds before it are on di
   }
 });
 
+test('result.json carries the AgentOps link when the trace is exported', async () => {
+  // The link was printed once, at the end of the run, and nowhere else. A run
+  // opened later from its directory, for its attempts page or for --propose,
+  // could not be found in AgentOps without scrolling back through a terminal
+  // that may be gone. A trace that is not exported has no link, and then the
+  // field is left out rather than written as null.
+  const ed = await fixtureEditor();
+  try {
+    const planner = { async round({ call }) {
+      await call('draft_design', { design: [{ op: 'set-palette', name: 'ink', value: '#101014' }] });
+      await call('finish_round', { summary: 'a palette' });
+    } };
+    const critic = { async judge() {
+      return { reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true, notes: [] };
+    } };
+    const go = async (name, trace) => {
+      const out = join(ed.dir, name);
+      await run({ brief: 'b', mcp: ed.mcp, planner, critic, trace, out, rounds: 1, propose: false,
+        views: ['left'], shot: { width: 200, height: 150 } });
+      return JSON.parse(await readFile(join(out, 'result.json'), 'utf8'));
+    };
+    const local = await createTrace({ dir: join(ed.dir, 'local') });
+    assert.equal('trace' in await go('local', local), false, 'no exporter, no link, no field');
+
+    const exported = await createTrace({ dir: join(ed.dir, 'exported') });
+    const link = 'https://app.agentops.ai/sessions?trace_id=abc123';
+    const saved = await go('exported', { ...exported, summary: () => ({ ...exported.summary(), link }) });
+    assert.equal(saved.trace, link, 'the link the run would print is in result.json');
+  } finally {
+    await ed.stop();
+  }
+});
+
 test('an editor that stops answering ends the run at once, like a dead MCP server', async () => {
   // Only the MCP child dying was fatal. With the editor gone and the child
   // alive, every tool answered "No fitting editor is listening" as an
