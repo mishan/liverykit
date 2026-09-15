@@ -2375,12 +2375,12 @@ export function carLength(model, profile) {
  * car, and the low end of those rather than the lowest, so one stray fitting
  * hung under the sill does not move the band.
  */
-export function flankBottom(model, profile, role, side, { hide = [], painted = [] } = {}) {
+export function flankBottom(model, profile, role, side, { hide = [], painted = [], seen = BARELY_SEEN } = {}) {
   const draw = drawing(profile, hide, [...painted, role]);
   const { L } = carFrame(model, profile, draw);
   const env = envelope(model, profile, 0, side * L, draw);
   const file = texture(profile, role).file.toLowerCase();
-  const panels = seenPanels(profile, role);
+  const panels = seenPanels(profile, role, seen);
   const lows = [];
   for (let j = 0; j < env.rows; j++) {
     for (let i = 0; i < env.cols; i++) {

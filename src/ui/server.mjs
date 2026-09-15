@@ -416,7 +416,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         // a region above it.
         derived: r.id === undefined,
         treatment: r.treatment,
-        editable: true,
+        // A region pinned to another texture of this term (see drawnOn) is not
+        // drawn on this one, so it has nothing here to see or drag: said, and
+        // locked, rather than listed as though it were placed and missing.
+        editable: !(typeof r.role === 'string' && r.role !== t.role),
+        ...(typeof r.role === 'string' && r.role !== t.role ? { drawnOn: r.role } : {}),
         // The design's own opposite number, if it declared one. Sent from here
         // rather than worked out in the browser: it needs the profile's
         // measured `mirrorOf`, and it is far easier to test in Node.
@@ -980,7 +984,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // run's drafts nearly always paint the same roles. One entry, because the
   // count keeps its per-view passes on the geometry (see piecesInView), and
   // several geometries would hold several sets of those.
-  // Every texture a design paints, one entry a role: a term's secondary
+  // Every texture a design paints, one entry per role: a term's secondary
   // textures too, which `editorState().surfaces` leaves out because it lists
   // the one the editor edits. The RSS4's body is body AND bodyRear, and taken
   // from that list the whole-car view drew the rear bodywork stock.
@@ -1050,9 +1054,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // editor's state, so the page would not load until the server restarted:
   // a tab still holding the design from before a restart applied a proposal
   // on top of it and doubled every region the proposal added.
+  // And one that does not resolve on this car at all, which breaks every
+  // request the same way: a region pinned to a texture its surface does not
+  // paint, a texture painted twice, a surface not in the vocabulary.
   const unloadable = (d) => {
     try {
       regionIds(d ?? {});
+      resolveTargets(profile, d ?? {});
       return null;
     } catch (e) {
       return e.message;

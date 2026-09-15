@@ -25,7 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
-import { meshesUsingTexture } from './engine/kn5.mjs';
+import { meshesUsingTexture, blends, isGlass } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
 import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength } from './fitment.mjs';
 
@@ -942,7 +942,7 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   const { hide, painted } = drawnBy(profile, design);
   const paints = [...new Set([...painted, role])];
   const flanks = [['left', 1], ['right', -1]].map(([side, sign]) => ({ side, sign,
-    bottom: flankBottom(model, profile, role, sign, { hide, painted: paints }) })).filter((f) => f.bottom !== null);
+    bottom: flankBottom(model, profile, role, sign, { hide, painted: paints, seen: AERO_SEEN }) })).filter((f) => f.bottom !== null);
   if (!flanks.length) {
     return { role, heightMm, name, regions: [], note: `Seen from either side, no panel of ${role} the world sees is in view.` };
   }
@@ -957,14 +957,28 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   const pieces = [];
   const skipped = [];
   const whole = new Set();
+  // Glass on the body's sheet is not bodywork, told as the stripe's layout
+  // tells it (`sheetOf`): a material that blends and is glass by its shader.
+  const glass = (q) => {
+    const mesh = q.source?.mesh ? model.meshes.find((m) => m.name === q.source.mesh) : null;
+    const mat = mesh ? model.materials?.[mesh.materialId] : null;
+    return Boolean(mat && blends(mat) && isGlass(mat.shader));
+  };
   for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
     const unknown = typeof q.visible !== 'number';
     if (!Array.isArray(q.rect) || q.hidden || (!unknown && q.visible < AERO_SEEN)) continue;
     // A panel's middle is inside its extent: one whose middle is above the kit
     // cannot lie inside it, and is not sampled to find that out.
     if (Array.isArray(q.centroid3d) && q.centroid3d[1] * 1000 > top + AERO_FIT_MM) continue;
+    if (glass(q)) continue;
     const on = panelOnCar(model, profile, role, panel);
-    if (!on || on.why || on.up[1] > top + AERO_FIT_MM) continue;
+    // A panel the model has no geometry for is a profile out of step with
+    // it, and said, as the flanks below say it, rather than dropped.
+    if (!on || on.why) {
+      skipped.push({ panel, why: on?.why ?? `${panel} lands on no geometry` });
+      continue;
+    }
+    if (on.up[1] > top + AERO_FIT_MM) continue;
     // Said rather than dropped, as everything left out of the kit is: a panel
     // the profile never measured could be the kit or could be under the car.
     if (unknown) {

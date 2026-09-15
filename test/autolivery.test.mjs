@@ -106,6 +106,9 @@ test('a stripe the check could not measure is not vouched for to the critic', as
   assert.deepEqual(stripesOf(design, [f('stripe-gap', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
   assert.deepEqual(stripesOf(design, [f('stripe-offset', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
   assert.deepEqual(stripesOf(design, [f('stripe-offset', 'high')]), [{ name: 'centre', clean: false }]);
+  // A check that did not run found nothing, which is not the same as clean.
+  assert.deepEqual(stripesOf(design, [], ['stripe-gap']), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [], ['unseen']), [{ name: 'centre', clean: true }]);
 });
 
 test('the planner is asked for a ground-effect kit and the wheels, and each can be left out', async () => {
