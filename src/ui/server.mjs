@@ -50,7 +50,7 @@ import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
-import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
@@ -1501,6 +1501,16 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         const files = paintedSheets(workingDesign ?? livery).map(({ role, file }) => ({ role, file }));
         const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
+        // As the pictures draw them: a two-layer part whose base sheet is clear
+        // everywhere is opaque (see clearBasesOpaque), which the browser, with
+        // no decoder for a PNG base, could not tell for itself. Only those
+        // parts' sheets are decoded, not the car's.
+        const layered = g.groups.filter((x) => x.blend && !x.role && x.detail?.diffuse);
+        if (layered.length) {
+          const { sheets } = await carSheets(layered.map(({ detail }) => ({ role: null, file: null, detail: { diffuse: detail.diffuse } })),
+            stockTexture, { cache: stockSheets });
+          g.groups = clearBasesOpaque(g.groups, sheets);
+        }
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packModel(g));
       }
