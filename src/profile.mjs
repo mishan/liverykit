@@ -247,6 +247,21 @@ export function resolveTargets(profile, livery) {
   const notes = [];
   const claimedBy = new Map();
 
+  // A region pinned to a texture its surface does not paint on this car
+  // would be drawn nowhere, and a region drawn nowhere looks exactly like one
+  // that is fine. Refused, naming the textures it could be on.
+  const pinned = (spec, from, roles) => {
+    for (const r of spec?.regions ?? []) {
+      if (r?.role === undefined) continue;
+      if (typeof r.role !== 'string' || !roles.includes(r.role)) {
+        throw new Error(
+          `Livery "${livery.name}": region "${r.id ?? '(no id)'}" on ${from} is pinned to texture role ` +
+          `${JSON.stringify(r.role)}, which ${from} does not paint on this car; it paints ${roles.join(', ')}.`
+        );
+      }
+    }
+  };
+
   const claim = (role, spec, from, primary = true) => {
     const prior = claimedBy.get(role);
     if (prior) {
@@ -262,6 +277,7 @@ export function resolveTargets(profile, livery) {
 
   for (const [role, spec] of Object.entries(livery.paint ?? {})) {
     texture(profile, role);            // throws with the known-roles list
+    pinned(spec, `paint.${role}`, [role]);
     claim(role, spec, `paint.${role}`);
   }
 
@@ -296,6 +312,7 @@ export function resolveTargets(profile, livery) {
       });
       continue;
     }
+    pinned(spec, `surfaces.${term}`, b.roles);
     b.roles.forEach((role, i) => {
       // The FIRST role a term resolves to is its primary surface. A term can
       // cover several textures — `body` on the RSS4 is two chassis textures —

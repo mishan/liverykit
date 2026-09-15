@@ -597,7 +597,7 @@ export function fitUsage(livery, profile, fit) {
   const used = new Set();
   for (const t of resolveTargets(profile, livery).targets) {
     applyFit(t.spec.regions ?? [], fit, {
-      profile, role: t.role, surfaceKey: t.from, used, notes: [],
+      profile, role: t.role, surfaceKey: t.from, used, notes: [], primary: t.primary !== false,
     });
   }
   return used;
@@ -660,7 +660,7 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
   const used = new Set();
   const surfaceKey = target.from ?? '';
   const fitted = applyFit(spec.regions ?? [], fit, {
-    profile, role, surfaceKey, used, notes,
+    profile, role, surfaceKey, used, notes, primary: target.primary !== false,
     // Every id the livery declares ANYWHERE, so a copy cannot quietly take a
     // name that belongs to a region on another surface.
     reserved: allRegionKeys(targets),
@@ -1549,6 +1549,21 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (!m) return json(404, { error: modelError ?? 'no model' });
         const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
         if (where.error) return json(400, { error: where.error });
+        // On a car whose surface paints several textures, each region says which
+        // one it was measured on, or it is drawn on every one of them: the RSS4's
+        // body is two textures, each with its own panel called left_mid, and a
+        // number laid out on one sidepod landed on the floor too. See drawnOn.
+        const shared = Object.values(profile.bind ?? {})
+          .some((b) => Array.isArray(b?.roles) && b.roles.length > 1 && b.roles.includes(where.role));
+        const pin = (r) => (shared && r && typeof r === 'object' ? { ...r, role: where.role } : r);
+        const pinLayout = (l) => (l?.regions ? { ...l, regions: { ...l.regions, roundel: pin(l.regions.roundel),
+          number: pin(l.regions.number), name: (l.regions.name ?? []).map(pin) } } : l);
+        const pinned = (res) => (!shared || !res ? res : {
+          ...res,
+          ...(Array.isArray(res.regions) ? { regions: res.regions.map(pin) } : {}),
+          ...(res.layout ? { layout: pinLayout(res.layout) } : {}),
+          ...(res.alternative ? { alternative: pinLayout(res.alternative) } : {}),
+        });
         // Normalised before anything is keyed on it: "300" and 300, or a
         // default left out and the same default sent, are one question.
         const num = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : Number(v));
@@ -1595,7 +1610,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
           try {
             remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
-            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });
           }
@@ -1606,7 +1621,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           const key = JSON.stringify(['aero', where.role, ask, drawnBy(profile, design)]);
           try {
             remember(spaces, key, spaces.get(key) ?? aeroLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
-            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });
           }
@@ -1637,7 +1652,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           // Said about THIS request, not cached with the answer: the same
           // question asked with the role spelled out and with it inferred gets
           // the same spots, and only the second was chosen for anybody.
-          return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
         } catch (e) {
           return json(400, { error: e.message });
         }

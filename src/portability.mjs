@@ -17,6 +17,7 @@
 // clean here is one that the build will genuinely paint.
 // ---------------------------------------------------------------------------
 
+import { drawnOn } from './fit.mjs';
 import { resolveTargets, expandRegions, placementRefusal, missExplanation, binding, panel as findPanel } from './profile.mjs';
 
 /**
@@ -91,7 +92,8 @@ export function portability(design, profile) {
 
   for (const t of targets) {
     surfaces.push({ from: t.from, role: t.role, status: 'present' });
-    const list = t.spec?.regions ?? [];
+    // The regions drawn on this texture: see `drawnOn`.
+    const list = (t.spec?.regions ?? []).filter((r) => drawnOn(r, t.role, t.primary !== false));
 
     let expanded;
     try {

@@ -1,0 +1,9 @@
+{
+  "name": "Autolivery",
+  "folder": "autolivery",
+  "car": "rss_formula_rss_4",
+  "packs": ["core"],
+  "identity": {},
+  "palette": { "primer": "#8a8d91" },
+  "surfaces": { "body": { "background": "primer", "regions": [] } }
+}
