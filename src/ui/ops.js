@@ -125,6 +125,21 @@ export function opAddRegion(design, { surface = 'surfaces.body', region, index }
   if (group !== 'surfaces' && group !== 'paint') return;
   if (!isSafeKey(name)) return;
 
+  // An id the design already has is refused, not added again. Ids are how a
+  // fit addresses a region, and a livery using one twice cannot be loaded: a
+  // proposal applied in a tab still holding the design from before its
+  // editor restarted doubled every region it added, the editor stored that,
+  // and the page would not load again until the server was restarted.
+  if (typeof region?.id === 'string' && region.id) {
+    for (const grp of ['surfaces', 'paint']) {
+      for (const [where, spec] of Object.entries(design[grp] ?? {})) {
+        if ((spec?.regions ?? []).some((r) => r?.id === region.id)) {
+          throw new Error(`There is already a region called "${region.id}" (on "${where}"): use set-region to ` +
+            'change it, or give the new one another id.');
+        }
+      }
+    }
+  }
   design[group] ??= {};
   design[group][name] ??= { regions: [] };
   design[group][name].regions ??= [];

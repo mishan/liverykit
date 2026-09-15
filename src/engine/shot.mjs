@@ -520,6 +520,7 @@ export function rasterise(model, groups, sheets, {
   // pixel or the reflection slides out from under the car.
   camera = null,
 } = {}) {
+  groups = clearBasesOpaque(groups, sheets);
   // Everything below works in SAMPLE space and the result is boxed down at the
   // end, so the projection, the depth buffer and the triangle walk are the
   // ones they always were and only the two numbers changed.
@@ -904,6 +905,40 @@ export function rasterise(model, groups, sheets, {
 }
 
 /** A texel's alpha, 0 to 1, nearest rather than filtered: this is a yes or no. */
+/**
+ * Two-layer parts whose base sheet is transparent everywhere, drawn opaque.
+ *
+ * The RSS4's rims wear CSW_PNG.png, a 28x28 placeholder, white with alpha 0
+ * on every texel, under a MultiMap material the model says blends, and no
+ * skin replaces it. Drawn by that alpha they were not drawn at all, while the
+ * game shows the rims on every stock skin: on such a material the base
+ * sheet's alpha is not coverage. Only a detail group, and only a base clear
+ * everywhere: the NSX's interior stickers are a blended MultiMap too, and
+ * their alpha is what keeps each sticker's background off the dash. A
+ * one-layer sheet that is clear stays clear, and a painted part wears the
+ * design's sheet, not this one.
+ */
+export function clearBasesOpaque(groups, sheets) {
+  return (groups ?? []).map((g) => {
+    if (!g.blend || g.role || !g.detail?.diffuse) return g;
+    const base = sheets?.get?.(g.detail.diffuse);
+    return base && sheetClear(base) ? { ...g, blend: false } : g;
+  });
+}
+
+const clearSheets = new WeakMap();
+function sheetClear(tex) {
+  if (!tex?.data) return false;
+  if (!clearSheets.has(tex)) {
+    let clear = true;
+    for (let i = 3; i < tex.data.length; i += 4) {
+      if (tex.data[i] > 1) { clear = false; break; }
+    }
+    clearSheets.set(tex, clear);
+  }
+  return clearSheets.get(tex);
+}
+
 function alphaAt(tex, u, v) {
   const x = Math.min(tex.w - 1, Math.max(0, Math.floor(u * tex.w)));
   const y = Math.min(tex.h - 1, Math.max(0, Math.floor(v * tex.h)));
@@ -1126,6 +1161,7 @@ function passOne(model, groups, sheets, view, width, height) {
  * not rasterised for this, and count as covering everywhere.
  */
 export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540, triangles = null } = {}) {
+  groups = clearBasesOpaque(groups, sheets);
   const { positions, uvs, normals, indices } = model;
   const { eye, sx, sy, sz, depth, who, hitU, hitV, groupOf } = passOne(model, groups, sheets, view, width, height);
   const walk = walker(indices, sx, sy, sz);

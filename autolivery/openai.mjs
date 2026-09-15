@@ -113,9 +113,9 @@ const textOf = (r) => (r.content ?? []).filter((c) => c.type === 'text').map((c)
  * no other place to put an answer — and any pictures follow in one user
  * message after all of them.
  */
-export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns = 30, maxTokens = 4096, maxNudges = 3, fresh = true }) {
+export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns = 30, maxTokens = 4096, maxNudges = 3, fresh = true, system = PLANNER_SYSTEM }) {
   const sees = endpoint.vision !== false;
-  let messages = [{ role: 'system', content: PLANNER_SYSTEM }];
+  let messages = [{ role: 'system', content: system }];
   let owedPictures = [];
   let lastSummary = '';
   const done = (summary) => {
@@ -144,7 +144,7 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
       // round 6 at 72k tokens, and a small model in a long history kept
       // writing a tag the gate had rejected four rounds running.
       if (fresh && feedback) {
-        messages = [{ role: 'system', content: PLANNER_SYSTEM }];
+        messages = [{ role: 'system', content: system }];
         owedPictures = [];
       }
       const parts = [];
@@ -254,11 +254,11 @@ export function createPlanner({ endpoint, model, trace, sampling = {}, maxTurns 
 
 export function createCritic({ endpoint, model, trace, sampling = {}, maxTokens = 8192 }) {
   return {
-    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null }) {
+    async judge({ brief, summary, images, parent, recheck = null, name = 'critic', measured = null, stripes = [] }) {
       const parts = [];
       for (const im of images) parts.push({ type: 'text', text: `${im.view} view:` }, picture(im.data));
       parts.push({ type: 'text', text: `The brief:\n${brief}\n\nWhat the designer says it is:\n${summary || '(nothing)'}` });
-      const note = measuredNote(measured);
+      const note = measuredNote(measured, stripes);
       if (note) parts.push({ type: 'text', text: note });
       if (recheck) parts.push({ type: 'text', text: recheckOf(recheck) });
       // The caller's sampling, but a judge's temperature: a verdict that

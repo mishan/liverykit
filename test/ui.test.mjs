@@ -3217,6 +3217,162 @@ test('the whole-car view is re-roled from the design, not from the cached geomet
   assert.deepEqual(reRole(undefined, undefined), []);
 });
 
+test('a two-layer part whose base sheet is clear everywhere is drawn opaque, and a sticker keeps its alpha', async () => {
+  // The RSS4's rims wear a 28x28 placeholder with alpha 0 on every texel,
+  // under a MultiMap material that blends. The game draws them on every stock
+  // skin; both renderers drew nothing. The NSX's interior stickers are a
+  // blended MultiMap too, and need their alpha.
+  const { clearBasesOpaque } = await import('../src/engine/shot.mjs');
+  const sheet = (...alphas) => ({ w: alphas.length, h: 1, data: Buffer.from(alphas.flatMap((a) => [255, 255, 255, a])) });
+  const sheets = new Map([['csw.png', sheet(0, 0)], ['decals.dds', sheet(0, 255)], ['plate.dds', sheet(0, 0)]]);
+  const groups = [
+    { role: null, file: null, detail: { diffuse: 'csw.png', detail: 'plastic.dds' }, blend: true },   // the rim
+    { role: null, file: null, detail: { diffuse: 'decals.dds', detail: 'x.dds' }, blend: true },      // stickers
+    { role: null, file: 'plate.dds', blend: true },                                                    // one layer, clear
+    { role: 'rims', file: 'csw.png', detail: { diffuse: 'csw.png' }, blend: true },                    // painted
+    { role: null, file: null, detail: { diffuse: 'missing.dds' }, blend: true },                       // no sheet to ask
+  ];
+  assert.deepEqual(clearBasesOpaque(groups, sheets).map((g) => g.blend), [false, true, true, true, true]);
+});
+
+test('a surface bound to two textures is painted on both in the whole car and its preview', async () => {
+  // The RSS4's body is body AND bodyRear. The whole-car geometry and the
+  // preview took their textures from the editor's surface list, which holds
+  // one a term, so the rear bodywork came down roleless and was drawn stock.
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const http = await import('node:http');
+  const { carKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-two-'));
+  const rear = { name: 'REAR_PANEL', materialId: 1, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, -1.2, 0.1, 0.1), vert(0.8, 0.5, -1.2, 0.9, 0.1), vert(0.8, 0.5, -1.6, 0.9, 0.9)] };
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5({ extraMeshes: [rear], materials: [{ name: 'BodyMat' }, { name: 'Rear', slots: { txDiffuse: 'rear.dds' } }],
+    extraTextures: [{ name: 'rear.dds' }] }));
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const rearRole = Object.entries(profile.textures).find(([, t]) => t.file === 'rear.dds')?.[0];
+  const bodyRole = profile.bind.body.roles[0];
+  assert.ok(rearRole && bodyRole && rearRole !== bodyRole, JSON.stringify(profile.bind.body));
+  profile.bind.body = { roles: [bodyRole, rearRole], source: 'human' };
+  const livery = { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+    palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const { server, url } = await startUi({ livery, profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+    liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {} });
+  // Through node:http: `runApp` leaves the app's fake fetch as the global one.
+  const call = (path, body) => new Promise((ok, no) => {
+    const req = http.request(new URL(path, url), { method: body ? 'POST' : 'GET',
+      headers: body ? { 'content-type': 'application/json' } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => ok({ status: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', no);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+  try {
+    const got = await call('/api/model?all=1');
+    assert.equal(got.status, 200);
+    const b = got.body;
+    const groups = unpackModel(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)).groups;
+    assert.deepEqual(groups.filter((g) => g.file === 'rear.dds').map((g) => g.role), [rearRole],
+      'the second texture of the surface comes down painted');
+    const preview = JSON.parse((await call('/api/preview', {})).body.toString());
+    assert.deepEqual(preview.surfaces.map((x) => x.role).sort(), [bodyRole, rearRole].sort(), 'and the preview renders both');
+
+    // A region pinned to the second texture is not drawn on the first, which
+    // is the one the editor lists and edits: said and locked there.
+    const pinned = { ...livery, surfaces: { body: { background: 'primer', regions: [
+      { id: 'rear-fill', treatment: 'fill', role: rearRole }, { id: 'both', treatment: 'fill' }] } } };
+    const st = JSON.parse((await call('/api/state', { design: pinned })).body.toString());
+    const listed = st.surfaces.find((x) => x.from === 'surfaces.body').regions;
+    assert.deepEqual(listed.map((r) => [r.id, r.editable, r.drawnOn ?? null]), [['rear-fill', false, rearRole], ['both', true, null]]);
+
+    // Pinned to a texture its surface does not paint, the design cannot be
+    // loaded: refused, and the editor keeps the one it had.
+    const bad = await call('/api/state', { design: { ...livery, surfaces: { body: { regions: [{ id: 'x', treatment: 'fill', role: 'glass' }] } } } });
+    assert.equal(bad.status, 400);
+    assert.match(JSON.parse(bad.body.toString()).error, /kept its working design.*pinned to texture role "glass"/);
+    assert.equal((await call('/api/state')).status, 200, 'and still serves its state');
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the whole car comes down grouped by the working design, so a rim painted since is a painted group', async () => {
+  // Reported: a proposal painted the NSX's rims orange, the texture rendered
+  // orange, and the whole-car view drew the wheels stock. The geometry was
+  // grouped by the livery on DISK, which paints only the body, and a rim on a
+  // two-layer material the design does not paint lands in a group with no
+  // file — shared with every such part — so the page had nothing to re-role.
+  // Grouped by the working design, the rim is its own painted group, and the
+  // page fetches again when the sheets the design paints change.
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { carKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-rims-'));
+  const rim = { name: 'EXT_RIM_LF', materialId: 1, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, 1.2, 0.1, 0.1), vert(0.8, 0.5, 1.2, 0.9, 0.1), vert(0.8, 0.5, 1.6, 0.9, 0.9)] };
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5({
+    wrapped: [{ name: 'RIM_LF', meshes: [rim] }],
+    materials: [{ name: 'BodyMat' }, { name: 'Rim', shader: 'ksPerPixelMultiMap', slots: { txDiffuse: 'rim.dds', txDetail: 'metal.dds' } }],
+    extraTextures: [{ name: 'rim.dds' }],
+  }));
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const rimRole = Object.entries(profile.textures).find(([, t]) => t.file === 'rim.dds')?.[0];
+  assert.ok(rimRole, `the profile has a role for rim.dds: ${Object.keys(profile.textures).join(', ')}`);
+  const livery = { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+    palette: { primer: '#8a8d91', orange: '#F26B21' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const { server, url } = await startUi({ livery, profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+    liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {} });
+  // Through node:http, not fetch: `runApp` installs the app's fake fetch as
+  // the global one and an earlier test in this file leaves it there.
+  const http = await import('node:http');
+  const call = (path, body) => new Promise((ok, no) => {
+    const req = http.request(new URL(path, url), { method: body ? 'POST' : 'GET',
+      headers: body ? { 'content-type': 'application/json' } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => ok({ status: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', no);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+  const rimGroups = async () => {
+    const res = await call('/api/model?all=1');
+    assert.equal(res.status, 200);
+    const b = res.body;
+    return unpackModel(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)).groups
+      .filter((g) => g.role === rimRole || g.file === 'rim.dds');
+  };
+  try {
+    assert.deepEqual(await rimGroups(), [], 'the livery on disk does not paint the rim, and nothing names it');
+
+    // Painted in the working design only, as an accepted proposal is.
+    const res = await call('/api/state',
+      { design: { ...livery, paint: { [rimRole]: { regions: [{ id: 'rims', treatment: 'fill', color: 'orange' }] } } } });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await rimGroups()).map((g) => [g.role, g.file]), [[rimRole, 'rim.dds']],
+      'the rim is a painted group of its own, wearing the design\'s sheet');
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 
 test('a texture named like a special key is a texture, not a prototype', async () => {
   // Every key in the roles index is a FILENAME out of a car somebody else made.
@@ -3893,13 +4049,14 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
   // two blurred stand-ins it swaps in with speed — and all three are in the
   // model at once, co-planar. Drawn together they z-fight into a mess.
-  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF']) {
+  // The Abarth joins it to the part and numbers it.
+  for (const yes of ['EXT_RIM_BLUR_LF', 'RIM_BLUR', 'blur', 'EXT_Rim_Blur_Static_RF', 'GEO_rimblur1_SUB0', 'GEO_rimblur_SUB1']) {
     assert.equal(motionBlurOnly(yes), true, `${yes} is an alternate`);
   }
   // And it must not eat a part whose name merely CONTAINS the letters. This is
   // the half that goes wrong: a pattern loose enough to catch the rims is
   // loose enough to delete a blurred-glass panel or a "Blurton" sponsor decal.
-  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', '', null]) {
+  for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', 'rimblurred', '', null]) {
     assert.equal(motionBlurOnly(no), false, `${JSON.stringify(no)} is a real part`);
   }
 

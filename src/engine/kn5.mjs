@@ -730,8 +730,15 @@ export function damageOnly(shader) {
  * name reliable, and it is the same convention `additive` and
  * `trustworthyDiffuse` already lean on.
  */
+//
+// Not only a word of its own. The Abarth's are `GEO_rimblur1_SUB0` and on to
+// `GEO_rimblur3`: joined to the part it blurs and numbered, which the first
+// pattern missed, so its blurred rims were drawn over the sharp ones at rest
+// and the twin check failed every design that painted its wheels. "blur" right
+// after rim, wheel, disc or tyre, or after a separator, and before digits
+// then a separator or the end — never a word that merely contains it.
 export function motionBlurOnly(name) {
-  return /(^|_)blur(_|$)/i.test(String(name ?? ''));
+  return /(^|_|rim|wheel|disc|tyre|tire)blur\d*(_|$)/i.test(String(name ?? ''));
 }
 
 /**

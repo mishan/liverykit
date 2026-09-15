@@ -228,6 +228,47 @@ test('artwork outside the readable part of a panel is reported', () => {
   const out = r.findings.filter((f) => f.kind === 'outside-safe');
   assert.deepEqual(out.map((f) => f.ids[0]), ['edge'], 'and not the one that said safe: false');
   assert.equal(out[0].severity, 'high');
+
+  // A fill covering its whole panel is a colour field whether or not it says
+  // so: run 26's planner copied a ground-effect kit out of find_space without
+  // its safe: false, and deleted the diffuser the check then reported. A fill
+  // on part of the panel is still artwork that can stray.
+  const fields = fitment(design([
+    { id: 'whole', treatment: 'fill', panel: 'L', color: 'ink' },
+    { id: 'spelt-out', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' },
+    { id: 'part', treatment: 'fill', panel: 'L', at: [0, 0, 0.9, 1], color: 'ink' },
+  ]), withSafe).findings.filter((f) => f.kind === 'outside-safe');
+  assert.deepEqual(fields.map((f) => f.ids[0]), ['part']);
+});
+
+test('a region on a surface of several textures is drawn on the one it names, and no key moves', async () => {
+  // The RSS4's body is two textures, each with its own panel called left_mid,
+  // and a region on surfaces.body was drawn on both: run 28's number, laid out
+  // on one sidepod, landed on the floor too, and the planner spent the round
+  // finding out why. `role` names the one texture; `once`, the first.
+  const { applyFit, drawnOn } = await import('../src/fit.mjs');
+  const { resolveTargets } = await import('../src/profile.mjs');
+  assert.equal(drawnOn({ role: 'bodyRear' }, 'body'), false);
+  assert.equal(drawnOn({ role: 'bodyRear' }, 'bodyRear', false), true);
+  assert.equal(drawnOn({ once: true }, 'bodyRear', false), false);
+  assert.equal(drawnOn({}, 'bodyRear', false), true);
+
+  // Left off a texture after its key is stamped, so an unnamed region after it
+  // keeps the positional key the editor and a fit know it by.
+  const regions = [{ treatment: 'fill' }, { id: 'floor', treatment: 'fill', role: 'bodyRear' },
+    { treatment: 'fill', once: true }, { treatment: 'text', text: 'x' }];
+  const on = (role, primary) => applyFit(regions, null, { role, surfaceKey: 'body', primary }).regions.map((r) => r.__key);
+  assert.deepEqual(on('body', true), ['body#0', 'body#2', 'body#3']);
+  assert.deepEqual(on('bodyRear', false), ['body#0', 'floor', 'body#3']);
+
+  // Pinned to a texture the surface does not paint here, it would be drawn
+  // nowhere, and is refused saying which it could be on.
+  const two = { id: 'two', textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } }, panels: {} };
+  const livery = (role) => ({ name: 'T', surfaces: { body: { regions: [{ id: 'x', treatment: 'fill', role }] } } });
+  assert.deepEqual(resolveTargets(two, livery('bodyRear')).targets.map((t) => t.role), ['body', 'bodyRear']);
+  assert.throws(() => resolveTargets(two, livery('glass')),
+    /region "x" on surfaces\.body is pinned to texture role "glass", which surfaces\.body does not paint on this car; it paints body, bodyRear/);
 });
 
 test('a band that cannot span is a finding, not an exception', () => {
@@ -756,6 +797,13 @@ test('a twin nobody draws is not a twin', () => {
   }, null, { model: named });
   assert.deepEqual(hiddenByCar.findings.filter((f) => f.kind === 'unpainted-twin'), [],
     'a mesh the car hides is not in the game to draw over anything');
+
+  // A motion-blur twin is swapped in at speed, not drawn over the part at rest,
+  // and the renderers leave it out. Counted, the Abarth's blurred rims failed
+  // every design that painted its wheels.
+  const blurred = { ...twinned, meshes: [twinned.meshes[0], { ...twinned.meshes[1], name: 'GEO_rimblur1_SUB1' }] };
+  assert.deepEqual(fitment(design(art), withPlateRole, null, { model: blurred }).findings
+    .filter((f) => f.kind === 'unpainted-twin'), [], 'a motion-blur twin is not drawn over anything at rest');
 
   // And the check is still live: the same model with neither says so.
   const bare = fitment(design(art), withPlateRole, null, { model: twinned });
@@ -1374,7 +1422,12 @@ test('a surface bound to two textures is asked about on the one that has the pan
   };
   assert.deepEqual(spaceRole(two, {}, 'surfaces.body', 'tail'), { role: 'bodyRear' });
   assert.deepEqual(spaceRole(two, {}, 'body', 'L'), { role: 'body' });
-  assert.match(spaceRole(two, {}, 'surfaces.body', 'shared').error, /on body and bodyRear.*pass paint\.body or paint\.bodyRear/);
+  // On both, it is measured on the one where it is largest and most seen,
+  // and said: refused, the RSS4's planner spent seven calls asking again.
+  const shared = spaceRole(two, {}, 'surfaces.body', 'shared');
+  assert.equal(shared.role, 'body');
+  assert.deepEqual(shared.roles, ['body', 'bodyRear']);
+  assert.match(shared.chosen, /"shared" is a panel on body and bodyRear, which "surfaces.body" paints alike; measured on body/);
   assert.deepEqual(spaceRole(two, {}, 'paint.body', 'shared'), { role: 'body' }, 'a texture named outright is that texture');
   assert.deepEqual(spaceRole(two, {}, 'bodyRear', 'shared'), { role: 'bodyRear' });
   assert.match(spaceRole(two, {}, 'surfaces.body', 'nowhere').error, /none of them has a panel called "nowhere"/);
@@ -1517,7 +1570,7 @@ test('lettering too close in colour to what is under it is measured, not left to
   // Round one of three runs in a row failed on the team name for this alone:
   // white on Gulf blue, then thin orange on Gulf blue, each found a whole round
   // later by looking at a picture. The design knows both colours.
-  const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5' };
+  const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5', black: '#000000' };
   const low = (regions) => fitment({ ...design(regions), palette: gulf }, profile)
     .findings.filter((f) => f.kind === 'low-contrast');
   const base = { id: 'base', treatment: 'fill', color: 'blue' };
@@ -1529,8 +1582,11 @@ test('lettering too close in colour to what is under it is measured, not left to
   assert.match(white[0].why, /white on blue \(base\): a contrast of 2\.\d:1/);
   assert.equal(low([base, name('orange')]).length, 1, 'orange on Gulf blue');
   assert.deepEqual(low([base, name('navy')]), [], 'navy on the blue reads');
-  assert.deepEqual(low([base, { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' },
-    name('white')]), [], 'white on an orange band behind it reads');
+  // What is under the letters is the band behind them. A name on Gulf orange
+  // needs black to clear 6:1; white on it is 3.2.
+  const band = { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' };
+  assert.deepEqual(low([base, band, name('black')]), [], 'black on an orange band behind it reads');
+  assert.match(low([base, band, name('white')])[0]?.why ?? '', /white on orange \(band\): a contrast of 3\.\d:1/);
   // A fill that names no colour wears the core treatment's own pink.
   const onDefault = low([{ id: 'plain', treatment: 'fill' }, name('white')]);
   assert.equal(onDefault.length, 1, 'white on the pink a fill wears by default');
@@ -1881,6 +1937,172 @@ test('find_space lays a stripe out along the car: a piece on every panel the ban
   assert.ok(onHatch.at.every((v, i) => Math.abs(v - [0, 0.4, 1, 0.5][i]) <= 0.01), JSON.stringify(onHatch));
   assert.equal(onHatch.id, 'side-hatch');
   assert.throws(() => stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 0 }), /widthMm/);
+});
+
+test('find_space lays a ground-effect kit out as the car\'s lowest panels all round, and leaves the door alone', async () => {
+  // A Gulf car's colours in profile are its orange splitter, skirts and
+  // diffuser; its centre stripe runs over the top, where a side view barely
+  // sees it. The kit is the car's own lowest panels, not a band at one
+  // height: on the NSX a band fitted the sill 56 mm off a straight line and
+  // took a sliver off the bottom of the door, under the lettering.
+  //
+  // A left flank at x 0.9: a sill 100 to 300 mm up along the middle, a door
+  // above it, and a front wing reaching from the sill's height to 800 mm.
+  // Across the front a splitter, and above it the nose; under the back a
+  // diffuser; and behind the sill a liner the world does not see.
+  const { aeroLayout } = await import('../src/space.mjs');
+  const flank = (x, y0, y1, z0, z1) => [[x, y0, z0], [x, y0, z1], [x, y1, z1], [x, y1, z0]];
+  const quads = [
+    { name: 'sill', uv: [0.02, 0.02, 0.4, 0.05], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.3, 1.0, -1.0) },
+    { name: 'door', uv: [0.02, 0.1, 0.3, 0.2], normal: [1, 0, 0], corners: flank(0.9, 0.3, 1.0, 1.0, -0.2) },
+    { name: 'wing', uv: [0.45, 0.02, 0.1, 0.15], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.8, 1.6, 1.0) },
+    { name: 'liner', uv: [0.85, 0.02, 0.1, 0.05], normal: [1, 0, 0], corners: flank(0.8, 0.1, 0.25, 0.5, -0.5) },
+    // Low on the flank behind the sill, and never measured by the profile.
+    { name: 'plate', uv: [0.85, 0.1, 0.1, 0.05], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.25, -1.1, -1.5) },
+    { name: 'splitter', uv: [0.6, 0.02, 0.2, 0.05], normal: [0, 1, 0],
+      corners: [[-0.9, 0.1, 2.0], [0.9, 0.1, 2.0], [0.9, 0.1, 1.8], [-0.9, 0.1, 1.8]] },
+    { name: 'nose', uv: [0.6, 0.2, 0.2, 0.1], normal: [0, 0, 1],
+      corners: [[-0.9, 0.1, 2.0], [0.9, 0.1, 2.0], [0.9, 0.6, 2.0], [-0.9, 0.6, 2.0]] },
+    { name: 'diffuser', uv: [0.6, 0.1, 0.2, 0.05], normal: [0, -1, 0],
+      corners: [[-0.8, 0.15, -1.8], [0.8, 0.15, -1.8], [0.8, 0.15, -2.0], [-0.8, 0.15, -2.0]] },
+  ];
+  const model = carOf(quads.map((q) => ({ ...q, name: q.name.toUpperCase() })));
+  const seen = { sill: 0.9, door: 0.9, wing: 0.9, liner: 0.05, splitter: 0.8, nose: 0.9, diffuser: 0.25 };
+  const ghost = { rect: [0.9, 0.9, 0.05, 0.05], anisotropy: 1, metresPerUv: [5, 5], visible: 0.9, tags: ['visible'] };
+  const profile = {
+    id: 'kit', name: 'Kit', calibration: { axes: { left: '+X', front: '+Z' } },
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: Object.fromEntries(quads.map(({ name, uv: [x, y, w, h] }) => [name, {
+      rect: [x, y, w, h], anisotropy: 1, metresPerUv: [5, 5], visible: seen[name], tags: ['visible'],
+      outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }])) },
+  };
+  // A panel the profile has and the model does not: a profile out of step.
+  profile.panels.body.ghost = ghost;
+
+  const got = aeroLayout({ profile, model, role: 'body', heightMm: 300 });
+  assert.deepEqual(got.upMm, [100, 400], 'measured up from the bottom of the bodywork');
+  // The liner, which the profile says nothing sees, is not in the kit, and
+  // neither is the nose. Nor is the diffuser: the profile calls its panel 25%
+  // visible, but this one is a plate facing the ground, and measured as
+  // check_fitment measures it none of it is seen. Left out with why, rather
+  // than handed to the planner as a high finding in its first check.
+  assert.deepEqual(got.parts, { front: ['aero-splitter'], left: ['aero-wing', 'aero-sill'] }, JSON.stringify(got));
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'diffuser')?.why ?? '', /^left out of the kit: aero-diffuser is 0% visible/);
+  // A panel the profile never measured is said, not dropped: it could be the
+  // kit, or it could be under the car.
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'plate')?.why ?? '',
+    /plate lies within the kit's height, but the profile has no measured visibility/, JSON.stringify(got.skipped));
+  assert.equal((got.skipped ?? []).filter((s) => s.panel === 'plate').length, 1, 'and said once');
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'ghost')?.why ?? '', /ghost lands on no geometry/, JSON.stringify(got.skipped));
+  const at = Object.fromEntries(got.regions.map((r) => [r.panel, r.at]));
+  // Filled whole, which is a region with no `at`, and to its edge.
+  for (const p of ['splitter', 'sill']) assert.equal(at[p], undefined, `${p} is filled whole`);
+  assert.ok(got.regions.every((r) => r.treatment === 'fill' && r.id === `aero-${r.panel}` && r.safe === false), JSON.stringify(got.regions));
+  // The wing is drawn to the sill's line, 300 mm up, and not to the kit's
+  // 400: two sevenths of its 700 mm from the bottom.
+  const wing = got.pieces.find((p) => p.panel === 'wing');
+  assert.ok(wing.upMm[0] === 100 && Math.abs(wing.upMm[1] - 300) <= 5, JSON.stringify(wing));
+  assert.ok(at.wing.every((v, i) => Math.abs(v - [0, 0, 1, 2 / 7][i]) <= 0.01) && wing.errorMm <= 5, JSON.stringify(wing));
+  // The door lies over the sill along the car: above the kit, not running on
+  // from it, so no band along its foot. On the Abarth's right side one was
+  // painted, where the left's was a sliver and left out.
+  const door = (got.skipped ?? []).find((s) => s.panel === 'door');
+  assert.match(door?.why ?? '', /door lies over sill along the car, above the kit rather than running on from it/, JSON.stringify(got.skipped));
+
+  assert.throws(() => aeroLayout({ profile, model, role: 'body', heightMm: 0 }), /heightMm/);
+});
+
+test('a stripe wider than a narrow nose is not offset where it runs on over a wider bonnet', async () => {
+  // A formula car's nose is narrower than the stripe and its bonnet and
+  // wings wider, so the nose's piece covers the nose edge to edge and the
+  // next piece runs on past it. The RSS4's layout was reported as seven high
+  // offsets for that, which is the car's shape; the check now leaves an edge
+  // alone where the narrower piece stops because its own panel does. A piece
+  // drawn narrow in the middle of its panel is still offset: see the test
+  // above, where the roof's is.
+  const { stripeLayout } = await import('../src/space.mjs');
+  const flat = (name, front, back, x0, x1, uv) => ({ name, front, back, y0: 1.0, y1: 1.0, x0, x1, uv });
+  const nose = flat('nose', 2.0, 1.5, -0.1, 0.1, [0.02, 0.02, 0.2, 0.1]);
+  const bonnet = flat('bonnet', 1.5, 0.3, -0.8, 0.8, [0.02, 0.2, 0.3, 0.4]);
+  const model = carOf([quadOf(nose), quadOf(bonnet)]);
+  const profile = { ...stripedProfile, panels: { body: Object.fromEntries([nose, bonnet].map((q) => {
+    const [x, y, w, h] = q.uv;
+    return [q.name, { rect: q.uv, anisotropy: 1, metresPerUv: [4, 4], visible: 0.9, tags: ['centre', 'visible'],
+      uAxis: alongOf(q), vAxis: [1, 0, 0], outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }];
+  })) } };
+  const laid = stripeLayout({ profile, model, role: 'body', widthMm: 300 });
+  assert.deepEqual(laid.regions.map((r) => r.panel), ['nose', 'bonnet'], JSON.stringify(laid.pieces));
+  assert.deepEqual(laid.findings, [], 'the nose\'s 200 mm and the bonnet\'s 300 mm are one stripe');
+});
+
+test('a name is held to 6:1 against what is under it, and other lettering to 4.5:1', () => {
+  // The critic failed a team name at 5.9:1 (run 29, deep blue on Gulf blue)
+  // and at 4.8:1 (run 30's polish), and passed it at 6.2, 6.5 and 8.3, while
+  // this check, at 3:1, passed them all. Not WCAG's 7:1 for small text,
+  // under which no name could sit on Gulf orange, black included.
+  const text = (t) => ({ id: 'x', treatment: 'text', panel: 'L', at: [0.2, 0.6, 0.6, 0.1], text: t, color: 'ink' });
+  const base = { id: 'base', treatment: 'fill', color: 'blue' };
+  const on = (ink, t) => fitment({ ...design([base, text(t)]), palette: { blue: '#7BB3D9', ink },
+    identity: { number: '85', team: 'NEON DOLL RACING' } }, profile).findings.filter((f) => f.kind === 'low-contrast');
+  const deep = on('#14304F', '{team}');
+  assert.equal(deep.length, 1, 'run 29 round 1, 5.9:1');
+  assert.match(deep[0].why, /a team or driver name needs at least 6:1 to read from trackside/);
+  assert.deepEqual(on('#071321', '{team}'), [], 'near-black navy clears it');
+  assert.deepEqual(on('#14304F', '{number}'), [], 'a race number is large, and 5.9:1 clears 4.5');
+  assert.match(on('#3A6FA0', '{number}')[0]?.why ?? '', /lettering needs at least 4.5:1/);
+});
+
+test('find_space measures the texture a panel is largest and most seen on, and picks a side\'s main panel', async () => {
+  // The RSS4's body is two textures, each with a left_mid, and find_space
+  // refused the question until the planner said which: seven refused calls
+  // in run 29's first round.
+  const { spaceRole, flankPanel } = await import('../src/space.mjs');
+  const panel = (w, visible, tags = ['left', 'mid', 'visible']) => ({ rect: [0, 0, w, w], metresPerUv: [2, 2], visible, tags });
+  const two = {
+    id: 'two', textures: { body: { file: 'a.dds', width: 64, height: 64 }, bodyRear: { file: 'b.dds', width: 64, height: 64 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+    panels: {
+      body: { left_mid: panel(0.5, 0.9), left_rear: panel(0.6, 0.9, ['left', 'rear', 'visible']) },
+      bodyRear: { left_mid: panel(0.2, 0.9) },
+    },
+  };
+  const design = { name: 'D', surfaces: { body: { regions: [] } } };
+  const named = spaceRole(two, design, 'surfaces.body', 'left_mid');
+  assert.equal(named.role, 'body');
+  assert.deepEqual(named.roles, ['body', 'bodyRear']);
+  assert.match(named.chosen, /measured on body, where it is largest and most seen/);
+  assert.equal(spaceRole(two, design, undefined, 'left_mid').role, 'body', 'and with no surface named');
+  // The middle of the car, not the larger rear quarter: a door, or a sidepod.
+  assert.deepEqual(flankPanel(two, ['body', 'bodyRear'], 'left'), { role: 'body', panel: 'left_mid' });
+  assert.equal(flankPanel(two, ['body'], 'right'), null);
+});
+
+test('a stripe over a surface of two textures is laid and measured as one, and sized to the bodywork', async () => {
+  // The bonnet on a texture of its own, as a formula car's rear bodywork is:
+  // each piece keeps the texture it was laid on, and the check sees them all.
+  const { stripeLayoutAcross } = await import('../src/space.mjs');
+  const model = carOf([
+    { ...quadOf(striped[0], 2.0, 1.5), materialId: 2 }, { ...quadOf(striped[0], 1.3, 0.8), materialId: 2 },
+    ...striped.slice(1).map((q) => quadOf(q)),
+    { name: 'GLASS', materialId: 1, uv: [0.5, 0.5, 0.2, 0.2], normal: [0, 0.8, 0.6],
+      corners: [[-0.8, 1.0, 0.8], [-0.8, 1.3, 0.4], [0.8, 1.3, 0.4], [0.8, 1.0, 0.8]] },
+  ], [{ slots: { txDiffuse: 'b.dds' } }, { slots: { txDiffuse: 'glass.dds' } }, { slots: { txDiffuse: 'r.dds' } }]);
+  const { bonnet, ...rest } = stripedProfile.panels.body;
+  const profile = { ...stripedProfile,
+    textures: { body: { file: 'b.dds', width: 2048, height: 2048 }, bodyRear: { file: 'r.dds', width: 2048, height: 2048 } },
+    bind: { body: { roles: ['body', 'bodyRear'], source: 'human' } },
+    panels: { body: rest, bodyRear: { bonnet } } };
+  const got = stripeLayoutAcross({ profile, model, roles: ['body', 'bodyRear'], widthMm: 300 });
+  const on = Object.fromEntries(got.regions.map((r) => [r.panel, r.role]));
+  assert.equal(on.bonnet, 'bodyRear', JSON.stringify(got.regions));
+  assert.equal(on.roof, 'body');
+  assert.deepEqual(got.findings, [], 'measured together, the two textures are one stripe');
+
+  // No width asked: a third of the bodywork's width, between 200 and 450 mm.
+  const sized = stripeLayoutAcross({ profile, model, roles: ['body', 'bodyRear'] });
+  assert.ok(sized.bodyWidthMm > 0 && sized.widthMm >= 200 && sized.widthMm <= 450, JSON.stringify({ w: sized.widthMm, body: sized.bodyWidthMm }));
+  assert.equal(sized.widthMm, Math.max(200, Math.min(450, Math.round((0.3 * sized.bodyWidthMm) / 10) * 10)));
 });
 
 test('a panel is measured on its own mesh, not on another island laid out inside its outline', () => {

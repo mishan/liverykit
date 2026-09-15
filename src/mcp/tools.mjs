@@ -526,7 +526,8 @@ export function createToolHandler(client) {
       inputSchema: {
         type: 'object',
         properties: {
-          panel: { type: 'string', description: 'Panel name, as find_panels lists it' },
+          panel: { type: 'string', description: 'Panel name, as find_panels lists it (with layout, side can name the side instead)' },
+          side: { type: 'string', enum: ['left', 'right'], description: 'With layout, instead of panel: the side of the car. find_space picks that side\'s main panel, a door or a formula car\'s sidepod, and says which in sideChosen' },
           role: { type: 'string', description: 'Texture role or surface, when the panel name is on more than one' },
           widthMm: { type: 'number', description: 'Width of the shape on the car, in mm (not with largest)' },
           heightMm: { type: 'number', description: 'Height on the car, in mm; defaults to widthMm, as a roundel is' },
@@ -541,7 +542,8 @@ export function createToolHandler(client) {
               'line or two) with the capital heights they measure. Tries the group\'s proportions, sizes the ' +
               'letters by the arithmetic check_fitment holds them to, keeps the number\'s letters inside the ' +
               'disc, and splits the name only when one line would cost the number more than a tenth of its ' +
-              'size. Follows the panel\'s own turn. marginMm defaults to 30 here.',
+              'size. Follows the panel\'s own turn. marginMm defaults to 30 here. Give side rather than panel to have ' +
+              'find_space pick the side\'s main panel.',
             properties: {
               number: { type: 'string', description: 'The race number as it is drawn, e.g. "85"' },
               name: { type: 'string', description: 'The name under it, e.g. "NEON DOLL RACING"' },
@@ -559,15 +561,30 @@ export function createToolHandler(client) {
               'crosses too little of to lay one on is listed under skipped, with why. With this, panel is ' +
               'any panel of the sheet the stripe is painted on.',
             properties: {
-              widthMm: { type: 'number', description: 'The stripe\'s width on the car, in mm' },
+              widthMm: { type: 'number', description: 'The stripe\'s width on the car, in mm. Left out, it is sized to the car\'s bodywork: a third of its width, 450 mm at most, which the answer says' },
               offsetMm: { type: 'number', description: 'Its centre\'s distance from the car\'s centreline, in mm, left positive (default 0)' },
               name: { type: 'string', description: 'The stripe\'s name, for its ids and its constraint (default "centre")' },
             },
-            required: ['widthMm'],
+            required: [],
+          },
+          aero: {
+            type: 'object',
+            description: 'Instead of a size: lay out a ground-effect kit, the front splitter, the side skirts and ' +
+              'the rear diffuser: the car\'s lowest panels all round, from the bottom of its bodywork up to ' +
+              'heightMm, returned as regions ready to use, with which part of the car each is on. A panel the ' +
+              'world sees lying wholly inside that height is filled whole; a taller one on a flank, such as the ' +
+              'rear of a front wing, gets the kit up to the line of the kit panel next to it; a door, or any panel ' +
+              'the line would only clip, is left out, listed under skipped with why. With this, panel is any panel ' +
+              'of the sheet the kit is painted on.',
+            properties: {
+              heightMm: { type: 'number', description: 'How far up the car, in mm from the bottom of the bodywork, a panel may reach and still be part of the kit' },
+              name: { type: 'string', description: 'The kit\'s name, for its ids (default "aero")' },
+            },
+            required: ['heightMm'],
           },
           cellMm: { type: 'number', description: 'The sweep\'s cell size on the car, in mm (default 50): smaller is finer, and slower to sweep' },
         },
-        required: ['panel'],
+        required: [],
       },
     },
     {

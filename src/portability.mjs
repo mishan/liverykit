@@ -17,6 +17,7 @@
 // clean here is one that the build will genuinely paint.
 // ---------------------------------------------------------------------------
 
+import { drawnOn } from './fit.mjs';
 import { resolveTargets, expandRegions, placementRefusal, missExplanation, binding, panel as findPanel } from './profile.mjs';
 
 /**
@@ -91,7 +92,11 @@ export function portability(design, profile) {
 
   for (const t of targets) {
     surfaces.push({ from: t.from, role: t.role, status: 'present' });
-    const list = t.spec?.regions ?? [];
+    // The regions drawn on this texture: see `drawnOn`. Keyed by where each
+    // stands in the whole list, as `applyFit` keys it, so leaving one off
+    // this texture does not move the positional id of the next.
+    const all = t.spec?.regions ?? [];
+    const list = all.filter((r) => drawnOn(r, t.role, t.primary !== false));
 
     let expanded;
     try {
@@ -108,7 +113,7 @@ export function portability(design, profile) {
 
     for (const [i, region] of list.entries()) {
       const kind = placementKind(region);
-      const key = region.id ?? `${t.from}#${i}`;
+      const key = region.id ?? `${t.from}#${all.indexOf(region)}`;
       const refused = placementRefusal(profile, t.role, region);
       if (refused) {
         regions.push({
