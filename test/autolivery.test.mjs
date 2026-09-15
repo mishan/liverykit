@@ -15,7 +15,7 @@ import { run } from '../autolivery/loop.mjs';
 import { piecesInView } from '../src/engine/shot.mjs';
 import { createPlanner } from '../autolivery/claude.mjs';
 import * as local from '../autolivery/openai.mjs';
-import { PLANNER_SYSTEM } from '../autolivery/prompts.mjs';
+import { PLANNER_SYSTEM, plannerSystem } from '../autolivery/prompts.mjs';
 import { fitment } from '../src/fitment.mjs';
 import { createToolHandler } from '../src/mcp/tools.mjs';
 import '../src/index.mjs';
@@ -70,12 +70,62 @@ test('the planner is told to take the number group from find_space\'s layout, wh
   // cleared its floor: run 21 spent most of a round finding that out. The
   // layout is measured by the server now; the prompt and the tool must agree
   // on how it is asked for.
-  assert.match(PLANNER_SYSTEM, /find_space with \{ panel, layout: \{ number, name \}, marginMm: 30 \}/);
+  assert.match(PLANNER_SYSTEM, /find_space with \{ layout: \{ number, name \}, side: "left", marginMm: 30 \}/);
   assert.doesNotMatch(PLANNER_SYSTEM, /aspect 0\.85|55% of the group/, 'and no recipe is left beside it');
   const tools = await createToolHandler({}).listTools();
   const schema = tools.find((t) => t.name === 'find_space').inputSchema.properties;
   assert.deepEqual(schema.layout?.required, ['number', 'name']);
   assert.doesNotMatch(schema.aspect.description, /0\.85/);
+});
+
+test('the critic is told a stripe the check measured whole, and only the top of the wing is the stripe', async () => {
+  // Run 25's critic and its second look both called the centre stripe
+  // missing from the wing, judging its end plates in the side views, while
+  // the top view showed it across the wing and the check had measured it
+  // there. The planner spent a paid round painting the end plates and the
+  // whole deck orange to answer it.
+  const { measuredNote } = await import('../autolivery/prompts.mjs');
+  const note = measuredNote([], [{ name: 'centre', clean: true }, { name: 'side', clean: false }]);
+  assert.match(note, /stripe "centre": its pieces were measured on the car and run nose to tail, and over the top of the rear wing/);
+  assert.match(note, /Only the top of the wing is the stripe: its end plates, supports and underside are not/);
+  assert.doesNotMatch(note, /stripe "side"/, 'a stripe with a high finding is not vouched for');
+  assert.equal(measuredNote([], [{ name: 'side', clean: false }]), null, 'and with nothing measured there is nothing to say');
+  assert.equal(measuredNote(null), null);
+});
+
+test('a stripe the check could not measure is not vouched for to the critic', async () => {
+  // The note tells the critic there is no bare bodywork between the pieces,
+  // so a check that could not look at the coverage or a join cannot say so;
+  // one that could not tell which way a piece runs says nothing about that,
+  // and the RSS4's diagonal cockpit panels would keep every stripe unvouched.
+  const { stripesOf } = await import('../autolivery/loop.mjs');
+  const design = { surfaces: { body: { regions: [{ id: 'a', constraints: { stripe: 'centre' } }] } } };
+  const f = (kind, severity, extra = {}) => ({ kind, severity, stripe: 'centre', ...extra });
+  assert.deepEqual(stripesOf(design, []), [{ name: 'centre', clean: true }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-across', 'low', { measured: false })]), [{ name: 'centre', clean: true }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-gap', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-offset', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-offset', 'high')]), [{ name: 'centre', clean: false }]);
+  // A check that did not run found nothing, which is not the same as clean.
+  assert.deepEqual(stripesOf(design, [], ['stripe-gap']), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [], ['unseen']), [{ name: 'centre', clean: true }]);
+});
+
+test('the planner is asked for a ground-effect kit and the wheels, and each can be left out', async () => {
+  // A Gulf car's centre stripe runs over the top, where trackside barely sees
+  // it; its orange splitter, skirts, diffuser and wheels are what carry it in
+  // profile. Each is a paragraph a run can drop (--no-aero, --no-wheels) when
+  // it costs the demo more time than it earns.
+  assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, aero: \{ heightMm: 300 \} \}/);
+  assert.match(PLANNER_SYSTEM, /a fill on surfaces\.rims/);
+  assert.equal(plannerSystem(), PLANNER_SYSTEM);
+  const noAero = plannerSystem({ aero: false }), noWheels = plannerSystem({ wheels: false });
+  assert.doesNotMatch(noAero, /aero:|ground-effect/);
+  assert.match(noAero, /surfaces\.rims/);
+  assert.doesNotMatch(noWheels, /surfaces\.rims/);
+  assert.match(noWheels, /aero: \{ heightMm: 300 \}/);
+  const tools = await createToolHandler({}).listTools();
+  assert.deepEqual(tools.find((t) => t.name === 'find_space').inputSchema.properties.aero?.required, ['heightMm']);
 });
 
 test('a draft is rendered as drafted, and nothing is proposed by looking at it', async () => {
@@ -93,6 +143,39 @@ test('a draft is rendered as drafted, and nothing is proposed by looking at it',
     const again = await ed.mcp.callTool('render_car', { view: 'left', width: 200, height: 150 });
     assert.equal(again.content[0].data, plain.content[0].data, 'and drawing it adopted nothing');
     assert.equal((await get(ed.url, 'api/proposal')).proposal, null, 'nor proposed anything');
+  } finally {
+    await ed.stop();
+  }
+});
+
+test('a draft that leaves a surface the run asked for unpainted is handed back once, then goes through', async () => {
+  // Run 29's planner left the RSS4's wheels stock though the prompt asked for
+  // them. The run holds the draft to it: finish_round hands the draft back
+  // once a round, and the next goes through, so a car without the surface can
+  // still submit.
+  const ed = await fixtureEditor();
+  try {
+    const said = [];
+    const planner = {
+      async round({ call }) {
+        await call('draft_design', { design: [
+          { op: 'set-palette', name: 'ink', value: '#101014' },
+          { op: 'add-region', surface: 'surfaces.body', region: { id: 'base', treatment: 'fill', color: 'ink' } },
+        ] });
+        const first = await call('finish_round', { summary: 'a black car' });
+        said.push(first);
+        const again = await call('finish_round', { summary: 'a black car; this car has no rims surface' });
+        said.push(again);
+      },
+    };
+    const critic = { judge: async () => ({ reads_at_distance: true, number_legible: true, palette_ok: true, matches_brief: true,
+      requirements: [{ asked: 'a car', present: true, where: 'all of it' }], cut_off: [], unreadable: [], notes: [] }) };
+    const dir = join(ed.dir, 'run');
+    await run({ brief: 'a black car', mcp: ed.mcp, planner, critic, trace: await createTrace({ dir }), out: dir,
+      rounds: 1, views: ['left'], shot: { width: 200, height: 150 }, closer: [], propose: false, mustPaint: ['surfaces.rims'] });
+    assert.ok(said[0].isError, 'the first finish_round is handed back');
+    assert.match(said[0].content[0].text, /this run asks you to paint surfaces\.rims, and the draft paints nothing there/);
+    assert.ok(!said[1].isError, 'and the second goes through');
   } finally {
     await ed.stop();
   }
@@ -117,10 +200,19 @@ test('the loop gates on its own measurement, and only a passing draft reaches th
           // its word for it: an empty draft measures clean.
           await call('finish_round', { summary: 'all done' });
         } else if (n === 2) {
-          await call('draft_design', { design: [
+          // Sent as a JSON string wrapped in { design }, as run 26's planner
+          // sent its first draft: taken, and the planner told to send the
+          // array itself. Refused, it wrote the same draft out again.
+          const sent = await call('draft_design', { design: JSON.stringify({ design: [
             { op: 'set-palette', name: 'ink', value: '#101014' },
             { op: 'add-region', surface: 'surfaces.body', region: region([0.3, 0.45, 0.4, 0.005]) },
-          ] });
+          ] }) });
+          assert.ok(!sent.isError, sent.content[0].text);
+          assert.match(sent.content[0].text, /Accepted 2 operation\(s\), sent as a JSON string rather than an array/);
+          // A string that is not operations is still refused, and changes nothing.
+          const prose = await call('draft_design', { design: 'a number on the left' });
+          assert.ok(prose.isError);
+          assert.match(prose.content[0].text, /needs a non-empty "design" array/);
           await call('finish_round', { summary: 'a number on the left' });
         } else {
           await call('draft_design', { design: [{ op: 'set-region', id: 'number-left', region: region([0.1, 0.3, 0.8, 0.4]) }] });
@@ -1177,7 +1269,8 @@ test('text on a panel the profile cannot measure can pass, and is said to be unm
         if (n === 1) {
           const [left, right] = [await side('left'), await side('right')];
           await call('draft_design', { design: [
-            { op: 'set-palette', name: 'ink', value: '#101014' },
+            // Black: a name on the grey primer needs 6:1, and near-black is 5.7.
+            { op: 'set-palette', name: 'ink', value: '#000000' },
             { op: 'set-identity', key: 'driver', value: 'Ada Vance' },
             { op: 'add-region', surface: 'surfaces.body', region: {
               id: 'driver-left', treatment: 'text', text: '{driver}', panel: left, at: [0.1, 0.3, 0.8, 0.4], color: 'ink' } },
@@ -1726,7 +1819,7 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     // And a stripe along the car, as regions ready to use, which the planner
     // is told to take rather than work out: on this car the roof is the only
     // panel seen from above, across it in x and 1.9 m wide.
-    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ widthMm, offsetMm \} \}/);
+    assert.match(PLANNER_SYSTEM, /find_space with \{ panel: <any panel of the bodywork>, stripe: \{ offsetMm \} \}/);
     const roof = JSON.parse((await ed.mcp.callTool('find_panels', { tag: 'centre' })).content[0].text).panels
       .find((p) => p.axes?.y === 'along the car').panel;
     const laid = await ed.mcp.callTool('find_space', { panel: roof, stripe: { widthMm: 300 } });
@@ -1742,6 +1835,13 @@ test('find_space returns measured spots on a panel, and refuses a panel that is 
     const tallStripe = await ed.mcp.callTool('find_space', { panel: roof, heightMm: 300, stripe: { widthMm: 300 } });
     assert.ok(tallStripe.isError, tallStripe.content[0].text);
     assert.match(tallStripe.content[0].text, /without layout, largest, widthMm or heightMm/);
+    // A ground-effect kit is its own question too, and one beside a stripe is refused.
+    const kit = await ed.mcp.callTool('find_space', { panel: roof, aero: { heightMm: 300 } });
+    assert.ok(!kit.isError, kit.content[0].text);
+    assert.ok(Array.isArray(JSON.parse(kit.content[0].text).regions));
+    const kitAndStripe = await ed.mcp.callTool('find_space', { panel: roof, aero: { heightMm: 300 }, stripe: { widthMm: 300 } });
+    assert.ok(kitAndStripe.isError);
+    assert.match(kitAndStripe.content[0].text, /without stripe, layout, largest, widthMm or heightMm/);
 
     const bad = await ed.mcp.callTool('find_space', { panel: 'no_such_panel', widthMm: 300 });
     assert.ok(bad.isError);

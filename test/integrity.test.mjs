@@ -1832,8 +1832,9 @@ test('the editor refuses to start on a fit it cannot honour', async () => {
   await writeFile(bad, JSON.stringify({ car: 'abarth500', regions: {} }));   // no "livery"
   await assert.rejects(() => ui(bad, 7395), /Could not load .*missing "livery"/s);
 
-  // A fit that simply is not there must still start.
-  const { server } = await ui(join(dir, 'absent.json'), 7396);
+  // A fit that simply is not there must still start. On any free port: 7396
+  // is where a person runs a second editor, and the suite failed on theirs.
+  const { server } = await ui(join(dir, 'absent.json'), 0);
   server.close();
 });
 

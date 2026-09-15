@@ -141,6 +141,29 @@ function constraintsById(design) {
 }
 
 /**
+ * Each stripe a design declares, and whether the check found it whole: no
+ * high stripe-across, stripe-offset or stripe-gap. Told to the critic, as a
+ * piece measured whole is (see `measuredNote`). Nor a low one that could not
+ * measure the band's coverage or a join: the note says there is no bare
+ * bodywork, and a check that could not look cannot say so. One that could not
+ * tell which way a piece runs says nothing about that, and the RSS4's
+ * diagonal cockpit panels would otherwise keep every stripe on it unvouched.
+ */
+export function stripesOf(design, findings, unrun = []) {
+  // A stripe check that did not run found nothing, and nothing is not clean.
+  const unmeasured = unrun.includes('stripe-offset') || unrun.includes('stripe-gap');
+  const names = new Set();
+  for (const group of ['surfaces', 'paint']) {
+    for (const spec of Object.values(design?.[group] ?? {})) {
+      for (const r of spec.regions ?? []) if (typeof r?.constraints?.stripe === 'string') names.add(r.constraints.stripe);
+    }
+  }
+  return [...names].map((name) => ({ name,
+    clean: !unmeasured && !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-')
+      && (f.severity !== 'low' || (f.measured === false && f.kind !== 'stripe-across'))) }));
+}
+
+/**
  * What got looser between two sets of constraints. Every constraint in the
  * vocabulary is a floor (a number the placement must reach), a requirement
  * (true), or a name (a region to sit with, a stripe to be part of), so going
@@ -270,6 +293,10 @@ async function runRounds({
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1, followRecording = false,
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
+  // Surfaces the run asked for beyond the brief (bin.mjs: the wheels), as
+  // `surfaces.<term>`. A draft submitted painting nothing there is handed back
+  // once a round, and the next finish_round goes through.
+  mustPaint = [],
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
   // .partial was left passed just as well with no rename at all.
@@ -402,13 +429,29 @@ async function runRounds({
     log(`round ${n} of ${rounds}`);
     let calls = 0;
     let renders = 0;
+    let reminded = false;
 
     const dispatch = async (name, args) => {
       switch (name) {
         case 'draft_design':
         case 'draft_fit': {
           const key = name === 'draft_design' ? 'design' : 'fit';
-          const ops = args?.[key];
+          let ops = args?.[key];
+          // The operations sent as a JSON string, as run 26's planner sent its
+          // whole first draft, wrapped in { "design": [...] }. Refused, it
+          // wrote the same 3,000 tokens again, a 27 s turn. Taken when the
+          // string is exactly that and nothing else; anything else is refused.
+          let parsed = false;
+          if (typeof ops === 'string') {
+            try {
+              const v = JSON.parse(ops);
+              const list = Array.isArray(v) ? v : Array.isArray(v?.[key]) ? v[key] : null;
+              if (list) {
+                ops = list;
+                parsed = true;
+              }
+            } catch { /* refused below */ }
+          }
           if (!Array.isArray(ops) || !ops.length) {
             return refuse(`${name} needs a non-empty "${key}" array of operations.`);
           }
@@ -416,7 +459,9 @@ async function runRounds({
           const r = await mcp.callTool('check_fitment', { proposal: candidate });
           if (r.isError) return refuse(`Refused, and the draft is unchanged: ${textOf(r)}`);
           draft[key] = candidate[key];
-          return ok(`Accepted ${ops.length} operation(s). The draft holds ${draft.design.length} design ` +
+          return ok(`Accepted ${ops.length} operation(s)` +
+            (parsed ? `, sent as a JSON string rather than an array; send "${key}" as the array itself next time` : '') +
+            `. The draft holds ${draft.design.length} design ` +
             `and ${draft.fit.length} fit operation(s). check_fitment on it now: ${JSON.parse(textOf(r)).verdict}`);
         }
         case 'reset_draft':
@@ -458,12 +503,42 @@ async function runRounds({
             return refuse('finish_round needs a summary: what the draft is, in a sentence or two. ' +
               'It is what a person reads when the design reaches the inbox.');
           }
+          // Handed back once a round, not refused outright: run 29's planner
+          // left the RSS4's wheels stock though the prompt asked for them, and
+          // a car with no such surface must still be able to submit.
+          if (mustPaint.length && !reminded) {
+            reminded = true;
+            const bare = await unpainted(mustPaint);
+            if (bare.length) {
+              return refuse(`Not submitted yet: this run asks you to paint ${bare.join(' and ')}, and the draft paints ` +
+                'nothing there. Add it with draft_design and call finish_round again. If describe_car says this car ' +
+                'has no such surface, call finish_round again as it is, and say so in the summary.');
+            }
+          }
           summary = args.summary;
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
           return refuse(`There is no tool called ${JSON.stringify(name)}.`);
       }
+    };
+
+    // Which of those the draft leaves unpainted, as the draft amounts to: a
+    // remove-region can take away what an add-region put there. A draft that
+    // cannot be read is not held back.
+    const unpainted = async (wanted) => {
+      let design;
+      try {
+        const r = await mcp.callTool('read_design', { proposal: draft });
+        if (r.isError) return [];
+        design = JSON.parse(textOf(r));
+      } catch {
+        return [];
+      }
+      return wanted.filter((w) => {
+        const [group, ...rest] = String(w).split('.');
+        return !(design?.[group]?.[rest.join('.')]?.regions?.length > 0);
+      });
     };
 
     // Submitting seals the round. Both planners run every call in a turn, so
@@ -706,6 +781,13 @@ async function runRounds({
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
     const whole = wholeFor(measured, fitment?.findings ?? [], views);
+    // Only from a measurement: a draft check_fitment refused has no findings,
+    // and no findings would read as a clean stripe.
+    // And only from checks that ran: without the model, stripe-offset and
+    // stripe-gap are listed as not checked and find nothing. A check the
+    // car's profile cannot support is excused, as it is from the gate.
+    const stripes = fitment ? stripesOf(effective, fitment.findings ?? [], (fitment.notChecked ?? [])
+      .filter((c) => !(fitment.unsupported ?? []).some((u) => u.notChecked === c))) : [];
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
@@ -713,7 +795,7 @@ async function runRounds({
     let criticPass = false;
     if (images.length) {
       try {
-        verdict = overrule(await critic.judge({ brief: theBrief, summary, images, parent: span, measured }), whole);
+        verdict = overrule(await critic.judge({ brief: theBrief, summary, images, parent: span, measured, stripes }), whole);
         // Every requirement, not only the summary: a critic answered
         // matches_brief: true while its own notes said the team name was
         // nowhere on the car. And every cut-off piece, listed as data for the
@@ -755,7 +837,7 @@ async function runRounds({
         try {
           second = overrule(await (referee ?? critic).judge({
             brief: theBrief, summary, images: [...images, ...closeImages], parent: span, recheck: verdict, name: 'referee',
-            measured,
+            measured, stripes,
           }), whole);
           criticPass = passes(second);
         } catch (e) {

@@ -141,12 +141,11 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // turn a solid colour, the DDS format or a filename is wrong and no
       // amount of artwork will fix it.
       // Fit first, so an override that names a panel replaces the tag selection
-      // before anything is expanded. Then `once`, which keeps a region on a
-      // term's PRIMARY texture: a term can resolve to several — `body` on the
-      // RSS4 is two chassis textures — and a pattern belongs on all of them
-      // while a car number belongs on the car once, not once per texture.
+      // before anything is expanded. `applyFit` also leaves off this texture a
+      // region that is not drawn on it (`role`, `once`: see `drawnOn`), after
+      // stamping its key, so the keys after it do not move.
       regions: flat ? [] : applyFit(
-        (spec.regions ?? []).filter((r) => !(r.once && !primary)),
+        spec.regions ?? [],
         // `surfaceKey` is not optional here, whatever the default says. A region
         // the design gave no id is addressed by POSITION, and the key is made
         // from the surface it sits on: the editor writes `body#0`, so a build
@@ -155,7 +154,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
         //
         // `reserved` is every key the livery declares anywhere, so a copy cannot
         // take a name belonging to a region on another surface.
-        fit, { profile, role, surfaceKey: from, used: fitUsed, notes, reserved },
+        fit, { profile, role, surfaceKey: from, used: fitUsed, notes, reserved, primary },
       ).regions,
       background: spec.background,
       treatments,

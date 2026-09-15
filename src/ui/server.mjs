@@ -50,12 +50,12 @@ import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
-import { shoot, carSheets, VIEWS, shootSheet, sheetCell } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
 import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
-import { findSpace, largestSpace, groupLayout, stripeLayout, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -416,7 +416,11 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         // a region above it.
         derived: r.id === undefined,
         treatment: r.treatment,
-        editable: true,
+        // A region pinned to another texture of this term (see drawnOn) is not
+        // drawn on this one, so it has nothing here to see or drag: said, and
+        // locked, rather than listed as though it were placed and missing.
+        editable: !(typeof r.role === 'string' && r.role !== t.role),
+        ...(typeof r.role === 'string' && r.role !== t.role ? { drawnOn: r.role } : {}),
         // The design's own opposite number, if it declared one. Sent from here
         // rather than worked out in the browser: it needs the profile's
         // measured `mirrorOf`, and it is far easier to test in Node.
@@ -597,7 +601,7 @@ export function fitUsage(livery, profile, fit) {
   const used = new Set();
   for (const t of resolveTargets(profile, livery).targets) {
     applyFit(t.spec.regions ?? [], fit, {
-      profile, role: t.role, surfaceKey: t.from, used, notes: [],
+      profile, role: t.role, surfaceKey: t.from, used, notes: [], primary: t.primary !== false,
     });
   }
   return used;
@@ -660,7 +664,7 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
   const used = new Set();
   const surfaceKey = target.from ?? '';
   const fitted = applyFit(spec.regions ?? [], fit, {
-    profile, role, surfaceKey, used, notes,
+    profile, role, surfaceKey, used, notes, primary: target.primary !== false,
     // Every id the livery declares ANYWHERE, so a copy cannot quietly take a
     // name that belongs to a region on another surface.
     reserved: allRegionKeys(targets),
@@ -980,6 +984,19 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // run's drafts nearly always paint the same roles. One entry, because the
   // count keeps its per-view passes on the geometry (see piecesInView), and
   // several geometries would hold several sets of those.
+  // Every texture a design paints, one entry per role: a term's secondary
+  // textures too, which `editorState().surfaces` leaves out because it lists
+  // the one the editor edits. The RSS4's body is body AND bodyRear, and taken
+  // from that list the whole-car view drew the rear bodywork stock.
+  const paintedSheets = (design) => {
+    const out = [];
+    for (const t of resolveTargets(profile, design).targets) {
+      if (out.some((r) => r.role === t.role)) continue;
+      out.push({ role: t.role, from: t.from, file: texture(profile, t.role).file });
+    }
+    return out;
+  };
+
   let lastCar = null;
   const carFor = (m, design) => {
     // EVERY role, not just the primary one per term. `editorState` returns
@@ -1032,6 +1049,24 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // refuse about the result. Shared by the inbox and by the endpoints that
   // measure a proposal without offering it, so the two cannot disagree about
   // what is acceptable.
+  // A design the editor could not load again: two regions sharing an id.
+  // Taken as the working design, it broke every later request for the
+  // editor's state, so the page would not load until the server restarted:
+  // a tab still holding the design from before a restart applied a proposal
+  // on top of it and doubled every region the proposal added.
+  // And one that does not resolve on this car at all, which breaks every
+  // request the same way: a region pinned to a texture its surface does not
+  // paint, a texture painted twice, a surface not in the vocabulary.
+  const unloadable = (d) => {
+    try {
+      regionIds(d ?? {});
+      resolveTargets(profile, d ?? {});
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  };
+
   const stage = (prop) => {
     try {
       const baseFit = workingFit ?? fit ?? { livery: liveryId, car: profile.id, regions: {} };
@@ -1398,6 +1433,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
         const { fit: working, design } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         return json(200, editorState({
@@ -1411,6 +1449,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         // render has to be of what is being edited rather than of what is on
         // disk. Nothing here writes it.
         const { fit: working, design, role, seed } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         return json(200, renderSurface({
@@ -1423,11 +1464,14 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
         const { fit: working, design, seed } = await body();
+        // Refused before either is taken: see `unloadable`.
+        const bad = design !== undefined ? unloadable(design) : null;
+        if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
-        const state = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit });
         const surfaces = [];
-        for (const s of state.surfaces) {
+        // Every painted texture, a term's secondary ones included: see paintedSheets.
+        for (const s of paintedSheets(workingDesign ?? livery)) {
           const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
@@ -1447,10 +1491,26 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       if (req.method === 'GET' && url.pathname === '/api/model' && url.searchParams.get('all')) {
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
-        const files = editorState({ livery, profile, fit })
-          .surfaces.map((s) => ({ role: s.role, file: s.file }));
+        // The WORKING design's surfaces, as every other render here takes. From
+        // the livery on disk, a surface the working design paints and the disk
+        // does not came down merged into whatever group its material fell in:
+        // the NSX's rims, on a two-layer material, landed in one group with
+        // every other part whose diffuse is not its surface, with no file of
+        // its own for the page to re-role, and the wheels stayed stock however
+        // the design painted them. The page fetches again when that set changes.
+        const files = paintedSheets(workingDesign ?? livery).map(({ role, file }) => ({ role, file }));
         const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
+        // As the pictures draw them: a two-layer part whose base sheet is clear
+        // everywhere is opaque (see clearBasesOpaque), which the browser, with
+        // no decoder for a PNG base, could not tell for itself. Only those
+        // parts' sheets are decoded, not the car's.
+        const layered = g.groups.filter((x) => x.blend && !x.role && x.detail?.diffuse);
+        if (layered.length) {
+          const { sheets } = await carSheets(layered.map(({ detail }) => ({ role: null, file: null, detail: { diffuse: detail.diffuse } })),
+            stockTexture, { cache: stockSheets });
+          g.groups = clearBasesOpaque(g.groups, sheets);
+        }
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
         return res.end(packModel(g));
       }
@@ -1517,8 +1577,57 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         const q = await body();
         const m = await getModel();
         if (!m) return json(404, { error: modelError ?? 'no model' });
+        // A side instead of a panel, for the number group: the side's main
+        // panel on the body, a door or a formula car's sidepod (flankPanel).
+        // The prompt used to say doors, and the RSS4's planner had to work out
+        // for itself that a car with none carries its number on the sidepods.
+        const side = q.side ?? null;
+        let sideChosen = null;
+        if (side !== null) {
+          if (side !== 'left' && side !== 'right') {
+            return json(400, { error: `side is "left" or "right", the side of the car to lay the group on; got ${JSON.stringify(side)}.` });
+          }
+          if (!q.layout) return json(400, { error: 'side picks the panel for a layout: ask it with layout: { number, name }.' });
+          if (q.panel === undefined || q.panel === null || q.panel === '') {
+            let bodyRoles = [];
+            try {
+              bodyRoles = resolveTargets(profile, workingDesign ?? livery).targets.filter((t) => t.from === 'surfaces.body').map((t) => t.role);
+            } catch { /* a design that does not resolve is refused below */ }
+            const pick = flankPanel(profile, bodyRoles, side);
+            if (!pick) return json(400, { error: `No panel of the bodywork on the car's ${side} side is tagged mid and seen from trackside; name one with panel.` });
+            q.panel = pick.panel;
+            q.role ??= `paint.${pick.role}`;
+            sideChosen = `${pick.panel} on ${pick.role}: the ${side} side's main panel, the largest and most seen in the middle of the car.`;
+          }
+        }
         const where = spaceRole(profile, workingDesign ?? livery, q.role, q.panel);
         if (where.error) return json(400, { error: where.error });
+        // On a car whose surface paints several textures, each region says which
+        // one it was measured on, or it is drawn on every one of them: the RSS4's
+        // body is two textures, each with its own panel called left_mid, and a
+        // number laid out on one sidepod landed on the floor too. See drawnOn.
+        const shared = Object.values(profile.bind ?? {})
+          .some((b) => Array.isArray(b?.roles) && b.roles.length > 1 && b.roles.includes(where.role));
+        const pin = (r) => (shared && r && typeof r === 'object' && !r.role ? { ...r, role: where.role } : r);
+        // Every texture of the surface this panel's texture is painted by: what
+        // a stripe or a kit runs over, where the panel only says which surface.
+        const surfaceRoles = (design) => {
+          try {
+            const targets = resolveTargets(profile, design).targets;
+            const from = targets.find((t) => t.role === where.role)?.from;
+            return from ? targets.filter((t) => t.from === from).map((t) => t.role) : [where.role];
+          } catch {
+            return [where.role];
+          }
+        };
+        const pinLayout = (l) => (l?.regions ? { ...l, regions: { ...l.regions, roundel: pin(l.regions.roundel),
+          number: pin(l.regions.number), name: (l.regions.name ?? []).map(pin) } } : l);
+        const pinned = (res) => (!shared || !res ? res : {
+          ...res,
+          ...(Array.isArray(res.regions) ? { regions: res.regions.map(pin) } : {}),
+          ...(res.layout ? { layout: pinLayout(res.layout) } : {}),
+          ...(res.alternative ? { alternative: pinLayout(res.alternative) } : {}),
+        });
         // Normalised before anything is keyed on it: "300" and 300, or a
         // default left out and the same default sent, are one question.
         const num = (v, fallback) => (v === undefined || v === null || v === '' ? fallback : Number(v));
@@ -1547,15 +1656,38 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           return json(400, { error: 'stripe lays a band along the whole car, as wide as stripe.widthMm: ' +
             'ask it without layout, largest, widthMm or heightMm.' });
         }
+        // A ground-effect kit is the same kind of question as a stripe, round
+        // the bottom of the car. Refused beside one before either is answered.
+        const aero = q.aero ?? null;
+        if (aero !== null && (typeof aero !== 'object' || Array.isArray(aero))) {
+          return json(400, { error: `aero is { heightMm, name }, how far up the car the kit reaches; got ${JSON.stringify(aero)}.` });
+        }
+        if (aero && (stripe || layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'aero lays out the car\'s lowest panels all round, as high as aero.heightMm: ' +
+            'ask it without stripe, layout, largest, widthMm or heightMm.' });
+        }
         if (stripe) {
-          const ask = { widthMm: num(stripe.widthMm, NaN), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
+          const ask = { widthMm: num(stripe.widthMm, undefined), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };
           // Keyed on what the design hides and paints too: that decides what
           // stands over the band, so the same ask can have two answers.
           const design = workingDesign ?? livery;
-          const key = JSON.stringify(['stripe', where.role, ask, drawnBy(profile, design)]);
+          const roles = surfaceRoles(design);
+          const key = JSON.stringify(['stripe', roles, ask, drawnBy(profile, design)]);
           try {
-            remember(spaces, key, spaces.get(key) ?? stripeLayout({ profile, model: m, role: where.role, ...ask, design }), 256);
-            return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+            remember(spaces, key, spaces.get(key) ?? stripeLayoutAcross({ profile, model: m, roles, ...ask, design }), 256);
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
+          } catch (e) {
+            return json(400, { error: e.message });
+          }
+        }
+        if (aero) {
+          const ask = { heightMm: num(aero.heightMm, NaN), name: aero.name ?? 'aero' };
+          const design = workingDesign ?? livery;
+          const roles = surfaceRoles(design);
+          const key = JSON.stringify(['aero', roles, ask, drawnBy(profile, design)]);
+          try {
+            remember(spaces, key, spaces.get(key) ?? aeroLayoutAcross({ profile, model: m, roles, ...ask, design }), 256);
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
           } catch (e) {
             return json(400, { error: e.message });
           }
@@ -1586,7 +1718,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           // Said about THIS request, not cached with the answer: the same
           // question asked with the role spelled out and with it inferred gets
           // the same spots, and only the second was chosen for anybody.
-          return json(200, { ...spaces.get(key), ...(where.chosen ? { roleChosen: where.chosen } : {}) });
+          return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
         } catch (e) {
           return json(400, { error: e.message });
         }
