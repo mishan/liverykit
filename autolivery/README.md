@@ -23,9 +23,16 @@ export ANTHROPIC_API_KEY=...
 export AGENTOPS_API_KEY=...              # optional
 
 node bin/liverykit.mjs autolivery-nsx --ui          # the editor, in another terminal
-node autolivery/bin.mjs "Gulf-style, number 85, Neon Doll Racing, number readable from trackside" \
-  --critic-model claude-sonnet-5 --critic-effort low
+node autolivery/bin.mjs "Gulf-style, number 85, Neon Doll Racing, number readable from trackside. \
+Use a white roundel with the number inside it, whole and fully visible, clear of every edge. \
+An orange centre stripe runs the full length of the car, nose to tail, continuing over the rear wing." \
+  --critic-model claude-sonnet-5 --critic-effort low --max-cost 3
 ```
+
+That is the brief every recorded run was given, and a run on the NSX passes it
+in the first round in about two minutes for under a dollar. `--max-cost` stops
+the run before any Claude call once it has spent that much at list price; the
+default is $5.
 
 The critic is the planner's model unless told otherwise. On the critic eval
 below, Sonnet 5 agreed with a person as often as Opus 5 at half the price, and
