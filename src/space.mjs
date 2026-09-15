@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -68,12 +68,10 @@ export function spaceRole(profile, design, asked, panel) {
     if (bound.length) {
       const holding = bound.filter((r) => Boolean(profile.panels[r]?.[resolvedName(profile, r, panel)]));
       if (holding.length === 1) return { role: holding[0] };
+      if (holding.length) return picked(profile, holding, panel, `${JSON.stringify(asked)} paints`);
       return {
-        error: holding.length
-          ? `${JSON.stringify(panel)} is a panel on ${holding.join(' and ')}, which ${JSON.stringify(asked)} ` +
-            `both paints; pass ${holding.map((r) => `paint.${r}`).join(' or ')} to say which.`
-          : `${JSON.stringify(asked)} paints ${bound.join(', ')}, and none of them has a panel called ` +
-            `${JSON.stringify(panel)}. find_panels lists them.`,
+        error: `${JSON.stringify(asked)} paints ${bound.join(', ')}, and none of them has a panel called ` +
+          `${JSON.stringify(panel)}. find_panels lists them.`,
       };
     }
     if (roles.includes(term)) return { role: term };
@@ -88,6 +86,7 @@ export function spaceRole(profile, design, asked, panel) {
     painted = [...new Set(resolveTargets(profile, design ?? {}).targets.map((t) => t.role))];
   } catch { /* a design that resolves to nothing paints nothing */ }
   const mine = has.filter((r) => painted.includes(r));
+  if (mine.length > 1) return picked(profile, mine, panel, 'this design paints');
   if (mine.length === 1) {
     return {
       role: mine[0],
@@ -99,6 +98,51 @@ export function spaceRole(profile, design, asked, panel) {
     error: `${JSON.stringify(panel)} is a panel on ${has.join(', ')}` +
       (mine.length ? `, and this design paints ${mine.join(' and ')}` : '') + '; pass role to say which.',
   };
+}
+
+/**
+ * One of several textures a design paints that each hold a panel of this
+ * name: the one on which it is largest and most seen. Refused, the RSS4's
+ * planner spent the first seven calls of run 29's round asking again with
+ * role, for a sidepod that is plainly on `body`. Said, so a caller that meant
+ * the other can ask for it.
+ */
+function picked(profile, roles, panel, painted) {
+  const weight = (r) => {
+    const q = profile.panels[r]?.[resolvedName(profile, r, panel)];
+    const per = q?.metresPerUv;
+    const m2 = Array.isArray(q?.rect) && Array.isArray(per) ? q.rect[2] * per[0] * q.rect[3] * per[1] : 0;
+    return m2 * (typeof q?.visible === 'number' ? q.visible : 0);
+  };
+  const role = [...roles].sort((a, b) => weight(b) - weight(a))[0];
+  return {
+    role, roles,
+    chosen: `${JSON.stringify(panel)} is a panel on ${roles.join(' and ')}, which ${painted} alike; measured on ` +
+      `${role}, where it is largest and most seen. Pass role as paint.<texture> to ask about another.`,
+  };
+}
+
+/**
+ * A side's main flank panel on these textures: the largest, most seen panel
+ * tagged with that side and the middle of the car — a door, or a formula
+ * car's sidepod. What a number and name go on when the design names a side
+ * rather than a panel; on the NSX, the RSS4 and the Abarth it is the door or
+ * sidepod each time, where the largest panel on the NSX's side is the rear
+ * quarter.
+ */
+export function flankPanel(profile, roles, side) {
+  let best = null;
+  for (const role of roles) {
+    for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
+      const tags = q.tags ?? [];
+      if (q.hidden || !tags.includes(side) || !tags.includes('mid') || !(q.visible >= 0.5)) continue;
+      const per = q.metresPerUv;
+      if (!Array.isArray(q.rect) || !Array.isArray(per)) continue;
+      const score = q.rect[2] * per[0] * q.rect[3] * per[1] * q.visible;
+      if (!best || score > best.score) best = { role, panel, score };
+    }
+  }
+  return best && { role: best.role, panel: best.panel };
 }
 
 function resolvedName(profile, role, name) {
@@ -901,7 +945,7 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     regions,
     pieces: pieces.map((p) => ({ id: p.id, panel: p.panel, behindNoseMm: p.behindNose, carriesMm: p.carriesMm, errorMm: p.errorMm })),
     ...(skipped.length ? { skipped } : {}),
-    findings: bandFindings({ profile, model, role, regions, hide, paints }),
+    findings: bandFindings({ profile, model, byRole: new Map([[role, regions]]), hide, paints }),
     ...(!regions.length ? {
       note: `A band ${widthMm} mm wide, ${offsetMm} mm from the centreline, crosses no panel of ${role} the world sees ` +
         'from above. Check the offset, or the sheet the panel named is on.',
@@ -1144,12 +1188,125 @@ function bandPieces({ model, profile, role, band, name, hide, paints, side = 0, 
  * was read off: the design's hides, and its other sheets painted with nothing,
  * so the check draws what the layout saw.
  */
-function bandFindings({ profile, model, role, regions, hide, paints }) {
-  if (!regions.length) return [];
+function bandFindings({ profile, model, byRole, hide, paints }) {
+  if (![...byRole.values()].some((list) => list.length)) return [];
+  const paint = Object.fromEntries(paints.map((r) => [r, { regions: [] }]));
+  for (const [role, regions] of byRole) paint[role] = { regions: regions.map((r) => ({ ...r, color: 'ink' })) };
   return fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
-    paint: { ...Object.fromEntries(paints.map((r) => [r, { regions: [] }])),
-      [role]: { regions: regions.map((r) => ({ ...r, color: 'ink' })) } } }, profile, null, { model })
+    paint }, profile, null, { model })
     .findings.filter((f) => f.kind.startsWith('stripe-')).map((f) => `${f.severity} ${f.kind}: ${f.why}`);
+}
+
+/**
+ * Region ids for layouts on several textures of one surface, by texture and
+ * the id each layout gave: kept as they are, and a clash suffixed with the
+ * texture it is on. Ids are named by panel, the RSS4's two body textures each
+ * have a centre_tail, and two regions called centre-centre_tail made a design
+ * the editor refused to load.
+ */
+function uniqueIds(each) {
+  const taken = new Set();
+  const out = new Map();
+  for (const e of each) {
+    for (const r of e.regions) {
+      const id = taken.has(r.id) ? `${r.id}-${e.role}` : r.id;
+      taken.add(id);
+      out.set(`${e.role}\u0000${r.id}`, id);
+    }
+  }
+  return out;
+}
+
+/**
+ * A stripe laid over every texture of one surface, measured as one: the
+ * RSS4's body is two, and the stripe runs over both. Each piece keeps the
+ * texture it was laid on in `role` (see drawnOn). Without a width, sized to
+ * the bodywork: a third of its width seen from above, 450 mm at most and 200
+ * at least, which is 450 on a GT car and narrower on a formula car's nose.
+ */
+export function stripeLayoutAcross({ profile, model, roles, widthMm, offsetMm = 0, name = 'centre', design = null }) {
+  const { hide, painted } = drawnBy(profile, design);
+  const paints = [...new Set([...painted, ...roles])];
+  const bodyMm = widthMm === undefined ? bodyWidthMm(model, profile, roles, { hide, painted: paints }) : null;
+  let width = widthMm ?? (bodyMm ? Math.max(200, Math.min(450, Math.round((0.3 * bodyMm) / 10) * 10)) : 450);
+  let each = roles.map((role) => stripeLayout({ profile, model, role, widthMm: width, offsetMm, name, design }));
+  // Sized to the bodywork only where the pieces still line up at that width.
+  // On the RSS4 a 310 mm band cut its rounded nose and cockpit part-way across
+  // and four joins came out offset, where at 450 each of those panels carries
+  // the band edge to edge and none does: the width that holds is used, and
+  // the answer says why.
+  let fell = null;
+  if (widthMm === undefined && width < 450) {
+    const joined = (list) => (roles.length > 1
+      ? bandFindings({ profile, model, byRole: new Map(list.map((e) => [e.role, e.regions])), hide, paints })
+      : list[0].findings).some((f) => f.startsWith('high'));
+    if (joined(each)) {
+      fell = `a ${width} mm stripe, a third of this bodywork's ${bodyMm} mm, did not line up across its panels, ` +
+        'so it is 450 mm, which does';
+      width = 450;
+      each = roles.map((role) => stripeLayout({ profile, model, role, widthMm: width, offsetMm, name, design }));
+    }
+  }
+  const ids = uniqueIds(each);
+  const pin = (r, role) => (roles.length > 1 ? { ...r, id: ids.get(`${role}\u0000${r.id}`), role } : r);
+  let byRole = new Map(each.map((e) => [e.role, e.regions.map((r) => pin(r, e.role))]));
+  const skipped = each.flatMap((e) => (e.skipped ?? []).map((k) => ({ ...k, role: e.role })));
+  // Measured as check_fitment measures them, and a piece it would call unseen
+  // left out, as the kit leaves one out: seen from above, the RSS4's band
+  // crosses a strip of floor behind the cockpit that trackside sees 2% of,
+  // and the piece laid there was a high finding in the planner's first check.
+  const unseen = new Map();
+  if ([...byRole.values()].some((list) => list.length)) {
+    const paint = Object.fromEntries(paints.map((r) => [r, { regions: [] }]));
+    for (const [role, list] of byRole) paint[role] = { regions: list.map((r) => ({ ...r, color: 'ink' })) };
+    for (const f of fitment({ name: 'stripe', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+      paint }, profile, null, { model }).findings) {
+      if (f.kind === 'unseen' && f.severity === 'high') for (const id of f.ids ?? []) unseen.set(id, f.why);
+    }
+  }
+  const out = new Set();
+  if (unseen.size) {
+    byRole = new Map([...byRole].map(([role, list]) => [role, list.filter((r) => {
+      if (!unseen.has(r.id)) return true;
+      skipped.push({ panel: r.panel, role, why: `left out of the stripe: ${unseen.get(r.id)}` });
+      out.add(r.id);
+      return false;
+    })]));
+  }
+  const regions = [...byRole.values()].flat();
+  return {
+    roles, widthMm: width, ...(bodyMm ? { bodyWidthMm: bodyMm, sized: fell ?? 'to the bodywork, as no widthMm was given' } : {}),
+    offsetMm, name, regions,
+    pieces: each.flatMap((e) => e.pieces.map((p) => ({ ...p, id: roles.length > 1 ? ids.get(`${e.role}\u0000${p.id}`) : p.id, role: e.role })))
+      .filter((p) => !out.has(p.id)),
+    ...(skipped.length ? { skipped } : {}),
+    findings: roles.length > 1 || out.size ? bandFindings({ profile, model, byRole, hide, paints }) : each[0].findings,
+    ...(!regions.length ? { note: each.map((e) => e.note).filter(Boolean).join(' ') } : {}),
+  };
+}
+
+/**
+ * The ground-effect kit on every texture of one surface: each laid out on its
+ * own (its lowest panels, its flanks), and each piece keeping its texture.
+ */
+export function aeroLayoutAcross({ profile, model, roles, heightMm, name = 'aero', design = null }) {
+  const each = roles.map((role) => aeroLayout({ profile, model, role, heightMm, name, design }));
+  if (roles.length === 1) return each[0];
+  const parts = {};
+  for (const e of each) for (const [k, ids] of Object.entries(e.parts ?? {})) (parts[k] ??= []).push(...ids);
+  const skipped = each.flatMap((e) => (e.skipped ?? []).map((k) => ({ ...k, role: e.role })));
+  const ids = uniqueIds(each);
+  const idOf = (role, id) => ids.get(`${role}\u0000${id}`);
+  for (const k of Object.keys(parts)) parts[k] = [];
+  for (const e of each) for (const [k, list] of Object.entries(e.parts ?? {})) parts[k].push(...list.map((id) => idOf(e.role, id)));
+  const regions = each.flatMap((e) => e.regions.map((r) => ({ ...r, id: idOf(e.role, r.id), role: e.role })));
+  return {
+    roles, heightMm, name, regions, parts,
+    pieces: each.flatMap((e) => (e.pieces ?? []).map((p) => ({ ...p, id: idOf(e.role, p.id), role: e.role }))),
+    upMm: Object.fromEntries(each.filter((e) => e.upMm).map((e) => [e.role, e.upMm])),
+    ...(skipped.length ? { skipped } : {}),
+    ...(!regions.length ? { note: each.map((e) => e.note).filter(Boolean).join(' ') } : {}),
+  };
 }
 
 /**
