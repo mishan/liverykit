@@ -980,6 +980,19 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // run's drafts nearly always paint the same roles. One entry, because the
   // count keeps its per-view passes on the geometry (see piecesInView), and
   // several geometries would hold several sets of those.
+  // Every texture a design paints, one entry a role: a term's secondary
+  // textures too, which `editorState().surfaces` leaves out because it lists
+  // the one the editor edits. The RSS4's body is body AND bodyRear, and taken
+  // from that list the whole-car view drew the rear bodywork stock.
+  const paintedSheets = (design) => {
+    const out = [];
+    for (const t of resolveTargets(profile, design).targets) {
+      if (out.some((r) => r.role === t.role)) continue;
+      out.push({ role: t.role, from: t.from, file: texture(profile, t.role).file });
+    }
+    return out;
+  };
+
   let lastCar = null;
   const carFor = (m, design) => {
     // EVERY role, not just the primary one per term. `editorState` returns
@@ -1448,9 +1461,9 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
-        const state = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit });
         const surfaces = [];
-        for (const s of state.surfaces) {
+        // Every painted texture, a term's secondary ones included: see paintedSheets.
+        for (const s of paintedSheets(workingDesign ?? livery)) {
           const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
@@ -1477,8 +1490,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         // every other part whose diffuse is not its surface, with no file of
         // its own for the page to re-role, and the wheels stayed stock however
         // the design painted them. The page fetches again when that set changes.
-        const files = editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit })
-          .surfaces.map((s) => ({ role: s.role, file: s.file }));
+        const files = paintedSheets(workingDesign ?? livery).map(({ role, file }) => ({ role, file }));
         const g = wholeModelGeometry(m, files, { livery: workingDesign ?? livery, profile });
         if (!g.indices.length) return json(404, { error: 'the model has no drawable geometry' });
         res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });

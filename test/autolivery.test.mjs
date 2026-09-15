@@ -93,6 +93,21 @@ test('the critic is told a stripe the check measured whole, and only the top of 
   assert.equal(measuredNote(null), null);
 });
 
+test('a stripe the check could not measure is not vouched for to the critic', async () => {
+  // The note tells the critic there is no bare bodywork between the pieces,
+  // so a check that could not look at the coverage or a join cannot say so;
+  // one that could not tell which way a piece runs says nothing about that,
+  // and the RSS4's diagonal cockpit panels would keep every stripe unvouched.
+  const { stripesOf } = await import('../autolivery/loop.mjs');
+  const design = { surfaces: { body: { regions: [{ id: 'a', constraints: { stripe: 'centre' } }] } } };
+  const f = (kind, severity, extra = {}) => ({ kind, severity, stripe: 'centre', ...extra });
+  assert.deepEqual(stripesOf(design, []), [{ name: 'centre', clean: true }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-across', 'low', { measured: false })]), [{ name: 'centre', clean: true }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-gap', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-offset', 'low', { measured: false })]), [{ name: 'centre', clean: false }]);
+  assert.deepEqual(stripesOf(design, [f('stripe-offset', 'high')]), [{ name: 'centre', clean: false }]);
+});
+
 test('the planner is asked for a ground-effect kit and the wheels, and each can be left out', async () => {
   // A Gulf car's centre stripe runs over the top, where trackside barely sees
   // it; its orange splitter, skirts, diffuser and wheels are what carry it in
