@@ -293,6 +293,10 @@ async function runRounds({
   rounds = 6, views = ['sheet'], shot = { width: 900, height: 540 }, sheetShot = { width: 2100, height: 960 },
   criticGates = true, propose = true, roundCalls = 40, looks = 2, log = () => {}, polish = 1, followRecording = false,
   referee = null, closer = ['left', 'right'], closeShot = { width: 1600, height: 960 }, seed = true, base = null,
+  // Surfaces the run asked for beyond the brief (bin.mjs: the wheels), as
+  // `surfaces.<term>`. A draft submitted painting nothing there is handed back
+  // once a round, and the next finish_round goes through.
+  mustPaint = [],
   // How a save puts its bytes on disk. A test hands in one that fails
   // partway, which the dead-server test could not: its check that no
   // .partial was left passed just as well with no rename at all.
@@ -425,6 +429,7 @@ async function runRounds({
     log(`round ${n} of ${rounds}`);
     let calls = 0;
     let renders = 0;
+    let reminded = false;
 
     const dispatch = async (name, args) => {
       switch (name) {
@@ -498,12 +503,42 @@ async function runRounds({
             return refuse('finish_round needs a summary: what the draft is, in a sentence or two. ' +
               'It is what a person reads when the design reaches the inbox.');
           }
+          // Handed back once a round, not refused outright: run 29's planner
+          // left the RSS4's wheels stock though the prompt asked for them, and
+          // a car with no such surface must still be able to submit.
+          if (mustPaint.length && !reminded) {
+            reminded = true;
+            const bare = await unpainted(mustPaint);
+            if (bare.length) {
+              return refuse(`Not submitted yet: this run asks you to paint ${bare.join(' and ')}, and the draft paints ` +
+                'nothing there. Add it with draft_design and call finish_round again. If describe_car says this car ' +
+                'has no such surface, call finish_round again as it is, and say so in the summary.');
+            }
+          }
           summary = args.summary;
           return ok('Submitted. The gate\'s verdicts come back in the next message.');
         default:
           if (KNOWING.includes(name)) return mcp.callTool(name, args ?? {});
           return refuse(`There is no tool called ${JSON.stringify(name)}.`);
       }
+    };
+
+    // Which of those the draft leaves unpainted, as the draft amounts to: a
+    // remove-region can take away what an add-region put there. A draft that
+    // cannot be read is not held back.
+    const unpainted = async (wanted) => {
+      let design;
+      try {
+        const r = await mcp.callTool('read_design', { proposal: draft });
+        if (r.isError) return [];
+        design = JSON.parse(textOf(r));
+      } catch {
+        return [];
+      }
+      return wanted.filter((w) => {
+        const [group, ...rest] = String(w).split('.');
+        return !(design?.[group]?.[rest.join('.')]?.regions?.length > 0);
+      });
     };
 
     // Submitting seals the round. Both planners run every call in a turn, so

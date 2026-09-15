@@ -798,6 +798,13 @@ test('a twin nobody draws is not a twin', () => {
   assert.deepEqual(hiddenByCar.findings.filter((f) => f.kind === 'unpainted-twin'), [],
     'a mesh the car hides is not in the game to draw over anything');
 
+  // A motion-blur twin is swapped in at speed, not drawn over the part at rest,
+  // and the renderers leave it out. Counted, the Abarth's blurred rims failed
+  // every design that painted its wheels.
+  const blurred = { ...twinned, meshes: [twinned.meshes[0], { ...twinned.meshes[1], name: 'GEO_rimblur1_SUB1' }] };
+  assert.deepEqual(fitment(design(art), withPlateRole, null, { model: blurred }).findings
+    .filter((f) => f.kind === 'unpainted-twin'), [], 'a motion-blur twin is not drawn over anything at rest');
+
   // And the check is still live: the same model with neither says so.
   const bare = fitment(design(art), withPlateRole, null, { model: twinned });
   assert.equal(bare.findings.filter((f) => f.kind === 'unpainted-twin').length, 1);
@@ -1989,9 +1996,11 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   const wing = got.pieces.find((p) => p.panel === 'wing');
   assert.ok(wing.upMm[0] === 100 && Math.abs(wing.upMm[1] - 300) <= 5, JSON.stringify(wing));
   assert.ok(at.wing.every((v, i) => Math.abs(v - [0, 0, 1, 2 / 7][i]) <= 0.01) && wing.errorMm <= 5, JSON.stringify(wing));
-  // The door begins where the sill ends, so the line would leave it a sliver.
+  // The door lies over the sill along the car: above the kit, not running on
+  // from it, so no band along its foot. On the Abarth's right side one was
+  // painted, where the left's was a sliver and left out.
   const door = (got.skipped ?? []).find((s) => s.panel === 'door');
-  assert.match(door?.why ?? '', /door begins (29\d|30\d) mm up, and the kit's line at (29\d|30\d) mm would leave a sliver/, JSON.stringify(got.skipped));
+  assert.match(door?.why ?? '', /door lies over sill along the car, above the kit rather than running on from it/, JSON.stringify(got.skipped));
 
   assert.throws(() => aeroLayout({ profile, model, role: 'body', heightMm: 0 }), /heightMm/);
 });
