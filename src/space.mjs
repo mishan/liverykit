@@ -951,18 +951,28 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   const length = carLength(model, profile);
   const partOf = (on) => (on.across[0] < 0 && on.across[1] > 0
     ? ((on.behindNose[0] + on.behindNose[1]) / 2 < length / 2 ? 'front' : 'rear')
-    : on.across[0] > 0 ? 'left' : 'right');
+    // Touching the centreline from one side is that side.
+    : on.across[0] >= 0 ? 'left' : 'right');
 
   const pieces = [];
   const skipped = [];
   const whole = new Set();
   for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
-    if (!Array.isArray(q.rect) || q.hidden || !(q.visible >= AERO_SEEN)) continue;
+    const unknown = typeof q.visible !== 'number';
+    if (!Array.isArray(q.rect) || q.hidden || (!unknown && q.visible < AERO_SEEN)) continue;
     // A panel's middle is inside its extent: one whose middle is above the kit
     // cannot lie inside it, and is not sampled to find that out.
     if (Array.isArray(q.centroid3d) && q.centroid3d[1] * 1000 > top + AERO_FIT_MM) continue;
     const on = panelOnCar(model, profile, role, panel);
     if (!on || on.why || on.up[1] > top + AERO_FIT_MM) continue;
+    // Said rather than dropped, as everything left out of the kit is: a panel
+    // the profile never measured could be the kit or could be under the car.
+    if (unknown) {
+      skipped.push({ panel, upMm: on.up, why: `${panel} lies within the kit's height, but the profile has no measured ` +
+        'visibility for it, so whether the world sees it could not be told; regenerate the profile with --from-kn5, ' +
+        'and check it in a picture of the car meanwhile' });
+      continue;
+    }
     whole.add(panel);
     pieces.push({ id: `${name}-${panel}`, panel, at: [0, 0, 1, 1], part: partOf(on), whole: true, upMm: on.up, behindNoseMm: on.behindNose });
   }
@@ -973,16 +983,23 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   const gapTo = (a, b) => Math.max(0, a[0] - b[1], b[0] - a[1]);
   for (const { side, sign } of flanks) {
     const kit = pieces.filter((p) => p.part === side);
-    const crossed = stripePanels(model, profile, role, [bottom, top], { hide, painted: paints, side: sign });
+    const crossed = stripePanels(model, profile, role, [bottom, top], { hide, painted: paints, side: sign, seen: AERO_SEEN });
     const seen = new Map(crossed.map((c) => [c.panel, c]));
     for (const c of crossed) {
-      if (whole.has(c.panel)) continue;
+      if (whole.has(c.panel) || skipped.some((k) => k.panel === c.panel)) continue;
       const on = panelOnCar(model, profile, role, c.panel);
       if (!on || on.why) {
         skipped.push({ panel: c.panel, why: on?.why ?? `${c.panel} lands on no geometry` });
         continue;
       }
       if (partOf(on) !== side) continue;          // the nose, the tail, or the far side
+      // Too little of it seen from this side to fit a piece to, or never
+      // measured: left out and said, as the stripe's layout says it.
+      if (c.measured === false) {
+        skipped.push({ panel: c.panel, upMm: on.up, why: c.why ?? `seen from the car's ${side} the kit's height covers at ` +
+          `most ${c.carriesMm} mm of ${c.panel}, too little to fit a piece to or to tell its line by` });
+        continue;
+      }
       const near = kit.reduce((best, p) => (!best || gapTo(p.behindNoseMm, c.behindNose) < gapTo(best.behindNoseMm, c.behindNose) ? p : best), null);
       // The kit panel's top as the side view shows it at the end facing this
       // one, which is lower than its top where something stands in front of

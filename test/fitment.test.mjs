@@ -1942,6 +1942,8 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
     { name: 'door', uv: [0.02, 0.1, 0.3, 0.2], normal: [1, 0, 0], corners: flank(0.9, 0.3, 1.0, 1.0, -0.2) },
     { name: 'wing', uv: [0.45, 0.02, 0.1, 0.15], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.8, 1.6, 1.0) },
     { name: 'liner', uv: [0.85, 0.02, 0.1, 0.05], normal: [1, 0, 0], corners: flank(0.8, 0.1, 0.25, 0.5, -0.5) },
+    // Low on the flank behind the sill, and never measured by the profile.
+    { name: 'plate', uv: [0.85, 0.1, 0.1, 0.05], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.25, -1.1, -1.5) },
     { name: 'splitter', uv: [0.6, 0.02, 0.2, 0.05], normal: [0, 1, 0],
       corners: [[-0.9, 0.1, 2.0], [0.9, 0.1, 2.0], [0.9, 0.1, 1.8], [-0.9, 0.1, 1.8]] },
     { name: 'nose', uv: [0.6, 0.2, 0.2, 0.1], normal: [0, 0, 1],
@@ -1969,6 +1971,11 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   // than handed to the planner as a high finding in its first check.
   assert.deepEqual(got.parts, { front: ['aero-splitter'], left: ['aero-wing', 'aero-sill'] }, JSON.stringify(got));
   assert.match((got.skipped ?? []).find((s) => s.panel === 'diffuser')?.why ?? '', /^left out of the kit: aero-diffuser is 0% visible/);
+  // A panel the profile never measured is said, not dropped: it could be the
+  // kit, or it could be under the car.
+  assert.match((got.skipped ?? []).find((s) => s.panel === 'plate')?.why ?? '',
+    /plate lies within the kit's height, but the profile has no measured visibility/, JSON.stringify(got.skipped));
+  assert.equal((got.skipped ?? []).filter((s) => s.panel === 'plate').length, 1, 'and said once');
   const at = Object.fromEntries(got.regions.map((r) => [r.panel, r.at]));
   // Filled whole, which is a region with no `at`, and to its edge.
   for (const p of ['splitter', 'sill']) assert.equal(at[p], undefined, `${p} is filled whole`);

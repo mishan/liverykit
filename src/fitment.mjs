@@ -2215,8 +2215,8 @@ export function stripeAt(model, profile, role, panel, { across = null, up = null
  * visibility inside the band was neither laid a piece nor asked for one, and
  * nothing said so. Now each is carried, and said to be unmeasured.
  */
-const seenPanels = (profile, role) => Object.entries(profile.panels?.[role] ?? {})
-  .filter(([, q]) => Array.isArray(q.rect) && (typeof q.visible !== 'number' || q.visible >= BARELY_SEEN))
+const seenPanels = (profile, role, floor = BARELY_SEEN) => Object.entries(profile.panels?.[role] ?? {})
+  .filter(([, q]) => Array.isArray(q.rect) && (typeof q.visible !== 'number' || q.visible >= floor))
   .map(([panel, q]) => ({ panel, visible: typeof q.visible === 'number' ? q.visible : null, rect: q.rect,
     mesh: q.source?.mesh ?? null, outline: Array.isArray(q.outline) && q.outline.length >= 3 ? q.outline : null }));
 
@@ -2266,12 +2266,14 @@ const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, 
  * instead, seen from that side, and `across` is [from, to] in millimetres up:
  * a side skirt, where the stripe check holds a band along a flank too.
  */
-export function stripePanels(model, profile, role, across, { hide = [], painted = [], side = 0 } = {}) {
+export function stripePanels(model, profile, role, across, { hide = [], painted = [], side = 0, seen = BARELY_SEEN } = {}) {
   const draw = drawing(profile, hide, [...painted, role]);
   const { F, L, noseZ } = carFrame(model, profile, draw);
   const env = side ? envelope(model, profile, 0, side * L, draw) : envelope(model, profile, 1, 1, draw);
   const file = texture(profile, role).file.toLowerCase();
-  const panels = seenPanels(profile, role);
+  // `seen` is the visibility a panel needs to be one: a caller painting a
+  // kit under the car, which a diffuser is, asks for less than a stripe.
+  const panels = seenPanels(profile, role, seen);
   const [lo, hi] = across.map((mm) => (mm / 1000) * (side ? 1 : L)).sort((a, b) => a - b);
   const cols = [];
   for (let i = 0; i < env.cols; i++) {

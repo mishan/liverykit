@@ -3217,6 +3217,61 @@ test('the whole-car view is re-roled from the design, not from the cached geomet
   assert.deepEqual(reRole(undefined, undefined), []);
 });
 
+test('a surface bound to two textures is painted on both in the whole car and its preview', async () => {
+  // The RSS4's body is body AND bodyRear. The whole-car geometry and the
+  // preview took their textures from the editor's surface list, which holds
+  // one a term, so the rear bodywork came down roleless and was drawn stock.
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const http = await import('node:http');
+  const { carKn5, vert } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { unpackModel } = await import('../src/ui/view3d.js');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-two-'));
+  const rear = { name: 'REAR_PANEL', materialId: 1, indices: [0, 1, 2],
+    verts: [vert(0.8, 0.1, -1.2, 0.1, 0.1), vert(0.8, 0.5, -1.2, 0.9, 0.1), vert(0.8, 0.5, -1.6, 0.9, 0.9)] };
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5({ extraMeshes: [rear], materials: [{ name: 'BodyMat' }, { name: 'Rear', slots: { txDiffuse: 'rear.dds' } }],
+    extraTextures: [{ name: 'rear.dds' }] }));
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const rearRole = Object.entries(profile.textures).find(([, t]) => t.file === 'rear.dds')?.[0];
+  const bodyRole = profile.bind.body.roles[0];
+  assert.ok(rearRole && bodyRole && rearRole !== bodyRole, JSON.stringify(profile.bind.body));
+  profile.bind.body = { roles: [bodyRole, rearRole], source: 'human' };
+  const livery = { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+    palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const { server, url } = await startUi({ livery, profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+    liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {} });
+  // Through node:http: `runApp` leaves the app's fake fetch as the global one.
+  const call = (path, body) => new Promise((ok, no) => {
+    const req = http.request(new URL(path, url), { method: body ? 'POST' : 'GET',
+      headers: body ? { 'content-type': 'application/json' } : {} }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => ok({ status: res.statusCode, body: Buffer.concat(chunks) }));
+    });
+    req.on('error', no);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+  try {
+    const got = await call('/api/model?all=1');
+    assert.equal(got.status, 200);
+    const b = got.body;
+    const groups = unpackModel(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)).groups;
+    assert.deepEqual(groups.filter((g) => g.file === 'rear.dds').map((g) => g.role), [rearRole],
+      'the second texture of the surface comes down painted');
+    const preview = JSON.parse((await call('/api/preview', {})).body.toString());
+    assert.deepEqual(preview.surfaces.map((x) => x.role).sort(), [bodyRole, rearRole].sort(), 'and the preview renders both');
+  } finally {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('the whole car comes down grouped by the working design, so a rim painted since is a painted group', async () => {
   // Reported: a proposal painted the NSX's rims orange, the texture rendered
   // orange, and the whole-car view drew the wheels stock. The geometry was

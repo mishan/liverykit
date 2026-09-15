@@ -3078,7 +3078,9 @@ async function ensureWholeCar() {
   //
   // Keyed by file, which is what both sides agree on: a group carries the
   // texture its meshes use, and a surface carries the texture it writes.
-  const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, state.data.surfaces) };
+  // From the preview's list, which holds every painted texture: the state's
+  // holds one a term, and a formula car's bodyRear was left roleless.
+  const g = { ...state.wholeGeometry, groups: reRole(state.wholeGeometry.groups, surfaces) };
   const drew = await state.viewer.setWholeCar(g, surfaces);
   return { g, drew };
 }

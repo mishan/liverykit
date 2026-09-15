@@ -143,10 +143,13 @@ function constraintsById(design) {
 /**
  * Each stripe a design declares, and whether the check found it whole: no
  * high stripe-across, stripe-offset or stripe-gap. Told to the critic, as a
- * piece measured whole is (see `measuredNote`). A low one is a panel too small
- * to measure, and says nothing about the stripe the pictures show.
+ * piece measured whole is (see `measuredNote`). Nor a low one that could not
+ * measure the band's coverage or a join: the note says there is no bare
+ * bodywork, and a check that could not look cannot say so. One that could not
+ * tell which way a piece runs says nothing about that, and the RSS4's
+ * diagonal cockpit panels would otherwise keep every stripe on it unvouched.
  */
-function stripesOf(design, findings) {
+export function stripesOf(design, findings) {
   const names = new Set();
   for (const group of ['surfaces', 'paint']) {
     for (const spec of Object.values(design?.[group] ?? {})) {
@@ -154,7 +157,8 @@ function stripesOf(design, findings) {
     }
   }
   return [...names].map((name) => ({ name,
-    clean: !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-') && f.severity !== 'low') }));
+    clean: !findings.some((f) => f.stripe === name && f.kind?.startsWith('stripe-')
+      && (f.severity !== 'low' || (f.measured === false && f.kind !== 'stripe-across'))) }));
 }
 
 /**
@@ -740,7 +744,9 @@ async function runRounds({
     // the critic and held against what it says: see `overrule`.
     const measured = fitment?.inView ?? null;
     const whole = wholeFor(measured, fitment?.findings ?? [], views);
-    const stripes = stripesOf(effective, fitment?.findings ?? []);
+    // Only from a measurement: a draft check_fitment refused has no findings,
+    // and no findings would read as a clean stripe.
+    const stripes = fitment ? stripesOf(effective, fitment.findings ?? []) : [];
 
     // Asked even when fitment has failed, so a round that fails both says so
     // at once instead of fixing one and discovering the other a round later.
