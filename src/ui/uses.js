@@ -4,9 +4,9 @@
 // A palette entry and an identity token are both just names, and both fail the
 // same quiet way when the name stops resolving:
 //
-//   * `ctx.color(name)` is `palette[name] ?? name`, so a colour the palette does
-//     not have is handed to the renderer as though it were a literal colour.
-//     `fill="ghost"` is not an error to librsvg, it is simply not the colour
+//   * `ctx.color(name)` is `palette[name] ?? name`, so a color the palette does
+//     not have is handed to the renderer as though it were a literal color.
+//     `fill="ghost"` is not an error to librsvg, it is simply not the color
 //     anybody meant.
 //   * a `{token}` in a `text` region interpolates through `tokens[k] ?? ''`, so
 //     an identity block missing `number` renders "A. Driver #" and says nothing.
@@ -55,7 +55,7 @@ export function eachRegion(design) {
 }
 
 /**
- * Which option of a treatment names a colour.
+ * Which option of a treatment names a color.
  *
  * Taken from the treatment's own description where there is one, which is what
  * descriptions are for. Where a pack described nothing, `color` and `colors` are
@@ -63,7 +63,7 @@ export function eachRegion(design) {
  * is right far more often than nothing would be, and being wrong costs an
  * over-count in a usage list rather than anything that renders.
  */
-function colourFields(region, treatments) {
+function colorFields(region, treatments) {
   const described = treatments?.get?.(region.treatment)?.options;
   if (!described) return ['color', 'colors'].filter((k) => region[k] !== undefined);
   return Object.entries(described)
@@ -74,7 +74,7 @@ function colourFields(region, treatments) {
 /**
  * Palette name -> the things referring to it.
  *
- * `background` counts. It names a palette colour exactly as a region's `color`
+ * `background` counts. It names a palette color exactly as a region's `color`
  * does, and a surface whose background stopped resolving is the largest possible
  * version of this mistake.
  */
@@ -97,7 +97,7 @@ export function paletteUses(design, treatments) {
     }
   }
   for (const { region, key } of eachRegion(design)) {
-    for (const field of colourFields(region, treatments)) {
+    for (const field of colorFields(region, treatments)) {
       const v = region[field];
       if (Array.isArray(v)) v.forEach((x) => add(x, key));
       else add(v, key);
@@ -147,7 +147,7 @@ export function tokenUses(design) {
 /**
  * Names the design refers to that it does not define.
  *
- * Neither list is certainly a bug, and both are worth seeing. A colour name the
+ * Neither list is certainly a bug, and both are worth seeing. A color name the
  * palette lacks is passed to the renderer as a literal — which is right if
  * somebody wrote `rebeccapurple` and wrong in a way nothing reports if they
  * meant a palette entry that has since been renamed. A token with no value
@@ -162,8 +162,8 @@ export function danglingNames(design, treatments) {
     // is not in the palette went there as a literal and will paint nothing
     // anybody chose — which is what `gulf-bleu` looks like after a typo, and
     // what `accent` looks like after a rename that missed a region.
-    colours: [...paletteUses(design, treatments)]
-      .filter(([name]) => !palette.includes(name) && !isAColour(name))
+    colors: [...paletteUses(design, treatments)]
+      .filter(([name]) => !palette.includes(name) && !isAColor(name))
       .map(([name, by]) => ({ name, by })),
     // A token with no value renders as nothing at all — the region stays, and
     // the text it was part of comes out short.
@@ -174,25 +174,25 @@ export function danglingNames(design, treatments) {
 }
 
 /**
- * Is this a colour, or a name that failed to resolve?
+ * Is this a color, or a name that failed to resolve?
  *
  * The question the whole dangling panel turns on, and it used to be answered by
  * a regex that accepted `#`, `rgb`, `hsl` and gave up: `red` was reported as an
  * unresolved name, `rebeccapurple` likewise, and `gulf-bleu` and `#00F0FF` were
  * told apart by their first character. The reason given was that the honest
- * alternative meant maintaining a table of 148 CSS colour names against a spec.
+ * alternative meant maintaining a table of 148 CSS color names against a spec.
  * It did, right up until the moment we stopped refusing to have a dependency:
  * `colord` parses strictly to the CSS Color specification, in 8 KB with nothing
  * underneath it.
  *
- * The three additions are SVG paint values rather than colours, which is why
+ * The three additions are SVG paint values rather than colors, which is why
  * colord rightly declines them and why the renderer nevertheless accepts them.
  * `var(--x)` is a custom property, which resolves to whatever the document says
  * and cannot be judged from here.
  */
 const SVG_PAINT = new Set(['none', 'currentcolor', 'inherit']);
 
-export function isAColour(v) {
+export function isAColor(v) {
   if (typeof v !== 'string') return false;
   const s = v.trim();
   if (!s) return false;

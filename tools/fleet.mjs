@@ -86,7 +86,7 @@ const blockedBy = (near) =>
  * only when the rule matched on none of the textures its surface binds, which
  * is what "landed nowhere" means to someone looking at the car.
  */
-export function summarise(records) {
+export function summarize(records) {
   const ok = records.filter((r) => !r.error);
   const failed = records.filter((r) => r.error);
   const n = ok.length;

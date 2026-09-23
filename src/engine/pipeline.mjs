@@ -38,7 +38,7 @@ export const mipCount = (w, h = w) => Math.floor(Math.log2(Math.max(w, h))) + 1;
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
 
-/** Rasterise an SVG string. librsvg ignores <filter>, so glow is done below. */
+/** Rasterize an SVG string. librsvg ignores <filter>, so glow is done below. */
 export async function rasterize(svg) {
   return sharp(Buffer.from(svg), { unlimited: true }).png().toBuffer();
 }
@@ -120,7 +120,7 @@ export async function toPNG(srcPath, outPath) {
  * different cars. Same decoder now — see src/ui/dds.js.
  *
  * `null` only when NEITHER can make sense of it: one texture no renderer can
- * decode is a part drawn grey, not a build that stops.
+ * decode is a part drawn gray, not a build that stops.
  */
 export async function decodeDds(buffer, { maxSize = 512 } = {}) {
   const bin = await magickBin().catch(() => null);

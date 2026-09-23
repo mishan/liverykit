@@ -45,7 +45,7 @@ export function decodeDds(buffer) {
 
   // NOT everything in a kn5 is block-compressed, and assuming it was is how
   // the two most valuable detail maps on this car came back as null and
-  // stayed grey: MAT_Carbon.dds, which is the actual carbon weave, is plain
+  // stayed gray: MAT_Carbon.dds, which is the actual carbon weave, is plain
   // 32-bit BGRA, and metal_detail_2.dds is 16-bit luminance-plus-alpha.
   //
   // Read through the channel MASKS rather than assuming a byte order. The
@@ -112,7 +112,7 @@ export function decodeDds(buffer) {
 
       if (dxt === 5) {
         // Two endpoints and a three-bit index per texel, with the same
-        // "which endpoint is larger" trick the colour block uses to pick
+        // "which endpoint is larger" trick the color block uses to pick
         // between two interpolation schemes.
         a[0] = src[o];
         a[1] = src[o + 1];
@@ -145,7 +145,7 @@ export function decodeDds(buffer) {
       unpack(0, c0);
       unpack(1, c1);
       // DXT1 hides one bit of alpha in the ORDER of its endpoints: c0 <= c1
-      // means the fourth colour is transparent black instead of a second
+      // means the fourth color is transparent black instead of a second
       // interpolation step. Read it the other way and every cut-out texture
       // grows a black fringe.
       const punchThrough = dxt === 1 && c0 <= c1;

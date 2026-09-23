@@ -115,9 +115,9 @@ function measure(model, mesh, verts, tris) {
   //
   // The magnitudes are right here, computed for the ratio and then thrown away,
   // so keeping them costs two additions and closes that. Assetto Corsa models
-  // are in metres — confirmed independently by the wheel-derived track width and
+  // are in meters — confirmed independently by the wheel-derived track width and
   // wheelbase matching a spec sheet, which the README already points at as the
-  // two numbers in a profile you can check — so these are metres per unit of UV.
+  // two numbers in a profile you can check — so these are meters per unit of UV.
   let sumT = 0, sumB = 0;
   let bx = 0, by = 0, bz = 0, nx = 0, ny = 0, nz = 0;
   // The tangent's DIRECTION, not just its length. The length alone gives
@@ -264,7 +264,7 @@ const clamp01 = (n) => Math.min(1, Math.max(0, n));
  * Needed because names like `nose` and `tail` are claims about a position on the
  * CAR, and the only way to make such a claim is to measure the car. Sampled with
  * a stride: bounds converge almost immediately, and a full pass over a few
- * hundred thousand vertices to move a bound by a millimetre is not worth it.
+ * hundred thousand vertices to move a bound by a millimeter is not worth it.
  */
 export function carBounds(model) {
   let xMax = 0, zMin = Infinity, zMax = -Infinity;
@@ -294,7 +294,7 @@ export function carBounds(model) {
  * islands ON THE SAME TEXTURE, which is only the car's extent when that texture
  * happens to cover the whole car. For anything smaller the five bands collapse
  * onto whatever that one sheet spans, and the frontmost thing on it is called
- * `nose` no matter where on the car it actually sits. A tyre sheet holds four
+ * `nose` no matter where on the car it actually sits. A tire sheet holds four
  * wheels, so the front pair were `*_nose` and the rear pair `*_tail`; a steering
  * wheel 30 cm across got a nose, a middle and a tail of its own. Measured over
  * two profiles, every single name on `interior`, `belts` and `steeringWheel` was
@@ -334,7 +334,7 @@ export function nameIslands(islands, axes, bounds = null) {
 }
 
 /**
- * Pair islands that are mirror images across the car's centreline.
+ * Pair islands that are mirror images across the car's centerline.
  *
  * Useful because a mirrored pair almost always wants the same artwork, and
  * because a pair that is NOT mirrored in UV space (the common case) means the
@@ -376,7 +376,7 @@ export function findMirrorPairs(islands, axes, { tolerance = 0.06 } = {}) {
  * stripe crossing from one to the other has to line up. Knowing the graph is
  * what makes that possible.
  *
- * Implemented with a spatial hash at `tolerance` metres — vertices on a shared
+ * Implemented with a spatial hash at `tolerance` meters — vertices on a shared
  * seam are usually bit-identical, so the tolerance is generous by default.
  */
 export function findAdjacency(model, islands, { tolerance = 0.004 } = {}) {
@@ -387,7 +387,7 @@ export function findAdjacency(model, islands, { tolerance = 0.004 } = {}) {
   islands.forEach((isl, idx) => {
     for (const i of isl.vertices) {
       const p = vertex(model, isl.meshRef, i);
-      // Insert into the 27 neighbouring cells so near-misses still meet.
+      // Insert into the 27 neighboring cells so near-misses still meet.
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
         const k = key(p.x + dx * cell, p.y + dy * cell, p.z + dz * cell);
         let s = grid.get(k);
@@ -420,8 +420,8 @@ export function findAdjacency(model, islands, { tolerance = 0.004 } = {}) {
 }
 
 /**
- * How to continue artwork from one island onto a neighbour: an affine map
- * from this island's texture coordinates to the neighbour's, for every pair
+ * How to continue artwork from one island onto a neighbor: an affine map
+ * from this island's texture coordinates to the neighbor's, for every pair
  * `findAdjacency` says touch.
  *
  * `adjacent` says the door and the rear quarter meet. It cannot say WHERE in
@@ -437,18 +437,18 @@ export function findAdjacency(model, islands, { tolerance = 0.004 } = {}) {
  * possibly a reflection where the unwrapper flipped one — so that is all
  * that is fitted. A general affine would have been tempting and wrong: a
  * seam is a line, and a line of points cannot pin down what happens away
- * from the line. Rigid is what "unfold the neighbour flat against this
+ * from the line. Rigid is what "unfold the neighbor flat against this
  * panel" means, and it is determined by two points.
  *
- * The one thing a line genuinely cannot tell is which SIDE the neighbour
+ * The one thing a line genuinely cannot tell is which SIDE the neighbor
  * lies on: a rotation and a reflection across the seam fit collinear points
- * equally well. The islands' own interiors settle it — the neighbour's
+ * equally well. The islands' own interiors settle it — the neighbor's
  * middle must land on the far side of the seam from this island's middle,
- * or the map folds the neighbour back over this panel.
+ * or the map folds the neighbor back over this panel.
  *
- * Returns Map<name, Map<neighbour, { matrix, points, rmsMm }>>, where
+ * Returns Map<name, Map<neighbor, { matrix, points, rmsMm }>>, where
  * `matrix` is [a, b, c, d, e, f] in SVG order: u' = a u + c v + e,
- * v' = b u + d v + f, from this island's fractions to the neighbour's.
+ * v' = b u + d v + f, from this island's fractions to the neighbor's.
  * `rmsMm` is how far the shared vertices miss under the fitted map — near
  * zero for a crease, larger where the seam curves and "unfold flat" is an
  * approximation worth knowing about.
@@ -481,7 +481,7 @@ export function findSeams(model, islands, adjacency, { tolerance = 0.004 } = {})
   // The cell is the tolerance, so two points 3 mm apart — well inside the 4 mm
   // this is willing to call the same vertex — land in different cells whenever
   // the boundary happens to run between them, and a bucket-only comparison
-  // found no correspondence at all for them. `findAdjacency` probes neighbours
+  // found no correspondence at all for them. `findAdjacency` probes neighbors
   // for exactly this reason and would call such a pair adjacent, which left
   // the two disagreeing: islands that touch, with no map to cross between
   // them, and a spanning region that stopped at the seam for no visible cause.
@@ -601,7 +601,7 @@ function rigidSeam(A, B, list, model) {
   const e = (-(best.cs * best.fx * ca[0]) + best.sn * ca[1] + cb[0]) / mub;
   const f = (-(best.sn * best.fx * ca[0]) - best.cs * ca[1] + cb[1]) / mvb;
   // Where the seam sits in THIS island's sheet, as a polyline through the
-  // shared points. A spanning region reaches the neighbour only if it
+  // shared points. A spanning region reaches the neighbor only if it
   // crosses this, which is what stops a band on the door reaching the
   // bonnet through a seam it never touches. A polyline and not a box: the
   // front clip meets the roof along the windscreen base and down both
@@ -618,7 +618,7 @@ function rigidSeam(A, B, list, model) {
 }
 
 /**
- * Shared points, chained into a line and simplified. Nearest-neighbour from
+ * Shared points, chained into a line and simplified. Nearest-neighbor from
  * the point farthest from the middle, which follows a straight seam and an
  * L alike; a seam that forks would come out as one branch, which is a limit
  * worth knowing and not one any car has shown yet.
@@ -669,7 +669,7 @@ function simplifyOpen(list, tol) {
  * A panel's `rect` is a bounding box, and islands are not boxes. Unwrappers
  * pack a small island into the concave corner of a big one, so two rects
  * overlap while the islands themselves do not share a texel. Artwork
- * clipped to the box then paints texels that belong to the neighbour — a
+ * clipped to the box then paints texels that belong to the neighbor — a
  * piece of the door's band, in the door's frame, sitting on the intake
  * surround. The outline is what the box was standing in for.
  *

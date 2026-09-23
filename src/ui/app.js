@@ -17,7 +17,7 @@
 import { createViewer, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
-import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColour } from './uses.js';
+import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColor } from './uses.js';
 import { applyDesignOp, applyFitOp, opSetConstraint } from './ops.js';
 
 const $ = (s) => document.querySelector(s);
@@ -156,7 +156,7 @@ $('#panels').onpointerover = (e) => {
 $('#panels').onpointerout = (e) => {
   // Only when the pointer has left the list entirely. Moving between two rows
   // fires `out` for the first before `over` for the second, so clearing on every
-  // `out` makes the highlight flicker off between neighbours.
+  // `out` makes the highlight flicker off between neighbors.
   if (!e.relatedTarget || !$('#panels').contains?.(e.relatedTarget)) hoverPanel(null);
 };
 $('#overlay').onpointerdown = (e) => {
@@ -454,7 +454,7 @@ $('#adoptsurface').onclick = () => adoptSurface($('#adoptsurface').dataset.role)
 //
 // Shaded tells you whether the design works on the CAR — how a stripe crosses a
 // curve, which panels the eye lands on, whether the whole thing reads at ten
-// metres. Unshaded tells you what colour the paint actually IS, which shading
+// meters. Unshaded tells you what color the paint actually IS, which shading
 // necessarily distorts, and that was the original reason this viewer drew the
 // raw texture. The UV tab is always the honest one; this switch is for the two
 // tabs that draw geometry.
@@ -734,7 +734,7 @@ function drawRegions() {
       : o ? 'adjusted'
       : (r.tags ? r.tags.join(' ') : r.panel ?? '');
     // A derived key is positional, so the label shows the treatment — which is
-    // what you recognise — rather than "surfaces.body#7", which is not.
+    // what you recognize — rather than "surfaces.body#7", which is not.
     const label = r.derived ? `${r.treatment} ${r.index}` : r.id;
     return `<li class="${cls.join(' ')}${r.derived ? ' derived' : ''}" data-id="${esc(r.id ?? '')}"
       title="${esc(r.derived ? `addressed by position as ${r.id} — give it an id in the livery to make it stable` : r.id)}">
@@ -748,7 +748,7 @@ function drawRegions() {
 // Both are design-level, both are small, and both are keyed by NAME — which is
 // why they are worth editing here rather than in a text file. Changing `accent`
 // re-renders every region that mentions it in about two milliseconds, so you
-// find out what a colour does to a car by changing it and looking, rather than
+// find out what a color does to a car by changing it and looking, rather than
 // by imagining.
 //
 // The names are also the risk. A region refers to a palette entry by name and
@@ -791,11 +791,11 @@ function drawPalette() {
 /**
  * Fill the swatches in through the CSSOM, which parses one value or none.
  *
- * `style.backgroundColor = v` accepts a colour and DROPS anything else on the
+ * `style.backgroundColor = v` accepts a color and DROPS anything else on the
  * floor — a second declaration, a `url()`, a stray brace — because the setter
  * parses `v` as a single `<color>` rather than pasting it into the document.
  * Assigning it is the whole guarantee; the swatch simply stays empty for a value
- * that is not a colour, which is also the honest thing to show.
+ * that is not a color, which is also the honest thing to show.
  */
 function paintSwatches(el) {
   for (const sw of el.querySelectorAll?.('[data-swatch]') ?? []) {
@@ -829,7 +829,7 @@ function drawIdentity() {
  * Names the design uses and does not define.
  *
  * The reason this panel is worth having. Both failures are invisible in the
- * render: an unknown colour reaches librsvg as a literal, and a token with no
+ * render: an unknown color reaches librsvg as a literal, and a token with no
  * value leaves a hole in the middle of a line of text.
  */
 function drawDangling() {
@@ -837,12 +837,12 @@ function drawDangling() {
   if (!el) return;
   if (state.lossy.length) { el.innerHTML = ''; return; }
 
-  const { colours, tokens } = danglingNames(state.design, state.treatments);
+  const { colors, tokens } = danglingNames(state.design, state.treatments);
   el.innerHTML = [
     ...tokens.map((t) => `<div class="note">Nothing gives <code>${esc(t.token)}</code> a value, so
       ${esc(t.by.join(', '))} ${t.by.length > 1 ? 'render' : 'renders'} with a hole where it should be.</div>`),
-    ...colours.map((c) => `<div class="note"><code>${esc(c.name)}</code> is not in the palette, so it goes
-      to the renderer as a literal colour — used by ${esc(c.by.join(', '))}.</div>`),
+    ...colors.map((c) => `<div class="note"><code>${esc(c.name)}</code> is not in the palette, so it goes
+      to the renderer as a literal color — used by ${esc(c.by.join(', '))}.</div>`),
   ].join('');
 }
 
@@ -853,15 +853,15 @@ function wirePalette() {
       const was = input.dataset.palette;
       const value = input.value ?? '';
       if (input.dataset.part === 'value') {
-        // An empty colour is not "no opinion", it is a region painted with the
+        // An empty color is not "no opinion", it is a region painted with the
         // empty string. Nothing to fall back to, so nothing happens.
-        if (!value.trim()) return status(`${was} needs a colour — left as it was`);
-        remember(`recolour ${was}`);
+        if (!value.trim()) return status(`${was} needs a color — left as it was`);
+        remember(`recolor ${was}`);
         state.design.palette[was] = value.trim();
       } else {
         const now = value.trim();
         if (!now || now === was) return drawPalette();
-        if (state.design.palette[now] !== undefined) return status(`there is already a colour called ${now}`);
+        if (state.design.palette[now] !== undefined) return status(`there is already a color called ${now}`);
         remember(`rename ${was}`);
         renamePalette(was, now);
       }
@@ -892,7 +892,7 @@ function drawAdders() {
   // the literal selectors out of this file and checks them against the page; one
   // assembled from a variable would be invisible to it, and a typo in it would
   // leave a control that silently never gets disabled.
-  for (const el of [$('#newcolourname'), $('#newcolourvalue'), $('#addcolour'),
+  for (const el of [$('#newcolorname'), $('#newcolorvalue'), $('#addcolor'),
     $('#newtokenname'), $('#newtokenvalue'), $('#addtoken')]) {
     if (el) el.disabled = off;
   }
@@ -901,17 +901,17 @@ function drawAdders() {
 /** Wired once: the Add row is static, so it keeps whatever you have typed. */
 function wireAdders() {
   {
-    const add = $('#addcolour');
+    const add = $('#addcolor');
     add.onclick = () => {
       if (state.lossy.length) return status(CANNOT_EDIT);
-      const name = ($('#newcolourname').value ?? '').trim();
-      const value = ($('#newcolourvalue').value ?? '').trim();
-      if (!name || !value) return status('a colour needs both a name and a value');
+      const name = ($('#newcolorname').value ?? '').trim();
+      const value = ($('#newcolorvalue').value ?? '').trim();
+      if (!name || !value) return status('a color needs both a name and a value');
       if (state.design.palette?.[name] !== undefined) return status(`${name} is already taken`);
       remember(`add ${name}`);
       (state.design.palette ??= {})[name] = value;
-      $('#newcolourname').value = '';
-      $('#newcolourvalue').value = '';
+      $('#newcolorname').value = '';
+      $('#newcolorvalue').value = '';
       return afterDesignEdit();
     };
   }
@@ -941,12 +941,12 @@ function badTokenName(token) {
 }
 
 /**
- * Rename a colour, and every reference to it.
+ * Rename a color, and every reference to it.
  *
  * The references are known — that is what `paletteUses` is for — so leaving them
  * pointing at a name that no longer exists would be choosing to break something
  * this code can see. A renamed entry with nothing updated renders as a literal
- * colour called `accent`, and says nothing about it.
+ * color called `accent`, and says nothing about it.
  *
  * Key order is kept rather than moving the entry to the end. A palette is read
  * by people, and reshuffling it on a rename is a diff nobody asked for.
@@ -963,7 +963,7 @@ function renamePalette(was, now) {
   }
   for (const { region } of eachRegion(state.design)) {
     for (const [key, v] of Object.entries(region)) {
-      if (!holdsAColour(region, key)) continue;
+      if (!holdsAColor(region, key)) continue;
       if (v === was) region[key] = now;
       else if (Array.isArray(v)) region[key] = v.map((x) => (x === was ? now : x));
     }
@@ -971,8 +971,8 @@ function renamePalette(was, now) {
   status(`renamed ${was} to ${now}, and the ${count} reference(s) to it`);
 }
 
-/** Would this option hold a colour? Ask the treatment; fall back to convention. */
-function holdsAColour(region, key) {
+/** Would this option hold a color? Ask the treatment; fall back to convention. */
+function holdsAColor(region, key) {
   const described = state.treatments.get(region.treatment)?.options;
   if (described) return described[key]?.type === 'color' || described[key]?.type === 'colors';
   return key === 'color' || key === 'colors';
@@ -1001,7 +1001,7 @@ function wireIdentity() {
         state.design.identity = Object.fromEntries(
           Object.entries(state.design.identity).map(([k, v]) => [k === was ? now : k, v]));
         // A token is referred to inside text, as `{was}`, so its references get
-        // rewritten exactly as a colour's do.
+        // rewritten exactly as a color's do.
         for (const { region } of eachRegion(state.design)) {
           if (typeof region.text === 'string') region.text = region.text.split(`{${was}}`).join(`{${now}}`);
         }
@@ -1635,7 +1635,7 @@ function startDrag(e, mode) {
  * Re-render the artwork mid-gesture, without redrawing the rest of the editor.
  *
  * Server-side rendering is 0.2 ms on the RSS4 and 1.3 ms on the Abarth, so the
- * cost is entirely in the browser: rasterising the SVG and uploading it. Two
+ * cost is entirely in the browser: rasterizing the SVG and uploading it. Two
  * things keep that inside a frame.
  *
  * COALESCED. One request in flight at a time; a position that arrives while one
@@ -1707,7 +1707,7 @@ function writeFit(sel) {
     // not wherever it happened to be. Dragging one side onto the rear wing and
     // leaving the other on a flank splits an idea the design said was one.
     //
-    // A panel with no mirror straddles the centreline — a nose, an engine
+    // A panel with no mirror straddles the centerline — a nose, an engine
     // cover — so it is its own twin, and both halves live on it mirrored
     // within it. That is what a car with two numbers on its nose looks like.
     const there = state.surface.panels.find((p) => p.name === (here?.mirrorOf ?? sel.panel));
@@ -1896,11 +1896,11 @@ function optionControls(id) {
       // the button appears exactly where that panel has nothing to say — one
       // judgement shown twice, rather than two regexes free to drift until they
       // give opposite advice about the same value in the same window.
-      const nameable = has && typeof v === 'string' && !names.includes(v) && isAColour(v);
+      const nameable = has && typeof v === 'string' && !names.includes(v) && isAColor(v);
       input = `<input list="palette-names" data-opt="${esc(key)}" data-kind="string"
         value="${has ? esc(v) : ''}"${hint}>` +
         `<datalist id="palette-names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>` +
-        (nameable ? `<button class="rot" data-name-colour="${esc(key)}">name it</button>` : '');
+        (nameable ? `<button class="rot" data-name-color="${esc(key)}">name it</button>` : '');
     } else if (o.type === 'number') {
       const bounds = [o.min !== undefined ? `min="${o.min}"` : '', o.max !== undefined ? `max="${o.max}"` : '',
         o.step !== undefined ? `step="${o.step}"` : ''].join(' ');
@@ -2085,11 +2085,11 @@ function wireOptionControls(id) {
   const remove = inspector.querySelector?.('#removeregion');
   if (remove) remove.onclick = () => deleteDesignRegion(id);
 
-  // Turn a one-off colour into a palette entry, and point the region at it.
-  // This is the loop closing: pick a colour on a region, name it, and everything
+  // Turn a one-off color into a palette entry, and point the region at it.
+  // This is the loop closing: pick a color on a region, name it, and everything
   // else in the design can use it — which is how a palette gets built in
   // practice rather than written out in advance.
-  for (const el of inspector.querySelectorAll?.('[data-name-colour]') ?? []) {
+  for (const el of inspector.querySelectorAll?.('[data-name-color]') ?? []) {
     el.onclick = () => {
       const key = el.dataset.nameColour;
       const value = region[key];
@@ -2337,7 +2337,7 @@ function onTheCar(sel) {
   const row = (body) => `<label>on the car</label><div class="muted">${body}</div>`;
 
   // TWO reasons there can be no answer, wanting different things done about
-  // them. Both arrive as `metres: null`, and one message covering both would
+  // them. Both arrive as `meters: null`, and one message covering both would
   // send somebody off to rebuild a profile that is already fine — and leave
   // them no wiser when the number still does not appear.
   //
@@ -2693,7 +2693,7 @@ function wireInspectorButtons(id) {
  * This is the one thing a fit does that ADDS a region, and the rule it bends is
  * one I wrote: a fit cannot add regions, because wanting to usually means the
  * design needs the change. A mirrored copy earns the exception by inventing no
- * artwork — treatment, colours and text all come from the region it names, and
+ * artwork — treatment, colors and text all come from the region it names, and
  * the only new information is a placement, which is precisely what a fit is
  * for. Symmetry is a property of the CAR: a design that paints one badge is
  * portable to a car with one flank worth painting and to a car with two, and
@@ -2980,7 +2980,7 @@ async function showView(which) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine. Neither is a model
     // with no cockpit eye — an open passenger buggy, or a car this project's
-    // steering-wheel search does not recognise — which loadCockpit reports the
+    // steering-wheel search does not recognize — which loadCockpit reports the
     // same way, as a message rather than a crash.
     $('#viewnote').textContent = `no 3D view — ${e.message}`;
     status(`3D unavailable for ${state.surface.file}`);
@@ -3004,7 +3004,7 @@ async function showView(which) {
  * meets the bodywork perfectly can still miss the sidepod next to it.
  *
  * The geometry is fetched once and kept; only the textures are re-rendered when
- * the fit changes. Anything the livery does not paint appears in flat grey,
+ * the fit changes. Anything the livery does not paint appears in flat gray,
  * because a car with holes where its glass should be reads as a broken export.
  */
 /**
@@ -3153,7 +3153,7 @@ async function loadCockpit() {
     (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
       drew.failed.join('; ')}` : '') +
     // The car's own textures, as opposed to the design's renders above. A
-    // missing one shows as grey on a part nobody painted, which reads as a
+    // missing one shows as gray on a part nobody painted, which reads as a
     // finished picture rather than a hole in it.
     (drew?.stockFailed?.length ? ` · ${drew.stockFailed.length} CAR TEXTURE${
       drew.stockFailed.length === 1 ? '' : 'S'} NOT SERVED: ${

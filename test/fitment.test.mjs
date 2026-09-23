@@ -101,7 +101,7 @@ test('a name is held to the number only where the design says so', async () => {
   assert.equal(d.surfaces.body.regions[0].constraints.groupWith, 'number');
 });
 
-test('find_space refuses a margin or a count it cannot honour, before measuring anything', async () => {
+test('find_space refuses a margin or a count it cannot honor, before measuring anything', async () => {
   // A negative margin returned spots with less clearance than asked for, and a
   // count of NaN switched off both limits on a loop where every step walks the
   // whole mesh. Refused before the grid is touched, so an empty one will do.
@@ -131,7 +131,7 @@ test('the parts a crash or a spinning wheel swaps in stand in front of nothing',
 test('letters on a panel laid a quarter turn stand along u', () => {
   // A road car turns its doors sideways to pack the sheet, and the text is
   // turned back upright. Its letters then run along the texture's u, which on
-  // this panel is eight times as many metres per unit as v.
+  // this panel is eight times as many meters per unit as v.
   const turned = {
     ...profile,
     panels: { body: { S: { rect: [0, 0, 0.4, 0.4], anisotropy: 1, metresPerUv: [8, 1], textRotation: 90, visible: 1, tags: ['left'] } } },
@@ -216,7 +216,7 @@ test('artwork outside the readable part of a panel is reported', () => {
   // `safe` is the UV bounds of the vertices that passed the visibility cast
   // when the profile was made, so straying outside it is landing on geometry
   // already measured and found wanting. `safe: false` means it on purpose — a
-  // background fill should reach the island's edge — and is honoured.
+  // background fill should reach the island's edge — and is honored.
   const withSafe = structuredClone(profile);
   withSafe.panels.body.L.safe = [0.05, 0.05, 0.3, 0.3];
 
@@ -229,7 +229,7 @@ test('artwork outside the readable part of a panel is reported', () => {
   assert.deepEqual(out.map((f) => f.ids[0]), ['edge'], 'and not the one that said safe: false');
   assert.equal(out[0].severity, 'high');
 
-  // A fill covering its whole panel is a colour field whether or not it says
+  // A fill covering its whole panel is a color field whether or not it says
   // so: run 26's planner copied a ground-effect kit out of find_space without
   // its safe: false, and deleted the diffuser the check then reported. A fill
   // on part of the panel is still artwork that can stray.
@@ -302,7 +302,7 @@ test('a region that names no panel is checked, not skipped', () => {
   //
   // Nothing about them needs a panel. `resolveRect` gives the sheet rectangle
   // straight back, and each check below already gates itself on the fields it
-  // needs — the safe area, the metres, the mirrored twin — so the ones that
+  // needs — the safe area, the meters, the mirrored twin — so the ones that
   // cannot answer stay quiet on their own.
   const r = fitment(design([
     { id: 'ground', treatment: 'fill', at: [0, 0, 1, 1], color: 'ink' },
@@ -314,7 +314,7 @@ test('a region that names no panel is checked, not skipped', () => {
     'a name under a full-sheet fill is the same finding it would be on a panel');
 
   // And the checks that need a panel do not guess: there is no safe area to be
-  // outside of, and no metres to be too small in. Size says it went unmeasured,
+  // outside of, and no meters to be too small in. Size says it went unmeasured,
   // low, rather than nothing: a name nobody measured read exactly like one
   // that passed.
   assert.deepEqual(r.findings.filter((f) => f.kind === 'outside-safe'), []);
@@ -606,7 +606,7 @@ test('something lying flush against a panel occludes it', () => {
 });
 
 test('something behind a panel does not stand in front of it', () => {
-  // The other side of that ownership rule. A mesh a few millimetres BEHIND
+  // The other side of that ownership rule. A mesh a few millimeters BEHIND
   // the paint — a door's inner shell, a bonnet's carbon liner — shares its
   // voxels exactly as a plate in front of it does, and a shared voxel stopped
   // every ray leaving the surface. The NSX's doors measured 64% visible for
@@ -616,7 +616,7 @@ test('something behind a panel does not stand in front of it', () => {
   assert.equal(behind.fraction, 1, `a shell 5 mm behind the paint hides nothing, got ${behind.fraction}`);
 });
 
-/** The same sheet with a second mesh floating `gap` metres in front of it. */
+/** The same sheet with a second mesh floating `gap` meters in front of it. */
 function withPlate(model, gap) {
   const m = model.meshes[0];
   const plate = { ...m, materialId: 1, world: [...m.world] };
@@ -728,7 +728,7 @@ test('a painted sheet with an unpainted twin on top of it is reported', () => {
   // candidate plate and recommended the one scoring 69% visible and 100% on the
   // mesh. Both true. Painting it put a black rectangle across the door, because
   // the car carries FOUR number plate sets at once and each has an emissive
-  // duplicate at identical coordinates — paint the colour sheet and the
+  // duplicate at identical coordinates — paint the color sheet and the
   // unpainted emissive one draws the car's own artwork over the top.
   //
   // Every other check here asks about a rectangle in a texture. This one cannot
@@ -849,7 +849,7 @@ test('the back of a panel is not a twin', () => {
   // box to within a percent, because they are the two sides of one panel — and
   // not a problem, since you cannot see both at once.
   //
-  // A colour sheet and its emissive twin face the SAME way, being one surface
+  // A color sheet and its emissive twin face the SAME way, being one surface
   // drawn twice. An inner shell faces the other way. Structural, not tuned.
   const base = plane({ rows: 4, cols: 4 });
   const m = base.meshes[0];
@@ -1167,7 +1167,7 @@ test('find_space reports a clearance the fine grid holds, even where the coarse 
   // below says so outright, over a car with a 40 mm plate standing 5 mm off
   // the paint at 1.2 m across. The spots are 300 mm wide and nothing bounds
   // them but the panel's edges, so the cells alone gave them a clearance of
-  // hundreds of millimetres, straight through the plate: returned as
+  // hundreds of millimeters, straight through the plate: returned as
   // marginMm, then written as minMargin, that failed. Held to the fine grid
   // instead, it fell back to the margin asked for, which was none, and a
   // spot with a good deal of room reported zero.
@@ -1240,7 +1240,7 @@ test('a number in a roundel over a name is laid out to clear the letter floors, 
   const lay = (prof, over = {}) => groupLayout({ profile: prof, model, prepared, role: 'body', panel: 'L',
     number: '85', name: 'NEON DOLL RACING', marginMm: 30, cellMm: 100, ...over });
   const withPanel = (extra) => ({ ...profile, panels: { body: { L: { ...profile.panels.body.L, ...extra } } } });
-  // The returned regions as a design would use them: ids, colours, nothing moved.
+  // The returned regions as a design would use them: ids, colors, nothing moved.
   const asDesign = (l) => ({ ...design([
     { id: 'roundel', ...l.regions.roundel, color: 'white' },
     { id: 'number', ...l.regions.number, color: 'ink' },
@@ -1566,10 +1566,10 @@ test('a disc dipping into the top of a name is found, however little their boxes
   assert.deepEqual(found(0.52), [], 'the same name clear of the disc');
 });
 
-test('lettering too close in colour to what is under it is measured, not left to the critic', () => {
+test('lettering too close in color to what is under it is measured, not left to the critic', () => {
   // Round one of three runs in a row failed on the team name for this alone:
   // white on Gulf blue, then thin orange on Gulf blue, each found a whole round
-  // later by looking at a picture. The design knows both colours.
+  // later by looking at a picture. The design knows both colors.
   const gulf = { blue: '#7BB3D9', orange: '#F26522', white: '#FFFFFF', navy: '#0E2233', pale: '#BFE3F5', black: '#000000' };
   const low = (regions) => fitment({ ...design(regions), palette: gulf }, profile)
     .findings.filter((f) => f.kind === 'low-contrast');
@@ -1587,7 +1587,7 @@ test('lettering too close in colour to what is under it is measured, not left to
   const band = { id: 'band', treatment: 'fill', panel: 'L', at: [0.15, 0.55, 0.7, 0.2], color: 'orange' };
   assert.deepEqual(low([base, band, name('black')]), [], 'black on an orange band behind it reads');
   assert.match(low([base, band, name('white')])[0]?.why ?? '', /white on orange \(band\): a contrast of 3\.\d:1/);
-  // A fill that names no colour wears the core treatment's own pink.
+  // A fill that names no color wears the core treatment's own pink.
   const onDefault = low([{ id: 'plain', treatment: 'fill' }, name('white')]);
   assert.equal(onDefault.length, 1, 'white on the pink a fill wears by default');
   assert.match(onDefault[0].why, /white on pink/);
@@ -1689,7 +1689,7 @@ test('a size the profile cannot measure is marked as the profile\'s, and text wi
   assert.deepEqual(fitment(design([driver]), profile).unsupported, [], 'and a panel with a scale leaves nothing to excuse');
 });
 
-test('contrast is measured whatever the palette calls a colour, and on the background the renderer paints', () => {
+test('contrast is measured whatever the palette calls a color, and on the background the renderer paints', () => {
   // Only `#rrggbb` was read, so `#fff` or `steelblue` switched the check off
   // without a word; and a surface with no background was skipped, while the
   // renderer paints black there.
@@ -1702,7 +1702,7 @@ test('contrast is measured whatever the palette calls a colour, and on the backg
   assert.equal(navy.length, 1, 'navy on the black the renderer paints');
   assert.match(navy[0].why, /navy on black/);
   assert.equal(low({ blue: '#7BB3D9', white: '#fff' }, [base, name('white')]).length, 1, '#fff on Gulf blue');
-  assert.equal(low({ blue: 'lightsteelblue' }, [base, name('white')]).length, 1, 'white on a colour named in CSS');
+  assert.equal(low({ blue: 'lightsteelblue' }, [base, name('white')]).length, 1, 'white on a color named in CSS');
   assert.deepEqual(low({ blue: '#7BB3D9', navy: 'navy' }, [base, name('navy')]), [], 'and a pair that reads still passes');
 });
 
@@ -1764,7 +1764,7 @@ const striped = [
   { name: 'wing', front: -1.65, back: -1.95, y0: 1.4, y1: 1.4, half: 0.7, uv: [0.3, 0.5, 0.075, 0.35] },
   { name: 'duct', front: 1.5, back: 1.4, y0: 0.75, y1: 0.75, half: 0.3, uv: [0.85, 0.02, 0.025, 0.15] },
   { name: 'duct-wall', front: 1.4, back: 1.3, y0: 0.75, y1: 0.99, half: 0.3, uv: [0.9, 0.02, Math.hypot(0.1, 0.24) / 4, 0.15] },
-  // A hatch in the roof, an island of its own set off the centreline and
+  // A hatch in the roof, an island of its own set off the centerline and
   // towards the back of it, as the NSX's is: from 40 to 440 mm left, so a
   // centred 300 mm stripe crosses 110 mm of it.
   { name: 'hatch', front: -0.1, back: -0.5, y0: 1.301, y1: 1.301, x0: 0.04, x1: 0.44, uv: [0.5, 0.35, 0.1, 0.1] },
@@ -1837,7 +1837,7 @@ test('pieces of a stripe that do not line up where they meet are high, in millim
   assert.deepEqual(found.map((f) => [f.kind, f.severity, f.ids]), [['stripe-offset', 'high', ['stripe-front', 'stripe-roof']]],
     JSON.stringify(found));
   assert.ok(found[0].mm > 30 && found[0].mm < 45, `each edge is 37.5 mm in; measured ${found[0].mm}`);
-  assert.match(found[0].why, /stripe-front ends 29\d mm wide on bonnet, from 1\d\d mm right of the centreline to 1\d\d mm left of the centreline, and stripe-roof begins 2[12]\d mm wide on roof, with its left edge 3\d mm further right and its right edge 3\d mm further left/);
+  assert.match(found[0].why, /stripe-front ends 29\d mm wide on bonnet, from 1\d\d mm right of the centerline to 1\d\d mm left of the centerline, and stripe-roof begins 2[12]\d mm wide on roof, with its left edge 3\d mm further right and its right edge 3\d mm further left/);
 
   // Sized to the same 300 mm on the car, they meet.
   assert.deepEqual(offsets([piece('stripe-front', 'bonnet', [0, 0.40625, 1, 0.1875]),
@@ -1872,7 +1872,7 @@ test('a stripe along the car runs nose to tail and over the wing, and is not hel
   const notch = gaps([front, roof, bridge, deck, wing]);
   assert.deepEqual(notch.map((f) => [f.severity, f.panel]), [['high', 'hatch']], JSON.stringify(notch));
   assert.ok(near(notch[0].from, 2100) && near(notch[0].to, 2500) && notch[0].mm >= 80 && notch[0].mm <= 120, JSON.stringify(notch[0]));
-  assert.match(notch[0].why, /hatch lies inside the stripe "centre" from \d+ to \d+ mm behind the nose, carrying \d+ mm of its \d+ mm width there, and the stripe does not paint it: a notch of the base colour in the stripe where it crosses roof/);
+  assert.match(notch[0].why, /hatch lies inside the stripe "centre" from \d+ to \d+ mm behind the nose, carrying \d+ mm of its \d+ mm width there, and the stripe does not paint it: a notch of the base color in the stripe where it crosses roof/);
 
   // The slope from the roof to the deck left bare, and the wing: each a
   // stretch of its own, high, placed from the nose and named by its panel.
@@ -1930,7 +1930,7 @@ test('find_space lays a stripe out along the car: a piece on every panel the ban
   assert.deepEqual(got.findings, [], 'fitment finds nothing wrong with the stripe as returned');
   assert.deepEqual(stripeFindings(got.regions), [], 'and neither does a design that uses it');
 
-  // Off the centreline, the same band on each panel moves with it: 200 mm
+  // Off the centerline, the same band on each panel moves with it: 200 mm
   // wide at 300 mm left is the hatch's middle half.
   const off = stripeLayout({ profile: stripedProfile, model: stripedModel, role: 'body', widthMm: 200, offsetMm: 300, name: 'side' });
   const onHatch = off.regions.find((r) => r.panel === 'hatch');
@@ -1940,7 +1940,7 @@ test('find_space lays a stripe out along the car: a piece on every panel the ban
 });
 
 test('find_space lays a ground-effect kit out as the car\'s lowest panels all round, and leaves the door alone', async () => {
-  // A Gulf car's colours in profile are its orange splitter, skirts and
+  // A Gulf car's colors in profile are its orange splitter, skirts and
   // diffuser; its centre stripe runs over the top, where a side view barely
   // sees it. The kit is the car's own lowest panels, not a band at one
   // height: on the NSX a band fitted the sill 56 mm off a straight line and

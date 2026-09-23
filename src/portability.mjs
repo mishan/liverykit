@@ -179,7 +179,7 @@ function hasPanel(profile, role, name) {
   try {
     return !!findPanel(profile, role, name);
   } catch {
-    // `panel()` throws with the known-names list, which is the right behaviour
+    // `panel()` throws with the known-names list, which is the right behavior
     // for a build and the wrong one for a survey: the whole job here is to keep
     // going and report every region, not to stop at the first that does not fit.
     return false;

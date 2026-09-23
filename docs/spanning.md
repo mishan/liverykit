@@ -22,15 +22,15 @@ car, two sets of texture coordinates. That is the correspondence, and it is in
 the model already.
 
 For every adjacent pair, `findSeams` fits a map from one island's sheet to the
-other's. Fitted in **metres**, not fractions: each island's `metresPerUv` turns
+other's. Fitted in **meters**, not fractions: each island's `metresPerUv` turns
 its sheet into a scale drawing of itself, and between two scale drawings that
 meet along an edge the relationship is rigid — a rotation and a shift, and a
 reflection where the unwrapper flipped one. A general affine was tempting and
 wrong. A seam is a line, and a line of points cannot say what happens away
-from the line; rigid is what "unfold the neighbour flat against this panel"
+from the line; rigid is what "unfold the neighbor flat against this panel"
 means, and two points determine it.
 
-The one thing a line genuinely cannot tell is which *side* the neighbour
+The one thing a line genuinely cannot tell is which *side* the neighbor
 continues on: a rotation and a reflection across the seam fit collinear points
 equally well, and on a four-point seam the residuals tie by noise. The first
 version let the residuals decide and got the NSX's quarter reflected against
@@ -55,7 +55,7 @@ Each seam is written into the profile on both islands:
 }
 ```
 
-`matrix` takes this island's fractions to the neighbour's, in SVG order.
+`matrix` takes this island's fractions to the neighbor's, in SVG order.
 `here` is the seam as a polyline through the shared points, in this sheet —
 where the seam is. A line and not a box, because the front clip meets the
 roof along the windscreen base and down both A-pillars, an L whose box is
@@ -67,7 +67,7 @@ points miss under it: near zero for a crease, larger where the seam curves and
 `outline` is the island's boundary polygon, simplified. It exists because a
 panel's `rect` is a bounding box and islands are not boxes: unwrappers pack a
 small island into the concave corner of a big one, and artwork clipped to the
-box paints texels that belong to the neighbour. Only islands with seams carry
+box paints texels that belong to the neighbor. Only islands with seams carry
 one; a profile is long enough.
 
 ## What a design says
@@ -104,7 +104,7 @@ copy but the home to the wrong place.
 
 The rule is easy to state and took three tries to get right:
 
-**A neighbour is reached when the part of the region on the panel it is
+**A neighbor is reached when the part of the region on the panel it is
 leaving contains at least 3 cm of the seam to it.**
 
 "The part on the panel" is the region's mapped quad clipped to the panel, as
@@ -112,18 +112,18 @@ a polygon. Boxes were tried first and a band mapped through a seam at -17
 degrees is a parallelogram whose bounding box is mostly not band; tested as a
 box it crossed seams it never touched and reached the roof from the door.
 
-*Not* "when the unfolded rectangle overlaps the neighbour's box". A band on
+*Not* "when the unfolded rectangle overlaps the neighbor's box". A band on
 the NSX's door reached the bonnet that way: the door touches the bonnet at one
 corner, and unfolding the whole door across that corner laid the band over the
 bonnet's sheet. It never crossed the seam.
 
 *Not* "when the region crosses the seam", either, testing the whole unfolded
 band. That let an 8 cm spill onto the fender strip carry the band's other
-three metres across every seam the strip has. Only the piece that is on the
+three meters across every seam the strip has. Only the piece that is on the
 current panel can cross out of it.
 
 The 3 cm floor (`minCross`) is measured along the seam itself, so a corner
-where three islands meet — the door and the rear quarter share a centimetre
+where three islands meet — the door and the rear quarter share a centimeter
 and a half — cannot clear it however the region sits on it. Without the
 floor, a band reached the quarter through that corner, at the corner's angle.
 

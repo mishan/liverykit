@@ -11,7 +11,7 @@
 // a labelled Skin_soft that no skin overrides and that is 0.1% visible. The
 // classifier is right there and the label is wrong.
 //
-// It scores `tyres` and `brakes` the same way, and prints the body's
+// It scores `tires` and `brakes` the same way, and prints the body's
 // CONFIDENCE TABLE: the proposals it was least sure of, and the highest
 // confidence at which one was wrong. That table is where the portability
 // plan's step 3 looked for a floor below which an automatic binding should not
@@ -47,8 +47,8 @@ const TERM_LABELS = {
 };
 
 // "Binds every labelled texture" cannot see a binding that holds too much:
-// the Civic's tyres bind its brake disc, which the author drew with ksTyres,
-// and still count as right. Nothing measured tells that disc from a tyre, so
+// the Civic's tires bind its brake disc, which the author drew with ksTyres,
+// and still count as right. Nothing measured tells that disc from a tire, so
 // it is reported below rather than excluded. Only the body's and these terms'
 // labels are read.
 const labelledAs = (f) => [

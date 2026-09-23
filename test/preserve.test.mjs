@@ -28,14 +28,14 @@ const wheels = () => [
 
 test('a name describes a place on the car, not a place on its own texture', () => {
   // THE BUG: names were normalised against the extent of the other islands on
-  // the SAME TEXTURE. A tyre sheet holds four wheels, so the front pair became
+  // the SAME TEXTURE. A tire sheet holds four wheels, so the front pair became
   // `*_nose` and the rear pair `*_tail` — the frontmost thing on the sheet is
   // called the nose of the car whatever it is and wherever it sits. On one
   // profile this made 239 of 416 names wrong, including every single name on
   // `interior`, `belts` and `steeringWheel`.
   const alone = nameIslands(wheels(), AXES).map((i) => i.name);
   assert.deepEqual(alone, ['left_nose', 'right_nose', 'left_tail', 'right_tail'],
-    'this is the old behaviour, kept as the fallback when no car bounds are known');
+    'this is the old behavior, kept as the fallback when no car bounds are known');
 
   // Told how long the car actually is, the front wheels stop being its nose.
   const onCar = nameIslands(wheels(), AXES, { zMin: -2.2, zMax: 2.1, halfWidth: 0.85 })
@@ -292,7 +292,7 @@ test("a texture's hand-written note survives the regeneration it was written to 
 
 test("a texture's note follows its file when the generated role name is reused", () => {
   // Numbered roles are handed out afresh on every run, so `tyres_2` can be a
-  // different texture next time. Carried by role name, the tyre's note stayed
+  // different texture next time. Carried by role name, the tire's note stayed
   // on `tyres_2` and so landed on the brake duct that now wears the name.
   const prior = { textures: {
     tyres_2: { file: 'Tyre_Old.dds', width: 512, height: 512, notes: 'sidewall is mirrored; paint the left one' },
@@ -586,7 +586,7 @@ test('nothing carried across is shared with the profile it came from', () => {
   assert.equal(prior.leaveStock[0].file, 'Mirror.DDS');
 });
 
-test('every shipped profile has a name a person would recognise', async () => {
+test('every shipped profile has a name a person would recognize', async () => {
   // The regression this guards is not a crash. `name ?? id` is the fallback
   // everywhere, so an empty name just means the tool starts calling the car
   // `rss_formula_rss_4` — and the profile ships that way, because nothing looks.

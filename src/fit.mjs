@@ -14,13 +14,13 @@
 //     de-genericises the thing the vocabulary exists to keep generic, and grows
 //     without limit — one block per car anyone ever runs it on
 //   * not to the car profile, which is shared by everyone who owns that car and
-//     should stay as free of one design's opinions as it is of its colours
+//     should stay as free of one design's opinions as it is of its colors
 //
 // It is a property of the (design, car) PAIR, so it is a third artefact:
 //
 //   fits/neon-grid-any@abarth500.json
 //
-// Overrides only, never a copy of the region. Treatment, colours and glow stay
+// Overrides only, never a copy of the region. Treatment, colors and glow stay
 // in the design, because that is the design. A car with no fit renders exactly
 // as it would have; nothing here is mandatory.
 //
@@ -80,7 +80,7 @@ export function checkFitIdentity(f, { livery, car, source = '<inline>' }) {
  *
  * Deliberately short. `at`, `rotate` and `scale` move and turn artwork; `panel`
  * overrides which panel the tags chose. Everything absent from this list — the
- * treatment, the colours, the lane counts — is the design's business, and a fit
+ * treatment, the colors, the lane counts — is the design's business, and a fit
  * that could reach it would slowly become a second livery language.
  *
  * A fit also cannot ADD a region. Wanting to is a good sign the design needs the
@@ -197,7 +197,7 @@ export function copiesOf(fit) {
  *
  * The one rule for every path that draws or measures regions — the build, the
  * editor, fitment, the in-view count — so what is checked is what ships. `once`
- * was honoured by the build alone, and the editor and fitment drew it on every
+ * was honored by the build alone, and the editor and fitment drew it on every
  * texture.
  */
 export function drawnOn(region, role, primary = true) {
@@ -329,7 +329,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   // about the tension. The rule above says a fit cannot ADD a region, because
   // wanting to usually means the DESIGN needs the change. A mirrored copy is
   // the exception that proves it rather than breaking it: it invents no
-  // artwork. Treatment, colours, glow, text all come from the region it names,
+  // artwork. Treatment, colors, glow, text all come from the region it names,
   // and the only new information is a placement — which is exactly what a fit
   // is for.
   //
@@ -449,13 +449,13 @@ export function toPanelRelative(panelRect, abs) {
 //
 // So the direction is measured too. Each panel records `uAxis` and `vAxis`: the
 // world directions +u and +v travel in. Reflect one panel's axis through the
-// centreline and compare it with the other's — agreement means the coordinate
+// centerline and compare it with the other's — agreement means the coordinate
 // runs the same way, disagreement means it is reversed.
 // ---------------------------------------------------------------------------
 
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/** Reflect through the centreline. Left and right differ only in x. */
+/** Reflect through the centerline. Left and right differ only in x. */
 const reflect = (v) => [-v[0], v[1], v[2]];
 
 /**
@@ -463,7 +463,7 @@ const reflect = (v) => [-v[0], v[1], v[2]];
  *
  * A panel with no measured axes — hand-written, or from a profile built before
  * this was recorded — reports no flip rather than a guess. That is exactly the
- * old behaviour: right about as often as it is wrong, but no worse than what
+ * old behavior: right about as often as it is wrong, but no worse than what
  * was there before, and it degrades quietly rather than inventing a direction.
  */
 export function mirrorFlips(a, b) {
@@ -478,7 +478,7 @@ export function mirrorFlips(a, b) {
 /**
  * Mirroring WITHIN one panel, for a panel that has no twin.
  *
- * A nose, an engine cover, a rear wing: these straddle the centreline, so they
+ * A nose, an engine cover, a rear wing: these straddle the centerline, so they
  * are their own mirror and `mirrorOf` is rightly absent. Dragging one half of a
  * pair onto such a panel used to have no good answer — leaving the other half
  * behind splits an idea the design said was one, and unlinking silently decides
@@ -486,7 +486,7 @@ export function mirrorFlips(a, b) {
  * within it, which is what a real car does with two numbers on a nose.
  *
  * Which axis to reverse is measured rather than assumed: whichever of the
- * panel's own axes runs most nearly across the car is the one the centreline
+ * panel's own axes runs most nearly across the car is the one the centerline
  * cuts. An island rotated in the unwrap has that role fall to `v`, and guessing
  * `u` would mirror it top to bottom instead of side to side.
  */

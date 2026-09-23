@@ -2,7 +2,7 @@
 // The shapes a placement can be.
 //
 // A rectangle stops being a rectangle the moment it crosses a seam: the map to
-// the neighbouring island is a rotation, so the piece that lands over there is
+// the neighboring island is a rotation, so the piece that lands over there is
 // a parallelogram, and its bounding box is roughly twice its area. Everything
 // that measured the box — overlap, safe area, legibility, coverage — was
 // answering about a shape the design does not paint.

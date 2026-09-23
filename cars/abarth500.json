@@ -85,6 +85,7 @@
     "method": "kn5",
     "source": "abarth500.kn5",
     "date": "2026-09-05",
+    "uvSet": 0,
     "axes": {
       "left": "+X",
       "front": "+Z",
@@ -576,14 +577,14 @@
   "doNotPaint": [
     {
       "file": "RearLight_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Gomma_Base_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -611,28 +612,28 @@
     },
     {
       "file": "Rim500_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Rim500_BLUR_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "BrakeClaw_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "flat_nm.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal",
         "txNormalBlur"
@@ -654,14 +655,14 @@
     },
     {
       "file": "NORMAL MAP DAMAGE_TEMP.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "500_fiat_Color_Skin_map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -696,84 +697,84 @@
     },
     {
       "file": "Grid_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "FrontLight_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "FrontLight_map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "Loghi_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Loghi-map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "DAMAGE_GLASS.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Pedali_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "LOGO_Airbag_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Skin_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Skin_Volante_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Logo_Volante_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Logo_Volante_SPEC.DDS",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -788,70 +789,70 @@
     },
     {
       "file": "NM_Audio_normal.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "LOGO_Cambio_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Shift_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "cuciture_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Pedana_normal.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Leva_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Seat_Strip_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Tappetino_normal.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "LOGO_500_NM.DDS",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Plate_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]

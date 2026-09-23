@@ -269,7 +269,7 @@ async function toolReport(client) {
  *
  * Shaped so the worst news is impossible to skim past. An agent handed a flat
  * list will read the first few entries and act; the counts and the `verdict`
- * line are there so that "nine low findings and one high" cannot be summarised
+ * line are there so that "nine low findings and one high" cannot be summarized
  * as "some minor findings", and so that a run which skipped the geometry checks
  * cannot be reported as a clean one.
  *
@@ -553,7 +553,7 @@ export function createToolHandler(client) {
           stripe: {
             type: 'object',
             description: 'Instead of a size: lay out a stripe along the car, nose to tail, as a band of the given ' +
-              'width at a given distance from the centreline, and return the regions ready to use: one for every ' +
+              'width at a given distance from the centerline, and return the regions ready to use: one for every ' +
               'panel of this sheet the band crosses seen from above (bonnet, roof, a hatch set into it, engine ' +
               'cover, deck, the top of the rear wing), each with the "at" that puts the band in the same place ' +
               'on that panel and the stripe constraint that holds the pieces together, and what check_fitment ' +
@@ -562,7 +562,7 @@ export function createToolHandler(client) {
               'any panel of the sheet the stripe is painted on.',
             properties: {
               widthMm: { type: 'number', description: 'The stripe\'s width on the car, in mm. Left out, it is sized to the car\'s bodywork: a third of its width, 450 mm at most, which the answer says' },
-              offsetMm: { type: 'number', description: 'Its centre\'s distance from the car\'s centreline, in mm, left positive (default 0)' },
+              offsetMm: { type: 'number', description: 'Its centre\'s distance from the car\'s centerline, in mm, left positive (default 0)' },
               name: { type: 'string', description: 'The stripe\'s name, for its ids and its constraint (default "centre")' },
             },
             required: [],
@@ -729,7 +729,7 @@ export function createToolHandler(client) {
             args.view ?? 'left', args.width, args.height, draftOf(args));
           const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
           // Named, not silently absent. Transparent surfaces with no artwork —
-          // glass, emissive masks — are left out rather than drawn as grey
+          // glass, emissive masks — are left out rather than drawn as gray
           // slabs, and a caller reading the picture should know that a part of
           // the car is missing on purpose.
           if (skipped) {
@@ -740,7 +740,7 @@ export function createToolHandler(client) {
           }
           // The other half of the same honesty. The car's own textures are what
           // the unpainted parts wear here; a model that cannot give one up
-          // leaves that part bare grey, which otherwise reads as a design that
+          // leaves that part bare gray, which otherwise reads as a design that
           // paints nothing there.
           if (absent) {
             content.push({ type: 'text', text:

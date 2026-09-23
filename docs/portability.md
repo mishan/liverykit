@@ -24,7 +24,7 @@ Reproduce with `node tools/survey.mjs <carsDir>`.
 
 Across 42 cars the generated role names produced **566 distinct names, 445 of
 which appear on exactly one car**. The median car has 32 paintable textures and
-shares almost none of its vocabulary with its neighbours.
+shares almost none of its vocabulary with its neighbors.
 
 A role called `body` exists on **16 of 42** cars — five of the six vintage cars,
 none of the five prototypes. The rest call the same surface `skin_00`, `skin.dds`,
@@ -63,7 +63,7 @@ because a cockpit is the densest geometry on a car — dials, switches, stitchin
 and bodywork is among the sparsest. It agreed with the skin-override signal on
 **3 of 41** cars.
 
-**Surface area.** Better, and the correct unit: a livery covers square metres,
+**Surface area.** Better, and the correct unit: a livery covers square meters,
 not vertices. But taken alone it selects engine bays, undertrays and cockpit
 occlusion maps, which really are the largest surfaces on a racing car. `engine_d`
 is 28% of a BAC Mono; `EXT_Engine_Bottom` is 28% of a 488 GT3.
@@ -76,11 +76,11 @@ vary per livery"; area says "and it is the big surface, not a 32×32 tint swatch
 
 That rule finds the right body texture on about two thirds of the sample, and
 where it fails it fails visibly rather than silently — the residue is a specific,
-identifiable group: road cars whose stock skins are factory colour options that
-ship *no* body texture at all. The Miata's eight colour variants each contain
+identifiable group: road cars whose stock skins are factory color options that
+ship *no* body texture at all. The Miata's eight color variants each contain
 four files, none of them bodywork. Those cars still have a paintable
 `Skin_00.dds` in the model covering 15% of the car; Kunos simply didn't use it
-for the factory colours. A livery can paint it. The heuristic just can't confirm
+for the factory colors. A livery can paint it. The heuristic just can't confirm
 it from the skins, because there is nothing there to confirm.
 
 ## Where this leaves the design

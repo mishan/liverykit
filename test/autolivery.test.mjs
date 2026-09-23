@@ -908,7 +908,7 @@ test('the local critic is held to the schema, and a verdict that is not one is r
     await assert.rejects(ask(), /not JSON/);
     // "false" is truthy. A gate that took it would pass a round the critic failed.
     await assert.rejects(ask(), /number_legible/);
-    // A server need not honour response_format: a requirement ticked with no
+    // A server need not honor response_format: a requirement ticked with no
     // "where" is a critic that did not say where it saw it.
     await assert.rejects(ask(), /requirements/);
     // Nor a cut-off piece with no id: the gate holds those against the count
@@ -1302,7 +1302,7 @@ test('text on a panel the profile cannot measure can pass, and is said to be unm
         if (n === 1) {
           const [left, right] = [await side('left'), await side('right')];
           await call('draft_design', { design: [
-            // Black: a name on the grey primer needs 6:1, and near-black is 5.7.
+            // Black: a name on the gray primer needs 6:1, and near-black is 5.7.
             { op: 'set-palette', name: 'ink', value: '#000000' },
             { op: 'set-identity', key: 'driver', value: 'Ada Vance' },
             { op: 'add-region', surface: 'surfaces.body', region: {

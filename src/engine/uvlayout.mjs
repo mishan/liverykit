@@ -49,7 +49,7 @@ export const TILED_BELOW = 0.5;
  *
  * `inside` is the fraction of the meshes' SURFACE AREA on islands no wider or
  * taller than SHEET_SPAN (see kn5.mjs). Area rather than triangle count, because a livery
- * covers square metres. `tile` is the whole-number copy of the sheet holding
+ * covers square meters. `tile` is the whole-number copy of the sheet holding
  * most of the surface, as the model stores it — `[0, 0]` for an unwrap where it
  * belongs — which is what a profile's `uvTile` records.
  */
