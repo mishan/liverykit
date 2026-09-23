@@ -8,7 +8,7 @@ identifying the surface, not changing the code.
 Open entries come first, ordered roughly by how much they cost the person
 looking at the preview. What has been dealt with is summarized under
 [Done](#done), a paragraph each — kept for the symptom, which is what the next
-person will recognise, and for the measurement, which in several cases is
+person will recognize, and for the measurement, which in several cases is
 recorded nowhere else. This is a backlog, not a history of itself.
 
 **The shape of what is left.** Nearly all of it is one mistake: *the model
