@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Point one design at many cars and record what it would do on each.
 //
-// docs/backlog.md opens with a sweep of this kind: neon-grid-any against 26
-// cars nobody had profiled, and a table of what went wrong. It was first done
+// docs/backlog.md records a sweep of this kind, under Done: neon-grid-any
+// against 26 cars nobody had profiled, and a table of what went wrong. It was first done
 // by hand, over 25 of them, so its numbers could be quoted and never re-run,
 // and every fix in docs/portability-plan.md is supposed to move one of them.
 // This is that sweep as a script: the same questions, asked the same way each
