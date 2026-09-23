@@ -121,6 +121,7 @@
     "method": "kn5",
     "source": "rss_formula_rss_4.kn5",
     "date": "2026-09-05",
+    "uvSet": 0,
     "axes": {
       "left": "+X",
       "front": "+Z",

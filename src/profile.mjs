@@ -79,7 +79,47 @@ export function validateProfile(p, source = '<inline>') {
     }
   }
 
+  checkUvSet(p, err);
+
   return p;
+}
+
+/**
+ * WHICH UV SET the panels in this profile were measured from.
+ *
+ * Every rect, safe area, anisotropy, mirror pair and seam in a profile is a
+ * statement about one UV layout, and a mesh may carry more than one. A kn5
+ * does not — `vertex` reads the single UV a kn5 vertex stores — so on every
+ * profile this project can generate today the answer is 0, and recording it
+ * costs one field.
+ *
+ * It is recorded because the day it is not 0 is a day nothing else would
+ * notice. Other formats reserve the second set for exactly the thing this
+ * project measures: a BeamNG vehicle puts its mechanical unwrap on UV0,
+ * mirrored to save sheet space, and its PAINT unwrap on UV1, unmirrored
+ * because a paint scheme cannot be mirrored. Measured off UV0, such a car
+ * still profiles — islands, panels, visibility, mirror pairs, all of it —
+ * and every number describes a layout no livery is ever drawn on. Nothing
+ * would throw, no render would look broken, and the profile would be wrong
+ * in a way only a person comparing it to the car could see.
+ *
+ * So a profile states the set, and a loader that cannot deliver it refuses.
+ * Profile-wide rather than per-texture because that is what is true of every
+ * format read so far; a format that mixes sets across its textures wants this
+ * on the texture instead, and this is the check that will say so.
+ */
+function checkUvSet(p, err) {
+  const set = p.calibration?.uvSet;
+  if (set === undefined) return;        // generated before the field existed
+  if (!Number.isInteger(set) || set < 0) {
+    err(`calibration.uvSet must be a non-negative integer, got ${JSON.stringify(set)}`);
+  }
+  if (set !== 0) {
+    err(`calibration.uvSet is ${set}, and nothing here can read a second UV set yet — ` +
+        'the kn5 reader has exactly one per vertex. A profile measured from another ' +
+        'set would describe a UV layout this build cannot reproduce, so it is refused ' +
+        'rather than resolved against the wrong one.');
+  }
 }
 
 // Checked here rather than left to the tagger, which reads a panel with no

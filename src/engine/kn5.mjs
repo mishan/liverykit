@@ -436,6 +436,10 @@ export function vertex(model, mesh, i) {
     z: x * m[2] + y * m[6] + z * m[10] + m[14],
     nx: rx / rl, ny: ry / rl, nz: rz / rl,
     tx, ty, tz,
+    // THE ONLY UV SET a kn5 vertex has, which profiles record as
+    // `calibration.uvSet: 0` — a format carrying two puts paint on the second,
+    // and a profile measured from the wrong one is wrong silently.
+    //
     // On the copy of the sheet in [0, 1], for an island stored on another one:
     // see placeOnSheet. A mesh with nothing to move has no `uvShift` and reads
     // exactly as stored.

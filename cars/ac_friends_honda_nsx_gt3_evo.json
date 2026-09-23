@@ -64,6 +64,7 @@
     "method": "kn5",
     "source": "honda_nsx_gt3_evo_endurance_acc.kn5",
     "date": "2026-08-23",
+    "uvSet": 0,
     "axes": {
       "left": "+X",
       "front": "+Z",
