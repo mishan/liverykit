@@ -31,7 +31,7 @@ If you don't have the model, `--uvgrid` calibration still works; see
 `"confidence": "measured"`, which is a real claim. Anything you fill in by hand
 should say `"estimated"` and mean it. A profile that admits which panels are
 guesses is far more useful than one that pretends they're all measured, because
-the next person knows where to be careful and where to just use a flat colour.
+the next person knows where to be careful and where to just use a flat color.
 
 **`safe` and `anisotropy` are derived for you** when the profile comes from a
 model, so leave them alone unless you're working from screenshots. If you are,

@@ -79,7 +79,47 @@ export function validateProfile(p, source = '<inline>') {
     }
   }
 
+  checkUvSet(p, err);
+
   return p;
+}
+
+/**
+ * WHICH UV SET the panels in this profile were measured from.
+ *
+ * Every rect, safe area, anisotropy, mirror pair and seam in a profile is a
+ * statement about one UV layout, and a mesh may carry more than one. A kn5
+ * does not — `vertex` reads the single UV a kn5 vertex stores — so on every
+ * profile this project can generate today the answer is 0, and recording it
+ * costs one field.
+ *
+ * It is recorded because the day it is not 0 is a day nothing else would
+ * notice. Other formats reserve the second set for exactly the thing this
+ * project measures: a BeamNG vehicle puts its mechanical unwrap on UV0,
+ * mirrored to save sheet space, and its PAINT unwrap on UV1, unmirrored
+ * because a paint scheme cannot be mirrored. Measured off UV0, such a car
+ * still profiles — islands, panels, visibility, mirror pairs, all of it —
+ * and every number describes a layout no livery is ever drawn on. Nothing
+ * would throw, no render would look broken, and the profile would be wrong
+ * in a way only a person comparing it to the car could see.
+ *
+ * So a profile states the set, and a loader that cannot deliver it refuses.
+ * Profile-wide rather than per-texture because that is what is true of every
+ * format read so far; a format that mixes sets across its textures wants this
+ * on the texture instead, and this is the check that will say so.
+ */
+function checkUvSet(p, err) {
+  const set = p.calibration?.uvSet;
+  if (set === undefined) return;        // generated before the field existed
+  if (!Number.isInteger(set) || set < 0) {
+    err(`calibration.uvSet must be a non-negative integer, got ${JSON.stringify(set)}`);
+  }
+  if (set !== 0) {
+    err(`calibration.uvSet is ${set}, and nothing here can read a second UV set yet — ` +
+        'the kn5 reader has exactly one per vertex. A profile measured from another ' +
+        'set would describe a UV layout this build cannot reproduce, so it is refused ' +
+        'rather than resolved against the wrong one.');
+  }
 }
 
 // Checked here rather than left to the tagger, which reads a panel with no
@@ -360,7 +400,7 @@ export function resolveTargets(profile, livery) {
         text: `${t.from} -> ${tex.file}: the car's own config hides every mesh wearing it, so this paints nothing the game shows`,
       });
     }
-    // Painted, with a caveat, rather than not painted: a flat colour or an even
+    // Painted, with a caveat, rather than not painted: a flat color or an even
     // pattern on a tiled material is a perfectly good livery. What cannot land
     // is anything placed, and each such region is reported where it is skipped.
     if (tex?.uvLayout === 'tiled') {
@@ -387,7 +427,7 @@ function checkRect(r, what, err, { loose = false } = {}) {
   if (!Array.isArray(r) || r.length !== 4) err(`${what} must be [x, y, w, h]`);
   if (r.some((n) => typeof n !== 'number' || !Number.isFinite(n))) err(`${what} must be numbers, got [${r}]`);
   // A spanning region is ALLOWED past its panel's edge: that is the point of
-  // it, and the part past the edge is what continues onto the neighbour.
+  // it, and the part past the edge is what continues onto the neighbor.
   if (loose) {
     if (r[2] <= 0 || r[3] <= 0) err(`${what} must have positive width and height, got [${r}]`);
     return;
@@ -807,7 +847,7 @@ export function expandRegions(profile, role, regions = []) {
  * shouldn't.
  */
 /**
- * How big a resolved rectangle is on the actual car, in metres.
+ * How big a resolved rectangle is on the actual car, in meters.
  *
  * Takes what `resolveRect` returned, because the panel it landed on is what
  * carries the measurement. Answers `null` rather than a guess when the profile
@@ -827,7 +867,7 @@ export function metresAcross(frac) {
 }
 
 /**
- * The narrowest a placement is on the car, in metres — the number legibility
+ * The narrowest a placement is on the car, in meters — the number legibility
  * turns on.
  *
  * The short side of the box, until a placement stopped being a box. A region
@@ -845,7 +885,7 @@ export function metresNarrowest(frac) {
 }
 
 /**
- * A fill that covers its whole panel: a colour field, never artwork meant to
+ * A fill that covers its whole panel: a color field, never artwork meant to
  * be read, so it reaches the island's edge as `safe: false` says, whether or
  * not it says so. Run 26's planner copied a ground-effect kit out of
  * find_space and dropped the `safe: false` on every piece, and the diffuser's
@@ -908,9 +948,9 @@ export function doNotPaint(profile) {
 // rectangles, and a seam that never quite lined up.
 //
 // `span: true` lets a region's `at` run past its panel's edge. The part past
-// the edge is continued onto whichever neighbouring islands it reaches,
+// the edge is continued onto whichever neighboring islands it reaches,
 // through the SEAM MAPS the profile measured — an affine from one island's
-// sheet to its neighbour's, fitted in metres from the vertices the two share
+// sheet to its neighbor's, fitted in meters from the vertices the two share
 // (see findSeams). The artwork is drawn once, in the home panel's frame, and
 // drawn again on each reached panel under that panel's map, clipped to it.
 //
@@ -947,24 +987,24 @@ function mappedQuad(m, r) {
 }
 
 /**
- * Where a spanning region lands: the home panel and every neighbour it
+ * Where a spanning region lands: the home panel and every neighbor it
  * reaches, each with the matrix that takes the home sheet's fractions to
  * that panel's, and the part of the mapped rectangle that lies on it.
  *
- * A neighbour is reached only when the part of the region ON the panel it
+ * A neighbor is reached only when the part of the region ON the panel it
  * is leaving crosses the seam to it — overlaps the seam's own box, by at
- * least `minCross` metres. Two mistakes are ruled out by that sentence, and
+ * least `minCross` meters. Two mistakes are ruled out by that sentence, and
  * both were made first. Asking only whether the unfolded rectangle overlapped
- * the neighbour's box let a band on the NSX's door reach the bonnet, which
+ * the neighbor's box let a band on the NSX's door reach the bonnet, which
  * the door touches at one corner the band never crosses. And testing the
  * WHOLE unfolded band for crossings, rather than the piece on the current
  * panel, let an 8 cm spill onto the fender strip carry the band's other
- * three metres across every seam the strip has.
+ * three meters across every seam the strip has.
  *
  * Panels are reached breadth-first — fewest seams wins, since every seam
  * crossed is an approximation — and among routes of equal length the one
  * crossing more seam. The door meets the rear quarter along a corner a
- * centimetre and a half across and the intake surround along its whole rear
+ * centimeter and a half across and the intake surround along its whole rear
  * edge; `minCross` is what sends a band through the surround.
  */
 export function spanPlacements(profile, role, homeName, home, { depth = 3, minCross = 0.03, notes = null } = {}) {
@@ -973,7 +1013,7 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
   const rect = { x: home.x, y: home.y, w: home.w, h: home.h };
   // A seam box is a line for a straight seam; pad it so a rectangle whose
   // edge sits exactly on it still counts as crossing.
-  // How much of the seam, in metres, lies inside the piece. The seam is a
+  // How much of the seam, in meters, lies inside the piece. The seam is a
   // polyline through the shared points; each segment is sampled and the
   // samples inside the piece (grown by a texel or two, so a rectangle whose
   // edge sits exactly on the seam still counts) are what crosses. Sampling
@@ -1055,7 +1095,7 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
         'would be silently clipped.\n' +
         '  If this profile was generated before seam maps existed, regenerate it ' +
         '(liverykit --from-kn5 <car.kn5>).\n' +
-        '  If it is current, this island has no measured neighbour: keep the region inside ' +
+        '  If it is current, this island has no measured neighbor: keep the region inside ' +
         'the panel, or drop span: true.'
       );
     }
@@ -1064,7 +1104,7 @@ export function spanPlacements(profile, role, homeName, home, { depth = 3, minCr
       status: 'clipped',
       text: `${role}.${start}: a spanning region runs past the panel's edge and this profile `
         + 'has no seam maps for it, so the artwork stops at the edge. Regenerate the profile '
-        + '(liverykit --from-kn5 <car.kn5>) to give the island its neighbours, or drop span: true.',
+        + '(liverykit --from-kn5 <car.kn5>) to give the island its neighbors, or drop span: true.',
     });
     return [{ panel: start, matrix: IDENTITY, on: polyBox(homePiece), hops: 0, crossed: Infinity, poly: homePiece }];
   }

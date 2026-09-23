@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// What a tyre island is, and how it was unwrapped.
+// What a tire island is, and how it was unwrapped.
 //
 // A sidewall is a disc. An unwrapper can lay it out as a DISC — polar about a
 // hub, the way a photograph of a wheel looks — or cut it once and roll it out
@@ -29,7 +29,7 @@ const WHEEL_REACH = 0.6;
  *
  *   part      'sidewall' (faces along the axle) or 'tread' (faces outward)
  *   unwrap    'strip' or 'annulus'
- *   radiusM   [rim, shoulder] distance from the axle, metres
+ *   radiusM   [rim, shoulder] distance from the axle, meters
  *   strip:    around 'u'|'v' — which coordinate runs round the circumference;
  *             rim 'u0'|'u1'|'v0'|'v1' — which edge of the panel is the rim;
  *             across [at rim, at shoulder] in that coordinate, sheet fractions

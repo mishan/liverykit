@@ -2,7 +2,7 @@
 
 ## The problem
 
-`docs/backlog.md` opens with a measurement: `neon-grid-any` resolved against 26
+`docs/backlog.md` records a measurement: `neon-grid-any` resolved against 26
 cars it had never seen, profiled from scratch with no hand-work. The format
 held, the fit machinery held, and the fitment checker reported nothing fatal.
 What did not hold was the part that decides *where* a portable design lands:
@@ -13,7 +13,7 @@ What did not hold was the part that decides *where* a portable design lands:
 | body bound to the right texture, whose islands were all dropped | 0; 2 (Avensis, RX3) before the shifted-sheet fix, and the 180SX's kept 2 panels |
 | body bound confidently to the wrong texture | 0; the Porsche 906 was, at 0.88, before the same fix, and now binds its paint at 0.79 |
 | an `auto` body proposal below 0.2 that is wrong | none; the three there are right, so no floor is set (step 3) |
-| `tyres` bound to one of a car's two tyre textures | 0; 11 of 176 labelled cars before step 3, which binds both |
+| `tires` bound to one of a car's two tire textures | 0; 11 of 176 labelled cars before step 3, which binds both |
 | `[left, visible]` or `[right, visible]` matched no panel | 0; 1 each, the mp412c, before step 2 |
 | a `[mid, upper, visible]` selection matched nothing on a car with a right body | 3 on the left, 2 on the right; 7 and 6 before tags read each panel's extent |
 | `[shared, visible]` matched no panel | 16, every one a car without instanced flanks; the rule is `optional` now, so these are expected (step 4) |
@@ -45,9 +45,11 @@ cheap and the classifier fix depends on it. The two classifier items come before
 the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
-*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 to 3
-are done — step 3 by measuring that its floor is not needed — and so are the
-shifted-sheet fix step 1 turned up and all of step 4; step 5 is not.*
+*Last checked against the code on 2026-09-22, at `1962647`. Every step is
+done — step 3 by measuring that its floor is not needed — along with the
+shifted-sheet fix step 1 turned up. That closes the roadmap's step 1. What each
+one established is recorded per step below, and in summary under Done in
+`docs/backlog.md`.*
 
 ## 0. A harness that re-runs the sweep
 
@@ -73,7 +75,7 @@ the checked-in profiles are part of the sweep too.
 
 **What it established.** Run on the engine as it stood when the backlog was
 written (`1562ef1`), the script reproduces the hand sweep's bindings exactly:
-20 confident bodies, 3 shaky, guesses at 0.11 and 0.19, tyres on 24 and brakes
+20 confident bodies, 3 shaky, guesses at 0.11 and 0.19, tires on 24 and brakes
 on 22. It differs in two places, both understood. It takes a lone
 `_LODA.kn5`, so `pm3dm_bmw_320i_stw` is swept and the sample is 26 cars, not
 25. And the hand sweep's "10 of 25" for the flank rules counted regions: the
@@ -211,7 +213,7 @@ that fit within a sheet. `ks_mclaren_650_gt3`, the other close call, is not this
 pick has 47 panels, and only the margin is thin, which is step 3's business.
 
 **Cause.** `scoreBody` in `src/engine/classify.mjs` weighs area, whether the
-texture straddles the centreline, skin overrides, shader, how much of the
+texture straddles the centerline, skin overrides, shader, how much of the
 car's length and height it spans, and visibility. It never asks whether the
 candidate has a paintable island on it. That is the one piece of evidence that
 would have settled the mp412c, and it is already known in the function that
@@ -315,43 +317,43 @@ The wrong low-confidence picks this step was written against were the mp412c's,
 and step 2 removed them. So no floor is set: by the step's own rule there is
 none to set, and one set anyway would only refuse correct bindings.
 
-The table found a different problem. `tyres` was wrong on 11 of 176 labelled
-cars, all at 0.45 to 0.58, and all the same case: a car with two tyre textures,
+The table found a different problem. `tires` was wrong on 11 of 176 labelled
+cars, all at 0.45 to 0.58, and all the same case: a car with two tire textures,
 a tread and a sidewall, where the tread was bound and the sidewall, where the
-lettering goes, was not. Every tyre proposal under 0.6 was one of the 17 cars
+lettering goes, was not. Every tire proposal under 0.6 was one of the 17 cars
 with two such textures. A floor would have left all 17 unpainted rather than
 half-painted. That is not what a floor is for.
 
 **What was built instead.**
 
-- `tyres` and `brakes` bind every texture that only their own shader draws
+- `tires` and `brakes` bind every texture that only their own shader draws
   (`bindsEvery` and `gate` in `VOCABULARY`), at confidence 1, since no such
   texture is left out. A texture another shader also draws is a swatch shared
-  with other parts and stays out: the Morgan's tyres had been bound to a
-  `white.dds` its body materials use, and are now bound to its three tyre
+  with other parts and stays out: the Morgan's tires had been bound to a
+  `white.dds` its body materials use, and are now bound to its three tire
   textures. A car with no texture only the shader draws keeps the single best
   candidate. Every car with one candidate binds exactly as before.
-- `tools/evaluate.mjs` scores `tyres` and `brakes` against filenames that
-  plainly say tyre or tread, disc or rotor, and prints the body's confidence
+- `tools/evaluate.mjs` scores `tires` and `brakes` against filenames that
+  plainly say tire or tread, disc or rotor, and prints the body's confidence
   table and what floors at 0.05, 0.1 and 0.2 would refuse, so the question can
   be asked again on any survey.
 - Not built: `portability()` still reports a term nobody has bound as `absent`,
   the same as one the car confirmably lacks. The plan meant to separate them
   for `uncertain`'s sake; they are worth separating anyway, and that is small.
 
-**What it established.** Tyres now bind every labelled texture on 182 of 184
+**What it established.** Tires now bind every labelled texture on 182 of 184
 cars, from 165 of 176 binding the labelled one. Of the two left, the Morgan has
-a rear sidewall its tyre materials do not draw, and the 180SX's tyres are not
-drawn with the tyre shader at all. Brakes bind every labelled disc on 193 of
+a rear sidewall its tire materials do not draw, and the 180SX's tires are not
+drawn with the tire shader at all. Brakes bind every labelled disc on 193 of
 202; seven of the nine misses are discs no brake-disc material draws, which no
 rule that reads the shader can reach, and are a scoring gap for step 5. The
 body is unchanged at 192/195. `test/classifier.test.mjs` holds both terms to
 their measured figures across the fleet fixture, and a hand-built case to the
 shared-swatch rule; both fail with the change reverted. On the sweep's 26
-cars, profiled before and after, only two change, and only in their tyres: the
-Avensis binds its tread and its sidewall, and the Morgan its three tyre
+cars, profiled before and after, only two change, and only in their tires: the
+Avensis binds its tread and its sidewall, and the Morgan its three tire
 textures instead of the shared swatch. The other 24 are byte-identical, and
-tyres are proposed at a mean confidence of 1.00, from 0.96.
+tires are proposed at a mean confidence of 1.00, from 0.96.
 
 ## 4. Tag selections that match nothing
 
@@ -401,7 +403,7 @@ happens in `computeTags`:
   matches (`limit`), a panel whose centroid is in the section comes before one
   that only reaches it, so reach fills a selection without moving a pick that
   was already made. The centroid stays for `left`, `right` and `centre`, where it is the
-  right measure, since a flank does not straddle the centreline and a bonnet
+  right measure, since a flank does not straddle the centerline and a bonnet
   does. `extent3d` comes from the model, so `tagProfile` on an existing
   profile cannot invent it: a panel without it keeps its centroid tags, the way
   a panel without `centroid3d` already gets only the tags that need no
@@ -489,11 +491,11 @@ allows" rather than as 16 misses; every other figure is as step 3 left it.
 ## 5. Binding more of the vocabulary
 
 **Symptom.** The vocabulary has 20 terms, and three of them have a scoring
-rule: `body`, `tyres` and `brakes`. `neon-grid-any` paints 14 terms, and
+rule: `body`, `tires` and `brakes`. `neon-grid-any` paints 14 terms, and
 `brakes` is not one of them, so on arrival it found two surfaces bound.
 `rims`, `interior`, `belts`, `steeringWheel`, `wing`, `metalTrim`,
 `heatShield`, `helmet`, `suit`, `gloves`, `crew` and `numberPlate` came back
-unbound on every car, so everything past the body and the tyres is a per-car
+unbound on every car, so everything past the body and the tires is a per-car
 `--explain` and a human confirmation, twelve times per car.
 
 **Two halves, and the second is the cheaper one.**
@@ -503,7 +505,7 @@ fleet and have measurements already in the profile:
 
 - `rims`: the texture whose islands `measureWheels` places at the wheel
   centres AC requires every car to name, that face along the axle, that are
-  not tyre parts, and whose shader is neither `ksTyres` nor `ksBrakeDisc`.
+  not tire parts, and whose shader is neither `ksTyres` nor `ksBrakeDisc`.
   `computeTags` already keeps the `wheel` measurement on rim and disc panels
   for this reason. Four instances sharing one rectangle is the confirming
   signal; the Abarth's `rims` has 64 panels for that reason.
@@ -574,7 +576,7 @@ The measurement settled both rules.
 - **`rims`**: every labelled rim texture has all of its islands at a wheel,
   and nearly all have four or more sharing a rectangle. Other textures near a
   wheel have a median of a fifth of their islands there. A rim is therefore a
-  texture with nine tenths or more of its islands at a wheel that no tyre or
+  texture with nine tenths or more of its islands at a wheel that no tire or
   disc shader draws, discounted when it has fewer than four copies.
 - **`interior`**: area times cockpit visibility times what trackside
   visibility leaves. It is proposed only where cockpit visibility was
@@ -708,8 +710,8 @@ islands out of the panel threshold, the column in `explain`. Fleet accuracy
 re-measured; the mp412c as a regression test.
 
 **3. The confidence floor, measured.** The evaluator's confidence table and its
-labels for `tyres` and `brakes`; no floor, since the table shows none is
-justified; `tyres` and `brakes` binding every texture only their own shader
+labels for `tires` and `brakes`; no floor, since the table shows none is
+justified; `tires` and `brakes` binding every texture only their own shader
 draws, which is what the table showed was wrong instead.
 
 **4. Tags.** `extent3d` in the profile, overlap-based section and level, a

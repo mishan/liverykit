@@ -1,4 +1,4 @@
-// Tyres. A sidewall is unwrapped as a strip (u round the circumference, v from
+// Tires. A sidewall is unwrapped as a strip (u round the circumference, v from
 // rim to shoulder) on the NSX and the RSS4, and as an annulus — a disc image —
 // on the Abarth. A design that draws rings is right on one and wrong on the
 // other, and nothing in the profile said which was which.

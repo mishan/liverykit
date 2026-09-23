@@ -7,7 +7,7 @@
 //
 //   * every texture the model references, with its dimensions read from the
 //     embedded blob — including textures no stock skin bothers to override,
-//     which is the gap that made tyres look unpaintable
+//     which is the gap that made tires look unpaintable
 //   * exact UV island rectangles, instead of rectangles read off a render
 //   * true anisotropy per island, from the UV->3D Jacobian
 //   * which islands physically touch on the car
@@ -35,7 +35,7 @@ import { proposalNotes } from './classify.mjs';
  *
  * Encrypted models substitute a 1x1 image for every texture. Anything this small
  * carries no artwork and no usable dimensions — a real car texture is never
- * smaller than about 8x8 even for a flat colour swatch.
+ * smaller than about 8x8 even for a flat color swatch.
  */
 function isPlaceholder(h) {
   return h.width <= 4 && h.height <= 4;
@@ -68,18 +68,18 @@ function imageHeader(name, data) {
  * available, and it is strictly better: the model states outright which slot a
  * texture is bound to, so there is nothing to infer. The heuristic version had
  * to guess from names and sizes, and it guessed wrong on exactly the texture
- * that started this whole line of work — a tyre diffuse that happened to be
+ * that started this whole line of work — a tire diffuse that happened to be
  * large and uncompressed got written off as a normal map.
  *
  * Authoritative data beats a good guess. That is the entire lesson of this
  * project, and it applies to its own code.
  */
 const SLOT_MEANING = {
-  txDiffuse: null,                    // colour — the paintable one
-  txNormal: 'normal map — encodes surface direction, not colour; painting corrupts lighting',
+  txDiffuse: null,                    // color — the paintable one
+  txNormal: 'normal map — encodes surface direction, not color; painting corrupts lighting',
   txNormalDetail: 'detail normal map',
   txNormalBlur: 'normal map for the motion-blurred variant',
-  txMaps: 'AC shader map — gloss and reflectivity per texel, not colour',
+  txMaps: 'AC shader map — gloss and reflectivity per texel, not color',
   txDetail: 'tiled detail overlay, shared across parts; not a per-car surface',
   txBlur: 'motion-blurred variant, swapped in at speed',
   txGlow: 'emissive mask',
@@ -167,7 +167,7 @@ export async function profileFromKn5(path, {
 
   // Which shaders draw each texture. A build that wants to make a part vanish
   // by shipping a transparent texture needs to know whether the material will
-  // honour the alpha, and by then there is no model to ask — only the profile.
+  // honor the alpha, and by then there is no model to ask — only the profile.
   const shadersOf = new Map();
   for (const mesh of model.meshes) {
     const mat = model.materials[mesh.materialId];
@@ -325,13 +325,13 @@ export async function profileFromKn5(path, {
     if (shaders.length) entry.shaders = shaders;
 
     // Whether this sheet is a BAKE rather than artwork: shading that a MultiMap
-    // material multiplies its detail texture against, with no colour of its own.
+    // material multiplies its detail texture against, with no color of its own.
     //
     // Written down HERE rather than decided while rendering. The viewer was
     // deciding it from the filename, which is precisely the kind of inference
     // this profile exists to replace — and it fails silently on the next car,
     // because a wrong answer still looks like a surface. It is not a subtle
-    // difference either: a bake mistaken for colour renders its brightest
+    // difference either: a bake mistaken for color renders its brightest
     // island as a white panel, which on this car is the dashboard cowl.
     //
     // TWO signals, and both must agree. The NAME, because Kunos names a bake a
@@ -357,7 +357,7 @@ export async function profileFromKn5(path, {
     // WHETHER SHIPPING THIS SHEET TRANSPARENT ACTUALLY HIDES IT, which the
     // build has to know when there is no model left to ask.
     //
-    // Every material that wears it has to honour the alpha, and the model
+    // Every material that wears it has to honor the alpha, and the model
     // states that per material (see `discardsClear`). It used to be inferred
     // from the shader names recorded beside this, and `ksPerPixelReflection`
     // reads as glass while this Abarth wears it on its bumpers — so the
@@ -518,10 +518,10 @@ export async function profileFromKn5(path, {
     nameIslands(keep, axes, bounds);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
-    // And HOW they touch: the map from each island's sheet to its neighbour's,
+    // And HOW they touch: the map from each island's sheet to its neighbor's,
     // so artwork can be continued across the seam. See findSeams.
     const seams = findSeams(model, keep, adj);
-    // Which islands are tyre parts, and how each was unwrapped. A sidewall
+    // Which islands are tire parts, and how each was unwrapped. A sidewall
     // rolled out as a strip and one laid out as a disc want different
     // artwork, and the texture cannot say which it is. See wheels.mjs.
     const wheels = measureWheels(model, keep);
@@ -557,12 +557,12 @@ export async function profileFromKn5(path, {
       const p = {
         rect: i.rect,
         anisotropy: Math.round(i.anisotropy * 100) / 100,
-        // How big one UV unit is on the car, in metres, along each axis. The
+        // How big one UV unit is on the car, in meters, along each axis. The
         // ratio above un-stretches a glyph; this says whether the glyph lands
         // 40 mm tall or 400, which is the question somebody placing artwork is
         // actually asking and the one thing a flat sheet can never answer.
         //
-        // Metres, to three decimals — so millimetre precision, not millimetres.
+        // Meters, to three decimals — so millimeter precision, not millimeters.
         // A profile is read by people, and the sixth decimal of a figure
         // measured off a game model would be pretending.
         metresPerUv: i.metresPerUv ? i.metresPerUv.map(r3) : undefined,
@@ -709,6 +709,12 @@ export async function profileFromKn5(path, {
       method: 'kn5',
       source: basename(path),
       date: new Date().toISOString().slice(0, 10),
+      // The UV set every rect, safe area and mirror pair below was measured
+      // from. A kn5 vertex stores one, so this is 0 on anything this project
+      // generates; it is written down because a format with two reserves the
+      // second for paint, and reading the wrong one fails silently. See
+      // `checkUvSet` in src/profile.mjs.
+      uvSet: 0,
       axes: {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',

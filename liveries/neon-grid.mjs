@@ -36,9 +36,9 @@ export default {
     country: '',
   },
 
-  // Treatments refer to these by name, so renaming a colour here changes the
+  // Treatments refer to these by name, so renaming a color here changes the
   // whole livery and never leaves a stray hex behind. Raw '#RRGGBB' still works
-  // anywhere a colour is expected.
+  // anywhere a color is expected.
   palette: {
     base: '#12203A',
     accent: '#00F0FF',
@@ -276,7 +276,7 @@ export default {
       ],
     },
 
-    // Hand grips. Partly hidden by your hands, so colour blocks only.
+    // Hand grips. Partly hidden by your hands, so color blocks only.
     grips: {
       background: 'ink',
       regions: [

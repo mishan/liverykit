@@ -59,7 +59,7 @@ export function traceRouter(rng, { w, h, lanes = 8, padX = 0.03, viaR = null, tu
 
 /**
  * Halftone gradient: dot radius shrinks along `angle`. Pure geometry, no masks
- * or filters, so it renders identically in every rasteriser.
+ * or filters, so it renders identically in every rasterizer.
  */
 export function halftoneDissolve({ w, h, cell = 26, angle = 0, color = '#000', maxR = null, start = 0.05, end = 0.85, x = 0, y = 0 } = {}) {
   // Callers derive `cell` from region height, so a thin region rounds it to
@@ -155,7 +155,7 @@ export function sparkleField(rng, { w, h, n = 14, minR = 8, maxR = 34, color = '
 }
 
 /**
- * Text laid out around an arc — for tyre sidewalls, which AC usually unwraps
+ * Text laid out around an arc — for tire sidewalls, which AC usually unwraps
  * as an annulus, and for helmet bands.
  *
  * Per-character transforms rather than <textPath>: librsvg's textPath support

@@ -42,7 +42,7 @@ test('sparkles keep off lettering on the same sheet without being told', async (
 
 test('a region is not told to avoid itself', async () => {
   // `keepClear` is a design saying "nothing may be painted across this", and
-  // it is honoured for any treatment — so a decorative region can declare it
+  // it is honored for any treatment — so a decorative region can declare it
   // too. Handed the whole list, that region was given its OWN rectangle to
   // avoid: rejection sampling then had nowhere to put a sparkle, and the
   // region rendered empty. Artwork silently absent is the failure this

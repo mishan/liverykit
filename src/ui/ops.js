@@ -24,7 +24,7 @@ export const CONSTRAINTS = {
     'it: a brief may want the name somewhere else.',
   stripe: 'string, a name for the stripe — this region is a piece of a stripe that runs along the ' +
     'car\'s length, and every region given the same name is another piece of the same stripe. Each ' +
-    'piece must run along the car, not across it; neighbouring pieces must line up where they meet, ' +
+    'piece must run along the car, not across it; neighboring pieces must line up where they meet, ' +
     'within 20 mm; and together they must cover the car nose to tail, over the rear wing where there ' +
     'is one, except where the car has glass, a vent, a grille or an opening. Checked only where a design ' +
     'declares it: a band across the car is a design choice too.',
@@ -211,7 +211,7 @@ export function opSetRegion(design, { id, region }) {
  * Take an unpainted texture into the design, the way the editor's own button
  * does — EMPTY, and with no background.
  *
- * This defaulted `background` to `ink`, which is a colour the agent did not
+ * This defaulted `background` to `ink`, which is a color the agent did not
  * choose and the person did not either. Two things wrong with that. It differs
  * from what clicking Paint this too produces, so the same act had two outcomes
  * depending on who performed it; and a background is a design decision that
@@ -220,7 +220,7 @@ export function opSetRegion(design, { id, region }) {
  *
  * With no background the sheet renders the renderer's default black, which is
  * the honest picture of a surface just taken over: the stock artwork is gone
- * and nothing has replaced it. A proposal that wants a colour there can say so
+ * and nothing has replaced it. A proposal that wants a color there can say so
  * with `set-option`, where it will be read.
  */
 export function opAdoptSurface(design, { role, background }) {
@@ -228,7 +228,7 @@ export function opAdoptSurface(design, { role, background }) {
   design.paint ??= {};
   if (!design.paint[role]) {
     design.paint[role] = { regions: [] };
-    // Only when asked for by name. `undefined` is not a colour.
+    // Only when asked for by name. `undefined` is not a color.
     if (typeof background === 'string' && background) design.paint[role].background = background;
   }
 }

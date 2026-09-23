@@ -25,7 +25,7 @@ without limit — one block per car anyone ever runs it on.
 Not in the car profile either. Where *this design's* number sits is not a fact
 about the Abarth. The profile is shared by everyone who owns that car and should
 stay free of any one design's opinions, exactly as it is free of any one design's
-colours.
+colors.
 
 A fit is a property of the **(design, car) pair**, so it is a third artefact:
 
@@ -63,7 +63,7 @@ replace the region's own values. `drop` removes a region on this car, which is
 the honest answer when a design asks for something a particular body shape has
 nowhere to put.
 
-Everything else about the region — its treatment, colours, glow — stays in the
+Everything else about the region — its treatment, colors, glow — stays in the
 design, because that is the design.
 
 ### Prerequisite: regions need names
@@ -154,7 +154,7 @@ add one — a sponsor patch that only makes sense on a particular car — is a g
 sign the design needs the change rather than this car's copy of it. Left open,
 the format becomes a second livery language.
 
-**This repo ships examples, not a catalogue.** `fits/` carries the two cars the
+**This repo ships examples, not a catalog.** `fits/` carries the two cars the
 project already profiles, because a format nobody can see an example of is a
 format nobody implements. Two hundred of them is somebody else's repository.
 
@@ -184,7 +184,7 @@ This creates a second and third `badge`. A MIRRORED copy and a DUPLICATE are
 the same entry: both take their artwork from `of` and state a placement, and
 mirroring is only how that placement was arrived at. The block was called
 `mirrors` first; that spelling still loads. It invents no artwork:
-treatment, colours, text and glow all come from the region named in `of`, and
+treatment, colors, text and glow all come from the region named in `of`, and
 the only new information is a placement — which is exactly what a fit is for.
 Setting anything else is rejected, so a mirrored copy cannot quietly become a
 second way of writing a livery.
@@ -203,9 +203,9 @@ puts the artwork at the wrong end of the car. That is not hypothetical: it
 shipped that way, and moving a number forward on one flank moved it backward on
 the other.
 
-A panel with no `mirrorOf` straddles the centreline — a nose, an engine cover —
+A panel with no `mirrorOf` straddles the centerline — a nose, an engine cover —
 so it is its own mirror, and the copy lands on the same panel with its position
-reflected within it. Which axis the centreline cuts is measured too, since an
+reflected within it. Which axis the centerline cuts is measured too, since an
 island the unwrapper packed sideways has that role fall to `v`.
 
 ### Rotation across a mirror

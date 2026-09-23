@@ -75,7 +75,7 @@ descriptions, so a new option is covered without anybody remembering.
 
 **The whole-car view has three sources of texture, in order.** The design's own
 render for a surface it paints; the car's own texture, straight out of the kn5,
-for one it does not; and a grey for anything neither can supply. The grey used to
+for one it does not; and a gray for anything neither can supply. The gray used to
 be shared with the handle the per-surface view uploads into, so unpainted glass
 wore the body design — and it was never noticed, because it made the car look
 whole. DDS goes to the GPU as S3TC blocks with no decode step.

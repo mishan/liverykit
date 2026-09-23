@@ -39,7 +39,7 @@ import namesPlugin from 'colord/plugins/names';
 export { CONSTRAINTS } from './ui/ops.js';
 import { CONSTRAINTS } from './ui/ops.js';
 
-// CSS colour names, as the palette accepts them (see ui/uses.js).
+// CSS color names, as the palette accepts them (see ui/uses.js).
 extend([namesPlugin]);
 
 /**
@@ -105,7 +105,7 @@ const BLEED_IS_FINE_BELOW = 0.15;
  *               car is not being visible: a roundel measured 99% on the door
  *               and had its top strip 44% visible, under the window frame, and
  *               nothing said so.
- *   minMargin   millimetres of clean bodywork all round: with that much added
+ *   minMargin   millimeters of clean bodywork all round: with that much added
  *               on every side, the box must still be on the car and seen. A
  *               roundel does not sit against a shut line or tuck its top edge
  *               under a window frame, and "not too close to an edge" is only a
@@ -220,7 +220,7 @@ function constraintsOf(region, id, t, say) {
       if (v === region.id) { bad(k, 'names this region itself.'); continue; }
     } else if (k === 'stripe') {
       // A name, not `true`: the name is what makes three regions on three
-      // panels one stripe, and a piece measured against no neighbours would
+      // panels one stripe, and a piece measured against no neighbors would
       // pass a check that never looked at where the pieces meet.
       if (typeof v !== 'string' || !v.trim() || v !== v.trim()) {
         bad(k, 'must be the stripe\'s name, shared exactly by every piece of it, e.g. "centre".'); continue;
@@ -370,7 +370,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
  * model object, so a model that is let go takes its grid with it.
  */
 /**
- * How tall each text region's capitals are on the car, in millimetres, by the
+ * How tall each text region's capitals are on the car, in millimeters, by the
  * arithmetic `too-small` holds them to: `{ mm, shrunk }` by placement id, or
  * `{ why }` where the letters cannot be measured.
  *
@@ -469,7 +469,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
       frac = resolveRect(profile, t.role, r);
     } catch (e) {
       // Which of the two it was, asked of the panel directly. `resolveRect`
-      // checks `at` before it looks the panel up, and labelling every throw as
+      // checks `at` before it looks the panel up, and labeling every throw as
       // a missing panel sent a region with an `at` past its edge, on a panel
       // the car has, looking for a panel that was never missing.
       let missing = null;
@@ -495,7 +495,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
     // rectangle alone would report the part past the panel's edge as
     // off-mesh, which is the one place it is meant to be.
     if (r.span === true && frac.panel) {
-      // A span the car cannot honour is clipped to its home panel and reported
+      // A span the car cannot honor is clipped to its home panel and reported
       // — see spanPlacements. It is a finding here as well as a note in the
       // render, because this is where somebody looks to find out what is wrong
       // with a design on a car, and "the band stops at the door's edge" is
@@ -522,7 +522,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
         // there is one: a piece that arrived through a seam is a parallelogram
         // filling roughly half the box drawn around it, and the box's half
         // that is not artwork was being reported as overlapping its
-        // neighbours, off the mesh, and big enough to read.
+        // neighbors, off the mesh, and big enough to read.
         frac: {
           ...p.on,
           poly: p.poly,
@@ -677,7 +677,7 @@ export const MARGIN_CLEAN = 0.98;
  * the box grown by the margin on every side must be on the car and visible.
  */
 /**
- * Samples every few millimetres across a placement, for a region that has said
+ * Samples every few millimeters across a placement, for a region that has said
  * it must be whole.
  *
  * Samples sit at cell centres, so a grid of N leaves a band half a cell wide
@@ -893,7 +893,7 @@ export function wholePieces(design, profile, fit = null) {
           const d = Math.hypot(u * size.w - g.cx, v * size.h - g.cy);
           return d >= g.inner && d <= g.outer;
         };
-        what = g.inner > 0 ? `a ring in ${p.region.color ?? 'its colour'}` : `a disc in ${p.region.color ?? 'its colour'}`;
+        what = g.inner > 0 ? `a ring in ${p.region.color ?? 'its color'}` : `a disc in ${p.region.color ?? 'its color'}`;
       } else if (minVisible !== null) {
         const poly = shapeOf(p.frac);
         box = [Math.min(...poly.map((q) => q[0])), Math.min(...poly.map((q) => q[1])),
@@ -931,12 +931,12 @@ function ringOnText(ring, text, size, identity = {}) {
 }
 
 /**
- * Lettering in a colour too close to what is painted under it.
+ * Lettering in a color too close to what is painted under it.
  *
  * Measured, not judged. Round one of three runs in a row failed on the team
  * name for this and nothing else: white script on Gulf blue, then thin orange
  * on Gulf blue, each reported by the critic a whole round after it was
- * drafted. The design says what colour the letters are and what is painted
+ * drafted. The design says what color the letters are and what is painted
  * beneath them, so the contrast is arithmetic, and a planner told while it is
  * still drafting fixes it before it submits.
  *
@@ -950,8 +950,8 @@ function ringOnText(ring, text, size, identity = {}) {
  * it clears 6.
  *
  * What is under the letters is the last region painted before them that
- * covers their centre. If that is a treatment whose colour at that point is
- * not one known colour (a halftone, a gradient, a logo), nothing is said:
+ * covers their centre. If that is a treatment whose color at that point is
+ * not one known color (a halftone, a gradient, a logo), nothing is said:
  * a guess would be a finding somebody learns to ignore.
  */
 const CONTRAST_FLOOR = { name: 6, other: 4.5 };
@@ -976,16 +976,16 @@ function contrast(placed, t, design, say, size) {
     const parsed = typeof v === 'string' ? colord(v) : null;
     return parsed?.isValid() ? parsed.toRgb() : null;
   };
-  // What `q` paints at (x, y), in texture fractions: a colour name, undefined
+  // What `q` paints at (x, y), in texture fractions: a color name, undefined
   // where it paints nothing there, or null where it paints something whose
-  // colour is not one known colour.
+  // color is not one known color.
   const paintAt = (q, x, y) => {
     const f = q.frac;
     if (x < f.x || x > f.x + f.w || y < f.y || y > f.y + f.h) return undefined;
     const tr = q.region.treatment;
-    // The core treatments' own defaults where a region names no colour, as
+    // The core treatments' own defaults where a region names no color, as
     // they paint it (packs/core.mjs). A fill with none used to be "not one
-    // known colour", and the lettering on it went unmeasured.
+    // known color", and the lettering on it went unmeasured.
     if (tr === 'fill') return q.region.color ?? 'pink';
     if (tr === 'stripe') return q.region.color ?? 'cyan';
     if (tr === 'ring') {
@@ -1022,7 +1022,7 @@ function contrast(placed, t, design, say, size) {
       ids: [p.id], contrast: round(ratio),
       why: `${name(t, p.id)} is ${inkName} on ${underName} (${what}): a contrast of ${ratio.toFixed(1)}:1, and ` +
         `${isName ? 'a team or driver name needs' : 'lettering needs'} at least ${floor}:1 to read from ` +
-        'trackside. Use a dark colour on a light base, close to black (navy near black on Gulf blue, not a mid ' +
+        'trackside. Use a dark color on a light base, close to black (navy near black on Gulf blue, not a mid ' +
         'navy), or white on a dark one. Lettering may sit on a stripe that runs the car\'s whole length, but not ' +
         'on a patch or band of its own, which reads as amateur.',
     });
@@ -1064,7 +1064,7 @@ function ringOverflow(placed, t, say) {
  * `safe` is the UV bounds of the vertices that passed the visibility cast when
  * the profile was generated, so a region straying outside it is on geometry
  * that was measured and found wanting. Regions may say `safe: false` and mean
- * it — a background fill should reach the island's edge — so that is honoured
+ * it — a background fill should reach the island's edge — so that is honored
  * rather than argued with.
  */
 function outsideSafe(placed, profile, t, say) {
@@ -1297,7 +1297,7 @@ function textIs(region, identity) {
 }
 
 /**
- * How tall a text placement's capitals are on the car, in millimetres, worked
+ * How tall a text placement's capitals are on the car, in millimeters, worked
  * out the way the text treatment sets them: 0.7 of the box's height, shrunk
  * until an estimated advance fits the width. On a panel laid a quarter turn,
  * the treatment draws in the box turned about its centre, so the letters stand
@@ -1320,7 +1320,7 @@ function letterSize(p, size, identity) {
       'and only a quarter turn keeps its letters along one axis of the texture' };
   }
   const { quarter, w, h, em, shrunk } = f;
-  // Pixels along the axis the letters stand on, to metres along that axis.
+  // Pixels along the axis the letters stand on, to meters along that axis.
   const mm = (px, alongU) => (alongU ? (px / size.w) * per[0] : (px / size.h) * per[1]) * 1000;
   return { mm: mm(CAP * em, quarter), shrunk, boxMm: [mm(w, !quarter), mm(h, quarter)] };
 }
@@ -1387,7 +1387,7 @@ function tooSmall(placed, t, say, size, identity, skip) {
  * taste standing in for the design's.
  *
  * The same panel, after aliases, on the same texture: the whole of what is
- * measured. A neighbouring panel would need the adjacency spans use, and
+ * measured. A neighboring panel would need the adjacency spans use, and
  * "beside" is not yet a question with an answer here.
  */
 function grouped(all, design, fit, profile, say) {
@@ -1459,7 +1459,7 @@ function grouped(all, design, fit, profile, say) {
  * meets within 8 mm at every join and reads as one stripe; its first round,
  * which read as offset rectangles, was out by 63 to 236 mm, and run 21's
  * stripe, which the critic called offset round the roof, by 60 to 295. The
- * measurement's own error is a few millimetres — samples every 8 mm, so an
+ * measurement's own error is a few millimeters — samples every 8 mm, so an
  * edge is found to within 4 — which 20 mm is well clear of, and it is under
  * the step anybody would see from trackside.
  */
@@ -1468,7 +1468,7 @@ const STRIPE_STEP_MM = 20;
 /**
  * How long a stretch of bare bodywork may be before it is a gap in the stripe.
  * Two islands meeting at a seam leave nothing and a shut line a few
- * millimetres, but the car is looked at through a 20 mm grid, so one cell of
+ * millimeters, but the car is looked at through a 20 mm grid, so one cell of
  * it is the measurement's own edge and two are a gap.
  */
 const STRIPE_GAP_MM = 30;
@@ -1477,7 +1477,7 @@ const STRIPE_GAP_MM = 30;
  * How much of each piece's end is its end. Not one row of samples: a shut line
  * crossing the stripe on a curve, as the bonnet's does at the windscreen,
  * cuts the corners of the piece off at different lengths, and the width that
- * meets the next piece is the width over the last few centimetres.
+ * meets the next piece is the width over the last few centimeters.
  */
 const STRIPE_END_MM = 60;
 
@@ -1512,7 +1512,7 @@ function stripes(all, profile, seen, say, skip, draw) {
  * bonnet runs. Of a panel's two axes, the one running across the car must be
  * the piece's short side; where neither is named across, the one running
  * along is its long side, which is the case on a flank, whose other axis is
- * up and down. The long side is in millimetres, not fractions: a stripe that
+ * up and down. The long side is in millimeters, not fractions: a stripe that
  * is 20% of a panel's length is still the long side if the panel is five times
  * longer than it is wide.
  *
@@ -1736,7 +1736,7 @@ function stripeJoin(A, B, { stripe, say, F, L, k: across = null, islandOf = () =
 
   const words = [
     { hi: 'left edge', lo: 'right edge', more: 'further left', less: 'further right',
-      at: (v) => (Math.abs(v) < 0.0005 ? 'the centreline' : `${Math.abs(mm(v))} mm ${v > 0 ? 'left' : 'right'} of the centreline`) },
+      at: (v) => (Math.abs(v) < 0.0005 ? 'the centerline' : `${Math.abs(mm(v))} mm ${v > 0 ? 'left' : 'right'} of the centerline`) },
     { hi: 'top edge', lo: 'bottom edge', more: 'higher', less: 'lower', at: (v) => `${mm(v)} mm up` },
     { hi: 'front edge', lo: 'rear edge', more: 'further forward', less: 'further back', at: (v) => `${mm(v)} mm along` },
   ][k];
@@ -1917,7 +1917,7 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L, draw 
   const painted = (r) => r.req > 0 && r.cov * 4 >= r.req;
   const unpainted = (r) => r.req * 2 >= cols.length && !painted(r);
 
-  // Millimetres behind the car's nose of a row's front edge and its back one:
+  // Millimeters behind the car's nose of a row's front edge and its back one:
   // the frontmost point of the car, as `panelOnCar` measures from.
   const noseZ = F > 0 ? env.r1 : env.r0;
   const edgeMm = (z) => Math.max(0, Math.round((noseZ - z) * F * 1000));
@@ -1991,9 +1991,9 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L, draw 
   // A panel inside the band that the stripe paints none of, where the rest of
   // the stripe is present: a notch, not a stretch, so the rows above never
   // see it. The NSX's roof has a hatch that is an island of its own, 433 mm
-  // square and set off the centreline, and a centred stripe crosses 110 mm of
+  // square and set off the centerline, and a centred stripe crosses 110 mm of
   // it. Runs 21 and 22 painted the roof and not the hatch, and the stripe had
-  // a bite of the base colour taken out of it. Found by where the panel is,
+  // a bite of the base color taken out of it. Found by where the panel is,
   // never by what it is called: the hatch is tagged `left`.
   const notched = new Map();
   rows.forEach((r, x) => {
@@ -2054,7 +2054,7 @@ function stripeCoverage(stripe, onCar, pieces, { profile, seen, say, F, L, draw 
       from, to, mm: carries,
       why: `${pan.panel} lies inside the stripe "${stripe}" from ${from} to ${to} mm behind the nose, carrying ` +
         `${carries} mm of its ${Math.round(band)} mm width there, and the stripe does not paint it: a notch of the base ` +
-        `colour in the stripe${around ? ` where it crosses ${around.panel}` : ''}. ${pan.panel} is ` +
+        `color in the stripe${around ? ` where it crosses ${around.panel}` : ''}. ${pan.panel} is ` +
         `${Math.round(pan.visible * 100)}% visible, and a panel inside the stripe's band is bodywork the stripe runs over, ` +
         `whatever it is called: add a piece on ${pan.panel} with constraints { stripe: "${stripe}" }, at the same place ` +
         'across the car as the rest.',
@@ -2075,7 +2075,7 @@ function carFrame(model, profile, draw = drawing(profile)) {
   return { F, L: ax.left === '-X' ? -1 : 1, noseZ: F > 0 ? env.r1 : env.r0 };
 }
 
-/** How many samples across `uv` of a panel measured at `per` metres a unit: one every STRIPE_SAMPLE_MM. */
+/** How many samples across `uv` of a panel measured at `per` meters a unit: one every STRIPE_SAMPLE_MM. */
 const sampleCells = (uv, per) => Math.max(8, Math.min(200, Math.ceil((uv * per * 1000) / STRIPE_SAMPLE_MM)));
 const sampleGrid = (pan, w, h) => {
   const per = pan?.metresPerUv;
@@ -2145,8 +2145,8 @@ function panelSamples(model, profile, role, panel, at) {
 }
 
 /**
- * Where a panel, or a rectangle on it, lands on the car, in millimetres:
- * `across` (left of the centreline is positive), `up`, and `behindNose`, each
+ * Where a panel, or a rectangle on it, lands on the car, in millimeters:
+ * `across` (left of the centerline is positive), `up`, and `behindNose`, each
  * as [least, most]. Measured on the model, on the panel's own island, a
  * sample every 8 mm or so, so an edge is found to within 4. Null where it
  * lands on no geometry, and `{ why }` where which mesh the panel is on cannot
@@ -2170,13 +2170,13 @@ export function panelOnCar(model, profile, role, panel, at = [0, 0, 1, 1]) {
 
 /**
  * The `at` on a panel that paints a band of the car: `across` as [from, to] in
- * millimetres left of the centreline, or `up` in millimetres up for a band
+ * millimeters left of the centerline, or `up` in millimeters up for a band
  * along a flank, running the panel's whole length the other way. The inverse
  * of `panelOnCar`, and what a stripe's pieces want: the same band across the
  * car, whatever fractions each panel needs for it.
  *
  * Fitted, not assumed: which of the panel's axes runs across the band and how
- * fast are read off the samples, and `error` says in millimetres how far the
+ * fast are read off the samples, and `error` says in millimeters how far the
  * panel strays from that straight line — a few on a flat bonnet, more on one
  * that curls or is laid out on a slant. Null, with `why`, where the band misses
  * the panel or the panel has no geometry.
@@ -2253,7 +2253,7 @@ const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, 
 /**
  * The panels of one sheet a band along the car crosses, seen from above, front
  * to back: what a stripe of that band is painted on. `across` is [from, to] in
- * millimetres left of the centreline. Each comes with where it lies along the
+ * millimeters left of the centerline. Each comes with where it lies along the
  * car, `behindNose`, and the most of the band's width it carries, `carriesMm`;
  * one the band covers too little of to measure, under two cells of the grid
  * either way, comes marked `measured: false`, as the coverage check says of it,
@@ -2273,7 +2273,7 @@ const panelAtUv = (panels, u, v, mesh = null) => panels.find(({ rect: [x, y, w, 
  * does, is that panel's hole and gets no piece.
  *
  * With `side` 1 or -1 the band runs along the car's left or right flank
- * instead, seen from that side, and `across` is [from, to] in millimetres up:
+ * instead, seen from that side, and `across` is [from, to] in millimeters up:
  * a side skirt, where the stripe check holds a band along a flank too.
  */
 export function stripePanels(model, profile, role, across, { hide = [], painted = [], side = 0, seen = BARELY_SEEN } = {}) {
@@ -2374,7 +2374,7 @@ export function stripePanels(model, profile, role, across, { hide = [], painted 
 
 /**
  * How wide a car's bodywork on these textures is, seen from above, in
- * millimetres: the middle one of the widths across the middle half of its
+ * millimeters: the middle one of the widths across the middle half of its
  * length. What a stripe along the car is sized to, where a design does not
  * say: 450 mm reads on a GT car and covers a formula car's nose and cockpit
  * edge to edge.
@@ -2397,7 +2397,7 @@ export function bodyWidthMm(model, profile, roles, { hide = [], painted = [] } =
   return Math.round(widths[widths.length >> 1] * ENVELOPE_CELL * 1000);
 }
 
-/** The car's length nose to tail in millimetres, over everything the picture draws. */
+/** The car's length nose to tail in millimeters, over everything the picture draws. */
 export function carLength(model, profile) {
   const env = envelope(model, profile, 1, 1);
   return Math.round((env.r1 - env.r0) * 1000);
@@ -2405,7 +2405,7 @@ export function carLength(model, profile) {
 
 /**
  * How far up the car its bodywork on `role`'s sheet begins, seen from its
- * left (`side` 1) or right (-1), in millimetres: where a side skirt's band is
+ * left (`side` 1) or right (-1), in millimeters: where a side skirt's band is
  * measured up from. The lowest seen panel's cell of each stretch along the
  * car, and the low end of those rather than the lowest, so one stray fitting
  * hung under the sill does not move the band.
@@ -2867,8 +2867,8 @@ function share(a, b) {
  * amount of box comparison can tell you which.
  *
  * So the broad check is not shipped. What is shipped is the narrow one, which
- * has a signal the broad one lacks: a colour sheet and its emissive twin are
- * not overlapping, they are the SAME surface twice, to within a millimetre. If
+ * has a signal the broad one lacks: a color sheet and its emissive twin are
+ * not overlapping, they are the SAME surface twice, to within a millimeter. If
  * you paint one and not the other, the car's own artwork is drawn over yours.
  * That is the black slab, and it is the specific thing that went wrong.
  */
@@ -2882,7 +2882,7 @@ const SAME_SIZE = 0.9;         // smaller volume over larger
  * they are the two sides of one panel — and not the problem at all, since you
  * cannot see both at once.
  *
- * A colour sheet and its emissive twin face the same way, being the same
+ * A color sheet and its emissive twin face the same way, being the same
  * surface drawn twice. An inner shell faces the other way. That is structural
  * rather than tuned, and it is the difference between "this panel has a back"
  * and "this panel is drawn twice and you only painted one of them".

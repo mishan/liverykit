@@ -15,7 +15,7 @@ import '../src/index.mjs';
 import { resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
 import { mulberry32 } from '../src/engine/rng.mjs';
-import { eachRegion, paletteUses, tokenUses, danglingNames, interpolates, isAColour } from '../src/ui/uses.js';
+import { eachRegion, paletteUses, tokenUses, danglingNames, interpolates, isAColor } from '../src/ui/uses.js';
 
 const core = () => resolveTreatments(['core']);
 
@@ -36,7 +36,7 @@ const design = () => ({
 });
 
 test('a name that stops resolving fails silently, which is why it is counted', () => {
-  // The two behaviours the whole file is built around, shown rather than
+  // The two behaviors the whole file is built around, shown rather than
   // claimed. Neither produces an error anywhere.
   const profile = { id: 'c', textures: { body: { file: 'b.dds', width: 64, height: 64 } },
     panels: { body: { L: { rect: [0, 0, 1, 1] } } } };
@@ -44,7 +44,7 @@ test('a name that stops resolving fails silently, which is why it is counted', (
     profile, role: 'body', regions, treatments: core(),
     palette, rng: mulberry32(1), font: 'sans', tokens }).base;
 
-  // A colour the palette lacks is handed straight to the renderer.
+  // A color the palette lacks is handed straight to the renderer.
   assert.match(draw([{ id: 'r', panel: 'L', treatment: 'fill', color: 'ghost' }], { ink: '#000' }, {}),
     /fill="ghost"/);
 
@@ -63,13 +63,13 @@ test('every region is reachable by the key a fit would use', () => {
 test('a palette entry knows who is relying on it, including a background', () => {
   const uses = paletteUses(design(), core());
   assert.deepEqual(uses.get('accent'), ['badge', 'name']);
-  // A background names a palette colour exactly as a region's `color` does, and
+  // A background names a palette color exactly as a region's `color` does, and
   // is the largest possible version of this mistake.
   assert.deepEqual(uses.get('ink'), ['surfaces.body background']);
   assert.deepEqual(uses.get('#123456'), ['surfaces.body#1'], 'literals are counted too, and shown as themselves');
 });
 
-test('colour fields come from the treatment description, not from a guess', () => {
+test('color fields come from the treatment description, not from a guess', () => {
   // `glitch` takes `colors`, plural, and no `color` at all. A hardcoded field
   // name would miss it; the description says so.
   const d = {
@@ -96,7 +96,7 @@ test('only text is scanned for tokens, because only text is interpolated', () =>
 
 test('a use is counted once per thing that depends on it, not once per mention', () => {
   // `glitch` takes an array, and nothing stops the same palette entry appearing
-  // in it twice — a two-tone glitch that happens to want one colour on both
+  // in it twice — a two-tone glitch that happens to want one color on both
   // sides is an ordinary thing to write. Counting the mentions would tell
   // somebody about to rename `violet` that three things depend on it.
   const d = {
@@ -142,31 +142,31 @@ test('a token the renderer could never substitute is not a token', async () => {
   }
 });
 
-test('a colour is told from a name by parsing it, not by its first character', () => {
+test('a color is told from a name by parsing it, not by its first character', () => {
   // The cases the old regex got right, and would have gone on getting right.
   for (const v of ['#00F0FF', '#fff', 'rgb(1, 2, 3)', 'rgba(1,2,3,.5)', 'hsl(200, 50%, 40%)']) {
-    assert.equal(isAColour(v), true, v);
+    assert.equal(isAColor(v), true, v);
   }
 
   // The ones it got WRONG, and the reason this dependency earns its 8 KB. Both
   // render perfectly well, and both were reported to the user as unresolved
   // names, because they do not begin with `#` or `rgb`.
   for (const v of ['red', 'rebeccapurple', 'darkslategrey']) {
-    assert.equal(isAColour(v), true, `${v} is a colour and was being called a typo`);
+    assert.equal(isAColor(v), true, `${v} is a color and was being called a typo`);
   }
 
   // And the ones that matter most, which look exactly like those and are not:
   // a palette entry renamed out from under a region, and a misspelling.
   for (const v of ['ghost', 'gulf-blue', 'accent', 'rebecapurple', '', '   ']) {
-    assert.equal(isAColour(v), false, `${JSON.stringify(v)} names nothing that can be painted`);
+    assert.equal(isAColor(v), false, `${JSON.stringify(v)} names nothing that can be painted`);
   }
 
-  // SVG paint values rather than colours: colord rightly declines them, the
+  // SVG paint values rather than colors: colord rightly declines them, the
   // renderer accepts them, and this file has to agree with the renderer.
   for (const v of ['none', 'currentColor', 'inherit', 'var(--team)']) {
-    assert.equal(isAColour(v), true, v);
+    assert.equal(isAColor(v), true, v);
   }
-  assert.equal(isAColour(undefined), false, 'and nothing is not a colour');
+  assert.equal(isAColor(undefined), false, 'and nothing is not a color');
 });
 
 test('names the design refers to and does not define are listed', () => {
@@ -176,13 +176,13 @@ test('names the design refers to and does not define are listed', () => {
   assert.deepEqual(dangling.tokens.map((t) => t.token), ['number'],
     'a token with no value renders as nothing at all');
   assert.deepEqual(dangling.tokens[0].by, ['name'], 'and says which region loses text');
-  assert.deepEqual(dangling.colours, [], 'every colour here either resolves or is a literal');
+  assert.deepEqual(dangling.colors, [], 'every color here either resolves or is a literal');
 
   // A literal is nobody's business; a bare word is reported as what it is.
   d.surfaces.body.regions[0].color = 'gulf-blue';
-  assert.deepEqual(danglingNames(d, core()).colours.map((c) => c.name), ['gulf-blue']);
+  assert.deepEqual(danglingNames(d, core()).colors.map((c) => c.name), ['gulf-blue']);
   d.surfaces.body.regions[0].color = '#ff00ff';
-  assert.deepEqual(danglingNames(d, core()).colours, []);
+  assert.deepEqual(danglingNames(d, core()).colors, []);
 
   // An empty identity value is as absent as a missing one: both interpolate to
   // nothing, and `country: ''` in the shipped designs is exactly that case.
@@ -196,7 +196,7 @@ test('the shipped designs refer to nothing they do not define', async () => {
   for (const name of ['neon-grid', 'neon-grid-any']) {
     const d = (await import(`../liveries/${name}.mjs`)).default;
     const dangling = danglingNames(d, resolveTreatments(d.packs ?? ['core']));
-    assert.deepEqual(dangling.colours, [], `${name} colours`);
+    assert.deepEqual(dangling.colors, [], `${name} colors`);
     assert.deepEqual(dangling.tokens, [], `${name} tokens`);
   }
 });

@@ -9,7 +9,7 @@ import { attemptsPage } from './attempts.mjs';
  *
  * Each round the planner writes a DRAFT — a list of the same operations a
  * proposal carries — and the harness, not the planner, then measures it: the
- * fitment check in millimetres against the model, and a critic that looks at
+ * fitment check in millimeters against the model, and a critic that looks at
  * renders and has not seen the planner's reasoning. The planner hears both
  * verdicts as structured data and revises. Only a draft that passes is offered
  * to the editor, and it arrives there as an ordinary proposal: a person still
@@ -88,7 +88,7 @@ export function plannerTools(served) {
       name: 'render_car',
       description:
         `Render the DRAFT on the car and return the picture. Views: ${views}. A software ` +
-        'rasteriser with one fixed light rig, no environment reflections and no normal maps: it ' +
+        'rasterizer with one fixed light rig, no environment reflections and no normal maps: it ' +
         'answers "does the artwork land where I said", not "is this exactly the game".',
       input_schema: {
         type: 'object',

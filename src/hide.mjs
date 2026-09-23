@@ -21,12 +21,12 @@ import { resolveTargets } from './profile.mjs';
  * fact about one car, not a property of the feature.
  *
  * The honest tool is a transparent texture, and it only works when the
- * material honours alpha — blends it, tests it, or turns it into coverage. So
+ * material honors alpha — blends it, tests it, or turns it into coverage. So
  * this is a decision per role, and every branch is reported, because the one
  * that would be silent — a transparent file for an opaque material, encoded
  * without complaint — is a part that still shows.
  *
- *   ship-transparent  every material wearing it honours alpha: ship a clear sheet
+ *   ship-transparent  every material wearing it honors alpha: ship a clear sheet
  *   car-hides         a clear sheet would not work, but the car's config hides
  *                     every mesh wearing it, so under CSP nothing shows anyway
  *   cannot            an opaque material, a texture no mesh in this model
@@ -41,7 +41,7 @@ import { resolveTargets } from './profile.mjs';
  * the game with Custom Shaders Patch, and by nothing else — the Content
  * Manager showroom does not read MODEL_REPLACEMENT, and a skin is looked at
  * in the showroom at least as often as on the track. A transparent sheet is
- * honoured by whatever draws the mesh. So where one will work it is shipped
+ * honored by whatever draws the mesh. So where one will work it is shipped
  * regardless, and `hiddenByCar` only decides what to say when one will not.
  *
  * The shader question is asked of PNG textures too. It used to be skipped for
@@ -104,7 +104,7 @@ export function hidePlan(profile, livery, { paintedRoles = null } = {}) {
       }
       return cannot(tex.alphaHides === false
         ? `${tex.file} is drawn by a material that ignores alpha${drawn} — a transparent texture would not hide it`
-        : `this profile does not record whether the materials drawing ${tex.file}${drawn} honour alpha; regenerate it`);
+        : `this profile does not record whether the materials drawing ${tex.file}${drawn} honor alpha; regenerate it`);
     }
     return { ...base, action: 'ship-transparent', why: `${role}: ${tex.file} shipped fully transparent${also}` };
   });

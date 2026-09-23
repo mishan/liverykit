@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Point one design at many cars and record what it would do on each.
 //
-// docs/backlog.md opens with a sweep of this kind: neon-grid-any against 26
-// cars nobody had profiled, and a table of what went wrong. It was first done
+// docs/backlog.md records a sweep of this kind, under Done: neon-grid-any
+// against 26 cars nobody had profiled, and a table of what went wrong. It was first done
 // by hand, over 25 of them, so its numbers could be quoted and never re-run,
 // and every fix in docs/portability-plan.md is supposed to move one of them.
 // This is that sweep as a script: the same questions, asked the same way each
@@ -36,7 +36,7 @@ import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadProfile, resolveTargets, nearMiss } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
-import { bestKn5, carIds, everyNth, summarise } from './fleet.mjs';
+import { bestKn5, carIds, everyNth, summarize } from './fleet.mjs';
 
 const REPO_CARS = fileURLToPath(new URL('../cars/', import.meta.url));
 
@@ -110,7 +110,7 @@ function sweptOtherwise(was, now) {
 // into this one's table would be a wrong number that looks like a right one.
 //
 // A file that is not there is a first run when sweeping, and a mistake when
-// summarising: --summary on a mistyped --out used to print an empty table and
+// summarizing: --summary on a mistyped --out used to print an empty table and
 // exit 0, which reads as a sweep of no cars.
 const summaryOnly = argv.includes('--summary');
 if (summaryOnly && argv.includes('--fresh')) throw new Error('--summary reads --out, and --fresh would discard it; pass one or the other');
@@ -120,10 +120,10 @@ if (!argv.includes('--fresh')) {
     records = JSON.parse(await readFile(outPath, 'utf8'));
   } catch (e) {
     if (e.code !== 'ENOENT') throw new Error(`${outPath} is not a sweep this can resume (${e.message}); pass --fresh to start over`);
-    if (summaryOnly) throw new Error(`there is no sweep at ${outPath} to summarise; pass the --out the sweep wrote`);
+    if (summaryOnly) throw new Error(`there is no sweep at ${outPath} to summarize; pass the --out the sweep wrote`);
   }
   if (!Array.isArray(records)) throw new Error(`${outPath} is not a sweep this can resume (not a list of records); pass --fresh to start over`);
-  if (summaryOnly && !records.length) throw new Error(`${outPath} holds no sweep records, so there is nothing to summarise`);
+  if (summaryOnly && !records.length) throw new Error(`${outPath} holds no sweep records, so there is nothing to summarize`);
   const other = records.find((r) => r.livery !== liveryName);
   if (other) throw new Error(`${outPath} holds a sweep of "${other.livery}", not "${liveryName}"; pass --fresh or another --out`);
 
@@ -160,7 +160,7 @@ function printSummary() {
     const group = records.filter((r) => r.from === from);
     if (!group.length) continue;
     console.log(`\n${liveryName} on ${label}:`);
-    for (const line of summarise(group)) console.log(`  ${line}`);
+    for (const line of summarize(group)) console.log(`  ${line}`);
   }
 }
 

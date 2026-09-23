@@ -131,7 +131,7 @@ li.head:hover { background: none; }
 
 /* A panel being HOVERED in the list, shown on the sheet. Distinct from .host,
    which means the selected region actually lives there — looking at a panel and
-   having a region on it are different facts and should not share a colour. */
+   having a region on it are different facts and should not share a color. */
 .panelrect.hot { stroke: var(--warn); stroke-width: 3; fill: #ffb45418; }
 
 /* Rotation choices. Small, because there are five of them and they sit inside

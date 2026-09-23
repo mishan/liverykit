@@ -39,7 +39,7 @@ readable from trackside, larger than 3% of the sheet, and on the left" has one
 right answer and no aesthetic content whatsoever. Today it means reading JSON or
 writing a throwaway script.
 
-**Drafting.** Gulf colours, number 7, sponsor text along the flanks — that is a
+**Drafting.** Gulf colors, number 7, sponsor text along the flanks — that is a
 first pass at a design, and a first pass is worth having even when every
 placement in it needs moving.
 
@@ -132,7 +132,7 @@ while the agent was thinking.
 
 ```jsonc
 {
-  "why": "a first pass at Gulf colours, from your brief",
+  "why": "a first pass at Gulf colors, from your brief",
   "design": [
     { "op": "set-palette", "name": "gulf-blue", "value": "#7BB3D9" },
     { "op": "add-region", "surface": "surfaces.body",
@@ -174,7 +174,7 @@ question when this was written — see below.
 
 | tool | answers |
 |---|---|
-| `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimetres, mirroring, coverage, occlusion |
+| `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimeters, mirroring, coverage, occlusion |
 | `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, clear of edges — as ranked spots with their clearance in mm; with `largest` and an `aspect`, the largest shape of that proportion that fits, found by sweeping sizes; with `layout: { number, name }` instead of a size, a race number in a roundel with the name under it, laid out as large as the panel allows with the letters sized by `check_fitment`'s own arithmetic, returned as regions ready to use; with `stripe: { widthMm, offsetMm }`, a stripe along the car, a piece on every panel its band crosses seen from above; with `aero: { heightMm }`, a ground-effect kit — splitter, side skirts, diffuser — as the car's lowest panels all round up to that height, filled whole, and a taller panel on a flank drawn to their line. Each is a separate question: `layout`, `stripe` and `aero` are refused beside each other or beside `largest`, `widthMm` or `heightMm` |
 | `render_view` | the rendered texture and placements for one surface, or all of them |
 | `render_car` | a picture of the working design on the car |
@@ -182,7 +182,7 @@ question when this was written — see below.
 `check_fitment` reports `checked` and `notChecked` separately, because a run that
 skipped the geometry checks and a run that passed them produce the same empty
 findings list and mean opposite things. Its reply opens with a verdict naming the
-worst severity and the counts: "nine low and one high" is otherwise summarised as
+worst severity and the counts: "nine low and one high" is otherwise summarized as
 "some minor findings" by anything reading in a hurry.
 
 **Proposing.** Everything here goes to the inbox and nowhere else.
@@ -270,7 +270,7 @@ one came back as a screenshot from the person the agent was supposed to be
 helping. No measurement in the profile says "the car is transparent now".
 
 **So `render_car` exists.** Not a canvas capture from the browser: a small
-software rasteriser in Node, about two hundred lines, no new dependency. It
+software rasterizer in Node, about two hundred lines, no new dependency. It
 projects the triangles, keeps a depth buffer, interpolates uv and normal, samples
 the design's own artwork and shades it the way the viewer does.
 
@@ -284,7 +284,7 @@ The tool description lists the limits rather than leaving them to be discovered:
 no environment reflections, one fixed light rig. It draws the car's own textures
 on the parts a design does not paint, the same ones the build's `preview.jpg`
 uses — for a while it did not, and the picture an agent checked its work against
-showed a car with grey glass and a grey interior while the editor beside it
+showed a car with gray glass and a gray interior while the editor beside it
 showed neither. It answers "does the
 artwork land where I said it would", not "is this exactly the game". And
 `PROMPT_NOTE` was updated at the same time: it used to tell the agent it could not
@@ -378,7 +378,7 @@ one the inbox will take.
 
 **7. Space. (Done, and forced by a roundel.)** `find_space` sweeps a panel with
 the same ray casting `check_fitment` uses and returns where a shape of a given
-size fits whole, ranked by clearance in millimetres; `minMargin` makes "not too
+size fits whole, ranked by clearance in millimeters; `minMargin` makes "not too
 close to an edge" a constraint the check enforces. It exists because a panel's
 box is not the panel. On the NSX the top quarter of the door's box is not door
 and its middle is under the window line, so everything that placed a roundel "in

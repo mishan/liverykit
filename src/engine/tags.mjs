@@ -8,13 +8,13 @@
 //
 // Tags fix that by describing each panel in terms that are true of any car:
 //
-//   side      left | right | centre        which side of the centreline
+//   side      left | right | centre        which side of the centerline
 //   section   nose | front | mid | rear | tail
 //   level     upper | lower
 //   visible   readable from trackside
 //   cockpit   readable from the driver's seat
 //   mirrored  has a mirror-image partner on the other side
-//   sidewall  a tyre's sidewall; tread, its tread — from the wheel measurement
+//   sidewall  a tire's sidewall; tread, its tread — from the wheel measurement
 //
 // A livery then says `{ tags: ['left', 'mid'] }` and gets whatever this car has
 // there, or nothing, reported.
@@ -240,11 +240,11 @@ export function computeTags(profile) {
       if (typeof p.visible === 'number' && p.visible >= 0.5) tags.push('visible');
       if (typeof p.visibleFromCockpit === 'number' && p.visibleFromCockpit >= 0.3) tags.push('cockpit');
       if (p.mirrorOf) tags.push('mirrored');
-      // Tyre parts, from the wheel measurement. `sidewall` is what a design
-      // means by "the tyre": the part with the lettering, that a spectator
+      // Tire parts, from the wheel measurement. `sidewall` is what a design
+      // means by "the tire": the part with the lettering, that a spectator
       // sees. The tread is the other part, and a design painting it is
       // painting the road.
-      // Only on the texture bound as the tyres: a rim's face and a brake
+      // Only on the texture bound as the tires: a rim's face and a brake
       // disc sit by a wheel and face along the axle too, and would otherwise
       // be called sidewalls. The `wheel` measurement stays on all of them.
       if (tyreRoles === null || tyreRoles.includes(role)) {

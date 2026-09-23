@@ -424,7 +424,7 @@ async function inBrowser(driver, {
       '--proxy-bypass-list=127.0.0.1;localhost',
       url,
     ];
-  // Force the software rasteriser. A headless box has no GPU, and Firefox
+  // Force the software rasterizer. A headless box has no GPU, and Firefox
   // otherwise reports "Exhausted GL driver options" on some runs and works on
   // others — which made the GL-dependent tests pass by taking their own skip
   // branch, green for no reason at all.
@@ -514,7 +514,7 @@ function howFar(trail) {
  *
  * A headless box with no GL is a fact about the box rather than a failure of the
  * code, so locally these tests check what they can without it and stop. In CI it
- * IS a failure: arranging xvfb and a software rasteriser is the whole point, and
+ * IS a failure: arranging xvfb and a software rasterizer is the whole point, and
  * "absent" there means the arrangement broke and every renderer test went green
  * without touching a shader. Exactly the silence LIVERYKIT_REQUIRE_BROWSER
  * exists to break.
@@ -1139,7 +1139,7 @@ test('the editor opens on the car, and a linked drag moves both sides', { skip: 
   // MIRRORED, not copied. Whether that means the same numbers depends on how
   // the two islands were unwrapped, so the expectation is computed from the
   // profile's own measured axes rather than written down here — writing it down
-  // would just be asserting the fixture's unwrap, not the behaviour.
+  // would just be asserting the fixture's unwrap, not the behavior.
   const { mirrorFlips, mirrorAt } = await import('../src/fit.mjs');
   const panels = profile.panels.body;
   const flips = mirrorFlips(panels[regions['mark-right'].panel ?? 'right_mid'],
@@ -1285,9 +1285,9 @@ test('a hostile palette value paints a swatch and nothing else', { skip: BROWSER
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   assert.match(find('real swatch: '), /rgb\(18, 32, 58\)|rgb\(\d+, \d+, \d+\)/,
-    `an ordinary palette colour must still show: ${report.join(' | ')}`);
+    `an ordinary palette color must still show: ${report.join(' | ')}`);
   assert.equal(find('trap swatch: '), 'trap swatch: rgba(0, 0, 0, 0)',
-    'the CSSOM parses one colour or none, so a value carrying declarations paints nothing');
+    'the CSSOM parses one color or none, so a value carrying declarations paints nothing');
   assert.equal(find('trap position: '), 'trap position: static',
     'and above all does not position itself');
   assert.equal(find('hit is a swatch: '), 'hit is a swatch: false',
@@ -1330,7 +1330,7 @@ test('an emissive-only treatment actually puts pixels on screen', { skip: BROWSE
       const svg = document.querySelector('#texture svg');
       if (!svg) { say('THREW no svg in the texture layer'); return done(); }
 
-      // Rasterise what the editor is actually displaying, and look at it.
+      // Rasterize what the editor is actually displaying, and look at it.
       const markup = new XMLSerializer().serializeToString(svg);
       const img = new Image();
       const done2 = new Promise((ok, no) => { img.onload = ok; img.onerror = () => no(new Error('svg would not load')); });
@@ -1387,9 +1387,9 @@ test('the browser resolves colord through the import map, not a copy', { skip: B
     (async () => {
       if (!await ready()) { say('the editor never came up — colord probably did not resolve'); return done(); }
       await settle(600);
-      const { isAColour } = await import('/uses.js');
-      say('red: ' + isAColour('red'));
-      say('typo: ' + isAColour('rebecapurple'));
+      const { isAColor } = await import('/uses.js');
+      say('red: ' + isAColor('red'));
+      say('typo: ' + isAColor('rebecapurple'));
       const dangling = document.querySelector('#dangling').innerHTML;
       say('warned about the typo: ' + /rebecapurple/.test(dangling));
       say('warned about red: ' + /<code>red<\\/code>/.test(dangling));
@@ -1401,7 +1401,7 @@ test('the browser resolves colord through the import map, not a copy', { skip: B
   assert.equal(find('red: '), 'red: true', `colord did not resolve in the browser: ${report.join(' | ')}`);
   assert.equal(find('typo: '), 'typo: false');
   assert.equal(find('warned about the typo: '), 'warned about the typo: true',
-    'a misspelt colour name is exactly what this panel is for');
+    'a misspelt color name is exactly what this panel is for');
   assert.equal(find('warned about red: '), 'warned about red: false',
     'and a real one is not worth mentioning');
 });
@@ -1451,7 +1451,7 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
   // with sponsor artwork in the whole-car view. Glass is on its own texture,
   // which the design does not paint, so those meshes belong to the group with
   // no role — and that group fell back to `texture`, the handle the PER-SURFACE
-  // view uploads the design you are editing into. It starts grey, so the code
+  // view uploads the design you are editing into. It starts gray, so the code
   // read as correct; the editor opens on the car view, so by the time anybody
   // presses Whole car it has held the body design for some time.
   //
@@ -1471,7 +1471,7 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
 
       let viewer;
       try { viewer = createViewer(canvas); } catch (e) { say('webgl: absent'); return done(); }
-      // True colour: this test counts pixels by threshold, and shading moves
+      // True color: this test counts pixels by threshold, and shading moves
       // them. What is under test is which texture reaches which geometry.
       viewer?.setLit(false);
       if (!viewer) { say('webgl: absent'); return done(); }
@@ -1494,16 +1494,16 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
       const magenta = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
         + '<rect width="64" height="64" fill="#FF00E5"/></svg>';
 
-      // No /api/stock for this model, so the roleless group keeps the grey —
+      // No /api/stock for this model, so the roleless group keeps the gray —
       // which is the fallback under test here. The next test supplies one.
       const noStock = window.fetch;
       window.fetch = async (u, i) => (String(u).startsWith('/api/stock')
         ? { ok: false, status: 404 } : noStock(u, i));
 
       // THE ORDER IS THE TEST. Uploading the surface first is what the editor
-      // does — it opens on the car view — and it is what turned the shared grey
+      // does — it opens on the car view — and it is what turned the shared gray
       // into the body design. Going straight to the whole-car view would find
-      // it still grey and pass for the wrong reason.
+      // it still gray and pass for the wrong reason.
       viewer.setGeometry(model);
       await viewer.setTexture(magenta, 64);
       await viewer.setWholeCar(model, [{ role: 'body', svg: magenta, width: 64, height: 64 }]);
@@ -1543,7 +1543,7 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
   const painted = Number(find('painted: ').slice('painted: '.length));
   const grey = Number(find('grey: ').slice('grey: '.length));
 
-  // BOTH, and that is the whole test. Asserting only the grey would pass on a
+  // BOTH, and that is the whole test. Asserting only the gray would pass on a
   // viewer that drew nothing at all.
   assert.ok(painted > 500, `the painted group should be painted: ${report.join(' | ')}`);
   assert.ok(grey > 500,
@@ -1552,12 +1552,12 @@ test('unpainted parts of the car stay grey, and do not wear the body design', { 
 
 test('the car supplies its own artwork for the parts a design does not paint', { skip: BROWSER ? false : 'no browser' }, async () => {
   // The whole-car view exists to answer "does this design work on this car",
-  // and a livery floating on a grey mannequin does not answer it. The car's own
+  // and a livery floating on a gray mannequin does not answer it. The car's own
   // textures come out of the kn5 the editor already has open.
   //
   // Straight to the GPU with no decoding step: a DDS is a 128-byte header and
   // then S3TC blocks, which is exactly what compressedTexImage2D takes. This
-  // builds one by hand so the expected colour is known exactly rather than read
+  // builds one by hand so the expected color is known exactly rather than read
   // off whatever a real car happens to ship.
   const report = await inBrowser(PRELUDE + `
     (async () => {
@@ -1568,7 +1568,7 @@ test('the car supplies its own artwork for the parts a design does not paint', {
 
       let viewer;
       try { viewer = createViewer(canvas); } catch { say('webgl: absent'); return done(); }
-      // True colour: this test counts pixels by threshold, and shading moves
+      // True color: this test counts pixels by threshold, and shading moves
       // them. What is under test is which texture reaches which geometry.
       viewer?.setLit(false);
       if (!viewer) { say('webgl: absent'); return done(); }

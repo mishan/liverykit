@@ -35,11 +35,11 @@ Reads every DDS header it finds, classifies each texture, warns about
 case-colliding filenames, and prints a profile skeleton. Save it as
 `cars/<carId>.json`.
 
-Three roles are excluded automatically, because painting them doesn't recolour
+Three roles are excluded automatically, because painting them doesn't recolor
 anything — it corrupts the model:
 
 - **`_NM` / large uncompressed** — normal maps. They encode surface direction.
-- **`_map`** — AC shader maps: gloss and reflectivity per texel, not colour.
+- **`_map`** — AC shader maps: gloss and reflectivity per texel, not color.
 - **glass / visor** — alpha-blended, easy to ruin.
 
 > ⚠️ **A scan cannot tell you what the model has, only what some stock skin
@@ -53,7 +53,7 @@ anything — it corrupts the model:
 node bin/liverykit.mjs <livery> --flat
 ```
 
-Solid colour, no artwork. Install it. If the car doesn't change colour, a
+Solid color, no artwork. Install it. If the car doesn't change color, a
 filename or the DDS format is wrong and no amount of art will fix it.
 
 Do this before making anything. The failure is completely silent: a skin folder
@@ -76,7 +76,7 @@ a screenshot may be small, angled or compressed and any one of them can fail:
 | | |
 |---|---|
 | cell labels | `A1`, `B1`, … exact, needs a close and sharp view |
-| per-cell colour | hue tracks the column, lightness the row — a blurry magenta cell still narrows it down |
+| per-cell color | hue tracks the column, lightness the row — a blurry magenta cell still narrows it down |
 | quadrant marks | huge faint labels, readable from across the showroom |
 
 Take one shot of each, as large and sharp as you can:
@@ -104,7 +104,7 @@ work.
 island, and anything asymmetric — text, the number — will appear reversed
 there. Better to know before it surprises you on track.
 
-**A whole panel in one flat colour with no visible label** means its island is
+**A whole panel in one flat color with no visible label** means its island is
 smaller than one grid cell. Re-run with more cells.
 
 **Cells that aren't square on the car** are anisotropy. A cell *is* square in
@@ -130,12 +130,12 @@ node bin/liverykit.mjs <livery> --uvgrid \
   --probe RSS4_Tire_D.dds,RSS4_Tire.dds,RSS4_Tyre_D.dds,tyres_all.dds
 ```
 
-Each candidate ships in its own loud colour with its own filename printed on it.
+Each candidate ships in its own loud color with its own filename printed on it.
 One look at the car identifies the winner; the rest are inert. This is the only
 way to find a texture that no stock skin overrides, short of reading the model.
 
 The probes also draw concentric rings. If the part turns out to be radially
-unwrapped — as tyre sidewalls usually are — they come back as clean concentric
+unwrapped — as tire sidewalls usually are — they come back as clean concentric
 bands, so you learn the layout at the same time as the name.
 
 **One caution:** no two candidates may differ only in case. Those are one file
@@ -160,5 +160,5 @@ Turn what you read into `panels`, and **be honest about confidence**:
 Anything read off a screenshot is `"estimated"`; `"measured"` is reserved for
 values derived from a model. A profile that admits which panels are guesses is
 much more useful than one pretending they're all exact, because it tells the next
-person where to be careful and where a flat colour is the wise choice.
+person where to be careful and where a flat color is the wise choice.
 

@@ -9,11 +9,11 @@
 //
 // So this classifies by measurement instead. Five signals, none of them a name:
 //
-//   area       fraction of the car's SURFACE AREA. Square metres, not vertices —
+//   area       fraction of the car's SURFACE AREA. Square meters, not vertices —
 //              a cockpit is the densest geometry on a car and the bodywork among
 //              the sparsest, so ranking by vertex count puts an interior
 //              occlusion map above the paint on essentially every car.
-//   straddles  does the geometry cross the centreline? Bodywork does; a single
+//   straddles  does the geometry cross the centerline? Bodywork does; a single
 //              corner part does not.
 //   skins      how many stock skins override the file. This is the car author
 //              stating outright that the surface is meant to vary per livery.
@@ -23,7 +23,7 @@
 //   shader     the material shader. ksPerPixelMultiMap_damage_dirt is a body
 //              panel in all but name; ksTyres and ksBrakeDisc weigh heavily
 //              against, though they do not exclude outright — a car whose only
-//              paintable surface shared a material with its tyres should still
+//              paintable surface shared a material with its tires should still
 //              produce a ranking rather than an empty one.
 //   visible    ray-cast trackside visibility. The decisive one, and the
 //              expensive one.
@@ -67,7 +67,7 @@ const r3 = (n) => Math.round(n * 1000) / 1000;
 
 /**
  * Measure every texture in a model: area covered, where it sits, whether it
- * straddles the centreline, which shaders bind it.
+ * straddles the centerline, which shaders bind it.
  *
  * This is the classifier's input contract, and it is deliberately separate from
  * the scoring. The measurements are facts about the car and are worth having
@@ -189,7 +189,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       // What measureWheels found: islands at a wheel centre, how many of
       // those face along the axle, and the most islands sharing one rectangle
       // (four wheels drawn from one rim face are four islands on one rect).
-      // Rims are told apart from tyres and discs by these, since a rim has no
+      // Rims are told apart from tires and discs by these, since a rim has no
       // shader of its own to be gated on.
       ...(panels ? {
         ...(wheelsMeasured ? {
@@ -261,7 +261,7 @@ export const VOCABULARY = {
   // had two — 11 of 176 labelled cars bound the tread and left the sidewall,
   // where the lettering goes, unpainted. A texture another shader also draws is
   // a swatch shared with other parts, and painting it paints them too: the
-  // Morgan's tyres were bound to a white.dds its body materials use.
+  // Morgan's tires were bound to a white.dds its body materials use.
   tyres: {
     describes: 'Tyre sidewalls and tread.',
     gate: /ksTyres/i,
@@ -380,7 +380,7 @@ function scoreBody(f) {
   if (excludedWhy(f)) return 0;
   let s = f.area;
 
-  // Bodywork crosses the centreline. A part that sits entirely on one side is a
+  // Bodywork crosses the centerline. A part that sits entirely on one side is a
   // corner piece, and knocking it down rather than out keeps single-sided
   // bodywork (a Le Mans car's asymmetric panel) in the running.
   if (!f.straddles) s *= 0.25;
@@ -575,9 +575,9 @@ export function proposeAll(features) {
  * three open-wheelers an open cockpit sees enough of the large body skin for
  * the interior to claim it too, and a design painting both then threw at
  * build time, since both would write one file; rt_bacmono's wheel sheet was
- * both its tyres and its brakes. So a role one term binds is not a candidate
+ * both its tires and its brakes. So a role one term binds is not a candidate
  * for a later one, and the later term gets its next-best. The order is the
- * vocabulary's: the body, the one validated term, first; tyres and brakes,
+ * vocabulary's: the body, the one validated term, first; tires and brakes,
  * gated on their own shaders; rims, from the wheels; the interior, from the
  * cockpit, last. `explain` stops here at its own term to say what was taken.
  */

@@ -5,7 +5,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { mipCount } from '../src/engine/pipeline.mjs';
 import { validateProfile, resolveRect, panel, texture } from '../src/profile.mjs';
@@ -48,6 +50,48 @@ test('profile rejects case-colliding filenames', () => {
       b: { file: 'SUIT_DIFF.dds', width: 1024, height: 1024 },
     },
   }), /case-colliding/i);
+});
+
+test('profile refuses a UV set nothing can read, and allows one it can', () => {
+  // The silent one. Every rect, safe area and mirror pair in a profile is a
+  // statement about ONE UV layout, and a mesh may carry more than one — a
+  // BeamNG vehicle unwraps its mechanicals onto UV0, mirrored, and its paint
+  // onto UV1, unmirrored, precisely because a livery cannot be mirrored.
+  // Measured from the wrong set a car still profiles cleanly and every number
+  // describes a layout no livery is drawn on: nothing throws, nothing renders
+  // broken, and only a person comparing the profile to the car could tell.
+  const car = (calibration) => ({
+    id: 'x',
+    ...(calibration ? { calibration } : {}),
+    textures: { body: { file: 'a.dds', width: 64, height: 64 } },
+    panels: { body: { p: { rect: [0, 0, 1, 1] } } },
+  });
+
+  assert.doesNotThrow(() => validateProfile(car()), 'generated before the field existed');
+  assert.doesNotThrow(() => validateProfile(car({ uvSet: 0 })), 'the only set a kn5 has');
+
+  assert.throws(() => validateProfile(car({ uvSet: 1 })), /nothing here can read a second UV set/,
+    'refused rather than resolved against the set it did not mean');
+  assert.throws(() => validateProfile(car({ uvSet: -1 })), /non-negative integer/);
+  assert.throws(() => validateProfile(car({ uvSet: 1.5 })), /non-negative integer/);
+  assert.throws(() => validateProfile(car({ uvSet: '0' })), /non-negative integer/,
+    'a string that looks like a set is not one');
+});
+
+test('a generated profile says which UV set it measured', async () => {
+  // Written by the generator rather than assumed by the reader: a profile that
+  // does not say is one made before the field existed, and is allowed. If
+  // nothing ever wrote it, the check above would have nothing to check on the
+  // only format this project reads.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-uvset-'));
+  const path = join(dir, 'fixture.kn5');
+  await writeFile(path, carKn5());
+
+  const made = await profileFromKn5(path, { id: 'x', visibility: false, log: () => {} });
+  assert.equal(made.calibration.uvSet, 0);
+  assert.doesNotThrow(() => validateProfile(made));
 });
 
 test('profile rejects rectangles that leave the texture', () => {
@@ -215,7 +259,7 @@ test('a profile may not ship both spellings of a case-colliding pair', () => {
   }), /one file on Windows|case-colliding/i);
 });
 
-test('mip chain length is an integer the encoder can actually honour', () => {
+test('mip chain length is an integer the encoder can actually honor', () => {
   // A fractional define makes ImageMagick write a chain length of 1 — no error,
   // exit 0, and a car that shimmers at distance. Ceil is equally wrong: 3000px
   // halves to 1px in 12 steps, and asking for 13 is rejected the same way.
@@ -366,7 +410,7 @@ test('cockpitEye respects which way the model calls forward', async () => {
 });
 
 test('an offset steering wheel is still a steering wheel', async () => {
-  // Rejecting anything more than 25 cm off the centreline was meant to skip
+  // Rejecting anything more than 25 cm off the centerline was meant to skip
   // steering ARMS out by the road wheels. It also skipped the NSX GT3's
   // wheel, which sits 34 cm left because the driver does, so the car got no
   // cockpit visibility at all and every interior panel lost its `cockpit`
@@ -496,7 +540,7 @@ test('a big invisible surface loses to a smaller visible one', async () => {
 });
 
 test('a one-sided part is demoted but not excluded', async () => {
-  // Bodywork crosses the centreline and a corner part does not, but some real
+  // Bodywork crosses the centerline and a corner part does not, but some real
   // bodywork IS one-sided — an asymmetric endurance panel — so this has to be a
   // penalty rather than a filter.
   const { rank } = await import('../src/engine/classify.mjs');
@@ -1491,7 +1535,7 @@ test('a stale fit is reported and ignored, never silently obeyed', async () => {
 });
 
 test('a fit may adjust placement, and nothing else', async () => {
-  // Left open, this becomes a second livery language. Colours and treatments
+  // Left open, this becomes a second livery language. Colors and treatments
   // belong to the design; a fit says where things go on one car.
   const { validateFit } = await import('../src/fit.mjs');
   assert.throws(() => validateFit({ livery: 'L', car: 'c', regions: { a: { color: 'red' } } }),
@@ -1795,7 +1839,7 @@ test('the shipped profiles carry a measured orientation per panel', async () => 
 
 test('a surface with no regions builds instead of crashing', async () => {
   // `regions` is optional everywhere else in this codebase. A surface that only
-  // sets a background is a legitimate way to flat-colour a part.
+  // sets a background is a legitimate way to flat-color a part.
   const { resolveTargets } = await import('../src/profile.mjs');
   const { applyFit } = await import('../src/fit.mjs');
   const profile = {
@@ -1811,7 +1855,7 @@ test('a surface with no regions builds instead of crashing', async () => {
   assert.deepEqual(applyFit(targets[0].spec.regions ?? [], null, { profile, role: 'body' }).regions, []);
 });
 
-test('the editor refuses to start on a fit it cannot honour', async () => {
+test('the editor refuses to start on a fit it cannot honor', async () => {
   // A missing fit is normal — most cars have never been tuned. A fit that exists
   // and is wrong is not, and starting anyway gives an editor that looks fine and
   // fails only when you press Save, by which point the work has been done twice.
@@ -2041,7 +2085,7 @@ test('a panel records how big it is on the car, not only how stretched', async (
     'the magnitudes must divide to the anisotropy already recorded');
 
   // The payoff: a region covering a third of that panel's width is now a
-  // number of metres rather than a fraction of an image nobody can picture.
+  // number of meters rather than a fraction of an image nobody can picture.
   const third = resolveRect(profile, role, { panel: 'left_mid', at: [0, 0, 1 / 3, 0.5] });
   const m = metresAcross(third);
   assert.ok(Math.abs(m.w - CAR.length / 3) < 0.02, `${m.w} m across, expected ${(CAR.length / 3).toFixed(2)}`);
@@ -2118,7 +2162,7 @@ test('the editor can say what a design would find on another car', async () => {
     assert.ok(role, `${other} has no texture roles, so nothing below would mean anything`);
     const design = (regions) => ({ name: 'probe', packs: ['core'], paint: { [role]: { regions } } });
 
-    // The working design is honoured, not the one on disk — the whole question
+    // The working design is honored, not the one on disk — the whole question
     // is about the edit in front of you, and answering about a saved file would
     // be answering about something nobody is looking at.
     const worked = await (await ask({
@@ -2157,8 +2201,8 @@ test('the editor can say what a design would find on another car', async () => {
   }});
 
 test('unpainted meshes are grouped by their own texture, not lumped together', async () => {
-  // They used to be one group with no role, drawn flat grey — honest, and it
-  // reads as a bug: a grey rectangle over a door panel looks like a sticker
+  // They used to be one group with no role, drawn flat gray — honest, and it
+  // reads as a bug: a gray rectangle over a door panel looks like a sticker
   // rather than like "your livery does not paint this". One group per texture
   // is what lets each wear the car's own artwork instead.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');

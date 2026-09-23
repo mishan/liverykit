@@ -231,7 +231,7 @@ const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'dds.js', 'fields
 /**
  * The one dependency the browser shares with Node, and where it comes from.
  *
- * `uses.js` has to answer "is this string a colour" the same way on both sides,
+ * `uses.js` has to answer "is this string a color" the same way on both sides,
  * because the dangling-names panel and the inspector's Add-to-palette button are
  * the same judgement shown twice — and a browser regex that disagreed with the
  * Node one would put a button next to a warning saying the opposite.
@@ -332,7 +332,7 @@ export function treatmentCatalogue(livery) {
  *     that the evidence is missing is how a badge ends up on a roof.
  *
  *   * Both halves may name the SAME panel, and that is valid: a panel with no
- *     mirror straddles the centreline, so it is its own, and a car with two
+ *     mirror straddles the centerline, so it is its own, and a car with two
  *     numbers on its nose wears both of them there. `commit` already mirrors
  *     within such a panel; this must not refuse the pair before it gets there.
  */
@@ -360,7 +360,7 @@ export function mirrorPairs(livery, profile, role) {
       const [theirsName, theirs] = resolve(o.panel);
       if (!mine || !theirs) continue;                       // unverifiable, so unlinked
       const mirrored = mineName === theirsName
-        ? mine.mirrorOf === undefined                       // a centreline panel is its own
+        ? mine.mirrorOf === undefined                       // a centerline panel is its own
         : mine.mirrorOf === theirsName || theirs.mirrorOf === mineName;
       if (!mirrored) continue;
     }
@@ -569,7 +569,7 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
  * wrong. Offering those as opportunities would be the editor inviting a mistake
  * the profile already knows about.
  *
- * A file can be BOTH a texture role and listed in `doNotPaint` — the tyre blur
+ * A file can be BOTH a texture role and listed in `doNotPaint` — the tire blur
  * variants are — so the two are merged rather than concatenated. Losing the role
  * name would leave the editor unable to say what it was refusing.
  */
@@ -733,7 +733,7 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
         // `null` for a profile generated before the measurement existed, which
         // is both bundled cars until they are regenerated.
         //
-        // From the ABSOLUTE rect, not from `at`. `metresPerUv` is metres per
+        // From the ABSOLUTE rect, not from `at`. `metresPerUv` is meters per
         // unit of the whole sheet and `at` is panel-relative, so multiplying
         // the two would report a region on a small panel as though it covered
         // the car. I wrote that version first.
@@ -875,8 +875,8 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   /**
    * The car's OWN artwork for a texture the design does not paint.
    *
-   * The whole-car view used to draw those parts flat grey. That is honest and it
-   * reads as a bug: a grey rectangle over a door panel looks like a sticker
+   * The whole-car view used to draw those parts flat gray. That is honest and it
+   * reads as a bug: a gray rectangle over a door panel looks like a sticker
    * somebody left on, not like "your livery does not paint this". Handing the
    * browser the car's real texture answers the question the view exists for —
    * does this design work on this car — instead of asking you to imagine the
@@ -897,7 +897,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // few seconds saw it truthy, skipped the load, looked up an empty map and was
   // told 404 — "this model has no such texture" — for textures the model does
   // have. The viewer asks for fifty of these six at a time on a cold server, so
-  // a refresh right after a restart drew most of the car grey, and a second
+  // a refresh right after a restart drew most of the car gray, and a second
   // refresh fixed it. Nothing was still loading by then; the answers had been
   // wrong the first time. Holding the in-flight promise makes the second caller
   // WAIT for the first one's work instead of racing past it.
@@ -911,7 +911,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       //
       // This was diffuse-only, from when one texture was the whole of a
       // surface. The first correction added txDetail, which fixed the seat's
-      // colour and left its normal map answering 404 — that one is bound as
+      // color and left its normal map answering 404 — that one is bound as
       // txNormalDetail. An allowlist of slot names goes stale every time the
       // viewer learns to read one more of them, and it fails SILENTLY: the
       // viewer asks, is told no, and draws something plausible with a layer
@@ -934,7 +934,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (!t.data || !used.has(t.name.toLowerCase())) continue;
         // A 1x1 blob is not a small texture, it is an absent one: an encrypted
         // kn5 substitutes placeholders and keeps the real artwork in a blob
-        // this project does not decrypt. Storing them would put a single grey
+        // this project does not decrypt. Storing them would put a single gray
         // texel on the bodywork and call it the car.
         if (t.data.length <= 256) continue;
         stock.set(t.name.toLowerCase(), Buffer.from(t.data));
@@ -1002,7 +1002,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     // EVERY role, not just the primary one per term. `editorState` returns
     // one entry per vocabulary term — right for a surface picker, wrong
     // here: `surfaces.body` on a formula car binds body AND bodyRear, the
-    // design paints both, and taking only the first drew half the car grey
+    // design paints both, and taking only the first drew half the car gray
     // and called it unpainted.
     const roles = [];
     for (const t of resolveTargets(profile, design).targets) {
@@ -1165,7 +1165,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // only ever answer with something the model itself contains.
       if (req.method === 'GET' && url.pathname === '/api/stock') {
         // 404 means THIS MODEL HAS NO SUCH TEXTURE, and the viewer takes it at
-        // its word — draws the grey and says nothing, because an encrypted car
+        // its word — draws the gray and says nothing, because an encrypted car
         // really does have none of these. So a model that could not be read is
         // a 500 and not a 404: it is a fact about the server, not about the car.
         let data;
@@ -1338,13 +1338,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         }));
         // The car's OWN artwork for everything the design does not paint, the
         // same way the build's preview.jpg gets it. Without it this drew glass,
-        // wheels and the entire interior flat grey while the browser view a
-        // metre away showed them in their real materials — and this is the only
+        // wheels and the entire interior flat gray while the browser view a
+        // meter away showed them in their real materials — and this is the only
         // picture an agent working without a browser can see, so a change was
         // being verified against the wrong one.
         // A kn5 whose textures cannot be read AT ALL rejects here once per
         // file, and carSheets names each of them — so the count below is the
-        // number of parts drawing grey either way, and the picture still gets
+        // number of parts drawing gray either way, and the picture still gets
         // taken. The geometry is already in hand; withholding it over the
         // paint would answer a question nobody asked.
         const { sheets: stock, absent } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
@@ -1475,7 +1475,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
-          // 2048x2048 — so the livery was rasterised at a quarter of its
+          // 2048x2048 — so the livery was rasterized at a quarter of its
           // resolution and drawn beside stock artwork uploaded at full size.
           // Nothing here is a rendering setting; it is a fact about the car,
           // and the only place that knows it is this side.
@@ -1839,7 +1839,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // package's own ESM build. No bundler and no vendored copy: colord ships
       // `.mjs`, an import map in `index.html` points the bare specifier `colord`
       // at these paths, and Node resolves the same specifier from the same
-      // package — so the editor and the tests agree about what a colour is
+      // package — so the editor and the tests agree about what a color is
       // because they are running the identical file.
       //
       // An allowlist of exactly the two paths in VENDOR, each mapped to a
