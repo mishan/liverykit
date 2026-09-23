@@ -138,7 +138,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       profile,
       role,
       // --flat proves the plumbing before any art exists: if the car doesn't
-      // turn a solid colour, the DDS format or a filename is wrong and no
+      // turn a solid color, the DDS format or a filename is wrong and no
       // amount of artwork will fix it.
       // Fit first, so an override that names a panel replaces the tag selection
       // before anything is expanded. `applyFit` also leaves off this texture a
@@ -282,7 +282,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
  * Parity with the editor's Whole Car view is the goal, not a coincidence:
  * both wear the design's own artwork on what it paints and the CAR'S OWN
  * texture on what it does not — glass, wheels, interior trim — rather than
- * leaving those parts flat grey. The editor gets that from the browser
+ * leaving those parts flat gray. The editor gets that from the browser
  * uploading the kn5's compressed textures straight to the GPU; this has no
  * GPU, so `carSheets` does in a temp file what the browser does in VRAM.
  */
@@ -325,14 +325,14 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
   }
 
   // The car's own artwork for whatever the design leaves unpainted — filed
-  // under FILE rather than role, which is how `rasterise`'s `sheetKey` tells
+  // under FILE rather than role, which is how `rasterize`'s `sheetKey` tells
   // "this is the car's" from "this is the design's". Only the files a group
   // actually claims, which `wholeModelGeometry` has already narrowed to what
   // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
   // excluded there, before this ever sees it).
   //
   // Shared with the MCP renderer rather than done here, which is where it used
-  // to live: `shoot` had none of this and drew every unpainted part grey, so
+  // to live: `shoot` had none of this and drew every unpainted part gray, so
   // the picture an agent takes without a browser and the picture that ships in
   // the skin disagreed about the same car.
   const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
@@ -463,7 +463,7 @@ function resolveAo(path, liveryDir) {
 
 /**
  * Scale a rendered SVG document by rewriting its width/height while leaving the
- * viewBox alone. Cheaper and sharper than rasterising at 1x and resampling.
+ * viewBox alone. Cheaper and sharper than rasterizing at 1x and resampling.
  */
 function scaleSvg(svg, scale) {
   if (scale === 1) return svg;

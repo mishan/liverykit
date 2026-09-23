@@ -112,13 +112,13 @@ and lights wrongly.
 The **Whole car** view shows every texture at once, with your design on the
 surfaces it paints and the car's own artwork — read from your kn5, never shipped
 — on the ones it does not. So what you are looking at is the car, not a livery
-floating on a grey mannequin.
+floating on a gray mannequin.
 
 The stock artwork goes to the GPU as compressed blocks with no decoding step,
 which means it covers DXT1, DXT3 and DXT5 — the great majority of what a car
 ships — and nothing else. A PNG texture, an uncompressed DDS, or a browser
-without `WEBGL_compressed_texture_s3tc` stays flat grey, as does an encrypted
-car, whose embedded textures are 1×1 placeholders. Grey means *this part is not
+without `WEBGL_compressed_texture_s3tc` stays flat gray, as does an encrypted
+car, whose embedded textures are 1×1 placeholders. Gray means *this part is not
 yours and could not be shown*, never a guess at what belongs there.
 
 It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
@@ -234,7 +234,7 @@ car:    'ks_ferrari_488_gt3',   // must match the profile's id
 node bin/liverykit.mjs my-livery --flat
 ```
 
-Solid colour, no artwork. Install it and check the car changes colour.
+Solid color, no artwork. Install it and check the car changes color.
 
 Do this first on every new car. If a filename is wrong the skin still installs
 cleanly, logs nothing, and renders the stock car — which looks exactly like "my
@@ -304,7 +304,7 @@ the panel's distortion. `contain` and `cover` fit the artwork to the aspect it
 should have ON the car, using the panel's measured `anisotropy` — the same
 correction the `text` treatment makes. `stretch` is there for when you mean it.
 
-**PNG, JPEG and SVG.** An SVG is rasterised when it is loaded, at 2048 on its
+**PNG, JPEG and SVG.** An SVG is rasterized when it is loaded, at 2048 on its
 longest side, and never travels as markup: a design is a file people download
 from each other and the editor renders the finished sheet as `innerHTML`, so
 foreign markup inside it is a way to lose. Its pixels are what reach the car.
@@ -366,9 +366,9 @@ derived from rounding error.
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
 trackside), `cockpit` (readable from the driver's seat), `mirrored`,
-`shared`, and on the tyre texture `sidewall` and `tread`.
+`shared`, and on the tire texture `sidewall` and `tread`.
 
-Tyres deserve a word. A sidewall is a disc, and an unwrapper lays it out either
+Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
 once and rolled out as a strip, u round the circumference and v from rim to
 shoulder. The Abarth's is a disc; the NSX's and the RSS4's are strips. A design
@@ -376,11 +376,11 @@ that draws rings is right on the first and draws one big circle across the
 second, which on the car is a few stray arcs where the circle crosses the
 strip. The profile measures which it is, from the wheel centres AC requires
 every car to name, and writes it on the panel as `wheel`; the `band` treatment
-reads that and draws a band round the tyre `along` the sidewall — 0 at the rim,
+reads that and draws a band round the tire `along` the sidewall — 0 at the rim,
 1 at the shoulder — whichever way it was unwrapped:
 
 ```js
-tyres: { regions: [
+tires: { regions: [
   { treatment: 'band', tags: ['sidewall'], along: 0.9, width: 0.08, color: 'accent', glow: true },
 ] }
 ```
@@ -508,7 +508,7 @@ Three views, because the sheet is not the question:
 
 Both car views are **lit** — a hemisphere for sky and ground, one key light and a
 clearcoat highlight — because an unlit slab cannot show how a stripe crosses a
-curve. Shading distorts colour, though, so the **lit** tick turns it off when you
+curve. Shading distorts color, though, so the **lit** tick turns it off when you
 need to read the paint as it is. The UV view is always the honest one.
 
 The Car views need the car's `.kn5`, which is yours and not shipped here — see
@@ -536,7 +536,7 @@ existing region *also* appears somewhere else.
 }
 ```
 
-Treatment, colours and text all come from `of`; the only new information is a
+Treatment, colors and text all come from `of`; the only new information is a
 placement, which is what a fit is for. It earns the exception because symmetry is
 a property of the *car* — a design that paints one badge is portable to a car
 with one flank worth painting and to a car with two, and the design cannot know
@@ -566,8 +566,8 @@ and several other things:
 | `off-mesh` | the box lands on texture space no triangle uses |
 | `unseen` | the bodywork hides it from trackside, or a fitting stands on it (a door handle, a number plate) |
 | `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
-| `low-contrast` | text in a colour too close to what is painted under it: under 3:1 will not read from trackside |
-| `unreadable` | too small in millimetres at the car's real scale |
+| `low-contrast` | text in a color too close to what is painted under it: under 3:1 will not read from trackside |
+| `unreadable` | too small in millimeters at the car's real scale |
 | `ungrouped` | a region that declared `groupWith` is not on the same panel as the region it names |
 | `stripe-across` | a piece of a declared `stripe` runs across the car on its panel: its long side is the axis find_panels names as across the car |
 | `stripe-offset` | two pieces of one declared `stripe` do not line up where they meet: an edge steps more than 20 mm on the car |
@@ -628,10 +628,10 @@ by the same ray casting as `unseen`, which on its own only speaks up below 35% �
 roundel tucked under a window frame is on the car and still cut off. Paint with a
 fitting standing on it counts as unseen however many angles slip round the fitting:
 the ray straight out from the surface is tested exactly against the triangles within
-5 cm, since a door handle a few millimetres proud is finer than the voxel grid. A region
+5 cm, since a door handle a few millimeters proud is finer than the voxel grid. A region
 with any of these constraints is sampled every 5 mm or so, so its edges are tested
 too. `minMargin`, in
-millimetres, asks for that much clean bodywork all round: with it added on every
+millimeters, asks for that much clean bodywork all round: with it added on every
 side, the box must still be on the car and visible. `groupWith` names another region
 this one must share a panel with, as a team name belongs beside the race number,
 and they are reported as `ungrouped` when they part. Unlike the floors it is never
@@ -662,7 +662,7 @@ the design paints is never hidden.
 
 In the editor a hidden surface is simply not drawn. In the game there is no such
 switch, so the build ships a **fully transparent texture** for it — which works
-when the part's material honours alpha, and not otherwise. The profile records
+when the part's material honors alpha, and not otherwise. The profile records
 `alphaHides` for each texture: true when every material that wears it blends,
 alpha-tests or uses alpha to coverage, each of which draws nothing of a fully
 transparent texel. The build reads it and says what happened to every hidden
@@ -693,7 +693,7 @@ never shows.
 That config is applied by the game running Custom Shaders Patch and by nothing
 else: Content Manager's showroom draws the stock model, plates and all. So the
 transparent texture is shipped whether or not the car hides the mesh — it is
-the one thing honoured by everything that draws the part — and `hiddenByCar`
+the one thing honored by everything that draws the part — and `hiddenByCar`
 only changes what is reported when no transparent texture would work.
 
 ### Two honest limits
@@ -733,7 +733,7 @@ design written for one car will always look better on it.
 - **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
 - **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
 - **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, and furthest from any edge — as ranked panel-relative spots with their clearance in mm, measured by the same ray casting as `check_fitment`. With `largest` and an `aspect`, the largest shape of that proportion that fits. With `layout: { number, name }`, a race number in a roundel with the name under it, laid out as large as the panel allows and returned as regions ready to use.
-- **`list_treatments`**: Catalogue of all loaded treatment options and schemas.
+- **`list_treatments`**: Catalog of all loaded treatment options and schemas.
 - **`list_constraints`**: The constraints a region may declare, and what each enforces.
 - **`read_design`**: Read working design data held in the running editor.
 - **`read_fit`**: Read working fit overrides and copies, including stale region IDs.
@@ -823,8 +823,8 @@ Per panel:
 | `anisotropy` | how much wider than tall a square of texture lands on the bodywork. The `text` treatment cancels it for you |
 | `mirrorOf` | the matching panel on the other side of the car, if there is one |
 | `adjacent` | panels that physically touch this one on the car |
-| `wheel` | on a tyre part: `part` (sidewall or tread), `unwrap` (strip or annulus), `radiusM` [rim, shoulder]; for a strip `around` (which coordinate runs round the circumference), `rim` (which panel edge is the rim) and `across` [at rim, at shoulder]; for an annulus `hub` and `radiusUv`. `fit` is the correlation the verdict rests on |
-| `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in metres from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
+| `wheel` | on a tire part: `part` (sidewall or tread), `unwrap` (strip or annulus), `radiusM` [rim, shoulder]; for a strip `around` (which coordinate runs round the circumference), `rim` (which panel edge is the rim) and `across` [at rim, at shoulder]; for an annulus `hub` and `radiusUv`. `fit` is the correlation the verdict rests on |
+| `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in meters from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
 | `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
@@ -836,10 +836,10 @@ Per panel:
 Top level: `textures` (role → file, size, alpha), `aliases`, `caseCollisions`,
 and two different "don't paint this" lists:
 
-- **`doNotPaint`** — textures the model binds as something other than colour:
+- **`doNotPaint`** — textures the model binds as something other than color:
   normal maps, shader maps, dirt masks. Painting one corrupts the thing it
   encodes.
-- **`leaveStock`** — textures that genuinely *are* colour maps and will happily
+- **`leaveStock`** — textures that genuinely *are* color maps and will happily
   accept artwork, but shouldn't get it: baked shadow overlays, mirror surfaces,
   motion-blur variants, and the car maker's own badges. Each entry says why.
 
@@ -852,7 +852,7 @@ rather type `liverykit`. `--help` is authoritative.
 
 ```
 <livery>                          build + ZIP
-<livery> --flat                   solid colour, no art — the smoke test
+<livery> --flat                   solid color, no art — the smoke test
 <livery> --seed hotline-07        re-roll all procedural placement
 <livery> --size 4096              render bigger (powers of two only)
 <livery> --keep-png               keep intermediate PNGs, written beside the skin
@@ -868,7 +868,7 @@ rather type `liverykit`. `--help` is authoritative.
 <livery> --pack ./my-pack.mjs     load an extra treatment pack (repeatable)
 <livery> --uvgrid                 build a calibration skin (see below)
 <livery> --uvgrid --cells 40      finer grid, for small parts
-<livery> --uvgrid --probe a,b,c   ship candidate filenames as colour-coded probes
+<livery> --uvgrid --probe a,b,c   ship candidate filenames as color-coded probes
 --from-kn5 <car>.kn5              generate a car profile from the model
   --skins <dir>                     cross-reference real texture sizes
   --car-id <id> --car-name <name>
@@ -903,9 +903,9 @@ overrides nothing, silently and harmlessly.
 node bin/liverykit.mjs my-livery --uvgrid --probe Tire_D.dds,Tire.dds,tyres_all.dds
 ```
 
-Each candidate ships in a loud colour with its own filename printed on it. One
+Each candidate ships in a loud color with its own filename printed on it. One
 look at the car identifies the winner; the rest are inert. The probes also draw
-concentric rings, so if the part turns out to be radially unwrapped — as tyre
+concentric rings, so if the part turns out to be radially unwrapped — as tire
 sidewalls usually are — you learn the layout at the same time as the name.
 
 ---
@@ -936,7 +936,7 @@ Full procedure in [docs/calibration.md](docs/calibration.md).
 Car profiles are the most valuable thing to contribute: one command produces one,
 and it's identical for everyone who owns that car. See
 [CONTRIBUTING.md](CONTRIBUTING.md), and [AGENTS.md](AGENTS.md) for how the code
-is arranged and the Assetto Corsa behaviours it is defending against — every one
+is arranged and the Assetto Corsa behaviors it is defending against — every one
 of which produces a file that installs cleanly and is wrong.
 
 The kn5 reader is reverse-engineered from a format with no public specification.
@@ -945,7 +945,7 @@ fails loudly instead of parsing into nonsense. If it throws on your car, please
 [open an issue](https://github.com/mishan/liverykit/issues) with the version
 number it prints.
 
-## Licence
+## License
 
 MIT. Not affiliated with Kunos Simulazioni or any car maker. Ships no game
 assets, and profiles contain measurements only — never textures or models.

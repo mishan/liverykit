@@ -3,7 +3,7 @@
 // grouped by which texture paints each part.
 //
 // Lives in engine/ rather than ui/ because both the fitting editor (which
-// draws it in WebGL) and the CLI build (which rasterises it in Node, for a
+// draws it in WebGL) and the CLI build (which rasterizes it in Node, for a
 // preview.jpg and for `render_car`/`render_view`) need the same grouping —
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
@@ -36,12 +36,12 @@ export function cockpitLod(m) {
  * Every mesh appears exactly once. A mesh whose texture the livery does not
  * paint goes into a group with no ROLE but with its FILE, one group per texture
  * — which is what lets the viewer draw the car's own artwork there, out of the
- * kn5, and fall back to flat grey only when it cannot. Leaving those meshes out
+ * kn5, and fall back to flat gray only when it cannot. Leaving those meshes out
  * entirely would be worse than either: a car with holes in it reads as a broken
  * export rather than as an unpainted panel.
  *
- * They used to be ONE group and always grey. That is honest and it reads as a
- * bug: a grey rectangle across a door panel looks like a sticker somebody left
+ * They used to be ONE group and always gray. That is honest and it reads as a
+ * bug: a gray rectangle across a door panel looks like a sticker somebody left
  * on, and it was reported as a fault twice.
  */
 export function wholeModelGeometry(model, files, { livery = {}, profile = {} } = {}) {
@@ -128,7 +128,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // would put another part's seams on this one. `null` where the material
         // does not honestly have one — see baseNormal for what that excludes.
         //
-        // A PAINTED group carries it too. A livery replaces the colour of a
+        // A PAINTED group carries it too. A livery replaces the color of a
         // panel, never the shape of the seam running across it.
         normalMap: baseNormal(model.materials?.[dominant]),
         add: blend && additive(group.file),
@@ -240,7 +240,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // A car of this kind ships its interior twice: COCKPIT_HR for the driver's
   // camera and COCKPIT_LR for every external one, occupying the same space and
   // swapped by whichever camera is live. Drawing both puts every interior
-  // surface a fraction of a millimetre from its own duplicate, which the depth
+  // surface a fraction of a millimeter from its own duplicate, which the depth
   // buffer cannot separate — the dashboard and the tub come out as a hard-edged
   // checkerboard that reads as a broken material rather than as z-fighting.
   //
@@ -288,7 +288,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // Whatever is left: glass, the number plates, the Lumirank panel, the mirrors.
   //
   // ONE GROUP PER TEXTURE, not one group for all of them. They used to be lumped
-  // together and drawn flat grey, which is honest but reads as a bug — a grey
+  // together and drawn flat gray, which is honest but reads as a bug — a gray
   // rectangle across a door panel looks like a sticker, not like "this part is
   // unpainted", and it was reported as a fault twice. Split by texture, each can
   // wear the car's OWN artwork, so the whole-car view shows the real car with
@@ -308,16 +308,16 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // But "the diffuse is not the surface" and "the surface is unknowable" are
     // different claims, and the second one cost this car its whole cockpit:
     // door cards, instrument surround and rollcage trim are MultiMap parts, so
-    // every one of them fell in here as flat grey next to a painted interior,
+    // every one of them fell in here as flat gray next to a painted interior,
     // which reads as a checkerboard and was reported as exactly that. Their
     // material knows better — see `detailLayer` — and says the part is a bake
     // times a tiling material.
     //
     // Deliberately NOT folded into `file`. Both renderers read `file` as "this
     // one sheet IS the surface", so putting an occlusion bake there would have
-    // the software rasteriser draw a door card as a greyscale photograph of
+    // the software rasterizer draw a door card as a greyscale photograph of
     // its own shadows. A renderer that cannot composite two layers should get
-    // the grey, and does.
+    // the gray, and does.
     const detail = file === null ? detailLayer(mat) : null;
     if (detail) detail.bake = bakes.has(detail.diffuse.toLowerCase());
 
@@ -359,7 +359,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     const wears = group.file ?? group.detail?.diffuse ?? null;
     if (wears && hidden.has(String(wears).toLowerCase())) continue;
     // `role: null` still means "the design does not paint this", which is what
-    // the viewer keys its grey off. `file` is new, and says what to draw instead
+    // the viewer keys its gray off. `file` is new, and says what to draw instead
     // when the car itself can supply it.
     emit(meshes, group);
   }

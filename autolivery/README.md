@@ -5,7 +5,7 @@ the car's real 3D model, and revises until the fitment check passes. Every call 
 makes is traced, and a person accepts or discards what it proposes.
 
 The fitment check is the part it cannot talk its way past. It measures in
-millimetres and visible fractions against the car's actual UV geometry, not by
+millimeters and visible fractions against the car's actual UV geometry, not by
 judging a picture, and the harness runs it rather than the agent reporting on
 itself.
 
@@ -39,7 +39,7 @@ below, Sonnet 5 agreed with a person as often as Opus 5 at half the price, and
 at low effort it agreed just as often again, in about 10 s a picture instead of
 20, so the example asks for that.
 
-`autolivery-nsx` is the Honda NSX GT3 Evo in grey primer and nothing else. The
+`autolivery-nsx` is the Honda NSX GT3 Evo in gray primer and nothing else. The
 editor needs the car's own `.kn5` for the 3D views, and so does the loop, because
 every measurement and render is taken from the model — see the main README on
 [supplying the game's files](../README.md#you-supply-the-games-files).
@@ -54,8 +54,8 @@ which views it judges.
 
 Beyond the brief, the planner is asked for two things a Gulf car carries where
 trackside sees it, since the stripe over the top barely shows from the side: a
-ground-effect kit in the style's colours (splitter, side skirts and diffuser,
-laid out by `find_space`'s `aero`) and the wheels in its accent colour.
+ground-effect kit in the style's colors (splitter, side skirts and diffuser,
+laid out by `find_space`'s `aero`) and the wheels in its accent color.
 `--no-aero` and `--no-wheels` leave either out.
 
 ## On your own GPU
@@ -233,7 +233,7 @@ not in the loop's logic. The car lives in three places plugged into it:
 - **The model and its profile.** The reader is Assetto Corsa's kn5, and the
   profile names panels, wheels and the car's frame, which is taken from where
   its wheels are.
-- **The checks.** Fitment measures in millimetres against that model, and
+- **The checks.** Fitment measures in millimeters against that model, and
   several checks are about cars: a race number's minimum capital height, a
   stripe that runs nose to tail and over the rear wing, a ground-effect kit
   laid out from the car's lowest panels.

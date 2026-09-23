@@ -11,7 +11,7 @@
 // megabyte to draw one textured mesh with an orbit camera, which is about two
 // hundred lines done directly. The trade would be different if this needed
 // lighting, shadows or materials. It does not: the texture IS the answer, and
-// anything shaded on top of it would be lying about the colours.
+// anything shaded on top of it would be lying about the colors.
 // ---------------------------------------------------------------------------
 
 import { decodeDds } from './dds.js';
@@ -44,7 +44,7 @@ void main() {
 // LIGHTING IS A MODE, and the reason it is a mode is worth keeping.
 //
 // This shader used to draw the raw texture and say so: "no lighting on purpose,
-// a shaded preview would misreport the artwork's colour, which is the one thing
+// a shaded preview would misreport the artwork's color, which is the one thing
 // this view exists to show honestly." That is still true, and it is why `lit`
 // can be turned off and why the UV tab never had this problem at all.
 //
@@ -55,7 +55,7 @@ void main() {
 // like the car in the game, and "nothing like the game" is a real answer to
 // "will this look right".
 //
-// So: shaded by default, honest colour one click away, and the highlight
+// So: shaded by default, honest color one click away, and the highlight
 // overlay drawn AFTER the shading so the thing you are dragging keeps its
 // contrast in shadow.
 //
@@ -118,7 +118,7 @@ uniform vec4 twin;        // its opposite number, which moves with it
 uniform vec4 twinPanel;   // and where that one lives
 uniform float border;     // border thickness, in UV units
 uniform float dim;        // 1 = not what the Bindings panel is pointing at
-uniform float lit;        // 0 = true colour, 1 = shaded like a car
+uniform float lit;        // 0 = true color, 1 = shaded like a car
 uniform float glass;      // 1 = this group is reflective glass
 // 1 = take this group's transparency from the texture's alpha channel.
 //
@@ -127,8 +127,8 @@ uniform float glass;      // 1 = this group is reflective glass
 // through the car. Only the alpha-blended pass asks for this, and only for
 // groups that are not glass — glass builds its own from the fresnel below.
 uniform float texAlpha;
-// 1 = the bound texture is this group's own artwork rather than the grey
-// stand-in. Glass reads it: a sheet's alpha means something, and the grey
+// 1 = the bound texture is this group's own artwork rather than the gray
+// stand-in. Glass reads it: a sheet's alpha means something, and the gray
 // fallback's alpha of 1 would make a windscreen with no texture solid.
 uniform float hasArt;
 // The alpha below which a fragment is thrown away, or 0 for a surface that
@@ -159,7 +159,7 @@ float edgeDist(vec4 r, vec2 p) {
  *
  * What IS defensible: bodywork is a dielectric with a clear lacquer over it, so
  * a broad diffuse term, a tight specular highlight that does not take the
- * paint's colour, and a Fresnel rim that brightens at grazing angles. Those
+ * paint's color, and a Fresnel rim that brightens at grazing angles. Those
  * three are what make a car read as a curved metal object rather than a decal
  * sheet, and none of them needs an asset.
  */
@@ -180,7 +180,7 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v, float glassRim) {
   diffuse += albedo * vec3(0.35, 0.42, 0.55) * max(0.0, dot(n, rim)) * 0.35;
 
   // Clearcoat. WHITE, not tinted by the paint: the highlight on a car is the
-  // sky in the lacquer, and colouring it by the artwork underneath is the
+  // sky in the lacquer, and coloring it by the artwork underneath is the
   // single most common way a shaded preview lies about a livery.
   vec3 h = normalize(key + v);
   float spec = pow(max(0.0, dot(n, h)), matExponent) * matSpecular;
@@ -201,7 +201,7 @@ void main() {
   vec4 texel = texture2D(map, vUv);
   // DISCARDED, not composited. An alpha-tested surface is drawn in the OPAQUE
   // pass, which ignores alpha and writes depth: handing it a zero alpha draws
-  // the absent part as whatever colour sits under it, and on a cutout sheet
+  // the absent part as whatever color sits under it, and on a cutout sheet
   // that is black. A grille came out a solid panel, the badge on this car's
   // nose a black rectangle.
   if (alphaTest > 0.0 && texel.a < alphaTest) discard;
@@ -209,8 +209,8 @@ void main() {
   // Two ways to put the layers together, and which one is right depends
   // entirely on what the DIFFUSE underneath actually is.
   //
-  // A real colour map takes the ordinary overlay: a detail sheet is authored
-  // against mid-grey meaning "leave this alone", so 0.5 * 2 = 1 and nothing
+  // A real color map takes the ordinary overlay: a detail sheet is authored
+  // against mid-gray meaning "leave this alone", so 0.5 * 2 = 1 and nothing
   // changes where the detail is neutral. Skip the doubling and every part
   // wearing one comes out at half brightness, which reads as a lighting bug.
   //
@@ -227,7 +227,7 @@ void main() {
   // Dropping the bake entirely was the previous attempt at that, and it went
   // too far the other way: it threw away the baked shadows and left every
   // surface flat, with the pale parts pale for want of anything to shade them.
-  // Multiplying at unit scale keeps both — the material's own colour, and the
+  // Multiplying at unit scale keeps both — the material's own color, and the
   // occlusion that gives it depth — and cannot brighten anything, since the
   // bake is never above one.
   if (hasDetail > 0.5) {
@@ -238,7 +238,7 @@ void main() {
   // and this used to hand it a hard 1.0 for everything that was not glass —
   // which composites as fully opaque and makes the whole pass a no-op for the
   // surfaces it exists for. A decal sheet or a mask carries its shape in the
-  // alpha channel; ignoring it draws the transparent part as whatever colour
+  // alpha channel; ignoring it draws the transparent part as whatever color
   // happens to sit under it. The detail layer above multiplies COLOUR only,
   // so it has nothing to say about coverage.
   float alpha = texAlpha > 0.5 ? texel.a : 1.0;
@@ -246,14 +246,14 @@ void main() {
   // Both faces are drawn, because car meshes are not reliably wound, so a
   // normal can point away from the camera on a perfectly visible surface.
   // Flipping it is what stops the far side of a shell rendering black.
-  // Computed unconditionally — glass needs it for alpha even in true-colour
+  // Computed unconditionally — glass needs it for alpha even in true-color
   // mode, where lit never reaches shade() at all.
   vec3 v = normalize(eye - vP);
   vec3 n = normalize(vN);
   if (dot(n, v) < 0.0) n = -n;
 
   // THE GRAIN OF THE MATERIAL, which is most of what tells two matte surfaces
-  // apart. A colour map says alcantara is dark grey; so is flat paint. What
+  // apart. A color map says alcantara is dark gray; so is flat paint. What
   // says suede is a nap that catches the light at a thousand angles at once,
   // and that lives in the detail normal map — the one texture the material
   // points at that nothing here was reading.
@@ -337,7 +337,7 @@ void main() {
       if (d.x > region.z * 0.75 && d.y > region.w * 0.75) c = mix(c, accent, 0.55);
       else if (edgeDist(region, vUv) < border) c = mix(c, accent, 0.9);
     } else if (within(twin, vUv)) {
-      // The opposite number: same true colour, a quieter outline, and NO grab
+      // The opposite number: same true color, a quieter outline, and NO grab
       // corner. It moves when this one moves, but it is not what the pointer
       // is holding, and drawing it identically would invite grabbing the wrong
       // one on a car where both flanks are in view at once.
@@ -568,7 +568,7 @@ export function capped(w, h, max = 4096) {
 }
 
 /**
- * What size to rasterise each painted surface at, for the whole-car view.
+ * What size to rasterize each painted surface at, for the whole-car view.
  *
  * Separated from the GPU so it can be checked without one, because the number
  * it produces is the whole of why the car looked fuzzy. It used to be a flat
@@ -670,7 +670,7 @@ export function createViewer(canvas) {
   // groups whose transparency is real — glass, the plates' emissive twins —
   // and those fragments then punch a hole through the canvas to the stage
   // behind it. It is nearly invisible here, because #stage is #05070a and the
-  // clear colour is (0.02, 0.03, 0.04): the hole shows the same near-black.
+  // clear color is (0.02, 0.03, 0.04): the hole shows the same near-black.
   // Guarding each uniform instead is what the per-surface pass already had to
   // do, and it only holds until the next pass forgets one.
   //
@@ -740,10 +740,10 @@ export function createViewer(canvas) {
     return t;
   }
   const texture = greyTexture();
-  // A SECOND grey, for the unpainted parts of the whole-car view, and deliberately
+  // A SECOND gray, for the unpainted parts of the whole-car view, and deliberately
   // not the one above.
   //
-  // `texture` starts grey and stops being grey the instant `setTexture` uploads
+  // `texture` starts gray and stops being gray the instant `setTexture` uploads
   // the surface you are editing into it. The whole-car draw fell back to it for
   // a group with no role, so every unpainted mesh on the car — glass, interior,
   // brake discs, anything the design does not touch — was drawn wearing the
@@ -752,12 +752,12 @@ export function createViewer(canvas) {
   // you off to look at the design.
   //
   // The editor opens on the car view, so `texture` has essentially never been
-  // grey by the time anybody presses Whole car. That is why it looked
+  // gray by the time anybody presses Whole car. That is why it looked
   // deliberate.
   const unpainted = greyTexture();
   // Whole-car mode: one texture per painted surface, and one draw call each.
   // `null` in a group means the design does not paint it — it then gets the
-  // car's own texture from `byFile` if the model could supply one, and the grey
+  // car's own texture from `byFile` if the model could supply one, and the gray
   // if not.
   const byRole = new Map();
   const byFile = new Map();
@@ -800,8 +800,8 @@ export function createViewer(canvas) {
   let twin = [0, 0, 0, 0];
   let twinPanel = [0, 0, 0, 0];
   let border = 0.0015;
-  // Shaded by default. Honest colour is one call away and the UV tab, where you
-  // read colours off the sheet, is untouched by any of this.
+  // Shaded by default. Honest color is one call away and the UV tab, where you
+  // read colors off the sheet, is untouched by any of this.
   let lit = true;
 
   function resize() {
@@ -954,7 +954,7 @@ export function createViewer(canvas) {
     const paint = (g) => {
       if (g.lod === 'LR') return;
       // In order: the design's own render for a painted role, then the car's
-      // own texture for a part the design skips, then grey.
+      // own texture for a part the design skips, then gray.
       //
       // `unpainted`, never `texture`: a group with no role is a part of the car
       // this design does not paint, and falling back to the surface being
@@ -963,27 +963,27 @@ export function createViewer(canvas) {
         ?? (g.detail ? byFile.get(g.detail.diffuse) : undefined) ?? null;
 
       // A BLENDED group with no texture is not drawn at all — UNLESS it is
-      // glass. Glass draws on `unpainted` grey plus the fresnel rim the
+      // glass. Glass draws on `unpainted` gray plus the fresnel rim the
       // fragment shader adds when `glass` is set: real automotive glass gets
       // most of its look from reflection, not from its diffuse texture, so a
       // bare surface shaded that way is closer to a windscreen than an empty
       // hole is.
       //
-      // For everything else, `unpainted` is opaque grey, and an opaque grey
+      // For everything else, `unpainted` is opaque gray, and an opaque gray
       // slab standing where a transparent surface belongs is the whole bug
       // this pass exists to fix. The number plate's emissive twin is the
       // case: it has no role, so if its stock DDS fails to fetch or upload it
-      // falls through to the grey — and being co-planar with the plate and
-      // sorted against it, that grey lands in front of the number about half
+      // falls through to the gray — and being co-planar with the plate and
+      // sorted against it, that gray lands in front of the number about half
       // the time. Not drawing it is the honest answer. The plate behind is
-      // real; the grey never was.
+      // real; the gray never was.
       if (!tex && g.blend && !g.glass) return;
       gl.uniform1f(loc.dim, dimmed(g, focus) ? 1 : 0);
 
       // The tiling layer, and only when its bake actually arrived: half of a
       // two-layer material is not a surface. A carbon weave multiplied over
-      // the fallback grey would be a plausible-looking part in a colour nobody
-      // chose, which is the confident wrongness the grey exists to avoid.
+      // the fallback gray would be a plausible-looking part in a color nobody
+      // chose, which is the confident wrongness the gray exists to avoid.
       const det = tex && g.detail ? byDetail.get(g.detail.detail) : null;
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, det ?? unpainted);
@@ -991,7 +991,7 @@ export function createViewer(canvas) {
       gl.uniform1f(loc.hasDetail, det ? 1 : 0);
       gl.uniform1f(loc.detailMult, det ? g.detail.mult : 1);
 
-      // The grain is independent of the colour: a material can state one
+      // The grain is independent of the color: a material can state one
       // without the other, and a normal map that failed to upload should cost
       // its material its texture rather than its lighting.
       const grain = det && g.detail.normal ? byDetail.get(g.detail.normal) : null;
@@ -1005,7 +1005,7 @@ export function createViewer(canvas) {
       // rides on the material rather than on the two-layer pair, so a plain
       // ksPerPixelNM part has one where it has no detail layer at all, and a
       // painted surface has one where it has no stock texture. Not gated on
-      // `tex` for the same reason — the design supplies the colour, the car
+      // `tex` for the same reason — the design supplies the color, the car
       // still supplies the shape.
       const relief = g.normalMap ? byFile.get(g.normalMap) : null;
       gl.activeTexture(gl.TEXTURE3);
@@ -1045,11 +1045,11 @@ export function createViewer(canvas) {
       // to reset per group: every group states its own, and a group with none
       // states zero.
       //
-      // The grey `unpainted` fallback below is opaque, so a cutout part whose
-      // texture never arrived stays a solid grey part rather than vanishing —
+      // The gray `unpainted` fallback below is opaque, so a cutout part whose
+      // texture never arrived stays a solid gray part rather than vanishing —
       // which is the honest picture of "no artwork here".
       gl.uniform1f(loc.alphaTest, g.alphaTest ?? 0);
-      // Whether the alpha below belongs to this group or to the grey stand-in.
+      // Whether the alpha below belongs to this group or to the gray stand-in.
       // Only glass reads it, and only glass would be hurt by getting it wrong:
       // the fallback is opaque, so a windscreen whose texture never arrived
       // would come out a solid pane instead of a bare one.
@@ -1102,7 +1102,7 @@ export function createViewer(canvas) {
    * Answers false rather than throwing for every reason this can fail: no
    * extension (S3TC is near-universal but not guaranteed), a format that is not
    * DXT1/3/5, a PNG rather than a DDS, a truncated blob. The caller keeps the
-   * grey, which is the behaviour this replaced and a perfectly good fallback.
+   * gray, which is the behavior this replaced and a perfectly good fallback.
    */
   /** The DDS header fields both upload paths need. 128 bytes, all of it fixed. */
   function ddsHeader(buffer) {
@@ -1202,7 +1202,7 @@ export function createViewer(canvas) {
    * already is.
    *
    * Answers false for anything it cannot honestly upload rather than throwing:
-   * the caller's fallback is the honest grey, and an exception here would
+   * the caller's fallback is the honest gray, and an exception here would
    * escape setWholeCar and take the whole view down over a wing mirror.
    */
   function uploadDds(target, buffer) {
@@ -1300,7 +1300,7 @@ export function createViewer(canvas) {
    *
    * REPEAT and the mip chain both want a power of two in WebGL 1. Detail maps
    * are authored small and square so this is very nearly always true; when it
-   * is not, answering false and letting the caller keep its grey beats what a
+   * is not, answering false and letting the caller keep its gray beats what a
    * non-power-of-two texture with a REPEAT wrap actually renders as, which is
    * solid black.
    */
@@ -1309,7 +1309,7 @@ export function createViewer(canvas) {
     // REPEAT and a mip chain both want a power of two in WebGL 1. Detail maps
     // are authored small and to a power of two, so this is very nearly always
     // true; when it is not, answering false and letting the caller keep its
-    // grey beats what a non-power-of-two texture with a REPEAT wrap actually
+    // gray beats what a non-power-of-two texture with a REPEAT wrap actually
     // renders as, which is solid black.
     if (!head || !isPot(head.width) || !isPot(head.height)) return false;
 
@@ -1361,10 +1361,10 @@ export function createViewer(canvas) {
   }
 
   /**
-   * Rasterise an SVG into a texture. The only way a browser will do it.
+   * Rasterize an SVG into a texture. The only way a browser will do it.
    *
    * Takes a WIDTH and a HEIGHT rather than one `size`. Car textures are not all
-   * square — this Honda's tyre sheet is 2048x512 — and forcing a square raster
+   * square — this Honda's tire sheet is 2048x512 — and forcing a square raster
    * threw away three quarters of the horizontal detail on every one of them.
    */
   async function uploadSvg(target, svg, w, h = w) {
@@ -1375,7 +1375,7 @@ export function createViewer(canvas) {
       img.height = h;
       await new Promise((ok, fail) => {
         img.onload = ok;
-        img.onerror = () => fail(new Error('the browser could not rasterise the texture'));
+        img.onerror = () => fail(new Error('the browser could not rasterize the texture'));
         img.src = url;
       });
       const c = document.createElement('canvas');
@@ -1482,7 +1482,7 @@ export function createViewer(canvas) {
      * Put the current texture on the car.
      *
      * The SVG goes through an Image, which is the only way a browser will
-     * rasterise one for WebGL. It is self-contained — no external references, no
+     * rasterize one for WebGL. It is self-contained — no external references, no
      * fonts fetched over the wire — so the canvas does not become tainted and
      * the upload is allowed.
      */
@@ -1494,7 +1494,7 @@ export function createViewer(canvas) {
     /**
      * The whole car: geometry grouped by surface, and one texture per group.
      *
-     * Each surface is rasterised at the size of the texture it REPLACES, which
+     * Each surface is rasterized at the size of the texture it REPLACES, which
      * the server sends down beside the svg. This used to be a flat 512 square,
      * justified by "thirty-seven surfaces at full size is a hundred megabytes"
      * — but thirty-seven is the number of textures on the CAR, and the number
@@ -1507,7 +1507,7 @@ export function createViewer(canvas) {
      * The budget is still real, just applied to what is actually there rather
      * than to what might have been.
      */
-    /** True colour, or shaded like a car. The UV tab is unaffected either way. */
+    /** True color, or shaded like a car. The UV tab is unaffected either way. */
     setLit(on) { lit = !!on; draw(); },
 
     /**
@@ -1571,14 +1571,14 @@ export function createViewer(canvas) {
       // PER SURFACE, and reported.
       //
       // This loop used to be a bare `await` in sequence, so one surface whose
-      // svg the browser would not rasterise threw, abandoned the remaining
+      // svg the browser would not rasterize threw, abandoned the remaining
       // uploads AND the stock-texture pass, and returned before `groups` was
       // ever assigned — leaving the previous frame's state on screen. From the
       // outside that is indistinguishable from "the new surface did not
       // render", and it puts nothing in the console, because the throw is
       // swallowed by whoever called this.
       //
-      // A surface that fails now keeps its grey and says which one it was.
+      // A surface that fails now keeps its gray and says which one it was.
       const failed = [];
       const sizes = textureSizes(surfaces, { budget, max: gl.getParameter(gl.MAX_TEXTURE_SIZE) });
       for (const [i, s] of surfaces.entries()) {
@@ -1594,8 +1594,8 @@ export function createViewer(canvas) {
       //
       // Each arrives as its own group with a `file` and no role. Fetching them
       // is what makes this view answer its actual question — does the design
-      // work on this car — rather than showing a livery floating on a grey
-      // mannequin. Anything that cannot be fetched or uploaded keeps the grey,
+      // work on this car — rather than showing a livery floating on a gray
+      // mannequin. Anything that cannot be fetched or uploaded keeps the gray,
       // which is what all of them did before.
       //
       // Sequential rather than parallel: a GT3 car has tens of these, several of
@@ -1640,7 +1640,7 @@ export function createViewer(canvas) {
         if (g.detail) {
           want(byFile, g.detail.diffuse, uploadDds, 'f');
           want(byDetail, g.detail.detail, uploadDetail, 'd');
-          // The grain, uploaded exactly like the colour beside it: same
+          // The grain, uploaded exactly like the color beside it: same
           // repeat wrap, same mip chain, same tiling in the shader.
           want(byDetail, g.detail.normal, uploadDetail, 'd');
         }
@@ -1657,7 +1657,7 @@ export function createViewer(canvas) {
       const bytes = new Array(wanted.length).fill(null);
       const arrived = new Array(wanted.length).fill(false);
       // A 404 is an ANSWER: an encrypted kn5 keeps its artwork in a blob this
-      // project does not decrypt, and the grey is the honest picture of that.
+      // project does not decrypt, and the gray is the honest picture of that.
       // Anything else is the server failing to answer, which used to look
       // exactly the same on screen — see the note on `loadStock` in server.mjs
       // for the load-order bug that made a cold server 404 things it had.

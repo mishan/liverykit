@@ -83,7 +83,7 @@ const treatments = {
   }),
 
   /**
-   * Text around an arc — for tyre sidewalls, which are commonly unwrapped as an
+   * Text around an arc — for tire sidewalls, which are commonly unwrapped as an
    * annulus, and for helmet bands. Uses per-character transforms rather than
    * <textPath>, whose librsvg support is inconsistent.
    */
@@ -135,7 +135,7 @@ export default definePack('synthwave', treatments, {
 
   glitch: {
     label: 'Glitch bands',
-    summary: 'Horizontal displaced bands in a few colours.',
+    summary: 'Horizontal displaced bands in a few colors.',
     options: {
       count: { type: 'number', min: 1, step: 1, hint: '7' },
       colors: { type: 'colors', hint: 'violet, cyan, white' },

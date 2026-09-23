@@ -10,7 +10,7 @@ The README calls it a livery generator. It is more accurately three things,
 in order of how hard they would be to replace:
 
 **A measurement of an unwrapped surface.** From a model, `profileFromKn5`
-derives named UV islands with exact rectangles, metres per UV unit, ray-cast
+derives named UV islands with exact rectangles, meters per UV unit, ray-cast
 visibility from trackside and from the driver's seat, adjacency, rigid seam
 maps between touching islands, outlines, mirror pairs, wheel layout and text
 rotation. No texture painter produces this, because a painter works on one
@@ -22,7 +22,7 @@ panel-relative coordinates. A binding maps a fixed vocabulary onto whatever a
 car calls its textures, proposed by a classifier that scores 192 of 195 on a
 held-out label and confirmed by a person. A fit holds the per-pair
 adjustments and nothing else. `fitment` reports what is wrong with a
-placement in millimetres. Together these are what let one design travel and
+placement in millimeters. Together these are what let one design travel and
 be diffed, which a painted texture cannot do.
 
 **A disposition.** Nothing fails silently, a guess is labelled a guess, a
@@ -44,7 +44,7 @@ object, nearly all of them `meshes` and `materials`. The synthetic fixture in
 Half right, and the halves are worth separating.
 
 **"Any object" is close.** Islands, seams, anisotropy, visibility, outlines,
-spans, fitment, decals, the editor and the software rasteriser are
+spans, fitment, decals, the editor and the software rasterizer are
 object-agnostic in substance. A glTF loader that fills the same model shape
 would make the profile generator work on any mesh with UVs. What is
 car-shaped in the generic path: the orientation frame comes from wheels; the
@@ -59,7 +59,7 @@ the words `car`, `livery` and `skin` are in every identifier.
    the knowledge a generic tool should remove. The 3D view can drag a region,
    but the drag is resolved as a UV delta on one sheet, and `docs/fitting.md`
    says in as many words that nothing knows which part of a panel is flat.
-2. **Spanning is one seam deep.** Seam maps take an island to its neighbour.
+2. **Spanning is one seam deep.** Seam maps take an island to its neighbor.
    A stripe around a whole car needs a path of seams composed into one
    flattened canvas, and nothing walks that graph.
 3. **Nothing measures flatness.** The profile says whether a spot is visible
@@ -119,7 +119,7 @@ Done when the synthetic fixture profiles identically through both loaders
 and a glTF teapot gets a profile with islands, seams and visibility.
 
 **3. Placement in 3D, as data.** A region gains an anchor: a surface point, an
-up direction on the surface, and a size in millimetres. The resolver turns it
+up direction on the surface, and a size in millimeters. The resolver turns it
 into per-island UV placements through the seam maps, and the fit file holds
 the result, so the design is still data and still diffs. The editor already
 has the barycentric pick, `metresPerUv` already gives the scale, and the
@@ -144,7 +144,7 @@ continuous on the tail of the NSX.
 
 **6. A sanitised vector import.** Decals cover raster. A designer exporting an
 SVG from Illustrator or Figma is the missing "any design" input. The threat
-model in `AGENTS.md` already says how: rasterise on load, never travel as
+model in `AGENTS.md` already says how: rasterize on load, never travel as
 markup. Done when a downloaded SVG with a script in it renders as pixels and
 nothing else.
 

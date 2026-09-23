@@ -120,7 +120,7 @@ export function parseKn5Buffer(buf, { keepTextureData = false, path = '<buffer>'
     // Read and dropped for a long time, which cost nothing while no shader
     // here sampled a second texture. `detailUVMultiplier` lives in here, and
     // without it a tiling detail map is drawn at 1:1 — a carbon weave at a
-    // 20cm pitch instead of a 2mm one, which reads as abstract grey mush
+    // 20cm pitch instead of a 2mm one, which reads as abstract gray mush
     // rather than as carbon.
     //
     // Only valueA is kept. Every property this project has wanted is the
@@ -417,7 +417,7 @@ export function vertex(model, mesh, i) {
   // than three numbers. It sits behind the UV, so it only exists on a mesh
   // packed wide enough to hold one — a narrower stride answers zero, and the
   // shader reads that as "no tangent frame here" instead of interpreting a
-  // neighbouring vertex's position as a direction.
+  // neighboring vertex's position as a direction.
   let tx = 0;
   let ty = 0;
   let tz = 0;
@@ -464,7 +464,7 @@ export function vertex(model, mesh, i) {
  * Which way is left, and which way is forward, from the wheels.
  *
  * Assetto Corsa's physics REQUIRES a car to carry nodes named WHEEL_LF, WHEEL_RF,
- * WHEEL_LR and WHEEL_RR — suspension, tyre and drivetrain all attach to them. It
+ * WHEEL_LR and WHEEL_RR — suspension, tire and drivetrain all attach to them. It
  * is not a naming convention an author may or may not follow; a car without them
  * does not run. All 235 cars in the fleet have all four, including all 91 whose
  * axes the name heuristic could not determine.
@@ -704,7 +704,7 @@ export function isGlass(shader) {
  * across the windscreen that looked like a rendering bug and was actually
  * this mesh, finally visible now that blended surfaces are not forced
  * opaque. It is excluded from `drawn` entirely rather than just kept out of
- * `isGlass`, because there is no textured or bare-grey rendering of a crack
+ * `isGlass`, because there is no textured or bare-gray rendering of a crack
  * decal that would be correct either.
  */
 export function damageOnly(shader) {
@@ -739,7 +739,7 @@ export function damageOnly(shader) {
 // `GEO_rimblur3`: joined to the part it blurs and numbered, which the first
 // pattern missed, so its blurred rims were drawn over the sharp ones at rest
 // and the twin check failed every design that painted its wheels. "blur" right
-// after rim, wheel, disc or tyre, or after a separator, and before digits
+// after rim, wheel, disc or tire, or after a separator, and before digits
 // then a separator or the end — never a word that merely contains it.
 export function motionBlurOnly(name) {
   return /(^|_|rim|wheel|disc|tyre|tire)blur\d*(_|$)/i.test(String(name ?? ''));
@@ -756,7 +756,7 @@ export function motionBlurOnly(name) {
  * runtime with a mask this project does not read. Sampling it raw shows a
  * fragment of every variant stitched together, which reads as a broken
  * texture rather than as an honestly-unpainted part. `car-hides`-style
- * honesty says grey instead.
+ * honesty says gray instead.
  *
  * Detected by NAME, the same way `additive` is: `ksPerPixelMultiMap_damage_dirt`
  * is also a body panel's shader (see docs/naming.md), so this only ever
@@ -776,11 +776,11 @@ export function trustworthyDiffuse(shader) {
  * surface. It does not follow that the surface is unknowable — the NMDetail
  * family is simply TWO layers, and the kn5 carries both. The NSX GT3's door
  * cards and rollcage trim are `INT_HR_Occlusion.dds`, an ambient-occlusion
- * bake with no colour in it whatsoever, multiplied by `MAT_Carbon.dds`, which
- * is where the weave and the colour actually live; the instrument surround is
+ * bake with no color in it whatsoever, multiplied by `MAT_Carbon.dds`, which
+ * is where the weave and the color actually live; the instrument surround is
  * the same bake against `metal_detail_2.dds`. Given both, a viewer can show
  * what the game shows. Given only the bake it cannot, so this answers `null`
- * and the caller keeps its honest grey rather than rendering a part as a
+ * and the caller keeps its honest gray rather than rendering a part as a
  * greyscale photograph of its own shadows.
  *
  * Gated on the material's own `useDetail`, not on the presence of a filename.
@@ -809,13 +809,13 @@ export function detailLayer(material) {
   if (!Number.isFinite(mult) || mult <= 0) return null;
 
   // And the detail's NORMAL map, tiled the same way, which is the half that
-  // makes a material read as itself. Alcantara's colour is a flat dark grey
+  // makes a material read as itself. Alcantara's color is a flat dark gray
   // whichever way you light it; what says "suede" is the nap catching light
   // at a thousand angles, and that lives entirely in alcnt_nm.dds. Without it
   // a matte fabric renders as one broad sheen on a perfectly smooth surface,
   // which is exactly the plastic look it is supposed to avoid.
   //
-  // Optional, because the colour detail is useful on its own and a material
+  // Optional, because the color detail is useful on its own and a material
   // may state one without the other. `detailNormalBlend` is how hard the
   // material wants it — 0.3 for this car's alcantara and carbon, 1.5 for its
   // brushed metal — and a material that gives no usable strength gets 1

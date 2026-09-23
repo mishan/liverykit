@@ -8,7 +8,7 @@
 // way of knowing.
 //
 // The editor draws with WebGL in a browser, which an MCP tool cannot reach. So
-// this is a small software rasteriser: project the triangles, keep a depth
+// this is a small software rasterizer: project the triangles, keep a depth
 // buffer, interpolate uv and normal, sample the design's own rendered artwork,
 // and shade it the way the viewer does. Perhaps two hundred lines, no
 // dependency that was not already here, and it turns "I cannot see it" into a
@@ -18,7 +18,7 @@
 // and no reflections, so a windscreen or a mirror never looks like glass here the
 // way it does in the game. It DOES wear the car's own stock textures on the
 // parts a design does not paint — sheetKey and carSheets, below, are the two
-// halves of that — and a caller that supplies none of them gets bare grey
+// halves of that — and a caller that supplies none of them gets bare gray
 // there rather than something invented. What this can answer is the
 // question I kept getting wrong: does the artwork land where I said it
 // would, and does the car still look like a car.
@@ -28,7 +28,7 @@ import sharp from 'sharp';
 
 import { decodeDds } from './pipeline.mjs';
 
-/** Unpainted geometry. Grey, and obviously grey — never a plausible colour. */
+/** Unpainted geometry. Gray, and obviously gray — never a plausible color. */
 const BARE = [0x4a, 0x4a, 0x52];
 
 /**
@@ -63,7 +63,7 @@ export const VIEWS = {
 };
 
 /**
- * Rasterise one texture's SVG to raw RGBA.
+ * Rasterize one texture's SVG to raw RGBA.
  *
  * Bounded on purpose, but not as tightly as it was. 512 left every texel
  * several pixels wide once the frame grew and the sampling supersampled, which
@@ -79,7 +79,7 @@ export const VIEWS = {
 async function sheet(svg, size = 1024) {
   const { data, info } = await sharp(Buffer.from(svg))
     // ASPECT PRESERVED. `fit: 'fill'` at size x size squashed this car's
-    // 2048x512 tyre sheet into a square and threw away three quarters of its
+    // 2048x512 tire sheet into a square and threw away three quarters of its
     // horizontal detail — the same bug the viewer had, reintroduced here in the
     // renderer built to catch bugs like it. `inside` bounds the long side and
     // leaves the ratio alone.
@@ -135,7 +135,7 @@ function shade(rgb, n, v, { rim = 0 } = {}) {
  * square at it and see mostly sky and your own reflection looking along it.
  * `ksPerPixelReflection`/`ksWindscreen` are how AC gets that, with an actual
  * environment map this project has no way to sample — this is the cheap
- * stand-in, and it is what turns "invisible or a grey slab" into something
+ * stand-in, and it is what turns "invisible or a gray slab" into something
  * that reads as glass at all.
  */
 const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
@@ -144,12 +144,12 @@ const glassFresnel = (n, v) => Math.pow(1 - Math.max(0, dot(n, v)), 2.5);
  * Which key a group's artwork is filed under in `sheets` — its role for a
  * painted surface, its file for a part the design leaves to the car's own
  * texture (`role` is null there; see wholeModelGeometry). A group with
- * neither draws bare grey, which is honest: it says "nobody supplied art for
+ * neither draws bare gray, which is honest: it says "nobody supplied art for
  * this" rather than inventing something.
  *
  * The third case is a two-layer material, where the base is the per-part
  * occlusion bake named in `detail.diffuse` and neither role nor file is set.
- * Those used to fall through to grey, so every carbon, alcantara and brushed
+ * Those used to fall through to gray, so every carbon, alcantara and brushed
  * metal surface in the cockpit rendered flat — which is most of an interior.
  */
 const sheetKey = (g) => g.role ?? g.file ?? g.detail?.diffuse ?? null;
@@ -179,12 +179,12 @@ export function carTextureFiles(groups) {
 }
 
 /**
- * Those textures, decoded into sheets `rasterise` can sample.
+ * Those textures, decoded into sheets `rasterize` can sample.
  *
  * This lived in the build, which was the only caller that had it, and `shoot`
  * was the caller that needed it: an MCP screenshot built `sheets` out of the
  * painted surfaces alone, so glass, wheels and the whole interior came out
- * BARE grey in the one renderer an agent working without a browser can see,
+ * BARE gray in the one renderer an agent working without a browser can see,
  * while the editor beside it drew the real materials. Two renderers
  * disagreeing about what the car looks like is how a change gets verified
  * against the wrong picture, and it has happened.
@@ -204,7 +204,7 @@ export function carTextureFiles(groups) {
 export async function carSheets(groups, load, { cache = null } = {}) {
   const sheets = new Map();
   // SAID OUT LOUD. A texture that does not arrive costs nothing visible — the
-  // part just draws grey — which is how an entire cockpit rendered flat for
+  // part just draws gray — which is how an entire cockpit rendered flat for
   // weeks while the editor showed it properly. An encrypted kn5 legitimately
   // has none of these, so it is a note rather than a failure.
   const absent = [];
@@ -225,7 +225,7 @@ export async function carSheets(groups, load, { cache = null } = {}) {
     // texture — the editor's stock loader rejects once for a kn5 it could not
     // read at all, and rejects the same way for every file after it. So each
     // file it was asked for is absent and each says why, which is what keeps
-    // the count the caller reports equal to the number of parts drawing grey.
+    // the count the caller reports equal to the number of parts drawing gray.
     // Not cached: the loader is entitled to recover, and a cached throw would
     // make one bad moment permanent.
     try {
@@ -417,7 +417,7 @@ export function frameCamera(positions, { yaw, pitch }, { width, height, focal, s
  *
  * `wrap` repeats rather than clamping, which is the difference between the two
  * layers of a MultiMap material: a bake is a per-part atlas whose UVs stay
- * inside [0,1] and whose neighbours are a different part, so reaching past the
+ * inside [0,1] and whose neighbors are a different part, so reaching past the
  * edge must not fetch them; a detail map is a small square of carbon or suede
  * tiled hundreds of times across a panel, and clamping it would smear one row
  * of texels across everything past the first repeat.
@@ -489,9 +489,9 @@ function viewFrame(positions, view, width, height) {
 /**
  * Render the model to raw RGBA.
  *
- * `sheets` maps a sheetKey to rasterised artwork — see above.
+ * `sheets` maps a sheetKey to rasterized artwork — see above.
  */
-export function rasterise(model, groups, sheets, {
+export function rasterize(model, groups, sheets, {
   width: outWidth = 900, height: outHeight = 560, view = 'left',
   background = [0x10, 0x10, 0x16],
   // Rendered this many times over in each direction and averaged back down.
@@ -501,7 +501,7 @@ export function rasterise(model, groups, sheets, {
   // the jaggies climb a wing endplate and a wheel's spokes, and a fine repeated
   // pattern in the artwork — a row of dots along a bonnet — aliases into moire
   // that is not in the design. There is no cheap analytic fix in a scanline
-  // rasteriser; there is just sampling more often.
+  // rasterizer; there is just sampling more often.
   //
   // Two is the default because it removes most of it for four times the
   // fragments, and the fragments are the cost here. Three is visibly better
@@ -568,7 +568,7 @@ export function rasterise(model, groups, sheets, {
     // Floored against the model's overall SPAN rather than against epsilon. A
     // thing with no extent in one axis — a flat panel, a single quad — has a
     // degenerate footprint, and dividing by that put the whole shadow inside a
-    // millimetre and the reflection nowhere, which looked exactly like the
+    // millimeter and the reflection nowhere, which looked exactly like the
     // floor not working at all.
     const rx = Math.max((hi[0] - lo[0]) / 2, span * 0.05) * 1.12;
     const rz = Math.max((hi[2] - lo[2]) / 2, span * 0.05) * 1.12;
@@ -592,13 +592,13 @@ export function rasterise(model, groups, sheets, {
     // pair, so asking for one sample of exactly this size reproduces this
     // pass's camera to the pixel, and the reflection gets its antialiasing
     // from the same box-down at the end that the car does.
-    const mirror = rasterise(
+    const mirror = rasterize(
       { positions: flipped, uvs, normals: flipNormals, indices },
       groups, sheets,
       // THE PARENT'S BACKGROUND, with alpha zero. Alpha is what carries
-      // coverage here, and the colour still has to match: a blended surface —
+      // coverage here, and the color still has to match: a blended surface —
       // glass above all — composites against whatever is behind it, so a
-      // mirror pass run against black reflects a differently-coloured
+      // mirror pass run against black reflects a differently-colored
       // windscreen than the one standing above it.
       { width, height, view, samples: 1, floor: false, camera: cam,
         background: [background[0], background[1], background[2], 0] },
@@ -673,7 +673,7 @@ export function rasterise(model, groups, sheets, {
     // `paint` in view3d.js for why this is not the one the game would pick.
     if (g.lod === 'LR') return false;
     if (!g.blend) return true;
-    // Glass is drawn even with no artwork — see glassFresnel. Its colour
+    // Glass is drawn even with no artwork — see glassFresnel. Its color
     // barely comes from a texture in the game either; a bare surface shaded
     // with the fresnel rim is closer to a windscreen than skipping it is.
     if (g.glass) return true;
@@ -681,7 +681,7 @@ export function rasterise(model, groups, sheets, {
     // this project has nothing to draw. A caller that has the car's own stock
     // texture for it keys the entry by FILE instead of role — see sheetKey —
     // and only when neither is on offer does this skip, rather than standing
-    // grey in for it: grey is opaque, and the whole point of these surfaces
+    // gray in for it: gray is opaque, and the whole point of these surfaces
     // is that they are not. Skipping says "not shown" and leaves the
     // bodywork visible through the hole, which is nearer the truth than a
     // slab.
@@ -724,7 +724,7 @@ export function rasterise(model, groups, sheets, {
     // The tiling half of a two-layer material, and how many times it repeats.
     // `detail.bake` is the recorded fact about the layer UNDER it: a bake is
     // an occlusion map and multiplies straight through, and anything else is
-    // a colour map, where the game's own x2 keeps the mid-grey of the detail
+    // a color map, where the game's own x2 keeps the mid-gray of the detail
     // sheet from halving the surface. Same rule the editor's shader follows.
     const layer = g.detail ? (sheets.get(g.detail.detail) ?? null) : null;
     const layerMult = g.detail?.mult ?? 1;
@@ -779,7 +779,7 @@ export function rasterise(model, groups, sheets, {
               // filters agree anyway, and bilinear is the one that stays honest
               // as the sheet shrinks relative to the frame.
               // CLAMPED. An island's UVs can run a hair outside [0,1] and
-              // wrapping there would fetch a neighbouring island's artwork onto
+              // wrapping there would fetch a neighboring island's artwork onto
               // the edge of this one.
               sampleTexel(art, u, v, false, base);
               rgb = [base[0], base[1], base[2]];
@@ -788,12 +788,12 @@ export function rasterise(model, groups, sheets, {
 
             // The second layer, over whatever the first one gave — including
             // over BARE, since a group can have a detail map and no base sheet
-            // and grey times carbon still reads as carbon.
+            // and gray times carbon still reads as carbon.
             if (layer) {
               sampleTexel(layer, u * layerMult, v * layerMult, true, grain);
               // A NEW array, never a write into `rgb`. With no base sheet `rgb`
               // is still BARE, which is a module constant shared by every group
-              // in the render — multiplying into it would turn the car's grey
+              // in the render — multiplying into it would turn the car's gray
               // black from the first detail fragment onwards.
               const k = layerGain / 255;
               rgb = [
@@ -808,7 +808,7 @@ export function rasterise(model, groups, sheets, {
           // grille, a stitch line, the badge on this car's nose: the surface is
           // opaque where it is drawn and absent where it is not, and there is
           // no third state. Composited instead, the absent part is drawn as
-          // whatever colour sits under it, which on a cutout sheet is black.
+          // whatever color sits under it, which on a cutout sheet is black.
           if (g.alphaTest != null && alpha < g.alphaTest) continue;
 
           // Depth WRITE only for opaque groups, so two blended surfaces do not
@@ -835,7 +835,7 @@ export function rasterise(model, groups, sheets, {
           // Glass gets a FLOOR under its alpha rather than a replacement for
           // it. AC's glass shaders take most of their transparency from the
           // shader — a fresnel and a reflection map — and a windscreen drawn
-          // from its diffuse alone read as a flat grey slab, which is why this
+          // from its diffuse alone read as a flat gray slab, which is why this
           // used to overwrite the texture's alpha outright.
           //
           // What that threw away is the one thing the sheet really does say:
@@ -1028,7 +1028,7 @@ export function onMeshShare(model, piece, tris, n = 96) {
 // be read once is allowed to be read the next time.
 const passOnes = new WeakMap();
 
-/** The same coverage rule as `rasterise` — pixel centres, barycentric weights all non-negative — inside a window of the frame. */
+/** The same coverage rule as `rasterize` — pixel centres, barycentric weights all non-negative — inside a window of the frame. */
 function walker(indices, sx, sy, sz) {
   return (t, x0, y0, x1, y1, visit) => {
     const ia = indices[t], ib = indices[t + 1], ic = indices[t + 2];
@@ -1069,7 +1069,7 @@ function passOne(model, groups, sheets, view, width, height) {
     { width, height, focal, span: frame.span, centre: frame.centre });
 
   // Every vertex projected once. A triangle's corners are shared with its
-  // neighbours, and projecting per triangle did that sum six times over.
+  // neighbors, and projecting per triangle did that sum six times over.
   const nv = positions.length / 3;
   const sx = new Float32Array(nv);
   const sy = new Float32Array(nv);
@@ -1158,7 +1158,7 @@ function passOne(model, groups, sheets, view, width, height) {
  * frit, where its own sheet is opaque, and nothing through the clear rest; a
  * glow adds light rather than standing in front. A cutout or a decal covers where its
  * own alpha says it is there, which needs its sheet; a design's own surfaces are
- * not rasterised for this, and count as covering everywhere.
+ * not rasterized for this, and count as covering everywhere.
  */
 export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540, triangles = null } = {}) {
   groups = clearBasesOpaque(groups, sheets);
@@ -1243,8 +1243,8 @@ export function piecesInView(model, groups, sheets, pieces, { view = 'left', wid
         // Seen when the whole car gives this pixel to the same triangle, to a
         // surface at the same depth, or to another triangle painting the same
         // piece — mirrored bodywork shares its texels, and either side showing
-        // the artwork is the artwork showing. Half a millimetre, because a
-        // door handle stands a few millimetres proud and a tie is a tie.
+        // the artwork is the artwork showing. Half a millimeter, because a
+        // door handle stands a few millimeters proud and a tie is a tie.
         if (t1 === t || depth[at] >= d2[i] - 0.0005
           || (t1 >= 0 && groups[groupOf[t1 / 3]]?.role === piece.role && piece.contains(hitU[at], hitV[at]))) {
           shown++;
@@ -1315,7 +1315,7 @@ export function sheetCell(width, height, n = SHEET_VIEWS.length) {
  * whole conversation and thinks again. Measured on a real run, that was most
  * of the bill and the pictures were a tenth of it. One sheet is one turn.
  *
- * The design's textures are rasterised once and shared by every camera on it,
+ * The design's textures are rasterized once and shared by every camera on it,
  * so here too it costs little more than one view.
  */
 export async function shootSheet(model, groups, surfaces, { sheets: stock = null, width = 1400, height = 840, views = SHEET_VIEWS } = {}) {
@@ -1335,7 +1335,7 @@ export async function shootSheet(model, groups, surfaces, { sheets: stock = null
   let skipped = 0;
   for (const [i, view] of views.entries()) {
     const c = i % nc, r = Math.floor(i / nc);
-    const img = rasterise(model, groups, sheets, { view, width: cols[c], height: rows[r] });
+    const img = rasterize(model, groups, sheets, { view, width: cols[c], height: rows[r] });
     skipped = Math.max(skipped, img.skipped);
     cells.push({ input: img.data, raw: { width: img.width, height: img.height, channels: 4 },
       left: c * cols[0], top: r * rows[0] });
@@ -1357,7 +1357,7 @@ export async function shoot(model, groups, surfaces, { sheets: stock = null, ...
   for (const s of surfaces) {
     if (s.role && s.svg) sheets.set(s.role, await sheet(s.svg));
   }
-  const { data, width, height, skipped } = rasterise(model, groups, sheets, opts);
+  const { data, width, height, skipped } = rasterize(model, groups, sheets, opts);
   const png = await sharp(data, { raw: { width, height, channels: 4 } }).png().toBuffer();
   return { png, skipped };
 }

@@ -51,8 +51,8 @@ export const TOKEN = /\{(\w+)\}/g;
  *
  * The five entities are resolved by any XML parser back to the characters they
  * stand for, and identically in an attribute and in a text node — so this
- * changes what a value can DO and not what it means. A colour with a quote in it
- * was never a colour.
+ * changes what a value can DO and not what it means. A color with a quote in it
+ * was never a color.
  */
 export function safe(v) {
   return String(v).replace(/[&<>"']/g, (c) => ENTITY[c]);
@@ -71,12 +71,12 @@ function safeDeep(v) {
 }
 
 /**
- * Resolve a colour reference. Palette keys win over raw values, so a livery can
+ * Resolve a color reference. Palette keys win over raw values, so a livery can
  * say `color: 'accent'` and stay renamable, while `color: '#FF00E5'` still works
  * for one-offs.
  *
  * The result is escaped, because every caller interpolates it into an attribute
- * — that is what a colour resolver is FOR — and `palette[name] ?? name` passes
+ * — that is what a color resolver is FOR — and `palette[name] ?? name` passes
  * an unknown name straight through, so the livery's own text reaches the
  * document either way.
  */
@@ -115,12 +115,12 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   // to be forgotten.
   //
   // Text and arc text, plus anything a design marked keepClear — the same
-  // declaration the fitment check honours, and a region that asks artwork to
+  // declaration the fitment check honors, and a region that asks artwork to
   // stay off it has said all it needs to.
   //
   // `keepClear === true` and not merely truthy, for the same reason the fitment
   // check refuses `keepClear: 'yes'`: a value that is not a boolean is a design
-  // that failed to say what it meant, and honouring it here would change what
+  // that failed to say what it meant, and honoring it here would change what
   // is drawn on the strength of a typo.
   //
   // Each rectangle remembers WHICH region it came from, because the list is
@@ -285,7 +285,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
         // Clipped to the island's OUTLINE where the profile has one, and to
         // its box otherwise. Islands are not boxes: unwrappers pack a small
         // island into the concave corner of a big one, and a copy clipped to
-        // the box paints texels that belong to the neighbour.
+        // the box paints texels that belong to the neighbor.
         const pan = profile.panels[role][p.panel];
         // From the number of clips written, which only ever goes up. It was the
         // two layers' lengths, and those only advance when a treatment emits
@@ -338,7 +338,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
 /**
  * The two layers flattened into one document, for looking at.
  *
- * The build never needs this: `composeLayers` rasterises the layers separately
+ * The build never needs this: `composeLayers` rasterizes the layers separately
  * and does the glow with a real blur, because librsvg ignores SVG `<filter>`
  * entirely. But the EDITOR only ever showed `base`, and several treatments draw
  * nothing there at all — `traces` and `sparkles` are emissive-only always, and

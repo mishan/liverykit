@@ -244,7 +244,7 @@ export function carKn5({
   // under 40 vertices as a sliver, so a four-corner face decomposes into no
   // panels at all and a profile built from the fixture comes back empty. And a
   // single quad cannot show anything a per-fragment highlight does that a
-  // per-triangle one does not, which is the behaviour worth a fixture for.
+  // per-triangle one does not, which is the behavior worth a fixture for.
   const N = CAR.grid;
   const verts = [];
   const indices = [];

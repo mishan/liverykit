@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nearMiss } from '../src/profile.mjs';
 import { featuresFromRecord } from '../src/engine/classify.mjs';
-import { bestKn5, bestOf, everyNth, summarise } from '../tools/fleet.mjs';
+import { bestKn5, bestOf, everyNth, summarize } from '../tools/fleet.mjs';
 import { buildKn5, carKn5 } from './fixtures/kn5.mjs';
 
 const run = promisify(execFile);
@@ -155,7 +155,7 @@ test('a resumed sweep retries what failed, and refuses records swept another way
   await assert.rejects(sweep(livery, '--out', out), /2 of them with --profiles .*profiles.*--fresh/s);
   await writeFile(livery, design.replace('cell: 30', 'cell: 31'));
   await assert.rejects(sweep(livery, '--profiles', profiles, '--out', out), /a different version of the design.*--fresh/s);
-  // Summarising reads what is there, but says when the design has moved on.
+  // Summarizing reads what is there, but says when the design has moved on.
   const summary = await sweep(livery, '--out', out, '--summary');
   assert.match(summary.stdout, /2 record\(s\) were swept from a different version of the design/);
 
@@ -314,7 +314,7 @@ test('the summary counts a rule as missed only where it landed nowhere', () => {
     from: 'surfaces.body', role, kind: 'tags', tags: ['left', 'visible'], status,
     ...(status === 'missing' ? { nearMiss } : {}),
   });
-  const lines = summarise([
+  const lines = summarize([
     car('a', { roles: ['body'], source: 'auto', confidence: 0.9, panels: 20 }, [rule('body', 'matched')]),
     // Missed on one of its two textures and matched on the other: it landed.
     car('b', { roles: ['body', 'rear'], source: 'auto', confidence: 0.5, panels: 20 },
@@ -337,7 +337,7 @@ test('the summary names a tie as a tie, not as the first tag', () => {
     regions: [{ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['left', 'mid', 'upper', 'visible'],
       status: 'missing', nearMiss }],
   });
-  const lines = summarise([
+  const lines = summarize([
     car('a', { blocking: 'mid', tied: [], panels: 9 }),
     car('b', { blocking: null, tied: ['mid', 'visible'], panels: 9 }),
     // A record swept before ties were reported still reads as it did.
@@ -434,7 +434,7 @@ test('the summary counts an optional miss apart from a real one', () => {
     surfaces: [{ from: 'surfaces.body', status: 'present' }],
     regions: [{ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], optional: true, status }],
   });
-  const lines = summarise([car('a', 'matched'), car('b', 'optional'), car('c', 'optional')]).join('\n');
+  const lines = summarize([car('a', 'matched'), car('b', 'optional'), car('c', 'optional')]).join('\n');
   assert.match(lines, /\[shared, visible\] \(optional\) found nothing on 2 of 3, as its design allows/);
 });
 
@@ -450,7 +450,7 @@ test('the summary keeps optional misses beside real ones, and an optional rule a
   });
   const tagged = (status, extra = {}) =>
     ({ from: 'surfaces.body', role: 'b', kind: 'tags', tags: ['shared', 'visible'], status, ...extra });
-  const lines = summarise([
+  const lines = summarize([
     car('a', [tagged('optional'), tagged('matched')]),
     car('b', [tagged('optional'), tagged('missing', { nearMiss: { blocking: 'shared', tied: [], panels: 9 } })]),
     car('c', [tagged('unplaceable', { optional: true }), tagged('matched')]),

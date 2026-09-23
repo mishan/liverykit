@@ -22,7 +22,7 @@ import { loadLivery } from '../src/livery.mjs';
 import { portability } from '../src/portability.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { proposeAll, propose, proposeDriverKit, featuresFromRecord, explain, rank, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
-import { summarise } from '../tools/fleet.mjs';
+import { summarize } from '../tools/fleet.mjs';
 import { dimmed } from '../src/ui/view3d.js';
 import { carKn5 } from './fixtures/kn5.mjs';
 import '../src/index.mjs';
@@ -504,7 +504,7 @@ test('a named binding is checked, said to be named, and kept out of the confiden
   assert.match(note.text, /by name; nothing was measured/);
   assert.doesNotMatch(note.text, /confidence/);
 
-  const lines = summarise([{
+  const lines = summarize([{
     id: 'a', from: 'kn5', textures: 2, panels: 1, surfaces: [], regions: [],
     bindings: {
       body: { roles: ['body'], source: 'auto', confidence: 0.9, panels: 1 },

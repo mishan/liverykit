@@ -27,7 +27,7 @@ that first survey came to **1,912 distinct names across 235 cars, 1,082 of them
 appearing on exactly one car**. A role called `body` exists on 86 of 235. Ninety cars have no mesh named in
 a way that reveals which end is the front. Only sixteen names appear on more than
 half the fleet, and they are the incidental ones — `rims`, `glass`, `interior`,
-`crew`, `mirror`, `belts`, `tyres`, plus numbered variants. Not one of them is the
+`crew`, `mirror`, `belts`, `tires`, plus numbered variants. Not one of them is the
 paint.
 
 Worse than absent, names are actively misleading: **1,133 of the 8,569 textures
@@ -39,12 +39,12 @@ that trusts a filename inherits that.
 
 Four measurements, none of which is a name:
 
-*Area covered*, as a fraction of the car's total surface — square metres, not
+*Area covered*, as a fraction of the car's total surface — square meters, not
 vertices. Vertex count ranks a cockpit occlusion map above the paint on nearly
 every car, because interiors are the densest geometry on a car and bodywork among
 the sparsest.
 
-*Whether the geometry straddles the centreline*, which separates bodywork from a
+*Whether the geometry straddles the centerline*, which separates bodywork from a
 single corner part.
 
 *How many stock skins override the file*, which is the author stating outright
@@ -81,7 +81,7 @@ binding only one left the wheel stock either standing still or at speed, and a
 pick that lands only through its twin is counted apart.
 
 - **`rims`: 228/246, 92.7% (225 for the pick alone).** A texture counts when all of its islands sit at a
-  wheel centre and no tyre or disc shader draws it, and four copies sharing one
+  wheel centre and no tire or disc shader draws it, and four copies sharing one
   rectangle is the confirming sign. On 9 of the 246 cars no labelled texture
   has an island at a wheel at all, so no measurement could pick it; counting
   only the other 237, it is 228. Most of the rest are an ambient-occlusion
@@ -107,7 +107,7 @@ already exists in `src/engine/visibility.mjs`.
 ### The vocabulary
 
 Small, fixed, and versioned in the repo. Roughly: `body`, `wing`, `floor`,
-`rims`, `tyres`, `brakes`, `glass`, `mirror`, `interior`, `seat`, `belts`,
+`rims`, `tires`, `brakes`, `glass`, `mirror`, `interior`, `seat`, `belts`,
 `steeringWheel`, `wheelLogo`, `helmet`, `suit`, `gloves`, `crew`, `numberPlate`,
 `heatShield`, `metalTrim`. Every term needs a one-line definition that a person
 can check against a render, because a vocabulary whose terms are only defined by
@@ -200,7 +200,7 @@ A *part* is a thing on the car. A *panel* is a region of a texture. They are not
 one to one, and the gap is much wider than it first looked: across eight cars
 sampled from the fleet, **42.8% of all panels shared their rectangle with another
 panel** — 1,472 of 3,437. Every one of those cars had groups spanning both sides
-of the centreline.
+of the centerline.
 
 `Rim500.DDS` on the Abarth is the clearest case: 64 panels over 16 distinct
 rectangles, because all four wheels are drawn from one rim texture. But mirrored
@@ -323,7 +323,7 @@ install, which is a missing file rather than a parsing problem.
 the answer.**
 
 Assetto Corsa's physics REQUIRES every car to carry nodes named `WHEEL_LF`,
-`WHEEL_RF`, `WHEEL_LR` and `WHEEL_RR` — suspension, tyres and drivetrain all
+`WHEEL_RF`, `WHEEL_LR` and `WHEEL_RR` — suspension, tires and drivetrain all
 attach to them, and a car without them does not run. That is a platform
 constraint rather than a naming convention an author may or may not follow, and
 all 238 parseable fleet cars have all four. So the axes are a subtraction, not an
@@ -339,7 +339,7 @@ Every car in the fleet turns out to be `+X` left, `+Z` forward.
 The wheel positions also give the track width and wheelbase for free, which are
 worth recording because they are the only numbers in a profile a person can check
 against a spec sheet. Measured against nine cars with published figures they land
-within a centimetre: Miata 2.27 m, AE86 2.40 m, 991 2.45 m, R34 2.67 m.
+within a centimeter: Miata 2.27 m, AE86 2.40 m, 991 2.45 m, R34 2.67 m.
 
 That check earned its keep twice. It caught a mesh named `A_Wheel_LF3` parented
 under `WHEEL_RF` being counted as part of the left front wheel, which dragged the

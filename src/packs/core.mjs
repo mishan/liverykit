@@ -63,7 +63,7 @@ const treatments = {
         // `dot` is the largest dot radius as a fraction of the cell pitch. The
         // default 0.42 packs dots nearly touching (~64% coverage), which is
         // what a dissolve edge wants but reads as near-solid for an even field.
-        // Drop to ~0.18 for texture rather than colour.
+        // Drop to ~0.18 for texture rather than color.
         maxR: cell * (c.opts.dot ?? 0.42),
         start: c.opts.start ?? 0.05,
         end: c.opts.end ?? 0.85,
@@ -85,7 +85,7 @@ const treatments = {
   },
 
   /**
-   * A band round a tyre's sidewall, `along` of the way from the rim (0) to
+   * A band round a tire's sidewall, `along` of the way from the rim (0) to
    * the shoulder (1), `width` as a fraction of that distance. (`at` is taken:
    * it is every region's rectangle.)
    *
@@ -156,7 +156,7 @@ const treatments = {
    *
    * 2. UV is anisotropic. A panel rarely maps texture pixels to the car at the
    *    same scale in both axes — a flank packs the whole length of the car into
-   *    fewer pixels per metre than it gives the car's height, so anything
+   *    fewer pixels per meter than it gives the car's height, so anything
    *    square in the texture comes out wide on the bodywork. If the car profile
    *    declares an `anisotropy` for this panel, glyphs are pre-narrowed by its
    *    reciprocal so they land looking normal. `aspect` overrides it manually.
@@ -275,7 +275,7 @@ export default definePack('core', treatments, {
 
   fill: {
     label: 'Fill',
-    summary: 'A flat rectangle of one colour.',
+    summary: 'A flat rectangle of one color.',
     options: {
       color: { type: 'color', hint: 'pink' },
     },
@@ -309,7 +309,7 @@ export default definePack('core', treatments, {
       angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
       // Worth spelling out: at the default the dots nearly touch, which is what
       // a dissolve edge wants and reads as near-solid for an even field.
-      dot: { type: 'number', min: 0.05, max: 0.5, step: 0.01, hint: '0.42 — try 0.18 for texture rather than colour', label: 'Dot size' },
+      dot: { type: 'number', min: 0.05, max: 0.5, step: 0.01, hint: '0.42 — try 0.18 for texture rather than color', label: 'Dot size' },
       start: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.05', label: 'Dissolve from' },
       end: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.85', label: 'Dissolve to' },
     },
