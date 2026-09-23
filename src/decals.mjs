@@ -41,7 +41,7 @@ const MAX_BYTES = 8 * 1024 * 1024;
  * The file on disk is the cheap early-out: a 400 MB TIFF should not be read
  * into memory to be told it is too big. What actually costs anything is what
  * comes out the other end, and for an SVG the two are not related — 194 bytes
- * of `feTurbulence` rasterises to 15 MB of PNG at 2048 square, measured, and
+ * of `feTurbulence` rasterizes to 15 MB of PNG at 2048 square, measured, and
  * every one of those bytes is then base64'd into every document that draws it.
  *
  * `maxBytes` is an option so that a caller with a tighter budget can say so —
@@ -50,7 +50,7 @@ const MAX_BYTES = 8 * 1024 * 1024;
  */
 
 /**
- * The longest side an SVG is rasterised to.
+ * The longest side an SVG is rasterized to.
  *
  * An SVG has no pixels until somebody chooses some. 2048 is the largest a car
  * texture usually is, so a logo across a whole sheet is still sampling down
@@ -183,7 +183,7 @@ export async function loadDecals(dir, { log = () => {}, maxBytes = MAX_BYTES } =
     // somebody's artwork looks like. The answer is to export it as a PNG at the
     // size it should be, and the message says so.
     if (bytes.length > maxBytes) {
-      log(`  ! ${entry.name} rasterises to ${width}x${height} and ${kb(bytes.length)}, over ` +
+      log(`  ! ${entry.name} rasterizes to ${width}x${height} and ${kb(bytes.length)}, over ` +
           `the ${kb(maxBytes)} a decal may be, and was skipped. Export it as a PNG at the ` +
           'size you want it drawn.');
       continue;
@@ -207,7 +207,7 @@ export async function loadDecals(dir, { log = () => {}, maxBytes = MAX_BYTES } =
     log(`  ${decals.size} decal(s):`);
     for (const a of decals.values()) {
       log(`    ${a.name.padEnd(20)} ${a.width}x${a.height}  ${kb(a.bytes)}` +
-          (a.file.toLowerCase().endsWith('.svg') ? '  (rasterised from SVG)' : ''));
+          (a.file.toLowerCase().endsWith('.svg') ? '  (rasterized from SVG)' : ''));
     }
   }
   return decals;

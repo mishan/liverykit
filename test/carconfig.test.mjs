@@ -199,7 +199,7 @@ test('a mesh the car hides is seen by nobody, whatever its own rays say', async 
 });
 
 test('a mesh behind the paint stands in front of nothing either, and one flush in front still does', async () => {
-  // A door's inner shell, a bonnet's carbon liner: a few millimetres behind
+  // A door's inner shell, a bonnet's carbon liner: a few millimeters behind
   // the skin, in the same voxels, and a shared voxel stopped every ray that
   // left it. The NSX's doors went from 88% visible to 64% and its bonnet from
   // 95% to 61%, and nothing on the car had moved.
@@ -218,7 +218,7 @@ test('a mesh behind the paint stands in front of nothing either, and one flush i
   const shell = await left(flankSheet('DOOR_L_INT', 0.95 - 0.002, -1));
   assert.ok(Math.abs(shell - bare) < 0.02, `a shell 2 mm behind the flank hides nothing: ${shell} against ${bare}`);
   // What ownership was introduced to catch, and must go on catching: a plate
-  // a few millimetres proud, in the very voxels the flank stands in, which
+  // a few millimeters proud, in the very voxels the flank stands in, which
   // only the exact test along the normal can now tell from the shell.
   const flush = await left(flankSheet('PLATE_L', 0.95 + 0.004));
   assert.ok(flush < bare - 0.2, `a plate 4 mm proud covers the flank: ${flush} against ${bare}`);
@@ -255,7 +255,7 @@ test('a motion-blur rim is measured as the rim it stands in for, not as somethin
 
 test('a mesh touching the caster far along the ray still blocks it', async () => {
   // A ray steps over a voxel it shares with another mesh, so that a shell a
-  // few millimetres behind the paint does not stop it where it starts. It did
+  // few millimeters behind the paint does not stop it where it starts. It did
   // so along the whole ray: anywhere on the car where another mesh came within
   // a voxel of the caster's own surface — a mirror foot, a wing mount, a
   // wheel-arch lip against the body — let that mesh's rays through.
@@ -328,8 +328,8 @@ test('a config that exists and cannot be read stops the profile rather than bein
 
 test('a bake is recorded from the name AND the structure, whatever the spelling', async () => {
   // `bake` decides how two renderers composite a two-layer material — a bake
-  // multiplies straight through, a colour map is doubled first — so getting it
-  // wrong is not subtle: the brightest island of a bake mistaken for colour
+  // multiplies straight through, a color map is doubled first — so getting it
+  // wrong is not subtle: the brightest island of a bake mistaken for color
   // renders as a white panel, which on the reference car is the dashboard cowl.
   //
   // Both signals must agree. The NAME, because Kunos names a bake a bake; and
@@ -383,7 +383,7 @@ test('a bake is recorded from the name AND the structure, whatever the spelling'
   const cased = await profileFromKn5(at, { id: 'fixture_car', log: () => {} });
   const kept = Object.values(cased.textures).filter((t) => t.file === BAKE);
   assert.equal(kept.length, 1, 'a case-mismatched slot keeps its texture');
-  assert.equal(kept[0].bake, true, 'and it is still recognised as a bake');
+  assert.equal(kept[0].bake, true, 'and it is still recognized as a bake');
 });
 
 test('a texture the model names twice is one role, and its profile loads', async () => {

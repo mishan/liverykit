@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import sharp from 'sharp';
 import { makeZip } from './zip.mjs';
-import { rasterise } from './shot.mjs';
+import { rasterize } from './shot.mjs';
 
 /**
  * Content Manager will happily install a ZIP whose internal layout mirrors the
@@ -64,7 +64,7 @@ export async function makePreview(pngBuffer, outPath, {
  * `sheets` is prebuilt — role -> { data, w, h } raw RGBA, already the PNGs
  * this build just composed and encoded to DDS — so this does no rendering of
  * its own artwork, only of the car wearing it. That is `shot.mjs`'s
- * `rasterise`, unchanged: the same rasteriser `render_car` uses, so a preview
+ * `rasterize`, unchanged: the same rasterizer `render_car` uses, so a preview
  * and an MCP screenshot of the same skin never disagree about what the car
  * looks like.
  */
@@ -72,7 +72,7 @@ export async function makeShowroomPreview(model, groups, sheets, {
   view = 'front-left', width = PREVIEW_FRAME.width, height = PREVIEW_FRAME.height,
   samples = 2,
 } = {}) {
-  const { data, width: w, height: h } = rasterise(model, groups, sheets, { width, height, view, samples });
+  const { data, width: w, height: h } = rasterize(model, groups, sheets, { width, height, view, samples });
   return sharp(data, { raw: { width: w, height: h, channels: 4 } })
     .jpeg({ quality: PREVIEW_QUALITY }).toBuffer();
 }

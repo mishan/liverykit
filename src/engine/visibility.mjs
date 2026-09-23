@@ -124,11 +124,11 @@ function buildOccupancy(model, meshes, cellSize) {
   // surface without that surface stopping it — which used to be done by
   // starting the ray 4 cm out along the normal, and 4 cm is further than the
   // things that hide artwork. On the Honda the number plates stand a few
-  // millimetres proud of the doors: nearer than the lift, and at 2.5 cm cells
+  // millimeters proud of the doors: nearer than the lift, and at 2.5 cm cells
   // in the same voxel as the door, so NO starting distance can tell them apart.
   //
   // Nor can the voxel. A shared cell used to stop every ray, as a plate in
-  // front of the paint, and a mesh a few millimetres BEHIND the paint shares
+  // front of the paint, and a mesh a few millimeters BEHIND the paint shares
   // the cell just the same: the NSX's inner door shell, cockpit tub and carbon
   // bonnet liner took its doors from 88% visible to 64% and its bonnet from
   // 95% to 61%. So `shared` keeps who marked each shared cell, a ray steps over
@@ -277,7 +277,7 @@ function buildNear(model, meshes) {
       const i0 = cell(Math.min(A.x, B.x, C.x)), i1 = cell(Math.max(A.x, B.x, C.x));
       const j0 = cell(Math.min(A.y, B.y, C.y)), j1 = cell(Math.max(A.y, B.y, C.y));
       const k0 = cell(Math.min(A.z, B.z, C.z)), k1 = cell(Math.max(A.z, B.z, C.z));
-      // A triangle half a metre across in every direction is a floor or a
+      // A triangle half a meter across in every direction is a floor or a
       // shell, not a fitting; the voxels have it, and filing it into a
       // thousand cells would buy nothing.
       if ((i1 - i0 + 1) * (j1 - j0 + 1) * (k1 - k0 + 1) > 1000) continue;
@@ -810,7 +810,7 @@ export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {
  * Fraction of each island visible from a single point inside the car.
  *
  * Rays go from the surface toward the eye, and the surface has to face it —
- * the back of a bulkhead one metre away is not "visible" just because nothing
+ * the back of a bulkhead one meter away is not "visible" just because nothing
  * happens to be in between.
  */
 export function computeCockpitVisibility(model, islands, {

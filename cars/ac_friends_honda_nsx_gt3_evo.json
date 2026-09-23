@@ -900,14 +900,14 @@
   "doNotPaint": [
     {
       "file": "EXT_Mechanics_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Mechanics_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -921,21 +921,21 @@
     },
     {
       "file": "flat_nm.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Damage_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Skin_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -970,14 +970,14 @@
     },
     {
       "file": "Lights_Aux_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "NULL.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txDetail",
         "txMaps"
@@ -992,14 +992,14 @@
     },
     {
       "file": "EXT_Decals_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "DAMAGE_GLASS.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -1013,21 +1013,21 @@
     },
     {
       "file": "EXT_Grid_2_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Grid_1_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "MAT_Carbon_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal",
         "txNormalDetail"
@@ -1035,14 +1035,14 @@
     },
     {
       "file": "EXT_Lights_Colour_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Lights_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1070,28 +1070,28 @@
     },
     {
       "file": "EXT_Lights_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Lumirank_3_slots_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Lumirank_3_slots_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "EXT_Disc_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -1119,21 +1119,21 @@
     },
     {
       "file": "Ext_caliper_n.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Caliper_map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "Tyre_Dry_NM_2.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
@@ -1161,14 +1161,14 @@
     },
     {
       "file": "EXT_Rim_Colour_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "EXT_Rim_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1182,21 +1182,21 @@
     },
     {
       "file": "Rim_blur_n.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Belt_OMP_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_Net_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1210,14 +1210,14 @@
     },
     {
       "file": "INT_Net_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_Steer_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1245,7 +1245,7 @@
     },
     {
       "file": "INT_Decals_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1259,42 +1259,42 @@
     },
     {
       "file": "INT_HR_Occlusion_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_HR_Occlusion_MAP.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "INT_Decals_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_Electronics_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_Electronics_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
     },
     {
       "file": "INT_Occlusion_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1308,14 +1308,14 @@
     },
     {
       "file": "INT_SAS_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "INT_SAS_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1329,14 +1329,14 @@
     },
     {
       "file": "hero7_labels_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "hero7_labels_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]
@@ -1357,14 +1357,14 @@
     },
     {
       "file": "Cockpit_LR_NM.dds",
-      "reason": "normal map — encodes surface direction, not colour; painting corrupts lighting",
+      "reason": "normal map — encodes surface direction, not color; painting corrupts lighting",
       "slots": [
         "txNormal"
       ]
     },
     {
       "file": "Cockpit_LR_Map.dds",
-      "reason": "AC shader map — gloss and reflectivity per texel, not colour",
+      "reason": "AC shader map — gloss and reflectivity per texel, not color",
       "slots": [
         "txMaps"
       ]

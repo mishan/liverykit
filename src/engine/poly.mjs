@@ -2,7 +2,7 @@
 // Polygons in texture space.
 //
 // A rectangle in a livery is a rectangle in ONE island's sheet. The moment it
-// crosses a seam it stops being one: the map to the neighbour is a rotation,
+// crosses a seam it stops being one: the map to the neighbor is a rotation,
 // so the piece that lands over there is a parallelogram, and clipped to the
 // island it is some convex shape with five or six corners.
 //
@@ -183,7 +183,7 @@ export function areaInPoly(convex, poly) {
  * one of its own edges (rotating calipers, minus the calipers), so every edge
  * is tried and the widest point away from it is what that edge's width is.
  *
- * `scale` turns the sheet into metres, one factor per axis, since a texture
+ * `scale` turns the sheet into meters, one factor per axis, since a texture
  * is stretched differently across than along on almost every panel.
  */
 export function minWidth(poly, [sx, sy] = [1, 1]) {

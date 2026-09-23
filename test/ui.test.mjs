@@ -101,7 +101,7 @@ async function runApp({ state, render, server = null, routes = {} }) {
       if (Object.hasOwn(routes, path)) return routes[path](sent);
       if (!server) return path === '/api/state' ? state : render;
       const fit = sent?.fit ?? server.fit ?? null;
-      // The working DESIGN is honoured exactly as the real server honours it. A
+      // The working DESIGN is honored exactly as the real server honors it. A
       // harness that ignored it would render from the file on disk and report
       // that every option control does nothing — or worse, that one works.
       const livery = sent?.design ?? server.livery;
@@ -221,7 +221,7 @@ test('the Bindings panel offers Confirm on a proposal and sends the roles it sho
 });
 
 test('app.js declares its helpers before the boot await reaches them', async () => {
-  // A structural check as well as a behavioural one: the boot must be the last
+  // A structural check as well as a behavioral one: the boot must be the last
   // statement, so no future edit can reintroduce the ordering problem without
   // moving it.
   const src = await readFile(new URL('../src/ui/app.js', import.meta.url), 'utf8');
@@ -509,7 +509,7 @@ test('the page and the script agree about what exists', async () => {
   // layers. That is precisely the rule the #car collision broke.
   //
   // Parsed rule by rule rather than with one regex over the whole file: a
-  // pattern that spans `{` happily matches a hex colour in the previous rule's
+  // pattern that spans `{` happily matches a hex color in the previous rule's
   // body, which is a fine way to make a test that fails for the wrong reason.
   // Comments first: they sit between rules, so splitting on `}` glues a
   // comment onto the next selector — and this file's comments mention the very
@@ -618,7 +618,7 @@ test('an unpainted mesh still reaches the viewer, in its own group', async () =>
 
   const model = parseKn5Buffer(carKn5());
   // A livery that paints nothing at all: every triangle should still be there,
-  // in the roleless group the viewer draws grey.
+  // in the roleless group the viewer draws gray.
   const none = wholeModelGeometry(model, []);
   assert.equal(none.groups.length, 1);
   assert.equal(none.groups[0].role, null);
@@ -972,7 +972,7 @@ test('a mirror pair is linked only where the panels can be checked', async () =>
       body: {
         left_mid: { rect: [0, 0, 0.4, 0.4], mirrorOf: 'right_mid' },
         right_mid: { rect: [0.5, 0, 0.4, 0.4], mirrorOf: 'left_mid' },
-        centre_nose: { rect: [0, 0.5, 0.4, 0.4] },      // straddles the centreline
+        centre_nose: { rect: [0, 0.5, 0.4, 0.4] },      // straddles the centerline
         roof: { rect: [0.5, 0.5, 0.4, 0.4] },
       },
     },
@@ -987,12 +987,12 @@ test('a mirror pair is linked only where the panels can be checked', async () =>
     { id: 'number-right', panel: 'flankRight' },
   ]).size, 2, 'aliases resolve, exactly as the renderer resolves them');
 
-  // A panel with no mirror IS its own: it crosses the centreline, so both halves
+  // A panel with no mirror IS its own: it crosses the centerline, so both halves
   // live on it, mirrored within it. A car with two numbers on its nose.
   assert.equal(pairs([
     { id: 'number-left', panel: 'centre_nose' },
     { id: 'number-right', panel: 'centre_nose' },
-  ]).size, 2, 'a centreline panel is its own mirror');
+  ]).size, 2, 'a centerline panel is its own mirror');
 
   // But a two-sided panel named by both halves is not: they would stack.
   assert.equal(pairs([
@@ -1070,7 +1070,7 @@ test('a mirrored placement is measured, not assumed', async () => {
   const { mirrorFlips, mirrorAt, mirrorRotation } = await import('../src/fit.mjs');
 
   // The RSS4's two flanks, as measured from the model. Their u axes run in
-  // opposite directions once one is reflected through the centreline, which is
+  // opposite directions once one is reflected through the centerline, which is
   // why copying `at` across moved the number forward on one side and backward
   // on the other.
   const left = { uAxis: [-0.203, -0.052, -0.978], vAxis: [0.02, -0.999, 0.03] };
@@ -1126,7 +1126,7 @@ test('a mirrored placement is measured, not assumed', async () => {
   assert.equal(mirrorRotation(undefined, { u: true, v: true }), undefined);
 
   // A profile from before the axes were recorded reports no flip rather than
-  // guessing — the old behaviour, degrading quietly.
+  // guessing — the old behavior, degrading quietly.
   assert.deepEqual(mirrorFlips({}, {}), { u: false, v: false });
   assert.deepEqual(mirrorFlips({ uAxis: [1, 0, 0] }, {}), { u: false, v: false });
 });
@@ -1188,10 +1188,10 @@ test('both copies of the mirror arithmetic agree', async () => {
   }
 });
 
-test('a panel that straddles the centreline is its own mirror', async () => {
+test('a panel that straddles the centerline is its own mirror', async () => {
   const { selfMirrorFlips, mirrorAt } = await import('../src/fit.mjs');
 
-  // A nose, laid out the obvious way: +u runs across the car, so the centreline
+  // A nose, laid out the obvious way: +u runs across the car, so the centerline
   // cuts the sheet left-to-right and that is the axis to reverse.
   const nose = { uAxis: [0.98, 0.1, 0.15], vAxis: [0.05, -0.99, 0.1] };
   assert.deepEqual(selfMirrorFlips(nose), { u: true, v: false });
@@ -1397,7 +1397,7 @@ test('a mirrored copy renders through the same path a build uses', async () => {
   assert.ok(copy, 'the copy is addressable by its own id');
 
   // It INHERITS the artwork and overrides only the placement. A fit that could
-  // set colours or text would be a second livery language wearing a disguise.
+  // set colors or text would be a second livery language wearing a disguise.
   assert.equal(copy.treatment, 'text');
   assert.equal(copy.text, 'AC');
   assert.equal(copy.color, 'ink');
@@ -2274,12 +2274,12 @@ test('a palette row shows how many things depend on it before you touch it', asy
   assert.match(html, /data-palette="accent"/);
   assert.match(html, /title="badge"/, 'and says which regions, not merely how many');
   assert.match(html, /title="surfaces\.body background"/, 'a background counts as a reference');
-  // A colour nothing refers to is dimmed rather than hidden: it is a candidate
+  // A color nothing refers to is dimmed rather than hidden: it is a candidate
   // for removal, not a mistake.
   assert.match(html, /class="named unused"[\s\S]*data-palette="spare"/);
 });
 
-test('changing a colour repaints everything that names it', async () => {
+test('changing a color repaints everything that names it', async () => {
   const server = copyFixture();
   server.livery = structuredClone(server.livery);
   server.livery.packs = ['core'];
@@ -2299,14 +2299,14 @@ test('changing a colour repaints everything that names it', async () => {
   assert.match(dom.querySelector('#texture').innerHTML, /#FF00FF/i, 'the render follows the palette');
   assert.equal(JSON.parse(dom.querySelector('#designjson').textContent).palette.accent, '#FF00FF');
   assert.match(dom.querySelector('#status').textContent, /design unsaved/,
-    'a colour is design, not a per-car adjustment');
+    'a color is design, not a per-car adjustment');
   assert.deepEqual(JSON.parse(dom.querySelector('#fitjson').textContent).regions ?? {}, {});
 });
 
-test('renaming a colour takes its references with it', async () => {
+test('renaming a color takes its references with it', async () => {
   // The references are known, so leaving them pointing at a name that is gone
   // would be choosing to break something the code can see — and it would render
-  // as a literal colour called `accent`, silently.
+  // as a literal color called `accent`, silently.
   const server = copyFixture();
   server.livery = structuredClone(server.livery);
   server.livery.packs = ['core'];
@@ -2350,7 +2350,7 @@ test('a name the design uses and does not define is reported, since nothing else
   assert.match(dom.querySelector('#texture').innerHTML, />A\. Driver #</,
     'which is exactly what the render does, silently');
 
-  // The colour goes to the renderer as a literal, which is right for `#hex` and
+  // The color goes to the renderer as a literal, which is right for `#hex` and
   // wrong in a way nothing reports for a palette entry that went away.
   assert.match(dangling, /<code>ghost<\/code> is not in the palette/);
 
@@ -2385,7 +2385,7 @@ test('renaming a token rewrites the text that interpolates it', async () => {
   assert.equal(dom.querySelector('#dangling').innerHTML, '');
 });
 
-test('adding a colour keeps what you typed until you press Add', async () => {
+test('adding a color keeps what you typed until you press Add', async () => {
   // The add row is static furniture. Rebuilding it inside the redrawn panel
   // would clear the field under the cursor on every render.
   const server = copyFixture();
@@ -2393,21 +2393,21 @@ test('adding a colour keeps what you typed until you press Add', async () => {
   server.livery.packs = ['core'];
 
   const { dom } = await runApp({ server });
-  dom.querySelector('#newcolourname').value = 'gulf-orange';
-  dom.querySelector('#newcolourvalue').value = '#F5A11B';
+  dom.querySelector('#newcolorname').value = 'gulf-orange';
+  dom.querySelector('#newcolorvalue').value = '#F5A11B';
 
   // A render in between, as any edit would cause.
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-  assert.equal(dom.querySelector('#newcolourname').value, 'gulf-orange', 'still there');
+  assert.equal(dom.querySelector('#newcolorname').value, 'gulf-orange', 'still there');
 
-  await dom.querySelector('#addcolour').onclick();
+  await dom.querySelector('#addcolor').onclick();
   const design = JSON.parse(dom.querySelector('#designjson').textContent);
   assert.equal(design.palette['gulf-orange'], '#F5A11B');
-  assert.equal(dom.querySelector('#newcolourname').value, '', 'and the row is cleared for the next one');
+  assert.equal(dom.querySelector('#newcolorname').value, '', 'and the row is cleared for the next one');
 });
 
-test('a one-off colour on a region can be named into the palette', async () => {
-  // The loop closing: pick a colour on a region, name it, and the rest of the
+test('a one-off color on a region can be named into the palette', async () => {
+  // The loop closing: pick a color on a region, name it, and the rest of the
   // design can use it — which is how a palette gets built in practice, rather
   // than written out in advance.
   const server = copyFixture();
@@ -2422,10 +2422,10 @@ test('a one-off colour on a region can be named into the palette', async () => {
   const inspector = dom.querySelector('#inspector');
   const button = { dataset: { nameColour: 'color' }, onclick: null };
   inspector.querySelector = () => null;
-  inspector.querySelectorAll = (q) => (q === '[data-name-colour]' ? [button] : []);
+  inspector.querySelectorAll = (q) => (q === '[data-name-color]' ? [button] : []);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
 
-  assert.match(inspector.innerHTML, /data-name-colour="color"/, 'a literal colour offers the button');
+  assert.match(inspector.innerHTML, /data-name-color="color"/, 'a literal color offers the button');
 
   globalThis.prompt = () => 'gulf-orange';
   try {
@@ -2435,13 +2435,13 @@ test('a one-off colour on a region can be named into the palette', async () => {
   }
 
   const design = JSON.parse(dom.querySelector('#designjson').textContent);
-  assert.equal(design.palette['gulf-orange'], '#F5A11B', 'the colour joins the palette');
+  assert.equal(design.palette['gulf-orange'], '#F5A11B', 'the color joins the palette');
   assert.equal(design.surfaces.body.regions[0].color, 'gulf-orange', 'and the region points at the name');
   assert.match(dom.querySelector('#texture').innerHTML, /#F5A11B/i, 'the picture does not change');
   assert.match(dom.querySelector('#palette').innerHTML, /data-palette="gulf-orange"/);
 });
 
-test('a colour that is already a palette name is not offered for naming', async () => {
+test('a color that is already a palette name is not offered for naming', async () => {
   const server = copyFixture();
   server.livery = structuredClone(server.livery);
   server.livery.packs = ['core'];
@@ -2453,7 +2453,7 @@ test('a colour that is already a palette name is not offered for naming', async 
   const { dom } = await runApp({ server });
   inspectorButtons(dom, ['#delete']);
   dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
-  assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-colour/,
+  assert.doesNotMatch(dom.querySelector('#inspector').innerHTML, /data-name-color/,
     'it already has a name');
 });
 
@@ -2479,14 +2479,14 @@ test('a palette value never reaches the page as CSS', async () => {
   // you edit to fix it.
   assert.match(el.innerHTML, /value="red;position:fixed/);
 
-  // And the colour is applied through the CSSOM, whose setter parses one
+  // And the color is applied through the CSSOM, whose setter parses one
   // `<color>` and drops anything else — so the hostile value paints nothing
   // rather than laying a sheet over the page.
   const swatches = ['ink', 'trap'].map((n) => ({ dataset: { swatch: n }, style: {} }));
   el.querySelectorAll = (q) => (q === '[data-swatch]' ? swatches : []);
   dom.querySelector('#surface').value = 'surfaces.body';
   await dom.querySelector('#surface').onchange();
-  assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real colour is set');
+  assert.equal(swatches[0].style.backgroundColor, '#101014', 'a real color is set');
   assert.equal(swatches[1].style.backgroundColor, hostile,
     'and the hostile one is handed to the parser, not to the document');
 });
@@ -2511,7 +2511,7 @@ test('a name the palette does not have is not offered for naming either', async 
     inspectorButtons(dom, ['#delete']);
     dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
     return {
-      button: /data-name-colour/.test(dom.querySelector('#inspector').innerHTML),
+      button: /data-name-color/.test(dom.querySelector('#inspector').innerHTML),
       // The panel's verdict on THIS value, not on any dangling name — the two
       // halves being one judgement is the property under test, so asking about
       // the wrong value would make the agreement free.
@@ -2520,17 +2520,17 @@ test('a name the palette does not have is not offered for naming either', async 
   };
 
   const ghost = await offered('ghost');
-  assert.equal(ghost.button, false, 'a bare word is a broken reference, not a colour to name');
+  assert.equal(ghost.button, false, 'a bare word is a broken reference, not a color to name');
   assert.equal(ghost.warned, true, 'and the panel says so, which is the thing worth keeping');
 
-  assert.equal((await offered('#F5A11B')).button, true, 'a literal colour still offers it');
+  assert.equal((await offered('#F5A11B')).button, true, 'a literal color still offers it');
   assert.equal((await offered('rgb(1,2,3)')).button, true);
 
-  // A named CSS colour IS a colour. This was the one case the editor used to get
+  // A named CSS color IS a color. This was the one case the editor used to get
   // wrong — in the safe direction, but wrong — because the honest alternative
-  // was maintaining 148 colour names against a spec by hand. `colord` knows
+  // was maintaining 148 color names against a spec by hand. `colord` knows
   // them, so the excuse is gone and the answer is simply right.
-  assert.equal((await offered('red')).button, true, 'a named colour is a colour');
+  assert.equal((await offered('red')).button, true, 'a named color is a color');
   assert.equal((await offered('rebeccapurple')).button, true);
   assert.equal((await offered('rebecapurple')).button, false,
     'and a typo of one is a dangling name, which is the distinction that matters');
@@ -2581,7 +2581,7 @@ test('a token that could never be substituted is refused where it is typed', asy
 
 test('a livery the editor cannot save does not offer to add to it', async () => {
   // The panels go dark for a design carrying code, because showing edits that
-  // could never be written back is the failure this whole step is organised
+  // could never be written back is the failure this whole step is organized
   // against. The Add rows sit OUTSIDE those panels — deliberately, so they keep
   // what you are typing — which is exactly how they stayed live after the panels
   // above them had given up.
@@ -2592,7 +2592,7 @@ test('a livery the editor cannot save does not offer to add to it', async () => 
   server.livery.render = { font: () => 'DejaVu Sans' };
 
   const { dom } = await runApp({ server });
-  for (const id of ['#newcolourname', '#newcolourvalue', '#addcolour',
+  for (const id of ['#newcolorname', '#newcolorvalue', '#addcolor',
     '#newtokenname', '#newtokenvalue', '#addtoken']) {
     assert.equal(dom.querySelector(id).disabled, true, `${id} should be disabled`);
   }
@@ -2601,9 +2601,9 @@ test('a livery the editor cannot save does not offer to add to it', async () => 
     'the disabled row needs a reason standing next to it');
 
   // The attribute is what a person sees; the handler is what actually holds.
-  dom.querySelector('#newcolourname').value = 'gulf-orange';
-  dom.querySelector('#newcolourvalue').value = '#F5A11B';
-  await dom.querySelector('#addcolour').onclick();
+  dom.querySelector('#newcolorname').value = 'gulf-orange';
+  dom.querySelector('#newcolorvalue').value = '#F5A11B';
+  await dom.querySelector('#addcolor').onclick();
   dom.querySelector('#newtokenname').value = 'number';
   await dom.querySelector('#addtoken').onclick();
 
@@ -2646,7 +2646,7 @@ test('the inspector says how big a region is on the actual car', async () => {
   assert.match(shown, /1\.60 m × 400 mm/,
     `expected 1.60 m × 400 mm from a panel-relative half of a 0.4 panel, got: ${shown.slice(0, 400)}`);
 
-  // Metres and millimetres, because 0.4 m is a number you have to convert in
+  // Meters and millimeters, because 0.4 m is a number you have to convert in
   // your head to picture and 400 mm is not.
   assert.doesNotMatch(shown, /0\.40 m/);
 });
@@ -2671,7 +2671,7 @@ test('a profile that never measured its panels says so, rather than nothing', as
 });
 
 test('a region on no panel is not told to regenerate a profile that is fine', async () => {
-  // Both reasons for having no size arrive as `metres: null`, and they want
+  // Both reasons for having no size arrive as `meters: null`, and they want
   // different things done about them. An absolute rectangle is not ON a panel,
   // and `metresPerUv` belongs to a panel — panels on one car differ in scale by
   // more than ten times, so there is nothing to fall back to. Telling somebody
@@ -3405,7 +3405,7 @@ test('a texture named like a special key is a texture, not a prototype', async (
   //
   // `constructor` and `__proto__`, because lookups are lowercased and those two
   // survive it — `toString` becomes `tostring` and misses the prototype by
-  // accident, which is not a defence. The roles map crosses the wire as JSON, so
+  // accident, which is not a defense. The roles map crosses the wire as JSON, so
   // whatever prototype the server gave it is gone by the time the browser reads
   // it: the null-prototype on the server protects the server, and this protects
   // the browser.
@@ -3442,7 +3442,7 @@ test('the fitment panel leads with what it could not check', async () => {
   assert.match(shown, /not checked: unseen, off-mesh/, 'the skipped checks are named');
   assert.match(shown, /class="note"/, 'and said as a warning, not as a hint');
   assert.doesNotMatch(shown, /Nothing to report from[\s\S]*unseen/,
-    'a partial run is never summarised as covering everything');
+    'a partial run is never summarized as covering everything');
 });
 
 test('the fitment panel names regions worst-first', async () => {
@@ -3481,7 +3481,7 @@ test('the fitment panel names regions worst-first', async () => {
 // ---------------------------------------------------------------------------
 // Why the whole car looked fuzzy.
 //
-// Every painted surface was rasterised at a flat 512 square, justified in a
+// Every painted surface was rasterized at a flat 512 square, justified in a
 // comment by "thirty-seven surfaces at full size is a hundred megabytes". But
 // thirty-seven is how many textures the CAR has; seven is how many this design
 // paints. The Honda's body sheet is 2048x2048, so the livery was shown at a
@@ -3490,7 +3490,7 @@ test('the fitment panel names regions worst-first', async () => {
 // gone before the GPU saw it.
 // ---------------------------------------------------------------------------
 
-test('a painted surface is rasterised at the size of the texture it replaces', async () => {
+test('a painted surface is rasterized at the size of the texture it replaces', async () => {
   const { textureSizes } = await import('../src/ui/view3d.js');
 
   // The real seven, at their real sizes.
@@ -3680,22 +3680,22 @@ test('what blends is what the model says blends', async () => {
 
 test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
   // The shot has no stock car textures. Drawing glass or an emissive mask as
-  // grey would be a lie — grey is opaque and the whole point of those surfaces
+  // gray would be a lie — gray is opaque and the whole point of those surfaces
   // is that they are not — so they are left out and the count is reported.
   // Silence would let a missing third of the car read as a design that paints
   // nothing there.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
   const quad = {
     positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
     uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
     normals: new Float32Array([-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0]),
     indices: new Uint32Array([0, 1, 2, 0, 2, 3]),
   };
-  const opaque = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+  const opaque = rasterize(quad, [{ role: 'body', start: 0, count: 6 }],
     new Map(), { width: 60, height: 60 });
   assert.equal(opaque.skipped, 0, 'an opaque group with no artwork is drawn grey');
 
-  const glass = rasterise(quad, [{ role: 'glass', start: 0, count: 6, blend: true }],
+  const glass = rasterize(quad, [{ role: 'glass', start: 0, count: 6, blend: true }],
     new Map(), { width: 60, height: 60 });
   assert.equal(glass.skipped, 1, 'a blended group with no artwork is not drawn');
   const at = (img) => [0, 1, 2].map((k) => img.data[(30 * img.width + 30) * 4 + k]);
@@ -3705,14 +3705,14 @@ test('a transparent surface with no artwork is skipped and counted, not drawn gr
 
 test('the whole-car view never paints grey where a transparent surface belongs', async () => {
   // Asked whether my MCP render was the same thing as the editor's Whole car
-  // view. It is not — it is a separate CPU rasteriser in Node that shares the
+  // view. It is not — it is a separate CPU rasterizer in Node that shares the
   // geometry and the artwork and nothing else. So a picture from it proves the
   // design paints the plate, and proves nothing about the browser.
   //
   // The browser had its own version of the bug. In the blended pass a group
   // with no texture fell through to `unpainted`, which is OPAQUE GREY. The
   // number plate's emissive twin has no painted role, so a failed stock fetch
-  // put a grey slab in front of the plate — sorted against it and co-planar
+  // put a gray slab in front of the plate — sorted against it and co-planar
   // with it, so roughly half the time.
   //
   // I had already applied this exact reasoning to the Node renderer and not to
@@ -3725,18 +3725,18 @@ test('the whole-car view never paints grey where a transparent surface belongs',
   const paintBody = src.slice(src.indexOf('const paint = (g) =>'),
     src.indexOf('for (const g of groups) if (!g.blend) paint(g);'));
   // Glass is the one deliberate exception, added later: it draws on
-  // `unpainted` grey plus a fresnel rim rather than being skipped, because a
+  // `unpainted` gray plus a fresnel rim rather than being skipped, because a
   // bare surface shaded that way reads as a windscreen and an empty hole
   // does not. It stays a NARROWER condition than the general rule, not a
   // replacement for it — every other blended group with no texture is still
-  // skipped, not drawn grey.
+  // skipped, not drawn gray.
   assert.match(paintBody, /if \(!tex && g\.blend && !g\.glass\) return;/,
     'a blended, non-glass group with no texture is skipped, not drawn grey');
   assert.ok(paintBody.indexOf('if (!tex && g.blend && !g.glass) return;')
     < paintBody.indexOf('gl.bindTexture'),
     'and skipped BEFORE it binds the grey fallback');
 
-  // The opaque path still falls back to grey, which is right: an unpainted
+  // The opaque path still falls back to gray, which is right: an unpainted
   // solid surface should read as unpainted rather than vanish.
   assert.match(paintBody, /tex \?\? unpainted/);
 });
@@ -3794,8 +3794,8 @@ test('the car is drawn on an opaque canvas, not a translucent one', async () => 
   // asked for: the DOM compositor reads it too, and a transparent fragment
   // punches through to the page.
   //
-  // It hides well. #stage is #05070a and the clear colour is (0.02, 0.03,
-  // 0.04), so the hole shows almost exactly the colour that should have been
+  // It hides well. #stage is #05070a and the clear color is (0.02, 0.03,
+  // 0.04), so the hole shows almost exactly the color that should have been
   // there — which is why the per-surface pass shipped leaking and was caught
   // by reasoning rather than by looking.
   //
@@ -3808,10 +3808,10 @@ test('the car is drawn on an opaque canvas, not a translucent one', async () => 
     'the drawing buffer has no alpha channel, so no fragment can reach the page');
 });
 
-test('a surface the browser cannot rasterise fails loudly and alone', async () => {
+test('a surface the browser cannot rasterize fails loudly and alone', async () => {
   // Three rounds of "I still cannot see the plate, no errors in console", and
   // this is why the console was clean. setWholeCar awaited each upload in
-  // sequence, so one surface whose svg would not rasterise threw, abandoned the
+  // sequence, so one surface whose svg would not rasterize threw, abandoned the
   // remaining uploads AND the stock-texture pass, and returned before `groups`
   // was assigned — leaving the previous frame on screen. Indistinguishable from
   // "the new surface did not render", and silent, because the throw was
@@ -4063,7 +4063,7 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   // TWO-LAYER MATERIALS. Only when the shader says its diffuse cannot stand
   // alone, the material asks for detail, both textures are real, and the tiling
   // is a usable number — anything less and the group is better off with the
-  // honest grey than with half a material.
+  // honest gray than with half a material.
   const multi = {
     shader: 'ksPerPixelMultiMap',
     slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds', txNormalDetail: 'carbon_nm.dds' },
@@ -4088,7 +4088,7 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   assert.equal(without({ props: { ...multi.props, detailUVMultiplier: NaN } }), null);
   assert.equal(detailLayer(null), null, 'a mesh with no material at all');
 
-  // The normal map is optional; the colour half still stands without it.
+  // The normal map is optional; the color half still stands without it.
   const noNormal = without({ slots: { txDiffuse: 'bake.dds', txDetail: 'carbon.dds' } });
   assert.equal(noNormal.detail, 'carbon.dds');
   assert.equal(noNormal.normal, null);
@@ -4154,7 +4154,7 @@ test("a group carries its material's relief, painted or not", async () => {
   }));
 
   // PAINTED, which is the case that could most easily have been left out. A
-  // livery replaces the colour of a panel; it does not replace the shape of the
+  // livery replaces the color of a panel; it does not replace the shape of the
   // seam running across it, and that shape is still the car's.
   const painted = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }]);
   assert.ok(painted.groups.length, 'the fixture drew something');
@@ -4162,7 +4162,7 @@ test("a group carries its material's relief, painted or not", async () => {
     assert.equal(g.normalMap, 'body_nm.dds', `${g.role ?? g.file} kept its relief`);
   }
 
-  // And unpainted, where the car supplies the colour as well as the shape.
+  // And unpainted, where the car supplies the color as well as the shape.
   for (const g of wholeModelGeometry(model, []).groups) {
     assert.equal(g.normalMap, 'body_nm.dds');
   }
@@ -4188,7 +4188,7 @@ test('the viewer samples the relief untiled, and asks for it on painted groups t
     'and never at the detail layer\'s tiling');
 
   // FETCHED FOR EVERY GROUP. The stock-texture loop skips painted groups —
-  // their colour comes from the design — and the relief does not follow that
+  // their color comes from the design — and the relief does not follow that
   // rule: the car still supplies the shape.
   const loop = src.slice(src.indexOf('for (const g of model.groups ?? []) {'),
     src.indexOf('// A few lanes rather than one after another.'));
@@ -4382,7 +4382,7 @@ test('every concurrent request for a stock texture gets it, on a cold server', a
   // started, so every request that landed during those seconds saw it truthy,
   // skipped the load, looked up the empty map, and got a 404 — "no such texture
   // in this model" — for a texture the model has. The client believed it, drew
-  // grey, and reported success. A refresh after a server restart came up with
+  // gray, and reported success. A refresh after a server restart came up with
   // most of the car untextured; a second refresh, against a warm server, was
   // fine. Nothing was ever still loading when the picture was drawn. The answers
   // had been wrong.
@@ -4435,7 +4435,7 @@ test('every concurrent request for a stock texture gets it, on a cold server', a
 });
 
 test('a model that cannot be read is a 500, not "no such texture"', async () => {
-  // The viewer takes a 404 at its word and draws the grey without a word,
+  // The viewer takes a 404 at its word and draws the gray without a word,
   // because an encrypted kn5 genuinely has none of these textures. That makes
   // 404 the wrong answer for a model nobody could read at all — the same
   // failure as the load-order race above, wearing different clothes: a request
@@ -4490,12 +4490,12 @@ test('a model that cannot be read is a 500, not "no such texture"', async () => 
 
 test('a stock sheet the GPU cannot take as blocks is decoded, not dropped', async () => {
   // THE SEE-THROUGH FRONT. The Abarth's nose badge and its headlight lenses
-  // were missing from the whole-car view — not grey, not dark, absent, so the
+  // were missing from the whole-car view — not gray, not dark, absent, so the
   // bumper behind them showed through and the front of the car read as glass.
   //
   // `uploadDds` only knew DXT1/3/5 and answered false for everything else, and
   // a blended group with no texture is deliberately skipped rather than drawn
-  // grey (see above). Six of this car's 31 stock textures are uncompressed —
+  // gray (see above). Six of this car's 31 stock textures are uncompressed —
   // Glass.dds and LOGO_500.dds at 32-bit BGRA, INTERNAL_Glass.dds at 16-bit
   // luminance-plus-alpha, LCD.dds and Rim500_BLUR.dds at 24-bit — so those six
   // parts were never drawn at all.
@@ -4579,27 +4579,27 @@ test('the decoder reads every pixel format this fleet actually ships', async () 
   assert.deepEqual(px(bgr, 0), [3, 2, 1, 255], 'no alpha mask means opaque');
 
   // 16-BIT LUMINANCE PLUS ALPHA — INTERNAL_Glass.dds, and the brushed metal
-  // detail map. One grey value across all three colour channels.
+  // detail map. One gray value across all three color channels.
   const al = decodeDds(dds(1, 1,
     { pfFlags: 0x20001, bits: 16, masks: [0x00ff, 0, 0, 0xff00] },
     new Uint8Array([90, 128])));
   assert.deepEqual(px(al, 0), [90, 90, 90, 128], 'luminance fills R, G and B');
 
   // DXT5, the format most of the car is in, through the same door. One block:
-  // both alpha endpoints 255, then two identical colour endpoints so every
+  // both alpha endpoints 255, then two identical color endpoints so every
   // interpolation scheme agrees on the answer.
   const red565 = 0xf800;
   const block = new Uint8Array(16);
   block[0] = 255; block[1] = 255;                       // alpha endpoints
-  block[8] = red565 & 0xff; block[9] = red565 >> 8;     // colour 0
-  block[10] = red565 & 0xff; block[11] = red565 >> 8;   // colour 1
+  block[8] = red565 & 0xff; block[9] = red565 >> 8;     // color 0
+  block[10] = red565 & 0xff; block[11] = red565 >> 8;   // color 1
   const dxt5 = decodeDds(dds(4, 4, { pfFlags: 0x4, fourCC: 0x35545844 }, block));
   assert.deepEqual([dxt5.width, dxt5.height], [4, 4]);
   assert.deepEqual(px(dxt5, 0), [255, 0, 0, 255]);
   assert.deepEqual(px(dxt5, 15), [255, 0, 0, 255], 'every texel in the block');
 
   // AND AN HONEST NULL for what it cannot read, because the caller's fallback
-  // is grey and a wrong guess would be worse than none.
+  // is gray and a wrong guess would be worse than none.
   assert.equal(decodeDds(new ArrayBuffer(8)), null, 'too short to be a header');
   assert.equal(decodeDds(dds(1, 1, { pfFlags: 0x40, bits: 12, masks: [0xf00, 0xf0, 0xf, 0] },
     new Uint8Array([0, 0]))), null, 'a bit depth that is not whole bytes');
@@ -4701,11 +4701,11 @@ test('the viewer throws away a cutout texel instead of painting it black', async
 
 test('a cut-out texel is not drawn and does not hide what is behind it', async () => {
   // The software renderer's half of the same rule, and the half with a trap in
-  // it: this rasteriser wrote depth as soon as a fragment passed the depth
+  // it: this rasterizer wrote depth as soon as a fragment passed the depth
   // TEST, before it had sampled the texture. A thrown-away texel that had
   // already written depth occludes what is behind it, so a grille would be a
   // hole in the car rather than a grille.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   // Two panels facing the camera, one behind the other. The `left` view looks
   // from +x, so the cutout is the quad at x = 1 and the solid green panel
@@ -4724,7 +4724,7 @@ test('a cut-out texel is not drawn and does not hide what is behind it', async (
   const cutout = { w: 2, h: 1, data: Buffer.from([0, 0, 0, 0, 255, 0, 255, 255]) };
   const solid = { w: 1, h: 1, data: Buffer.from([0, 255, 0, 255]) };
   const sheets = new Map([['cut', cutout], ['back', solid]]);
-  const shot = (alphaTest) => rasterise(quads, [
+  const shot = (alphaTest) => rasterize(quads, [
     { role: 'cut', start: 6, count: 6, alphaTest },
     { role: 'back', start: 0, count: 6 },
   ], sheets, { view: 'left', width: 60, height: 60, floor: false });
@@ -4736,7 +4736,7 @@ test('a cut-out texel is not drawn and does not hide what is behind it', async (
   assert.ok(through[1] > 100 && through[0] < 40,
     `the panel behind shows through the cut part: ${through}`);
 
-  // Without a threshold the transparent half is drawn anyway, as the colour
+  // Without a threshold the transparent half is drawn anyway, as the color
   // sitting under the alpha — a near-black rectangle over the green panel.
   // That is the grille, the stitching and the 500 badge on this car's nose.
   const kept = at(shot(null), 38);
@@ -4789,7 +4789,7 @@ test('glass keeps the opacity its own texture states', async () => {
   //
   // Glass alpha was REPLACED by a fresnel term, deliberately: AC's glass
   // shaders take their transparency from the shader rather than the diffuse,
-  // and a windscreen drawn from a texture that is mostly opaque read as a grey
+  // and a windscreen drawn from a texture that is mostly opaque read as a gray
   // slab. That reasoning was about which SURFACES are glass, and it was
   // settled properly when blending started coming from the model. What it
   // cost was the one thing the texture really does say.
@@ -4797,7 +4797,7 @@ test('glass keeps the opacity its own texture states', async () => {
   // So the fresnel ADDS to the sheet's own alpha rather than standing in for
   // it: a windscreen is still see-through, its frit is still solid, and a
   // glass surface with no texture at all still gets the rim it always had.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   const quads = {
     positions: new Float32Array([
@@ -4815,7 +4815,7 @@ test('glass keeps the opacity its own texture states', async () => {
     { role: 'glass', start: 6, count: 6, blend: true, glass: true },
     { role: 'back', start: 0, count: 6 },
   ];
-  const img = rasterise(quads, groups, new Map([['glass', pane], ['back', solid]]),
+  const img = rasterize(quads, groups, new Map([['glass', pane], ['back', solid]]),
     { view: 'left', width: 60, height: 60, floor: false });
   const at = (x) => [0, 1, 2].map((k) => img.data[(((30 * img.width) + x) * 4) + k]);
 
@@ -4828,8 +4828,8 @@ test('glass keeps the opacity its own texture states', async () => {
 
   // A glass group with no artwork keeps the fresnel it always had — this
   // repository has several cars whose glass texture nothing could decode, and
-  // an empty hole where a windscreen belongs is worse than a grey pane.
-  const bare = rasterise(quads, [{ role: 'glass', start: 6, count: 6, blend: true, glass: true }],
+  // an empty hole where a windscreen belongs is worse than a gray pane.
+  const bare = rasterize(quads, [{ role: 'glass', start: 6, count: 6, blend: true, glass: true }],
     new Map(), { view: 'left', width: 60, height: 60, floor: false });
   const pale = [0, 1, 2].map((k) => bare.data[(((30 * bare.width) + 30) * 4) + k]);
   assert.ok(pale.reduce((a, b) => a + b, 0) > 60, `a bare windscreen is still drawn: ${pale}`);

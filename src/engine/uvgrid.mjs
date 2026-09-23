@@ -15,7 +15,7 @@
 // compressed and any one of them can fail:
 //
 //   1. Cell labels      A1, B1, ... — exact, needs a close/sharp view.
-//   2. Per-cell colour  hue tracks the column, lightness tracks the row, so a
+//   2. Per-cell color  hue tracks the column, lightness tracks the row, so a
 //                       blurry magenta-ish cell still narrows things down.
 //   3. Quadrant marks   huge faint labels readable from across the showroom.
 //
@@ -88,7 +88,7 @@ export function uvGridSvg({ width, height, label = '', font = 'sans-serif', cols
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       // Hue walks the column; lightness carries the row via a checkerboard plus
-      // a coarser 5-row banding, so neighbours differ on two axes at once.
+      // a coarser 5-row banding, so neighbors differ on two axes at once.
       const hue = (c / cols) * 330;
       const light = ((c + r) % 2 ? 36 : 23) + (Math.floor(r / 5) % 2 ? 11 : 0);
       cells.push(
@@ -180,7 +180,7 @@ export function uvGridSvg({ width, height, label = '', font = 'sans-serif', cols
 // The useful consequence: a filename matching nothing overrides nothing,
 // silently and harmlessly. Guessing therefore costs a few hundred KB and no
 // risk at all. Ship every plausible spelling at once, give each its own loud
-// colour and print its own filename on it, and one look at the car tells you
+// color and print its own filename on it, and one look at the car tells you
 // which one the model actually uses.
 //
 // This found RSS4_Tire.dds on the Formula RSS 4 in a single build, after the
@@ -217,10 +217,10 @@ export function makeProbes(files) {
 }
 
 /**
- * Flat colour, filename in large type, plus concentric rings.
+ * Flat color, filename in large type, plus concentric rings.
  *
  * The rings are not decoration: if the part turns out to be unwrapped radially
- * — as tyre sidewalls usually are — they come back as clean concentric bands,
+ * — as tire sidewalls usually are — they come back as clean concentric bands,
  * which tells you the layout at the same time as the name.
  */
 export function probeSvg({ width, height, file, color, label = 'NAME PROBE', font = 'sans-serif' }) {

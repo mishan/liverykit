@@ -42,9 +42,9 @@ The loop:
   --polish <n>           rounds after a pass spent acting on the critic's advice, when it
                          gave any (default 1). The pass is kept, and offered instead of a
                          polish that does not pass the gate
-  --no-aero              do not ask for a ground-effect kit in the style's colours
+  --no-aero              do not ask for a ground-effect kit in the style's colors
                          (splitter, side skirts, diffuser)
-  --no-wheels            do not ask for the wheels in the style's accent colour
+  --no-wheels            do not ask for the wheels in the style's accent color
 
 The models:
   --backend <b>          anthropic (default), or openai for any OpenAI-compatible

@@ -357,7 +357,7 @@ function preserveTextureSizes(profile, prior, report) {
  *
  * Followed by FILE, and by role name only for a prior entry that has none. It
  * was followed by name, and numbered roles are handed out afresh each run: a
- * `tyres_2` that became the brake duct kept the tyre's note on mirrored
+ * `tyres_2` that became the brake duct kept the tire's note on mirrored
  * sidewalls, which then read as the truth about the wrong texture. The file is
  * what the note was written about, as it is for role names above. A note whose
  * file nothing wears any more is reported with its text, not dropped.

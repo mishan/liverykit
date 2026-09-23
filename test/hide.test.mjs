@@ -1,6 +1,6 @@
 // What a design's `hide` list does at build time.
 //
-// It used to do nothing there. The editor's whole-car view honoured it and the
+// It used to do nothing there. The editor's whole-car view honored it and the
 // build wrote no file for a hidden role, so a plate hidden on screen still wore
 // its stock artwork in the game — unless the car's own config happened to hide
 // it, which on the one car this was built against it did, so nobody noticed.

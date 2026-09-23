@@ -584,7 +584,7 @@ test('check_fitment: the worst finding leads, and is counted', async () => {
       'worst first, so truncation loses the least important end');
 
     // A count and a sorted list, because "some minor findings" is how nine low
-    // and one high gets summarised by anything reading in a hurry.
+    // and one high gets summarized by anything reading in a hurry.
     if (out.findings.length) {
       assert.match(out.verdict, /Worst finding is (fatal|high|low)\./, out.verdict);
       assert.match(out.verdict, /\d+ fatal, \d+ high, \d+ low/, out.verdict);
@@ -1041,7 +1041,7 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
   // Rendering without the editor, so this can be checked without a browser or
   // a car. Two triangles forming a quad, facing the camera, wearing a solid
   // magenta sheet.
-  const { rasterise, VIEWS } = await import('../src/engine/shot.mjs');
+  const { rasterize, VIEWS } = await import('../src/engine/shot.mjs');
   assert.ok(VIEWS.left && VIEWS.right, 'the named views exist');
 
   // In the YZ plane, facing the `left` camera at +x. A quad in the XY plane
@@ -1059,26 +1059,26 @@ test('a shot is drawn from geometry, with the artwork on it', async () => {
     255, 0, 255, 255, 255, 0, 255, 255,
   ]) };
 
-  const painted = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+  const painted = rasterize(quad, [{ role: 'body', start: 0, count: 6 }],
     new Map([['body', art]]), { view: 'left', width: 80, height: 80 });
   const at = (img, x, y) => [0, 1, 2].map((k) => img.data[(y * img.width + x) * 4 + k]);
   const [r, g, b] = at(painted, 40, 40);
   // Darker than the source, because it is shaded — the hue is what matters.
   assert.ok(r > 40 && b > 40 && g < r / 2, `the artwork reaches the pixels: ${r},${g},${b}`);
 
-  // A group with no artwork is drawn bare grey, which says "your design does
-  // not paint this" rather than inventing a colour for it.
-  const bare = rasterise(quad, [{ role: 'body', start: 0, count: 6 }],
+  // A group with no artwork is drawn bare gray, which says "your design does
+  // not paint this" rather than inventing a color for it.
+  const bare = rasterize(quad, [{ role: 'body', start: 0, count: 6 }],
     new Map(), { view: 'left', width: 80, height: 80 });
   const [br, bg, bb] = at(bare, 40, 40);
   assert.ok(Math.abs(br - bg) < 30 && Math.abs(bg - bb) < 30,
-    `unpainted is grey, not a plausible colour: ${br},${bg},${bb}`);
+    `unpainted is grey, not a plausible color: ${br},${bg},${bb}`);
   assert.notDeepEqual([br, bg, bb], [r, g, b]);
 });
 
 test('a shot wears the car\'s own texture where the design paints nothing', async () => {
   // `shoot` built `sheets` out of the painted surfaces alone, so everything a
-  // design does not paint — glass, wheels, the whole interior — drew BARE grey
+  // design does not paint — glass, wheels, the whole interior — drew BARE gray
   // in the only picture an agent working without a browser can see. The build's
   // preview.jpg had been doing this properly for weeks, which is what made it
   // hard to notice: two renderers disagreeing about the same car is how a
@@ -1108,7 +1108,7 @@ test('a shot wears the car\'s own texture where the design paints nothing', asyn
 
   const bare = await centre((await shoot(quad, groups, [], opts)).png);
   assert.ok(Math.abs(bare[0] - bare[1]) < 30 && Math.abs(bare[1] - bare[2]) < 30,
-    `with nothing supplied the part is grey, not a plausible colour: ${bare}`);
+    `with nothing supplied the part is grey, not a plausible color: ${bare}`);
 
   const worn = await centre((await shoot(quad, groups, [], { ...opts, sheets: stock })).png);
   assert.ok(worn[1] > worn[0] + 40 && worn[1] > worn[2] + 40,
@@ -1123,7 +1123,7 @@ test('the car\'s own sheets are asked for by file, both halves of a material inc
     { role: null, file: 'glass.dds' },
     // A two-layer material: an occlusion bake with a tiling material over it,
     // and neither of them named by `file`. Missing these is what left a whole
-    // cockpit flat grey in the build's preview.
+    // cockpit flat gray in the build's preview.
     { role: null, file: null, detail: { diffuse: 'seat_bake.dds', detail: 'alcantara.dds', mult: 40 } },
   ];
   const wanted = carTextureFiles(groups);
@@ -1147,7 +1147,7 @@ test('the car\'s own sheets are asked for by file, both halves of a material inc
   // A LOADER THAT THROWS names every file, not one. The editor's stock loader
   // rejects once for a kn5 it could not read and rejects identically for every
   // file after it, and the count this returns is what the shot reports as the
-  // number of parts drawing grey — so answering "1" for a model that gave up
+  // number of parts drawing gray — so answering "1" for a model that gave up
   // nothing would tell the caller most of the car is fine.
   const broken = new Map();
   const threw = await carSheets(groups, () => { throw new Error('could not read the model'); },
@@ -1178,9 +1178,9 @@ test('the left view shows the left of the car', async () => {
   // was of the right-hand side. Nobody caught it because a livery is nearly
   // symmetric, until a stripe painted on left_mid alone showed up only in
   // the `right` view.
-  const { rasterise } = await import('../src/engine/shot.mjs');
-  // Two slabs, one each side, each wearing its own colour. Whichever is
-  // nearer the camera wins the depth test, so the colour at the centre says
+  const { rasterize } = await import('../src/engine/shot.mjs');
+  // Two slabs, one each side, each wearing its own color. Whichever is
+  // nearer the camera wins the depth test, so the color at the centre says
   // which side the view is looking at.
   const slab = (x) => [x, -1, -1, x, -1, 1, x, 1, 1, x, 1, -1];
   const model = {
@@ -1194,11 +1194,11 @@ test('the left view shows the left of the car', async () => {
   const groups = [{ role: 'leftSide', start: 0, count: 6 }, { role: 'rightSide', start: 6, count: 6 }];
   const centre = (img) => [0, 1, 2].map((k) => img.data[(40 * img.width + 40) * 4 + k]);
 
-  const [lr, , lb] = centre(rasterise(model, groups, sheets, { view: 'left', width: 80, height: 80 }));
+  const [lr, , lb] = centre(rasterize(model, groups, sheets, { view: 'left', width: 80, height: 80 }));
   assert.ok(lr > lb * 2, `left view sees the +X slab, which is red: got ${lr},${lb}`);
-  const [rr, , rb] = centre(rasterise(model, groups, sheets, { view: 'right', width: 80, height: 80 }));
+  const [rr, , rb] = centre(rasterize(model, groups, sheets, { view: 'right', width: 80, height: 80 }));
   assert.ok(rb > rr * 2, `right view sees the -X slab, which is blue: got ${rr},${rb}`);
-  const [flr, , flb] = centre(rasterise(model, groups, sheets, { view: 'front-left', width: 80, height: 80 }));
+  const [flr, , flb] = centre(rasterize(model, groups, sheets, { view: 'front-left', width: 80, height: 80 }));
   assert.ok(flr > flb * 2, `front-left is a left view: got ${flr},${flb}`);
 });
 
@@ -1240,7 +1240,7 @@ test('a view this renderer does not have falls back to one it does', async () =>
   // The server refuses an unknown view before it reaches here; this is about
   // what the renderer does when something gets past it, and the answer has to
   // be a picture rather than an empty room.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
   const quad = {
     positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
     uvs: new Float32Array([0, 1, 1, 1, 1, 0, 0, 0]),
@@ -1251,9 +1251,9 @@ test('a view this renderer does not have falls back to one it does', async () =>
   const art = new Map([['body', { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) }]]);
   const opts = { width: 60, height: 60, samples: 1 };
 
-  const left = rasterise(quad, groups, art, { ...opts, view: 'left' });
+  const left = rasterize(quad, groups, art, { ...opts, view: 'left' });
   for (const view of ['constructor', 'toString', 'nope']) {
-    const fallen = rasterise(quad, groups, art, { ...opts, view });
+    const fallen = rasterize(quad, groups, art, { ...opts, view });
     // Compared as BUFFERS. deepEqual over two unpacked frames builds a diff of
     // fourteen thousand numbers when it fails, which is how proving this bug
     // exists killed the test runner rather than reporting it.
@@ -1263,8 +1263,8 @@ test('a view this renderer does not have falls back to one it does', async () =>
 });
 
 test('the shot composites blended surfaces the way the viewer does', async () => {
-  // Two ways the rasteriser drifted from the viewer it exists to check.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  // Two ways the rasterizer drifted from the viewer it exists to check.
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   // Two quads facing the camera, the second nearer. Both blended.
   const quad = (x) => ({
@@ -1290,7 +1290,7 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
   // ADDITIVE: a black emissive sheet must add nothing, leaving the magenta
   // behind it visible. Alpha-composited it would be a black rectangle — the
   // exact failure this renderer is meant to catch.
-  const withGlow = rasterise(model, [
+  const withGlow = rasterize(model, [
     { role: 'plate', start: 0, count: 6, blend: true },
     { role: 'glow', start: 6, count: 6, blend: true, add: true },
   ], new Map([['plate', sheet(255, 0, 255, 255)], ['glow', sheet(0, 0, 0, 255)]]),
@@ -1300,9 +1300,9 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
     `a black emissive sheet hid the plate under it: ${r},${g},${b}`);
 
   // SORTED: the nearer blended quad composites last. Given a fully opaque one
-  // in front, its colour is what survives — which only holds if the two are
+  // in front, its color is what survives — which only holds if the two are
   // ordered by distance rather than by however the groups arrived.
-  const ordered = rasterise(model, [
+  const ordered = rasterize(model, [
     { role: 'far', start: 0, count: 6, blend: true },
     { role: 'near', start: 6, count: 6, blend: true },
   ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
@@ -1311,7 +1311,7 @@ test('the shot composites blended surfaces the way the viewer does', async () =>
   assert.ok(ng > nr && ng > nb, `the nearer surface should win: ${nr},${ng},${nb}`);
 
   // And the same two groups listed the other way round give the same picture.
-  const reversed = rasterise(model, [
+  const reversed = rasterize(model, [
     { role: 'near', start: 6, count: 6, blend: true },
     { role: 'far', start: 0, count: 6, blend: true },
   ], new Map([['far', sheet(255, 0, 255, 255)], ['near', sheet(0, 255, 0, 255)]]),
@@ -1326,7 +1326,7 @@ test('a shot is antialiased, and comes back the size it was asked for', async ()
   // triangle edge a step function, and a fine repeated pattern in the artwork
   // aliases into moire that is not in the design. `samples` renders the frame
   // several times over in each direction and boxes it back down.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   // Rotated in the image plane, so its edges cross pixel rows at an angle and
   // there is something for the sampling to be wrong about. An axis-aligned
@@ -1343,8 +1343,8 @@ test('a shot is antialiased, and comes back the size it was asked for', async ()
   const group = [{ role: 'body', start: 0, count: 3 }];
   const opts = { view: 'left', width: 60, height: 60 };
 
-  const hard = rasterise(tri, group, new Map(), { ...opts, samples: 1 });
-  const soft = rasterise(tri, group, new Map(), { ...opts, samples: 3 });
+  const hard = rasterize(tri, group, new Map(), { ...opts, samples: 1 });
+  const soft = rasterize(tri, group, new Map(), { ...opts, samples: 3 });
 
   // The frame is the frame. A caller asking for 60x60 gets 60x60 whatever the
   // sampling did internally, or every consumer of this — preview.jpg's encoder
@@ -1355,7 +1355,7 @@ test('a shot is antialiased, and comes back the size it was asked for', async ()
     assert.equal(img.data.length, 60 * 60 * 4, name);
   }
 
-  // Count how many distinct greys appear. Aliased, there are two — background
+  // Count how many distinct grays appear. Aliased, there are two — background
   // and surface. Antialiased, the edge pixels hold the blend between them, and
   // that is the whole of what this buys.
   const shades = (img) => new Set(
@@ -1441,7 +1441,7 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
   // the dark that gathers at the contact. There is no floor surface drawn —
   // both are composited onto the background over the pixels whose ray reaches
   // the ground plane.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   // A SLAB, not a single quad: two faces with real extent in x, because the
   // contact shadow is an ellipse over the footprint and a flat thing has no
@@ -1464,7 +1464,7 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
     indices: new Uint32Array([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]),
   };
   const art = { w: 1, h: 1, data: Buffer.from([255, 0, 255, 255]) };
-  const draw = (floor) => rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+  const draw = (floor) => rasterize(slab, [{ role: 'body', start: 0, count: 12 }],
     new Map([['body', art]]), { view: 'left', width: 120, height: 120, floor, samples: 1 });
 
   const bare = draw(false);
@@ -1516,7 +1516,7 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
     centre: [0, 1, 2].map((k) => (lo[k] + hi[k]) / 2),
   };
   const fromLeft = frameCamera(slab.positions, VIEWS.left, shape);
-  const wrongView = rasterise(slab, [{ role: 'body', start: 0, count: 12 }],
+  const wrongView = rasterize(slab, [{ role: 'body', start: 0, count: 12 }],
     new Map([['body', art]]),
     { view: 'right', width: 120, height: 120, floor: false, samples: 1, camera: fromLeft });
   assert.deepEqual(Buffer.from(wrongView.data), Buffer.from(bare.data),
@@ -1525,11 +1525,11 @@ test('the car stands on a floor: a reflection under it and dark where it meets',
 
 test('a two-layer material gets both layers, and the tiling one tiles', async () => {
   // MultiMap materials are a per-part occlusion bake times a small square of
-  // carbon or suede repeated across the panel. The rasteriser knew about the
+  // carbon or suede repeated across the panel. The rasterizer knew about the
   // first layer and not the second, so every one of them drew flat — which on
-  // this project's reference car is 180k triangles of cockpit rendering grey
+  // this project's reference car is 180k triangles of cockpit rendering gray
   // while the editor showed it in its real materials.
-  const { rasterise } = await import('../src/engine/shot.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
 
   const quad = {
     positions: new Float32Array([0, -1, -1, 0, -1, 1, 0, 1, 1, 0, 1, -1]),
@@ -1545,12 +1545,12 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
   const opts = { view: 'left', width: 90, height: 90, floor: false, samples: 1 };
 
   // No role and no file: this group's base sheet is named by the detail block,
-  // which is the case that used to fall through to grey.
-  const withLayer = rasterise(quad, [{
+  // which is the case that used to fall through to gray.
+  const withLayer = rasterize(quad, [{
     start: 0, count: 6, role: null, file: null,
     detail: { diffuse: 'bake.dds', detail: 'grain.dds', mult: 8, bake: true },
   }], sheets, opts);
-  const without = rasterise(quad, [{
+  const without = rasterize(quad, [{
     start: 0, count: 6, role: null, file: 'bake.dds',
   }], sheets, opts);
 
@@ -1584,8 +1584,8 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
   }
   assert.ok(turns >= 8, `eight repeats should turn about sixteen times, got ${turns}`);
 
-  // THE OTHER GAIN. A bake multiplies straight through; a colour map is doubled
-  // first, because a detail sheet is authored against mid-grey meaning "leave
+  // THE OTHER GAIN. A bake multiplies straight through; a color map is doubled
+  // first, because a detail sheet is authored against mid-gray meaning "leave
   // this alone" and 0.5 x 2 = 1. Backwards in either direction and the surface
   // is half or twice the brightness it should be — which is what the dashboard
   // cowl rendering white was, and it reads as a lighting bug rather than as a
@@ -1595,20 +1595,20 @@ test('a two-layer material gets both layers, and the tiling one tiles', async ()
   // two rules give plainly different answers: doubled it is the base
   // untouched, undoubled it is the base halved.
   const neutral = { w: 1, h: 1, data: Buffer.from([128, 128, 128, 255]) };
-  const overNeutral = (bake) => rasterise(quad, [{
+  const overNeutral = (bake) => rasterize(quad, [{
     start: 0, count: 6, role: null, file: null,
     detail: { diffuse: 'bake.dds', detail: 'neutral.dds', mult: 1, bake },
   }], new Map([['bake.dds', white], ['neutral.dds', neutral]]), opts);
 
   const centre = (img) => img.data[((45 * img.width) + (img.width >> 1)) * 4];
   const asBake = centre(overNeutral(true));
-  const asColour = centre(overNeutral(false));
+  const asColor = centre(overNeutral(false));
   const noLayer = centre(without);
 
-  assert.ok(Math.abs(asColour - noLayer) <= 2,
-    `a colour base doubles back to itself over neutral grey: ${asColour} vs ${noLayer}`);
-  assert.ok(asBake < asColour - 20,
-    `a bake must NOT double, so it comes out darker: ${asBake} vs ${asColour}`);
+  assert.ok(Math.abs(asColor - noLayer) <= 2,
+    `a color base doubles back to itself over neutral grey: ${asColor} vs ${noLayer}`);
+  assert.ok(asBake < asColor - 20,
+    `a bake must NOT double, so it comes out darker: ${asBake} vs ${asColor}`);
 });
 
 test('the framed camera is actually centred, and fills the frame', async () => {

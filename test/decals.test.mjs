@@ -187,7 +187,7 @@ test('a decal can glow, and can be turned down', async () => {
 
 test('a decal is measured by the pixels that reach the document, not by the file', async () => {
   // THE FILE ON DISK IS NOT THE COST. An SVG has no pixels until this
-  // rasterises it, and 194 bytes of `feTurbulence` at 2048 square measures 15
+  // rasterizes it, and 194 bytes of `feTurbulence` at 2048 square measures 15
   // MB of PNG — every byte of which is then base64'd into every document that
   // draws it, including the whole-car preview the editor re-renders on each
   // frame of a drag. The cap was read off the source file, so that asset
@@ -202,8 +202,8 @@ test('a decal is measured by the pixels that reach the document, not by the file
   assert.deepEqual([...decals.keys()], ['sponsor'], 'the small PNG is fine; the SVG is not');
   const why = said.find((l) => /flag\.svg/.test(l));
   assert.ok(why, 'and it is reported rather than quietly missing');
-  assert.match(why, /rasterises to/, 'saying it is the pixels, not the file');
-  assert.match(why, /2048/, 'and what it rasterised to');
+  assert.match(why, /rasterizes to/, 'saying it is the pixels, not the file');
+  assert.match(why, /2048/, 'and what it rasterized to');
   assert.match(why, /skipped/);
 
   // The cheap early-out on the source file still stands, for a file nobody

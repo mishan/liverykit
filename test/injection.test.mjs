@@ -113,7 +113,7 @@ function attempts(label, render, failures, unprobed) {
     expected = elements(render(BENIGN));
   } catch (e) {
     // NOT a quiet skip. This used to `return`, which meant a treatment that
-    // started rejecting `AAAAAA` — an enum learning its own values, a colour
+    // started rejecting `AAAAAA` — an enum learning its own values, a color
     // option validating its format — would stop being probed for injection and
     // say nothing, in the one test whose entire job is to notice that something
     // stopped being checked. A field that cannot be probed is a field this test
@@ -150,14 +150,14 @@ test('no value a livery supplies can become markup', () => {
   for (const [name, entry] of treatments) {
     const region = (extra) => ({ id: 'r', panel: 'L', treatment: name, text: 'hi', ...extra });
 
-    // The background and a palette colour reach markup through `ctx.color`,
+    // The background and a palette color reach markup through `ctx.color`,
     // which every treatment uses and which passes an unknown name straight
     // through — so the livery's own text arrives either way.
     // `checked` counts probes that actually RAN, so the guard at the bottom
     // notices a field dropping out even if nothing else does.
     if (attempts(`${name}: background`, (v) =>
       draw({ region: region({}), palette: { bg: v }, background: 'bg' }), failures, unprobed)) checked += 1;
-    if (attempts(`${name}: a palette colour`, (v) =>
+    if (attempts(`${name}: a palette color`, (v) =>
       draw({ region: region({ color: 'p', colors: ['p'] }), palette: { p: v } }), failures, unprobed)) checked += 1;
 
     // And every option the pack says it takes, whatever it is called. Read from
@@ -191,7 +191,7 @@ test('no value a livery supplies can become markup', () => {
 test('escaping changes what a value can do, not what it means', () => {
   // The five entities are resolved by any XML parser back to the characters
   // they stand for, so this is not a filter that quietly eats input.
-  assert.equal(safe('#00F0FF'), '#00F0FF', 'an ordinary colour is untouched');
+  assert.equal(safe('#00F0FF'), '#00F0FF', 'an ordinary color is untouched');
   assert.equal(safe('rgb(1, 2, 3)'), 'rgb(1, 2, 3)');
   assert.equal(safe('a"b'), 'a&quot;b');
   assert.equal(safe(`a'b`), 'a&apos;b');
@@ -232,7 +232,7 @@ test('text keeps its own characters, because it is content and not a parameter',
 });
 
 test('every value a treatment is handed is safe to interpolate', async () => {
-  // The twelve shipped treatments all reach colours through `ctx.color`, so the
+  // The twelve shipped treatments all reach colors through `ctx.color`, so the
   // test above would pass even if `ctx.palette` and `ctx.tokens` went over raw
   // — which they did. Nothing was exploitable through them today; the first
   // pack author to write `fill="${c.palette.accent}"`, reasonably, having been

@@ -28,7 +28,7 @@ want two badges*, which is a fact about the design, and it slipped in only
 because the mechanism was already there. *Step 2 moved it:* Duplicate writes a
 design region now, and `copies` means mirroring again.
 
-A new element with its own treatment, its own colours and its own text is not
+A new element with its own treatment, its own colors and its own text is not
 that either. It is design. It belongs to every car the livery is pointed at, not to the
 pair, and putting it in a fit would mean the design looked different depending on
 which car you built it for, with no file saying so.
@@ -141,7 +141,7 @@ and the editor shows that as placeholder text. It does **not** write a value int
 the design that the person did not choose. Two reasons: a design file should say
 only what it means, and a schema that carried real defaults would be a second
 source of truth for them, free to drift from the `?? 22` in the code — silently,
-which is the failure mode this codebase is organised against.
+which is the failure mode this codebase is organized against.
 
 **Drift is caught mechanically.** Every `c.opts.X` a pack reads is visible in its
 source. A test walks each registered pack's file, collects those reads, and
@@ -153,7 +153,7 @@ has to remember.
 
 Types worth having: `string`, `number` (min/max/step), `boolean`, `enum`,
 `color`, and `rects` for things like `sparkles`' `avoid`. `color` is the
-interesting one — treatments resolve colours through `ctx.color(name)` against
+interesting one — treatments resolve colors through `ctx.color(name)` against
 the livery's palette, so the control offers the palette's own names first and a
 literal value as the escape. Anything a schema cannot express degrades to JSON
 for that field alone, rather than for the whole treatment.
@@ -161,7 +161,7 @@ for that field alone, rather than for the whole treatment.
 ## Two modes, not a guess
 
 Once the editor can write both files, "what does this drag change?" has two
-answers, and guessing between them would be the worst possible behaviour.
+answers, and guessing between them would be the worst possible behavior.
 
 So it is a mode, stated in the header, and it changes what the editor renders:
 
@@ -220,13 +220,13 @@ so typing a real driver's name shows the actual text metrics — which matters,
 because librsvg does no reflow and the `text` treatment estimates advance width
 and scales to fit.
 
-Adding a palette entry from the colour control closes the loop: pick a colour for
+Adding a palette entry from the color control closes the loop: pick a color for
 a region, name it, and it is available to everything else.
 
 The names are the risk, though, and it took building it to see how much. Both a
 palette entry and an identity token are referred to BY NAME, and both fail the
 same quiet way when the name stops resolving: `ctx.color` is `palette[name] ??
-name`, so an unknown colour is handed to the renderer as a literal and
+name`, so an unknown color is handed to the renderer as a literal and
 `fill="ghost"` is not an error to librsvg; a `{token}` interpolates through
 `tokens[k] ?? ''`, so a missing `number` renders "A. Driver #" and says nothing.
 
@@ -269,10 +269,10 @@ the person is still looking:
   will not render at all; offer to add the pack;
 - a rectangle whose panel-relative coordinates leave the panel — already
   clamped for drags, and authoring must clamp the same way;
-- a colour name absent from the palette — `makeColorResolver` returns
+- a color name absent from the palette — `makeColorResolver` returns
   `palette[name] ?? name`, so a typo is handed to the renderer as though it were
-  a literal colour. `fill="accnt"` is not an error to librsvg, it is just not the
-  colour you meant. The editor knows the palette and can say so.
+  a literal color. `fill="accnt"` is not an error to librsvg, it is just not the
+  color you meant. The editor knows the palette and can say so.
 
 ## What this does not do
 
@@ -310,9 +310,9 @@ moved out of the fit into the design, leaving `copies` to mean mirroring again.
 preview an option change, and it is the same mechanism, so step 2 inherits it.*
 
 **3. Palette and identity.** *Done.* The rows, the live re-render, and naming a
-colour into the palette from the region that wanted it. It grew one thing the
+color into the palette from the region that wanted it. It grew one thing the
 plan did not anticipate: both are keyed by NAME, and a name that stops resolving
-fails silently in both directions — an unknown colour reaches the renderer as a
+fails silently in both directions — an unknown color reaches the renderer as a
 literal, a token with no value leaves a hole in the middle of a line. So every
 row carries a count of what depends on it, renaming rewrites the references
 rather than orphaning them, and a panel lists whatever the design refers to and

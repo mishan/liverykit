@@ -37,17 +37,17 @@ The obstacle is that the editor's `lightingFor` scales those numbers against a
 a measurement (see below). Porting the calibration into a second renderer would
 make one car's paint the reference for two of them.
 
-### `INT_ELECTRONICS` and its kind still render grey
+### `INT_ELECTRONICS` and its kind still render gray
 
 29k triangles of dash switchgear on this car. The material is
 `ksPerPixelMultiMap` with `useDetail: 0`, so `detailLayer` correctly declines
 it, and `trustworthyDiffuse` then refuses its diffuse because the shader name
-says MultiMap — leaving the honest grey.
+says MultiMap — leaving the honest gray.
 
-But `INT_Electronics_Colour.dds` is a genuine colour map, near-black with small
+But `INT_Electronics_Colour.dds` is a genuine color map, near-black with small
 bright switch detail. Shown raw it would look right. The reason it cannot
 simply be trusted is that `Cockpit_LR_Colour.dds` is the same shape — MultiMap,
-no detail — and is a palette of team colour swatches that renders as stitched
+no detail — and is a palette of team color swatches that renders as stitched
 nonsense.
 
 Nothing in the material distinguishes them. This wants the same treatment the
@@ -174,7 +174,7 @@ straddles a boundary, which the game wraps across the image's edge, cannot be,
 so its panel stops at the edge and loses whatever is past it. Measured after
 the fix: 165 of them, on 70 textures on 49 cars, and not one on a texture the
 classifier proposes as a body. They are flat swatches, glass and cockpit
-sheets — the S2000's `black.dds`, the GT40's `Grey.dds`, the Alpine's clear
+sheets — the S2000's `black.dds`, the GT40's `Gray.dds`, the Alpine's clear
 glass, the 962C's cockpit — and on most the clamp costs a few percent of the
 island's area.
 
@@ -225,7 +225,7 @@ direction they sit in is [roadmap.md](roadmap.md).
   `body` to a role called `black` with ZERO panels, on a car whose `interior`
   had 90, so the design painted a sheet with nothing mapped on it and every tag
   selection then matched nothing. The classifier — which ranks on area,
-  centreline, stock-skin overrides, shader, span and visibility, never on the
+  centerline, stock-skin overrides, shader, span and visibility, never on the
   name — now also counts islands and scores a texture with none at 0. That
   alone did not fix it: its real paint `SKIN_00` had kept 1 panel of 102,
   because one strip with UVs 1,222 sheets wide carried almost all the texture's
@@ -288,7 +288,7 @@ direction they sit in is [roadmap.md](roadmap.md).
   tag that emptied it.
 
 - **The design finds two of its fourteen surfaces bound.** Of the vocabulary's
-  20 terms only `body`, `tyres` and `brakes` could be proposed automatically,
+  20 terms only `body`, `tires` and `brakes` could be proposed automatically,
   and `neon-grid-any` paints 14 terms of which `brakes` is not one — so a fresh
   car arrived with two surfaces bound and twelve `--explain`-and-confirm jobs.
   Both halves of the plan's step 5 are in. The scorers: `rims` and `interior`
@@ -311,7 +311,7 @@ direction they sit in is [roadmap.md](roadmap.md).
   one the label disagrees with is at 0.8. So no floor. `tools/evaluate.mjs`
   prints the table, and **the question is worth asking again whenever the fleet
   or the classifier changes.** What the table did find was 11 cars whose
-  `tyres` bound the tread and not the sidewall, so tyres and brakes now bind
+  `tires` bound the tread and not the sidewall, so tires and brakes now bind
   every texture only their own shader draws.
 
 ### A texture whose slot is spelled in another case vanished from the profile
@@ -337,7 +337,7 @@ carry `role`, the one texture it is drawn on, and `drawnOn` in `src/fit.mjs` is
 the single rule, applied inside `applyFit` after the key is stamped, so the
 build, the renderer, fitment, the editor and the in-view count all agree about
 the car and no positional key moves. `once` goes through it too, having been
-honoured by the build alone while the editor and fitment drew those regions on
+honored by the build alone while the editor and fitment drew those regions on
 every texture. A `role` its surface does not paint on this car is refused at
 load, and a panel no bound texture has is still `unmatched`.
 
@@ -347,7 +347,7 @@ Both Node renderers dress an unpainted part in the car's own artwork, and
 `decodeDds` shelled out to ImageMagick and nothing else — which refuses the
 uncompressed 16-bit A8L8 sheets that are really in these cars: three on the
 NSX (`INT_Bakes_2.dds`, `SEAMLESS_PLASTIC.dds`, `metal_detail_2.dds`) and the
-RSS4's `HUB_1.dds`. Those parts drew grey while the editor showed them
+RSS4's `HUB_1.dds`. Those parts drew gray while the editor showed them
 correctly, which was the tell: the two renderers disagreeing about the car
 across a decoder this project owns on one side and rents on the other. The
 viewer's pixel loop is now `src/ui/dds.js` — no DOM, no GL — imported by

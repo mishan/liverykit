@@ -44,13 +44,13 @@ Options
   --out <dir>         output directory                        (default: dist)
   --size <px>         render size for the largest texture; scales everything
   --seed <string>     re-roll all procedural placement
-  --flat              solid colour, no art — proves the plumbing first
+  --flat              solid color, no art — proves the plumbing first
   --keep-png          keep the intermediate PNGs for inspection
   --no-zip            write the folder only
 
   --uvgrid            build the calibration skin instead of the livery
   --cells <n>         calibration grid columns (default 20 = 5% steps)
-  --probe <a,b,c>     also ship these filenames as colour-coded name probes
+  --probe <a,b,c>     also ship these filenames as color-coded name probes
 
   --scan <path>       point at a car's skins/ directory
   --explain <kn5>     rank candidates for a vocabulary term and show why
@@ -483,7 +483,7 @@ if (values.ui) {
   if (values['keep-png']) console.log(`\n  Intermediate PNGs: ${join(values.out, `${folder}_png`)}`);
 
   // A livery that paints something the profile warns against — normal maps,
-  // shader maps — recolours nothing and corrupts the model's lighting.
+  // shader maps — recolors nothing and corrupts the model's lighting.
   const banned = new Map(doNotPaint(profile).map((d) => [d.file.toLowerCase(), d.reason]));
   for (const role of Object.keys(livery.paint ?? {})) {
     const f = profile.textures[role]?.file?.toLowerCase();

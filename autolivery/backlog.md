@@ -47,10 +47,10 @@ distinction the critic got wrong in run 20.
 **Where to start.**
 
 - `src/profile.mjs`, which has `panel`, `resolveRect` and the spans code (it
-  knows which panels neighbour which)
+  knows which panels neighbor which)
 - `src/engine/visibility.mjs`, whose `scanGrid` maps a UV rectangle to surface
   points
-- the ID render, once it exists (each region drawn in a flat, unique colour so
+- the ID render, once it exists (each region drawn in a flat, unique color so
   its pixels in a view can be counted), could measure the top view's coverage
   of the stripe as a cross-check
 

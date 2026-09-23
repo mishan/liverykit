@@ -291,8 +291,8 @@ test('a large, visible sheet with no islands does not become the body', async ()
 });
 
 test('tyres bind every texture only the tyre shader draws, and leave a shared swatch out', () => {
-  // A tread and a sidewall on their own tyre materials, and a white swatch the
-  // tyre material shares with the body. Picking the biggest bound the tread
+  // A tread and a sidewall on their own tire materials, and a white swatch the
+  // tire material shares with the body. Picking the biggest bound the tread
   // alone on 11 fleet cars, leaving the sidewall, where the lettering goes,
   // unpainted; and the Morgan's biggest was the shared swatch.
   const f = (role, area, shaders) => ({ role, file: `${role}.dds`, area, shaders, straddles: true, skinFraction: 0, box: null });
@@ -303,7 +303,7 @@ test('tyres bind every texture only the tyre shader draws, and leave a shared sw
   assert.deepEqual(p.roles, ['tread', 'side']);
   assert.equal(p.confidence, 1, 'nothing the tyre shader alone draws is left out');
   assert.match(explain([white, tread, side], 'tyres'), /proposal: tread, side/);
-  // With nothing but the shared swatch, it is still the tyres — as it was.
+  // With nothing but the shared swatch, it is still the tires — as it was.
   assert.deepEqual(propose([white], 'tyres').roles, ['white']);
   // And the body is still one texture.
   assert.equal(propose([tread, side, { ...white, shaders: ['ksPerPixel'] }], 'body').roles.length, 1);
@@ -366,10 +366,10 @@ test('a generated profile binds every texture the tyres proposal holds', async (
 
 test('tyres and brakes bind every texture their names say they are, across the fleet', async () => {
   // The same held-out label as the body's, for the terms a car's own shader
-  // names: filenames that plainly say tyre or tread, disc or rotor. These terms
+  // names: filenames that plainly say tire or tread, disc or rotor. These terms
   // bind every texture only their shader draws, so a car may have several
   // labelled textures, and the binding is right when it holds all of them.
-  // Measured at 182/184 for tyres and 193/202 for brakes; seven of the brake
+  // Measured at 182/184 for tires and 193/202 for brakes; seven of the brake
   // misses are discs no ksBrakeDisc material draws, which no binding rule that
   // reads the shader can reach.
   const cars = await fleet();
@@ -392,7 +392,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
 
   // What they bind that a label calls something else, which "binds every
   // labelled texture" cannot see. The Civic's author drew its disc with
-  // ksTyres, and nothing measured tells that disc from a tyre, so it is
+  // ksTyres, and nothing measured tells that disc from a tire, so it is
   // known and listed here; a new one is a change to look at.
   const is = {
     body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
@@ -416,8 +416,8 @@ test('a role one term binds is not a candidate for a later one', () => {
   // An open cockpit sees a lot of the body, and the body is large, so on
   // three open-wheelers the interior claimed the body's skin as well, and a
   // design painting both threw at build time: both would write one file. And
-  // rt_bacmono's wheel sheet, drawn by its tyre and its disc materials, was
-  // both its tyres and its brakes.
+  // rt_bacmono's wheel sheet, drawn by its tire and its disc materials, was
+  // both its tires and its brakes.
   const f = (o) => ({ role: o.file.replace('.dds', ''), area: 0.05, box: [0, 1, 0, 1, 0, 1], straddles: true, skinFraction: 0, shaders: ['ksPerPixel'], islands: 8, wheelIslands: 0, sidewalls: 0, instances: 1, ...o });
   const skin = f({ file: 'skin.dds', area: 0.5, visible: 0.7, cockpit: 0.3, shaders: ['ksPerPixelMultiMap_damage_dirt'] });
   const cabin = f({ file: 'cabin.dds', visible: 0.1, cockpit: 0.5 });

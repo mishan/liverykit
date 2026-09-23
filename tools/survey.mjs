@@ -19,7 +19,7 @@
 //   box        where the geometry sits, normalised to the car's own bounding
 //              box, so "high and central" means the same thing on a Formula car
 //              and a van.
-//   symmetry   whether the geometry straddles the centreline. Bodywork does;
+//   symmetry   whether the geometry straddles the centerline. Bodywork does;
 //              a single wheel does not; four wheels sharing one texture do.
 //   shaders    the material shader names. ksPerPixelMultiMap_damage_dirt is a
 //              body panel in all but name.

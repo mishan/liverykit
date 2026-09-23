@@ -11,12 +11,12 @@
 // at a time, which is this module done by hand.
 //
 // So it is done here, by measurement, in two parts. `cleanGrid` sweeps the
-// panel's box in cells a few centimetres across; each is CLEAN when it lands
+// panel's box in cells a few centimeters across; each is CLEAN when it lands
 // on the model and is seen from trackside, by the same ray casting
 // `check_fitment` uses. That is the expensive half and it depends only on the
 // panel, so a caller keeps it. `findSpace` then slides a shape of the asked
 // size over the clean cells and scores every position by its clearance: how
-// far, in millimetres, to the nearest cell that is not clean or to the edge of
+// far, in millimeters, to the nearest cell that is not clean or to the edge of
 // the box. The best few, spaced apart, come back as panel-relative `at`
 // rectangles, re-measured at full resolution.
 //
@@ -233,7 +233,7 @@ export function findSpace({
   // The roomiest first, and not five spellings of the same spot. Each is
   // measured again at full resolution and dropped if it fails there: the
   // cells are coarse, and a caller is told to hold what comes back to 100%.
-  // A dropped spot still keeps its neighbours out, or the next one tried
+  // A dropped spot still keeps its neighbors out, or the next one tried
   // would be the same spot again; the attempts are capped because each
   // measurement walks the whole mesh.
   found.sort((a, b) => b.clearance - a.clearance);
@@ -256,7 +256,7 @@ export function findSpace({
     const visible = v ? v.fraction : 0;
     if (onCar < CLEAN || visible < CLEAN) continue;
     // The margin too, as `minMargin` will hold it: the box grown by it on
-    // every side, sampled every few millimetres, against the same bar. The
+    // every side, sampled every few millimeters, against the same bar. The
     // clearance above came from the coarse cells alone, and an edge or a
     // fitting narrower than a cell could sit inside it and fail the constraint
     // the caller is told to add. Measured on the `at` the caller is handed,
@@ -280,7 +280,7 @@ export function findSpace({
     // caller was told would pass then failed. Where the cells' figure does not
     // hold, the largest that does is found by halving between it and what was
     // asked, which has been held. Falling back to what was asked reported
-    // zero for a spot with hundreds of millimetres of room whenever no margin
+    // zero for a spot with hundreds of millimeters of room whenever no margin
     // was asked, and a planner told zero has no margin to write. The halving
     // stops at the fine grid's own step, below which it samples nothing new;
     // each question walks the whole mesh, so this is a handful per spot.
@@ -351,7 +351,7 @@ export function largestSpace({
     const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries, fine });
     if (!r.candidates.length) return false;
     // Reported at a size that was itself measured. Rounded to the nearest
-    // millimetre, the size could be larger than the shape that passed, and
+    // millimeter, the size could be larger than the shape that passed, and
     // the spot, clearance and fractions beside it were for another shape.
     const fw = Math.floor(w), fh = Math.floor(w * aspect);
     const at = fw > 0 && fh > 0
@@ -511,8 +511,8 @@ function nameLines(name) {
  * The disc and the letters are sized in texture pixels, because that is where
  * the ring is drawn and tested: a circle of the box's shorter side in pixels,
  * which on a panel whose pixels are not square on the car is an ellipse there,
- * and laid out in millimetres the number's ink ran out through its rim on the
- * test car's doors. `ah` and `av` are pixels per millimetre across and down the
+ * and laid out in millimeters the number's ink ran out through its rim on the
+ * test car's doors. `ah` and `av` are pixels per millimeter across and down the
  * upright group, and `ax` is how the treatment narrows glyphs for the panel's
  * stretch. Font sizes (`em`) are in pixels down the letters.
  */
@@ -558,7 +558,7 @@ export function groupLayout({
   }
   const quarter = turn === 90 || turn === 270;
   const [bw, bh] = g.boxMm;
-  // Pixels per millimetre along the texture's u and v, then across and down
+  // Pixels per millimeter along the texture's u and v, then across and down
   // the upright group, which a quarter turn swaps.
   const tex = texture(profile, g.role);
   const perU = tex.width / (pan.metresPerUv[0] * 1000), perV = tex.height / (pan.metresPerUv[1] * 1000);
@@ -705,7 +705,7 @@ export function groupLayout({
       { id: 'number', ...regions.number, color: 'ink' },
       ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } });
   // Contrast and mirroring are about the design this goes into, which
-  // chooses the colours and paints the other side; neither is the layout's.
+  // chooses the colors and paints the other side; neither is the layout's.
   const wrongIn = (findings, ids, also = []) => findings.filter((f) => (f.severity === 'high' || f.severity === 'fatal')
     && !['low-contrast', 'unmirrored', ...also].includes(f.kind) && (f.ids ?? []).some((id) => ids.includes(id)));
   // The best that measures, over how tall the stack may stand.
@@ -888,7 +888,7 @@ function coarseFits(g, [x, y, w, h], marginMm) {
 /**
  * Whether a panel-relative `at` is on the car and seen, and has `marginMm` of
  * clean bodywork all round, measured as `findSpace` measures a spot it
- * returns: the shape sampled 16 across, the margin every few millimetres.
+ * returns: the shape sampled 16 across, the margin every few millimeters.
  */
 function fineFits(g, model, prepared, at, marginMm) {
   const [px, py, pw, ph] = g.rect;
@@ -930,7 +930,7 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     throw new Error(`find_space's stripe needs widthMm, the stripe's width on the car in mm, above zero; got ${JSON.stringify(widthMm)}.`);
   }
   if (!Number.isFinite(offsetMm)) {
-    throw new Error(`find_space's stripe takes offsetMm, its centre's distance from the centreline in mm, left positive; got ${JSON.stringify(offsetMm)}.`);
+    throw new Error(`find_space's stripe takes offsetMm, its centre's distance from the centerline in mm, left positive; got ${JSON.stringify(offsetMm)}.`);
   }
   if (typeof name !== 'string' || !name.trim() || name !== name.trim()) {
     throw new Error(`find_space's stripe takes name, the stripe's name for its ids and its constraint; got ${JSON.stringify(name)}.`);
@@ -947,7 +947,7 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
     ...(skipped.length ? { skipped } : {}),
     findings: bandFindings({ profile, model, byRole: new Map([[role, regions]]), hide, paints }),
     ...(!regions.length ? {
-      note: `A band ${widthMm} mm wide, ${offsetMm} mm from the centreline, crosses no panel of ${role} the world sees ` +
+      note: `A band ${widthMm} mm wide, ${offsetMm} mm from the centerline, crosses no panel of ${role} the world sees ` +
         'from above. Check the offset, or the sheet the panel named is on.',
     } : {}),
   };
@@ -957,11 +957,11 @@ export function stripeLayout({ profile, model, role, widthMm, offsetMm = 0, name
  * A ground-effect kit: the front splitter, the side skirts and the rear
  * diffuser, which is to say the car's lowest panels all the way round, from
  * the bottom of its bodywork up to `heightMm`. A Gulf car's orange kit is what
- * carries its colours in profile; its centre stripe runs over the top, where
+ * carries its colors in profile; its centre stripe runs over the top, where
  * a side view barely sees it.
  *
  * Panel by panel, and not as one band like `stripeLayout`'s, because the kit
- * is the car's own lowest panels in a colour. On the NSX a band at one height
+ * is the car's own lowest panels in a color. On the NSX a band at one height
  * fitted the sill 56 mm off a straight line (its texture is laid on a slant),
  * took a sliver off the bottom of the door, and wrapped round the front of the
  * nose. So:
@@ -995,7 +995,7 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   const length = carLength(model, profile);
   const partOf = (on) => (on.across[0] < 0 && on.across[1] > 0
     ? ((on.behindNose[0] + on.behindNose[1]) / 2 < length / 2 ? 'front' : 'rear')
-    // Touching the centreline from one side is that side.
+    // Touching the centerline from one side is that side.
     : on.across[0] >= 0 ? 'left' : 'right');
 
   const pieces = [];
