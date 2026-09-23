@@ -90,11 +90,15 @@ Each step says what it is for and what would show it worked. The order puts
 cheap correctness before generality, because a generic kernel inherits every
 flaw the car-specific one has.
 
-**1. Close the portability gap.** `docs/portability-plan.md`. A sweep
+**1. Close the portability gap — done.** `docs/portability-plan.md`. A sweep
 harness, tiled materials named, islands as a classifier input, a measured
 confidence floor, extent-based tags with a nearest-miss explanation, and
 one-pass binding. Done when the 25-car sweep is a script and its numbers have
-moved.
+moved: it is `tools/sweep.mjs`, it covers 26 cars, all five steps of the plan
+are in, and a car arrives with a mean of 4.0 of the portable design's 14
+surfaces bound where it was 2.0. The confidence floor the plan proposed was
+measured and deliberately not set; see `docs/backlog.md`. **Step 2 is the next
+one.**
 
 **2. Extract the kernel.** Document the model contract that `vertex` and
 `triangles` already imply. Add a glTF loader that fills it, since binary glTF

@@ -2,7 +2,7 @@
 
 ## The problem
 
-`docs/backlog.md` opens with a measurement: `neon-grid-any` resolved against 26
+`docs/backlog.md` records a measurement: `neon-grid-any` resolved against 26
 cars it had never seen, profiled from scratch with no hand-work. The format
 held, the fit machinery held, and the fitment checker reported nothing fatal.
 What did not hold was the part that decides *where* a portable design lands:
@@ -45,9 +45,11 @@ cheap and the classifier fix depends on it. The two classifier items come before
 the tag items because a wrong body binding produces tag misses as a side
 effect, and the tag numbers cannot be read until that noise is out of them.
 
-*Last checked against the code on 2026-09-13, at `d16e8a0`. Steps 0 to 3
-are done — step 3 by measuring that its floor is not needed — and so are the
-shifted-sheet fix step 1 turned up and all of step 4; step 5 is not.*
+*Last checked against the code on 2026-09-22, at `1962647`. Every step is
+done — step 3 by measuring that its floor is not needed — along with the
+shifted-sheet fix step 1 turned up. That closes the roadmap's step 1. What each
+one established is recorded per step below, and in summary under Done in
+`docs/backlog.md`.*
 
 ## 0. A harness that re-runs the sweep
 
