@@ -100,7 +100,13 @@ surfaces bound where it was 2.0. The confidence floor the plan proposed was
 measured and deliberately not set; see `docs/backlog.md`. **Step 2 is the next
 one.**
 
-**2. Extract the kernel.** Document the model contract that `vertex` and
+**2. Extract the kernel.** Read [kernel-spike.md](kernel-spike.md) first: two
+games outside this lineage were read against this list, and the measurement
+engine survives both while the profile schema, `fitment`'s findings and the
+output adapter do not. The step below is right about what it names and
+incomplete about what it omits.
+
+Document the model contract that `vertex` and
 `triangles` already imply. Add a glTF loader that fills it, since binary glTF
 is a few hundred lines and every DCC tool exports it. Make the orientation
 frame pluggable: from wheels for cars, from a stated up and forward for

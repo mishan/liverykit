@@ -5,7 +5,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { mipCount } from '../src/engine/pipeline.mjs';
 import { validateProfile, resolveRect, panel, texture } from '../src/profile.mjs';
@@ -48,6 +50,48 @@ test('profile rejects case-colliding filenames', () => {
       b: { file: 'SUIT_DIFF.dds', width: 1024, height: 1024 },
     },
   }), /case-colliding/i);
+});
+
+test('profile refuses a UV set nothing can read, and allows one it can', () => {
+  // The silent one. Every rect, safe area and mirror pair in a profile is a
+  // statement about ONE UV layout, and a mesh may carry more than one — a
+  // BeamNG vehicle unwraps its mechanicals onto UV0, mirrored, and its paint
+  // onto UV1, unmirrored, precisely because a livery cannot be mirrored.
+  // Measured from the wrong set a car still profiles cleanly and every number
+  // describes a layout no livery is drawn on: nothing throws, nothing renders
+  // broken, and only a person comparing the profile to the car could tell.
+  const car = (calibration) => ({
+    id: 'x',
+    ...(calibration ? { calibration } : {}),
+    textures: { body: { file: 'a.dds', width: 64, height: 64 } },
+    panels: { body: { p: { rect: [0, 0, 1, 1] } } },
+  });
+
+  assert.doesNotThrow(() => validateProfile(car()), 'generated before the field existed');
+  assert.doesNotThrow(() => validateProfile(car({ uvSet: 0 })), 'the only set a kn5 has');
+
+  assert.throws(() => validateProfile(car({ uvSet: 1 })), /nothing here can read a second UV set/,
+    'refused rather than resolved against the set it did not mean');
+  assert.throws(() => validateProfile(car({ uvSet: -1 })), /non-negative integer/);
+  assert.throws(() => validateProfile(car({ uvSet: 1.5 })), /non-negative integer/);
+  assert.throws(() => validateProfile(car({ uvSet: '0' })), /non-negative integer/,
+    'a string that looks like a set is not one');
+});
+
+test('a generated profile says which UV set it measured', async () => {
+  // Written by the generator rather than assumed by the reader: a profile that
+  // does not say is one made before the field existed, and is allowed. If
+  // nothing ever wrote it, the check above would have nothing to check on the
+  // only format this project reads.
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-uvset-'));
+  const path = join(dir, 'fixture.kn5');
+  await writeFile(path, carKn5());
+
+  const made = await profileFromKn5(path, { id: 'x', visibility: false, log: () => {} });
+  assert.equal(made.calibration.uvSet, 0);
+  assert.doesNotThrow(() => validateProfile(made));
 });
 
 test('profile rejects rectangles that leave the texture', () => {

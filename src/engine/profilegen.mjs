@@ -709,6 +709,12 @@ export async function profileFromKn5(path, {
       method: 'kn5',
       source: basename(path),
       date: new Date().toISOString().slice(0, 10),
+      // The UV set every rect, safe area and mirror pair below was measured
+      // from. A kn5 vertex stores one, so this is 0 on anything this project
+      // generates; it is written down because a format with two reserves the
+      // second for paint, and reading the wrong one fails silently. See
+      // `checkUvSet` in src/profile.mjs.
+      uvSet: 0,
       axes: {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',
