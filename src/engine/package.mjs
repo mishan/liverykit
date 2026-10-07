@@ -8,10 +8,22 @@ import { rasterize } from './shot.mjs';
  * Content Manager will happily install a ZIP whose internal layout mirrors the
  * game's own tree. Anything ambiguous makes CM ask which car it belongs to, so
  * the full content/cars/<id>/skins/<name>/ path is written out.
+ *
+ * A race server's upload form wants the other thing: the skin's own folder and
+ * nothing above it, because the server already knows which car it is for. Fed
+ * the CM layout it finds no skin at its top level. That is `layout: 'folder'`.
+ * The folder itself stays in the archive, since its name is the skin's name.
  */
-export async function packageZip({ skinDir, zipPath, carId, skinFolder }) {
+export const ZIP_LAYOUTS = ['cm', 'folder'];
+
+export async function packageZip({ skinDir, zipPath, carId, skinFolder, layout = 'cm' }) {
+  if (!ZIP_LAYOUTS.includes(layout)) {
+    throw new Error(`ZIP layout ${JSON.stringify(layout)} is not one of: ${ZIP_LAYOUTS.join(', ')}. ` +
+      '"cm" carries the game\'s content/cars/<car>/skins/ path for Content Manager; ' +
+      '"folder" is just the skin\'s folder, for a server upload.');
+  }
   const files = (await readdir(skinDir)).sort();
-  const prefix = `content/cars/${carId}/skins/${skinFolder}`;
+  const prefix = layout === 'cm' ? `content/cars/${carId}/skins/${skinFolder}` : skinFolder;
   const entries = await Promise.all(
     files.map(async (f) => ({ name: `${prefix}/${f}`, data: await readFile(join(skinDir, f)) }))
   );

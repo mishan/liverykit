@@ -447,9 +447,9 @@ async function writeMetadata({ outDir, livery, firstPng, previewLabel, frame = P
   }
 }
 
-/** ZIP carrying the full content/cars/<id>/skins/<folder>/ path. */
-export async function packSkin({ skinDir, zipPath, carId, folder }) {
-  return packageZip({ skinDir, zipPath, carId, skinFolder: folder });
+/** ZIP of the skin, laid out for Content Manager or as the bare folder — see packageZip. */
+export async function packSkin({ skinDir, zipPath, carId, folder, layout = 'cm' }) {
+  return packageZip({ skinDir, zipPath, carId, skinFolder: folder, layout });
 }
 
 const pct = (n) => `${Number(n.toFixed(1))}%`;
