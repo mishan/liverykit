@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
+import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
 import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
@@ -47,6 +48,9 @@ Options
   --flat              solid color, no art — proves the plumbing first
   --keep-png          keep the intermediate PNGs for inspection
   --no-zip            write the folder only
+  --zip-layout <l>    cm: the content/cars/<car>/skins/ path, for Content
+                      Manager (default). folder: just the skin's folder, for
+                      a server upload such as acsm-champctl
 
   --uvgrid            build the calibration skin instead of the livery
   --cells <n>         calibration grid columns (default 20 = 5% steps)
@@ -90,6 +94,7 @@ const { values, positionals } = parseArgs({
     flat: { type: 'boolean', default: false },
     'keep-png': { type: 'boolean', default: false },
     'no-zip': { type: 'boolean', default: false },
+    'zip-layout': { type: 'string', default: 'cm' },
     uvgrid: { type: 'boolean', default: false },
     cells: { type: 'string' },
     probe: { type: 'string' },
@@ -123,6 +128,12 @@ process.on('unhandledRejection', fail);
 function fail(err) {
   console.error(`\n${err?.message ?? err}\n`);
   process.exit(1);
+}
+
+// Checked now rather than when packaging, which comes after the whole render:
+// a misspelled layout should not cost a build to find out about.
+if (!ZIP_LAYOUTS.includes(values['zip-layout'])) {
+  fail(new Error(`--zip-layout must be one of: ${ZIP_LAYOUTS.join(', ')}; got "${values['zip-layout']}".`));
 }
 
 /** parseArgs gives us strings; anything numeric has to be checked explicitly. */
@@ -506,12 +517,21 @@ if (values.ui) {
 // fits, not skins; there is nothing here for this section to package.
 if (!values.ui && !values['no-zip']) {
   await mkdir(values.out, { recursive: true });
-  const zipPath = join(values.out, `${folder}.zip`);
-  const n = await packSkin({ skinDir: outDir, zipPath, carId: profile.id, folder });
+  // A different name per layout. The two archives hold the same files under
+  // different paths, and one name for both is how a CM archive gets uploaded to
+  // a server, or a server one dragged onto CM, with nothing to tell them apart.
+  const layout = values['zip-layout'];
+  const zipPath = join(values.out, layout === 'cm' ? `${folder}.zip` : `${folder}.${layout}.zip`);
+  const n = await packSkin({ skinDir: outDir, zipPath, carId: profile.id, folder, layout });
   const kb = (await stat(zipPath)).size / 1024;
   console.log(`\n  ${zipPath}  (${n} files, ${kb.toFixed(0)} KB)`);
-  console.log(`  Drag onto Content Manager — the archive carries the full`);
-  console.log(`  content/cars/${profile.id}/skins/${folder}/ path, so it installs without asking.`);
+  if (layout === 'cm') {
+    console.log(`  Drag onto Content Manager — the archive carries the full`);
+    console.log(`  content/cars/${profile.id}/skins/${folder}/ path, so it installs without asking.`);
+  } else {
+    console.log(`  For a server upload: just the ${folder}/ folder, for ${profile.id}.`);
+    console.log(`  Not for Content Manager, which would ask which car it belongs to.`);
+  }
 } else if (!values.ui) {
   console.log(`\n  Copy ${outDir} into content/cars/${profile.id}/skins/`);
 }

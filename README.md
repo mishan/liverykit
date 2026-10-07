@@ -857,6 +857,9 @@ rather type `liverykit`. `--help` is authoritative.
 <livery> --size 4096              render bigger (powers of two only)
 <livery> --keep-png               keep intermediate PNGs, written beside the skin
 <livery> --no-zip                 folder only
+<livery> --zip-layout folder      ZIP of just the skin's folder, for a server
+                                  upload, as <folder>.folder.zip; the default,
+                                  cm, keeps the path Content Manager installs from
 <livery> --profile <path>         use a different car profile — how you port a
                                   design between cars
 <livery> --fit <path>             per-car placement overrides for this design
