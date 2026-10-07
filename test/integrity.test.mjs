@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,6 +13,7 @@ import { mipCount } from '../src/engine/pipeline.mjs';
 import { validateProfile, resolveRect, panel, texture } from '../src/profile.mjs';
 import { makeProbes, gridShape } from '../src/engine/uvgrid.mjs';
 import { makeZip } from '../src/engine/zip.mjs';
+import { packageZip } from '../src/engine/package.mjs';
 import { definePack, registerPack, unregisterPack, resolveTreatments } from '../src/registry.mjs';
 import { renderTexture } from '../src/render.mjs';
 import { buildKn5 } from './fixtures/kn5.mjs';
@@ -188,6 +189,47 @@ test('the ZIP writer produces an archive the OS can read', async () => {
   assert.ok(zip.includes(Buffer.from('content/cars/x/skins/y/a.txt')));
   // End of central directory record must be present or nothing will open it.
   assert.ok(zip.includes(Buffer.from('PK\x05\x06', 'latin1')));
+});
+
+// The names in the central directory, which is what an unzipper lists.
+// Searching the whole buffer would also find a name in a local header, and a
+// `content/cars/...` prefix could hide in either.
+function zipNames(zip) {
+  const names = [];
+  for (let o = zip.indexOf('PK\x01\x02', 0, 'latin1'); o !== -1; o = zip.indexOf('PK\x01\x02', o + 4, 'latin1')) {
+    const n = zip.readUInt16LE(o + 28);
+    names.push(zip.subarray(o + 46, o + 46 + n).toString('utf8'));
+  }
+  return names;
+}
+
+test('a skin ZIP is laid out for Content Manager, or as the bare skin folder', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-zip-'));
+  const skinDir = join(dir, 'skin');
+  await mkdir(skinDir);
+  await writeFile(join(skinDir, 'Skin_00.dds'), 'dds');
+  await writeFile(join(skinDir, 'ui_skin.json'), '{}');
+  const args = { skinDir, carId: 'test_car', skinFolder: 'neon_doll' };
+
+  // Content Manager installs from the game's own tree.
+  await packageZip({ ...args, zipPath: join(dir, 'cm.zip') });
+  assert.deepEqual(zipNames(await readFile(join(dir, 'cm.zip'))), [
+    'content/cars/test_car/skins/neon_doll/Skin_00.dds',
+    'content/cars/test_car/skins/neon_doll/ui_skin.json',
+  ]);
+
+  // A server upload takes just the skin's folder. Had the folder been left out
+  // as well, the files would land loose and the skin would have no name.
+  await packageZip({ ...args, zipPath: join(dir, 'folder.zip'), layout: 'folder' });
+  assert.deepEqual(zipNames(await readFile(join(dir, 'folder.zip'))), [
+    'neon_doll/Skin_00.dds',
+    'neon_doll/ui_skin.json',
+  ]);
+
+  await assert.rejects(
+    packageZip({ ...args, zipPath: join(dir, 'x.zip'), layout: 'server' }),
+    /layout/,
+  );
 });
 
 test('the shipped car profile is valid', async () => {
