@@ -206,3 +206,32 @@ test('a design that is not an object at all says so, including null', async () =
   assert.match(designRefusal(null, '/x/a.json'), /must be an object/,
     'and the refusal is the plain answer rather than a crash');
 });
+
+// Installed from npm, the package's own directory is inside node_modules: a
+// design, its car and its fit are where the person runs liverykit, and only the
+// bundled examples are beside the code.
+test('the CLI finds a livery, its profile and its fit in the working directory', async (t) => {
+  const { mkdir, readFile, rm } = await import('node:fs/promises');
+  const { spawn } = await import('node:child_process');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-work-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  for (const d of ['cars', 'liveries', 'fits']) await mkdir(join(dir, d));
+  const profile = JSON.parse(await readFile(new URL('../cars/abarth500.json', import.meta.url), 'utf8'));
+  await writeFile(join(dir, 'cars/workdir_car.json'), JSON.stringify({ ...profile, id: 'workdir_car', name: 'Workdir Car' }));
+  await writeFile(join(dir, 'liveries/wd.mjs'), `export default { name: 'WD', folder: 'wd', car: 'workdir_car',
+    palette: { base: '#000000' }, surfaces: { body: { background: 'base', regions: [] } } };`);
+  await writeFile(join(dir, 'fits/wd@workdir_car.json'), JSON.stringify({ livery: 'wd', car: 'workdir_car', regions: {} }));
+
+  const child = spawn(process.execPath, [new URL('../bin/liverykit.mjs', import.meta.url).pathname,
+    'wd', '--ui', '--port', String(20000 + Math.floor(Math.random() * 20000))], { cwd: dir });
+  t.after(() => child.kill());
+  let out = '';
+  child.stderr.on('data', (d) => { out += d; });
+  await new Promise((ok, fail) => {
+    child.stdout.on('data', (d) => { out += d; if (out.includes('ctrl-c')) ok(); });
+    child.on('exit', () => fail(new Error(`exited before the editor started:\n${out}`)));
+  });
+  assert.match(out, /WD {2}-> {2}Workdir Car/);
+  assert.match(out, /fit: \S*fits\/wd@workdir_car\.json/);
+  assert.ok(out.includes(`writes ${join(dir, 'fits/wd@workdir_car.json')}`), out);
+});

@@ -147,8 +147,9 @@ export function serialisableDesign(design) {
  * used to throw a TypeError from inside node:path, which made an exported
  * helper work for exactly one caller. The default is this package's own root —
  * the same directory the CLI passes — so the answer does not depend on who is
- * asking. A caller with liveries somewhere else says so, and a path is
- * resolved against the working directory either way.
+ * asking. A caller with liveries somewhere else says so — several roots are
+ * searched in order — and a path is resolved against the working directory
+ * either way.
  */
 export async function resolveLivery(arg, { root = PACKAGE_ROOT } = {}) {
   const looksLikePath = /[\\/]/.test(arg)
@@ -156,11 +157,13 @@ export async function resolveLivery(arg, { root = PACKAGE_ROOT } = {}) {
   const candidates = looksLikePath
     ? [resolve(arg)]
     : [
-        join(root, 'liveries', `${arg}.mjs`),
-        join(root, 'liveries', `${arg}.json`),
-        join(root, 'liveries', `${arg}.local.mjs`),
-        join(root, 'liveries', `${arg}.local.json`),
-        join(root, 'liveries', arg),
+        ...[root].flat().flatMap((r) => [
+          join(r, 'liveries', `${arg}.mjs`),
+          join(r, 'liveries', `${arg}.json`),
+          join(r, 'liveries', `${arg}.local.mjs`),
+          join(r, 'liveries', `${arg}.local.json`),
+          join(r, 'liveries', arg),
+        ]),
         resolve(arg),
       ];
 
