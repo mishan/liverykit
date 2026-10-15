@@ -1866,6 +1866,58 @@ test('rotate: auto follows the panel the unwrapper actually made', async () => {
   assert.doesNotMatch(draw('flat'), /rotate\(/, 'no measurement means no rotation');
 });
 
+test('rotate: auto mirrors artwork back on a panel the unwrapper reflected', async () => {
+  // A reflected island is a mirror image in the texture: no turn makes its text
+  // read, and a word painted there reads backwards on the car. The Tatuus FA01's
+  // left flank is one. Rotation is the panel's to supply and so is the flip, and
+  // a text region that has not asked for either is told what it will look like.
+  const p = {
+    id: 't',
+    textures: { body: { file: 'b.dds', width: 512, height: 512 } },
+    panels: { body: {
+      plain: { rect: [0, 0, 0.4, 0.4], textRotation: 0 },
+      reflected: { rect: [0.5, 0, 0.4, 0.4], textRotation: 180, reflected: true },
+    } },
+  };
+  const draw = (panel, rotate) => {
+    const notes = [];
+    const { base } = renderTexture({
+      profile: p, role: 'body',
+      regions: [{ treatment: 'text', panel, rotate, text: 'X', color: 'white' }],
+      treatments: resolveTreatments(['core']), palette: {}, rng: Math.random,
+      font: 'sans-serif', tokens: {}, regionNotes: notes,
+    });
+    return { base, notes: notes.map((n) => n.text).join('\n') };
+  };
+
+  assert.doesNotMatch(draw('plain', 'auto').base, /scale\(-1/);
+  const mirrored = draw('reflected', 'auto');
+  assert.match(mirrored.base, /rotate\(180[^"]*\) scale\(-1,1\)/, 'turned upright, then mirrored left to right');
+  assert.equal(mirrored.notes, '');
+  const unasked = draw('reflected', undefined);
+  assert.doesNotMatch(unasked.base, /scale\(-1/);
+  assert.match(unasked.notes, /reflected.*backwards.*rotate: 'auto'/);
+});
+
+test('a profile marks the panels whose unwrap is a mirror image', async () => {
+  // The synthetic car's front and rear faces are unwrapped mirrored, its flanks
+  // the right way round; see the fixture's corner order.
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-reflect-'));
+  const kn5 = join(dir, 'fixture-car.kn5');
+  await writeFile(kn5, carKn5());
+  const profile = await profileFromKn5(kn5, { visibility: false, log: () => {} });
+  await rm(dir, { recursive: true, force: true });
+  const panels = Object.values(Object.values(profile.panels)[0]);
+  const at = (face) => panels.find((q) => q.rect.every((v, i) => Math.abs(v - CAR.faces[face][i]) < 0.01));
+  assert.deepEqual(['left', 'right', 'front', 'rear'].map((f) => at(f)?.reflected ?? false),
+    [false, false, true, true]);
+});
+
 test('the shipped profiles carry a measured orientation per panel', async () => {
   // The measurement that explains what a car looks like: the Abarth's doors are
   // laid sideways in its texture, the formula car's flanks are not.

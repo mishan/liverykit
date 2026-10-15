@@ -177,8 +177,10 @@ function measure(model, mesh, verts, tris) {
   // the test fixture winds two of its six faces inward, and a mod car may
   // well do the same. Two touching islands with opposite handedness were
   // unwrapped as mirror images of each other, and artwork continued from one
-  // to the other has to be flipped. Kept on the island for findSeams; not
-  // written to the profile, where the seam map already carries the answer.
+  // to the other has to be flipped. A texture is read right and down, so
+  // seen from outside its (u, v) points INTO the surface: +1 is an island
+  // unwrapped as a mirror image, which the profile records as `reflected`
+  // because no turn makes its lettering read.
   let vnx = 0, vny = 0, vnz = 0;
   for (const i of verts) { const p = vertex(model, mesh, i); vnx += p.nx; vny += p.ny; vnz += p.nz; }
   const uvu = unit([tx, ty, tz]), uvv = unit([bx, by, bz]);
