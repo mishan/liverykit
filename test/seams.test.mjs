@@ -440,3 +440,27 @@ test('a region does not land in the empty texture inside a panel box, or travel 
   assert.deepEqual(notched.map((p) => p.panel), ['A'],
     'texture nothing wears is not a panel this region reached');
 });
+
+test('an outline is coarse enough not to redraw the unwrap, and still traces the island', async () => {
+  // A published profile describes where an island is, not how its maker drew
+  // it: a finely traced boundary is most of a livery template. A wavy-edged
+  // disc of 400 boundary vertices comes back as a few dozen points that still
+  // reach its rim.
+  const { islandOutline, MAX_OUTLINE_POINTS } = await import('../src/engine/islands.mjs');
+  const N = 400;
+  const rim = [...Array(N)].map((_, i) => {
+    const a = (i * 2 * Math.PI) / N, r = 0.4 + 0.02 * Math.sin(a * 37);
+    return [0.5 + r * Math.cos(a), 0.5 + r * Math.sin(a)];
+  });
+  const uv = [[0.5, 0.5], ...rim];
+  const verts = uv.map(([u, v]) => vert(u * 2, 0, v * 2, u, v));
+  const indices = rim.flatMap((_, i) => [0, 1 + i, 1 + ((i + 1) % N)]);
+  const m = parseKn5Buffer(buildKn5({ bodyMesh: { name: 'disc', verts, indices } }));
+  const [isl] = findIslands(m, meshesUsingTexture(m, 'body.dds'), { minVertices: 3 });
+  const outline = islandOutline(m, isl);
+
+  assert.ok(outline.length <= MAX_OUTLINE_POINTS, `${outline.length} points`);
+  assert.ok(outline.length >= 8, 'still a disc, not a triangle');
+  const far = Math.max(...outline.map(([u, v]) => Math.hypot(u - 0.5, v - 0.5)));
+  assert.ok(far > 0.38 && far < 0.43, `the outline reaches the rim: ${far}`);
+});
