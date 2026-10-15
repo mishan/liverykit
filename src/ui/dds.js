@@ -40,7 +40,17 @@ export function decodeDds(buffer) {
   if (head.getUint32(0, true) !== 0x20534444) return null;      // 'DDS '
   const height = head.getUint32(12, true);
   const width = head.getUint32(16, true);
-  const dxt = { 0x31545844: 1, 0x33545844: 3, 0x35545844: 5 }[head.getUint32(84, true)];
+  // The DX10 extension header puts a DXGI format after the classic one, and
+  // what it wraps is often the same BC1, BC2 or BC3 blocks; 257 stock
+  // textures in a 254-car fleet are that. Other DXGI formats are left to the
+  // caller to say it could not read.
+  const fourcc = head.getUint32(84, true);
+  const dxgi = fourcc === 0x30315844 && buffer.byteLength >= 148 ? head.getUint32(128, true) : null;
+  const dxt = dxgi === null
+    ? { 0x31545844: 1, 0x33545844: 3, 0x35545844: 5 }[fourcc]
+    : { 71: 1, 72: 1, 74: 3, 75: 3, 77: 5, 78: 5 }[dxgi];
+  if (dxgi !== null && !dxt) return null;
+  const data = dxgi === null ? 128 : 148;
   if (!width || !height) return null;
 
   // NOT everything in a kn5 is block-compressed, and assuming it was is how
@@ -92,8 +102,8 @@ export function decodeDds(buffer) {
   const blockBytes = dxt === 1 ? 8 : 16;
   const bw = Math.ceil(width / 4);
   const bh = Math.ceil(height / 4);
-  if (buffer.byteLength < 128 + (bw * bh * blockBytes)) return null;
-  const src = new Uint8Array(buffer, 128, bw * bh * blockBytes);
+  if (buffer.byteLength < data + (bw * bh * blockBytes)) return null;
+  const src = new Uint8Array(buffer, data, bw * bh * blockBytes);
   const out = new Uint8Array(width * height * 4);
 
   // Reused across every block rather than allocated per block: a 1024-square

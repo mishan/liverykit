@@ -467,7 +467,7 @@ test('an outline is coarse enough not to redraw the unwrap, and still traces the
 
 test('a low-polygon island is kept when it is big on the car', async () => {
   // Islands under the vertex floor were dropped as slivers, bolt heads and trim,
-  // which a flat surface modelled with a handful of triangles is not: the
+  // which a flat surface modeled with a handful of triangles is not: the
   // Tatuus's wing planes went, and an eight-vertex island of 1.6 m² on the
   // Abarth's body sheet. Size on the car is what tells a wing from a bolt.
   const quad = (name, size, u0) => ({ name, verts: [

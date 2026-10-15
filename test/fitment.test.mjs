@@ -2372,11 +2372,13 @@ test('a texture another model draws is not checked against this one, and says so
       crew: { file: 'ac_crew.dds', width: 512, height: 512, inModel: false },
       lost: { file: 'gone.dds', width: 512, height: 512 } },
     bind: { ...profile.bind, crew: { roles: ['crew'], source: 'human' } } };
-  const crewOnly = { ...design([]), surfaces: { crew: { background: 'ink', regions: [{ treatment: 'fill', color: 'ink' }] } } };
+  const crewOnly = { ...design([]), surfaces: { crew: { background: 'ink', regions: [
+    { id: 'crew-name', treatment: 'text', at: [0.2, 0.2, 0.6, 0.2], text: '{team}', constraints: { minMargin: 10 } }] } } };
   const r = fitment(crewOnly, car, null, { model });
 
-  assert.deepEqual(r.findings.filter((f) => f.severity === 'fatal'), []);
+  assert.deepEqual(r.findings.filter((f) => f.severity === 'fatal' || f.kind === 'margin'), []);
   assert.ok(r.notChecked.some((s) => /unseen for surfaces\.crew: .*another model/.test(s)), JSON.stringify(r.notChecked));
+  assert.ok(r.notChecked.some((s) => /margin for crew-name: .*another model/.test(s)), JSON.stringify(r.notChecked));
   assert.ok(r.unsupported.some((u) => u.check === 'unseen' && u.role === 'crew'));
 
   // A texture the profile says IS on this car, and is not, is still the

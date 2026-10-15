@@ -29,7 +29,7 @@ import { polyArea } from './poly.mjs';
  * Decompose the given meshes into UV islands.
  * `minVertices` drops slivers — bolt heads and tiny trim pieces that would
  * otherwise bury the panels worth naming — unless the island covers at least
- * `bigEnough` square metres of the car. A flat surface can be a handful of
+ * `bigEnough` square meters of the car. A flat surface can be a handful of
  * triangles, and a vertex count alone dropped the Tatuus's wing planes and an
  * eight-vertex island of 1.6 m² on the Abarth's body sheet.
  */

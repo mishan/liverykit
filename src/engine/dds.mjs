@@ -11,20 +11,35 @@
 // (src/ui/dds.js) checks it.
 // ---------------------------------------------------------------------------
 
-/** The next mip level: each texel the average of the 2x2 above it. */
+/**
+ * Mip chain length, driven by the LONGER edge — a 2048x512 texture still needs
+ * 12 levels, not the 10 that log2(512)+1 would give. Floored: 3000px halves to
+ * 1px in 12 steps, not 13.
+ */
+export const mipCount = (w, h = w) => Math.floor(Math.log2(Math.max(w, h))) + 1;
+
+/**
+ * The next mip level: each texel the average of the 2x2 above it, its color
+ * weighted by alpha. A cut-out's clear area is usually black, and averaged
+ * evenly that black darkens every edge from the first mip down — which is to
+ * say at every distance but the closest.
+ */
 export function halve(pixels, width, height) {
   const w = Math.max(1, width >> 1), h = Math.max(1, height >> 1);
-  const sx = width > 1 ? 2 : 1, sy = height > 1 ? 2 : 1;
+  const sx = width > 1 ? 2 : 1, sy = height > 1 ? 2 : 1, n = sx * sy;
   const out = new Uint8Array(w * h * 4);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      for (let c = 0; c < 4; c++) {
-        let sum = 0;
-        for (let dy = 0; dy < sy; dy++) for (let dx = 0; dx < sx; dx++) {
-          sum += pixels[((y * sy + dy) * width + (x * sx + dx)) * 4 + c];
-        }
-        out[(y * w + x) * 4 + c] = Math.round(sum / (sx * sy));
+      let a = 0; const c = [0, 0, 0], plain = [0, 0, 0];
+      for (let dy = 0; dy < sy; dy++) for (let dx = 0; dx < sx; dx++) {
+        const s = ((y * sy + dy) * width + (x * sx + dx)) * 4;
+        const al = pixels[s + 3];
+        a += al;
+        for (let k = 0; k < 3; k++) { c[k] += pixels[s + k] * al; plain[k] += pixels[s + k]; }
       }
+      const o = (y * w + x) * 4;
+      for (let k = 0; k < 3; k++) out[o + k] = Math.round(a ? c[k] / a : plain[k] / n);
+      out[o + 3] = Math.round(a / n);
     }
   }
   return { pixels: out, width: w, height: h };
@@ -81,7 +96,9 @@ function colorBlock(px, out, at) {
     const r = px[i * 4] - mr, g = px[i * 4 + 1] - mg, b = px[i * 4 + 2] - mb;
     crr += r * r; crg += r * g; crb += r * b; cgg += g * g; cgb += g * b; cbb += b * b;
   }
-  let ax = [1, 1, 1];
+  // Started from the channel that varies most: from a fixed [1, 1, 1], a red
+  // and green checker, whose axis is perpendicular to it, never left the mean.
+  let ax = crr >= cgg && crr >= cbb ? [1, 0, 0] : cgg >= cbb ? [0, 1, 0] : [0, 0, 1];
   for (let k = 0; k < 6; k++) {
     const n = [crr * ax[0] + crg * ax[1] + crb * ax[2], crg * ax[0] + cgg * ax[1] + cgb * ax[2], crb * ax[0] + cgb * ax[1] + cbb * ax[2]];
     const len = Math.hypot(...n);
@@ -162,7 +179,7 @@ function alphaBlock(px, out, at) {
  * with every mip level down to 1x1 — log2 of the LONGER edge, plus one.
  */
 export function encodeDds(rgba, width, height, { alpha = false } = {}) {
-  const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
+  const levels = mipCount(width, height);
   const block = alpha ? 16 : 8;
   const sizes = [];
   for (let l = 0, w = width, h = height; l < levels; l++, w = Math.max(1, w >> 1), h = Math.max(1, h >> 1)) {

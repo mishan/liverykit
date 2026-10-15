@@ -22,6 +22,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { VOCABULARY, DRIVER_KIT, SCORABLE } from './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
@@ -68,7 +69,11 @@ export function profileJson(p) {
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
-  return validateProfile(raw, path);
+  const p = validateProfile(raw, path);
+  // Not a field of the profile, so nothing that writes one carries it: where
+  // this copy was read from, for a note that tells somebody which file to edit.
+  Object.defineProperty(p, 'loadedFrom', { value: path instanceof URL ? fileURLToPath(path) : String(path) });
+  return p;
 }
 
 // The profile format this liverykit writes and reads. Profiles are published
@@ -399,9 +404,9 @@ export function resolveTargets(profile, livery) {
             'so regenerate the profile with --skins, or record it under "bind" by hand'
           : SCORABLE.includes(term)
             ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
-              `editor's Bindings panel, and record it under "bind" in ${profile.id}.json`
+              `editor's Bindings panel, and record it under "bind" in ${profile.loadedFrom ?? `${profile.id}.json`}`
             : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
-              `${profile.id}.json under "bind"`,
+              `${profile.loadedFrom ?? `${profile.id}.json`} under "bind"`,
       });
       continue;
     }

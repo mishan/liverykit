@@ -901,6 +901,18 @@ test('an unbound term the classifier does not score is sent to the profile, not 
   const ranked = notes.find((n) => n.term === scored).text;
   assert.match(ranked, /--explain <kn5> --all/, scored);
   assert.match(ranked, /Bindings panel/, scored);
+
+  // Loaded from a file, the note names that file: from --profiles or a path
+  // whose name is not the car's id, "<id>.json" is a file nobody can find.
+  const { loadProfile } = await import('../src/profile.mjs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-hint-'));
+  const file = join(dir, 'library-copy.json');
+  await writeFile(file, JSON.stringify(carWith({ body: { roles: ['chassis'], source: 'human' } })));
+  const loaded = resolveTargets(await loadProfile(file), { name: 'L', surfaces: { body: spec, floor: spec } });
+  await rm(dir, { recursive: true, force: true });
+  assert.ok(loaded.notes.find((n) => n.term === 'floor').text.includes(`bind it by hand in ${file}`));
 });
 
 test('an unconfirmed binding is used, and said out loud', async () => {
