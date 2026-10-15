@@ -20,19 +20,72 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { VOCABULARY, DRIVER_KIT, SCORABLE } from './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
+
+/**
+ * Why this model is not the one the profile was measured from, or null.
+ *
+ * A car update can move every island and keep every filename, and artwork
+ * placed by the old layout then lands somewhere nobody chose, with nothing to
+ * say so. A profile that predates the fingerprint has nothing to compare and
+ * is not called stale.
+ */
+export function staleModel(profile, bytes) {
+  const want = profile.calibration?.model;
+  if (!want?.sha256) return null;
+  if (want.bytes === bytes.length && want.sha256 === createHash('sha256').update(bytes).digest('hex')) return null;
+  return `this profile was measured from a different version of ${profile.calibration.source ?? 'the car\'s model'}; ` +
+    'regenerate it with --from-kn5 before trusting where it puts things';
+}
+
+/**
+ * A profile as text: one panel, one texture and one binding to a line.
+ *
+ * Profiles are published and regenerated, and a regeneration changes some
+ * panels and not others. Pretty-printed, every number of a panel's outline and
+ * seams is a line of its own and a diff is unreadable; minified, any change is
+ * one line the length of the file.
+ */
+export function profileJson(p) {
+  const oneLine = (path) => (path.length === 3 && path[0] === 'panels')
+    || (path.length === 2 && (path[0] === 'textures' || path[0] === 'bind'));
+  const write = (v, path, pad) => {
+    if (v === null || typeof v !== 'object' || oneLine(path)) return JSON.stringify(v);
+    const inner = pad + '  ';
+    const items = Array.isArray(v)
+      ? v.map((x, i) => inner + write(x, [...path, i], inner))
+      : Object.entries(v).filter(([, x]) => x !== undefined)
+        .map(([k, x]) => `${inner}${JSON.stringify(k)}: ${write(x, [...path, k], inner)}`);
+    const [open, close] = Array.isArray(v) ? ['[', ']'] : ['{', '}'];
+    return items.length ? `${open}\n${items.join(',\n')}\n${pad}${close}` : `${open}${close}`;
+  };
+  return write(p, [], '') + '\n';
+}
 
 export async function loadProfile(path) {
   const raw = JSON.parse(await readFile(path, 'utf8'));
   return validateProfile(raw, path);
 }
 
+// The profile format this liverykit writes and reads. Profiles are published
+// apart from the code, so one written by a later version is refused rather
+// than read by rules that may have changed under it. One without the field
+// predates it, and is version 1.
+export const PROFILE_SCHEMA = 1;
+
 export function validateProfile(p, source = '<inline>') {
   const err = (m) => { throw new Error(`Car profile ${source}: ${m}`); };
 
+  if (p.schemaVersion !== undefined) {
+    if (!Number.isInteger(p.schemaVersion) || p.schemaVersion < 1) err('schemaVersion must be a positive integer');
+    if (p.schemaVersion > PROFILE_SCHEMA) {
+      err(`is format ${p.schemaVersion}, written by a newer liverykit; this one reads up to ${PROFILE_SCHEMA}. Update liverykit.`);
+    }
+  }
   if (!p.id) err('missing "id" (the folder name under content/cars/)');
   if (!p.textures || !Object.keys(p.textures).length) err('has no textures');
 

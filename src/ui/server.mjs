@@ -40,7 +40,7 @@ import { fileURLToPath } from 'node:url';
 import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../profile.mjs';
 import { VOCABULARY, SCORABLE, VALIDATED, MEASURED } from '../engine/classify.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
@@ -1237,7 +1237,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           const { mode } = await stat(real);
           const tmp = `${real}.${process.pid}.tmp`;
           try {
-            await writeFile(tmp, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });
+            await writeFile(tmp, profileJson(next), { mode: 0o600 });
             await chmod(tmp, mode & 0o7777);
             await rename(tmp, real);
           } catch (e) {

@@ -682,8 +682,14 @@ function simplifyOpen(list, tol) {
  * day, and painting a window cut-out costs nothing on the car).
  *
  * Simplified to `tolerance` in fractions so a 2000-vertex door becomes a
- * few dozen points; the profile is read by people as well as code.
+ * few dozen points; the profile is read by people as well as code. And never
+ * more than MAX_OUTLINE_POINTS, coarsening until it fits: profiles are
+ * published, and a boundary traced texel by texel is most of the car maker's
+ * livery template, which says where an island is far more exactly than
+ * clipping artwork to it needs.
  */
+export const MAX_OUTLINE_POINTS = 32;
+
 export function islandOutline(model, isl, { tolerance = 0.0015 } = {}) {
   const mesh = isl.meshRef;
   const inIsland = new Set(isl.vertices);
@@ -737,7 +743,14 @@ export function islandOutline(model, isl, { tolerance = 0.0015 } = {}) {
     if (a > bestArea) { best = loop; bestArea = a; }
   }
   if (best.length < 3) return null;
-  return simplify(best, tolerance).map(([u, v]) => [Math.round(u * 1e4) / 1e4, Math.round(v * 1e4) / 1e4]);
+  return capOutline(best, tolerance);
+}
+
+/** A boundary loop simplified to `tolerance`, then coarsened until it has at most MAX_OUTLINE_POINTS. */
+export function capOutline(loop, tolerance = 0.0015) {
+  let out = simplify(loop, tolerance);
+  for (let tol = tolerance * 1.5; out.length > MAX_OUTLINE_POINTS; tol *= 1.5) out = simplify(loop, tol);
+  return out.map(([u, v]) => [Math.round(u * 1e4) / 1e4, Math.round(v * 1e4) / 1e4]);
 }
 
 /** Douglas-Peucker on a closed loop. */

@@ -17,11 +17,13 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
 import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly, SHEET_SPAN } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
+import { PROFILE_SCHEMA } from '../profile.mjs';
 import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, proposeBindings } from './classify.mjs';
@@ -702,6 +704,7 @@ export async function profileFromKn5(path, {
   const named = name || await carNameBeside(path, log);
 
   const profile = {
+    schemaVersion: PROFILE_SCHEMA,
     bind,
     id: id ?? basenameNoExt(path),
     name: named,
@@ -709,6 +712,7 @@ export async function profileFromKn5(path, {
     calibration: {
       method: 'kn5',
       source: basename(path),
+      model: await fingerprint(path),
       date: new Date().toISOString().slice(0, 10),
       // The UV set every rect, safe area and mirror pair below was measured
       // from. A kn5 vertex stores one, so this is 0 on anything this project
@@ -806,9 +810,13 @@ async function carNameBeside(kn5Path, log) {
     ? raw.subarray(2).toString('utf16le')
     : raw.toString('utf8').replace(/^\uFEFF/, '');
 
+  // Kunos writes descriptions with raw line breaks inside the string, which
+  // strict JSON refuses, so most of the base game would read as nameless.
+  // Outside a string a control character is only whitespace, so blanking them
+  // all changes nothing else about the document.
   let ui;
   try {
-    ui = JSON.parse(text);
+    ui = JSON.parse(text.replace(/[\u0000-\u001F]/g, ' '));
   } catch (e) {
     log(`  ! ${at} is not valid JSON (${e.message.split('\n')[0]}), so the car has no display name.`);
     log('    Pass --car-name to set one.');
@@ -817,6 +825,12 @@ async function carNameBeside(kn5Path, log) {
   const found = typeof ui?.name === 'string' ? ui.name.trim() : '';
   if (found) log(`  Name from ui_car.json: ${found}`);
   return found;
+}
+
+/** What identifies the model a profile was measured from; see `staleModel`. */
+async function fingerprint(path) {
+  const bytes = await readFile(path);
+  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 }
 
 const basename = (p) => p.split(/[\\/]/).pop();

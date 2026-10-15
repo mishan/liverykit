@@ -236,3 +236,37 @@ test('the CLI finds a livery, its profile and its fit in the working directory',
   assert.match(out, /fit: \S*fits\/wd@workdir_car\.json/);
   assert.ok(out.includes(`writes ${join(dir, 'fits/wd@workdir_car.json')}`), out);
 });
+
+// Profiles for cars liverykit does not bundle live in a checkout of
+// liverykit-profiles; a design names its car, or --profile names one by id.
+test('a profile is found by car id in --profiles, and a missing one names every place it looked', async (t) => {
+  const { mkdir, readFile, rm } = await import('node:fs/promises');
+  const { execFile } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-profiles-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'library'));
+  const profile = JSON.parse(await readFile(new URL('../cars/abarth500.json', import.meta.url), 'utf8'));
+  await writeFile(join(dir, 'library/library_car.json'), JSON.stringify({ ...profile, id: 'library_car', name: 'Library Car' }));
+  const bin = fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url));
+  const cli = (args, env = {}) => new Promise((ok) => execFile(process.execPath, [bin, ...args],
+    { cwd: dir, env: { ...process.env, ...env } }, (e, stdout, stderr) => ok({ code: e?.code ?? 0, stdout, stderr })));
+
+  const missing = await cli(['neon-grid-any', '--profile', 'library_car', '--uvgrid', '--no-zip']);
+  assert.notEqual(missing.code, 0);
+  assert.match(missing.stderr, /No profile for "library_car"/);
+  assert.ok(missing.stderr.includes(join(dir, 'cars', 'library_car.json')), missing.stderr);
+
+  // Found, the editor opens on it, which needs neither ImageMagick nor a model.
+  const { spawn } = await import('node:child_process');
+  const opens = (args, env = {}) => new Promise((ok, fail) => {
+    const child = spawn(process.execPath, [bin, 'neon-grid-any', '--profile', 'library_car', '--ui',
+      '--port', String(20000 + Math.floor(Math.random() * 20000)), ...args], { cwd: dir, env: { ...process.env, ...env } });
+    let out = '';
+    child.stderr.on('data', (d) => { out += d; });
+    child.stdout.on('data', (d) => { out += d; if (out.includes('ctrl-c')) { child.kill(); ok(out); } });
+    child.on('exit', () => fail(new Error(`exited before the editor started:\n${out}`)));
+  });
+  assert.match(await opens(['--profiles', join(dir, 'library')]), /Neon Grid \(any car\) {2}-> {2}Library Car|-> {2}Library Car/);
+  assert.match(await opens([], { LIVERYKIT_PROFILES: join(dir, 'library') }), /-> {2}Library Car/);
+});

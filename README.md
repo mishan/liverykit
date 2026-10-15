@@ -152,6 +152,18 @@ belong to the people who made the cars. What it ships are **profiles** —
 measurements about a car, a few hundred lines of JSON each — which is why the two
 bundled examples build without you owning anything.
 
+Profiles for the rest of the cars that come with the game live in
+[liverykit-profiles](https://github.com/mishan/liverykit-profiles). Point
+liverykit at a checkout, and a design or `--profile` can name any of them by id:
+
+```sh
+git clone https://github.com/mishan/liverykit-profiles
+node bin/liverykit.mjs neon-grid-any --profile ks_ferrari_488_gt3 --profiles liverykit-profiles/cars
+# or set LIVERYKIT_PROFILES once instead of passing --profiles
+```
+
+Profiles are looked for in `./cars/`, then there, then among the bundled ones.
+
 Anything that has to read a car reads it from *your* installation:
 
 | | needs |
@@ -837,8 +849,11 @@ Per panel:
 | `uvBounds` | present only when `tiled`: the true UV extent, before clamping |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 
-Top level: `textures` (role → file, size, alpha), `aliases`, `caseCollisions`,
-and two different "don't paint this" lists:
+Top level: `schemaVersion` (a profile from a newer liverykit is refused rather
+than misread), `calibration.model` (the size and SHA-256 of the kn5 it was
+measured from; a different model is reported as stale), `textures` (role → file,
+size, alpha), `aliases`, `caseCollisions`, and two different "don't paint this"
+lists:
 
 - **`doNotPaint`** — textures the model binds as something other than color:
   normal maps, shader maps, dirt masks. Painting one corrupts the thing it
