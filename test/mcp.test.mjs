@@ -18,7 +18,11 @@ import '../src/index.mjs';
 const ROOT = process.cwd();
 
 async function setupTestEditor() {
-  const profile = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  // The Tatuus paints its bodywork on one sheet. Plenty of cars use two, and
+  // several tools behave differently when a surface binds more than one
+  // texture, so here its body is bound to `details` as well.
+  const profile = await loadProfile(join(ROOT, 'cars/tatuusfa1.json'));
+  profile.bind.body = { roles: ['skinbase', 'details'], source: 'human' };
   const livery = {
     name: 'Test Livery',
     folder: 'test_livery',
@@ -32,7 +36,7 @@ async function setupTestEditor() {
       },
     },
   };
-  const fitPath = join(ROOT, 'fits/neon-grid@rss_formula_rss_4.json');
+  const fitPath = join(ROOT, 'fits/neon-grid@tatuusfa1.json');
 
   const { server, url } = await startUi({
     livery,
@@ -111,7 +115,7 @@ test('mcp tools: describe_car', async () => {
 
     assert.ok(!res.isError);
     const data = JSON.parse(res.content[0].text);
-    assert.equal(data.car.id, 'rss_formula_rss_4');
+    assert.equal(data.car.id, 'tatuusfa1');
     assert.ok(data.textureCount > 0);
     assert.ok(data.totalPanels > 0);
     assert.ok(Array.isArray(data.unpaintedSurfaces));
@@ -128,7 +132,7 @@ test('mcp tools: render_view', async () => {
     const handler = createToolHandler(client);
 
     // Single surface render
-    const resSurface = await handler.callTool('render_view', { role: 'body' });
+    const resSurface = await handler.callTool('render_view', { role: 'skinbase' });
     assert.ok(!resSurface.isError);
     const dataSurface = JSON.parse(resSurface.content[0].text);
     assert.ok(dataSurface.svg);
@@ -189,19 +193,19 @@ test('mcp tools: find_panels with filters', async () => {
     assert.ok(dataTag.panels.every((p) => !p.axes || said(p.axes) || declined(p.axes)),
       JSON.stringify(dataTag.panels.map((p) => p.axes)));
 
-    // Search by role. On this car `body` binds two textures, body and bodyRear,
+    // Search by role. Here `body` binds two textures, skinbase and details,
     // and a region can go on a panel of either: both are listed.
     const resRole = await handler.callTool('find_panels', { role: 'body' });
     const dataRole = JSON.parse(resRole.content[0].text);
     assert.ok(dataRole.count > 0);
-    assert.ok(dataRole.panels.every((p) => p.role === 'body' || p.role === 'bodyRear'));
-    assert.ok(dataRole.panels.some((p) => p.role === 'bodyRear'), 'including the second texture the surface binds');
-    const resRear = await handler.callTool('find_panels', { role: 'bodyRear' });
+    assert.ok(dataRole.panels.every((p) => p.role === 'skinbase' || p.role === 'details'));
+    assert.ok(dataRole.panels.some((p) => p.role === 'details'), 'including the second texture the surface binds');
+    const resRear = await handler.callTool('find_panels', { role: 'details' });
     assert.ok(!resRear.isError, resRear.content[0].text);
     const dataRear = JSON.parse(resRear.content[0].text);
-    assert.ok(dataRear.count > 0 && dataRear.panels.every((p) => p.role === 'bodyRear'), 'and it can be asked for by name');
+    assert.ok(dataRear.count > 0 && dataRear.panels.every((p) => p.role === 'details'), 'and it can be asked for by name');
     // ...and as paint.<role>, the form find_space and a design's paint block use.
-    const resPaint = await handler.callTool('find_panels', { role: 'paint.bodyRear' });
+    const resPaint = await handler.callTool('find_panels', { role: 'paint.details' });
     assert.ok(!resPaint.isError, resPaint.content[0].text);
     assert.equal(JSON.parse(resPaint.content[0].text).count, dataRear.count);
 
@@ -260,7 +264,7 @@ test('mcp tools: report', async () => {
 
     assert.ok(!res.isError);
     const data = JSON.parse(res.content[0].text);
-    assert.equal(data.car.id, 'rss_formula_rss_4');
+    assert.equal(data.car.id, 'tatuusfa1');
     assert.ok(data.surfaces.length > 0);
   } finally {
     await stop();
@@ -309,41 +313,39 @@ test('mcp tools: propose_design posts to proposal inbox', async () => {
 });
 
 test('mcp tools: propose_design with adopt-surface', async () => {
-  // `grips`, not `wing`. On the RSS4 `wing` is a vocabulary TERM bound to no
-  // roles at all — `bind.wing` is an empty array, which is the profile saying
-  // this car has no such surface — so `paint.wing` names a texture that does
-  // not exist and could never be adopted. `grips` is a real texture role on
-  // this profile that the design does not paint, which is the case the tool is
-  // actually for.
+  // A texture role, not a vocabulary term: `paint.wing` would name a texture
+  // that does not exist and could never be adopted. `steeringWheel` is a real
+  // texture role on this profile that the design does not paint, which is the
+  // case the tool is actually for.
   const { url, stop } = await setupTestEditor();
   try {
     const client = createEditorClient(url);
     const handler = createToolHandler(client);
 
     const propRes = await handler.callTool('propose_design', {
-      why: 'adopt the grip texture into the design',
+      why: 'adopt the steering wheel texture into the design',
       design: [
-        { op: 'adopt-surface', role: 'grips' },
+        { op: 'adopt-surface', role: 'steeringWheel' },
       ],
     });
 
     assert.ok(!propRes.isError);
     const pending = await fetch(new URL('api/proposal', url).href).then((r) => r.json());
-    assert.equal(pending.proposal.why, 'adopt the grip texture into the design');
+    assert.equal(pending.proposal.why, 'adopt the steering wheel texture into the design');
     assert.equal(pending.proposal.design[0].op, 'adopt-surface');
-    assert.equal(pending.proposal.design[0].role, 'grips');
+    assert.equal(pending.proposal.design[0].role, 'steeringWheel');
   } finally {
     await stop();
   }
 });
 
 test('mcp tools: a secondary bound role is not offered as unpainted', async () => {
-  // A vocabulary term may bind to several textures: on the RSS4 `body` binds to
-  // `body` AND `bodyRear`. The editor's `surfaces` list holds one entry per
+  // A vocabulary term may bind to several textures: in this editor `body`
+  // binds to `skinbase` AND `details`. The editor's `surfaces` list holds one entry per
   // term — the primary — because that is the one you edit, so reading painted
   // roles off it marks every secondary as free.
   //
-  // Offering `bodyRear` for adoption would then produce `paint.bodyRear`
+  // Offering `details` for adoption would then produce `paint.details`
   // alongside `surfaces.body`, two claims on one texture, which
   // `resolveTargets` refuses outright. The design would stop resolving on the
   // next request.
@@ -356,9 +358,9 @@ test('mcp tools: a secondary bound role is not offered as unpainted', async () =
     const described = JSON.parse(text);
 
     const offered = (described.unpaintedSurfaces ?? []).map((s) => s.role);
-    assert.ok(!offered.includes('bodyRear'),
-      `bodyRear is already painted via surfaces.body; offered: ${offered.join(', ')}`);
-    assert.ok(!offered.includes('body'), 'nor the primary');
+    assert.ok(!offered.includes('details'),
+      `details is already painted via surfaces.body; offered: ${offered.join(', ')}`);
+    assert.ok(!offered.includes('skinbase'), 'nor the primary');
     // And it still offers the ones that genuinely are free, or the check above
     // would pass on a tool that offered nothing at all.
     assert.ok(offered.length > 0, 'some textures on this car really are unpainted');
@@ -503,7 +505,7 @@ test('refusal: concurrent pending proposal is rejected', async () => {
 
 test('refusal: zero writes to disk during proposals', async () => {
   const { url, stop } = await setupTestEditor();
-  const fitPath = join(ROOT, 'fits/neon-grid@rss_formula_rss_4.json');
+  const fitPath = join(ROOT, 'fits/neon-grid@tatuusfa1.json');
   const initialContent = await readFile(fitPath, 'utf8').catch(() => null);
 
   try {
@@ -659,7 +661,7 @@ test('check_fitment answers about the working fit, not the file on disk', async 
   // Two text regions that do not overlap, then a working fit that puts one on
   // the other. Overlap is the one check that needs neither a car model nor a
   // regenerated profile, so this stays a test about plumbing.
-  const profile = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
+  const profile = await loadProfile(join(ROOT, 'cars/tatuusfa1.json'));
   const livery = {
     name: 'Two Names', folder: 'two_names', packs: ['core'],
     identity: { driver: 'Tester', team: 'Team', number: '7' },
@@ -670,7 +672,7 @@ test('check_fitment answers about the working fit, not the file on disk', async 
     ] } },
   };
   const { server, url } = await startUi({
-    livery, profile, fitPath: join(ROOT, 'fits/neon-grid@rss_formula_rss_4.json'),
+    livery, profile, fitPath: join(ROOT, 'fits/neon-grid@tatuusfa1.json'),
     liveryId: 'neon-grid', liveryPath: join(ROOT, 'liveries/neon-grid.json'),
     port: 0, log: () => {},
   });
@@ -1223,7 +1225,7 @@ test('render_view tells an empty role apart from no role at all', async () => {
     assert.ok(JSON.parse(all.content[0].text).surfaces, 'the whole-car preview');
 
     // And a real role is trimmed rather than refused.
-    const one = await tools.callTool('render_view', { role: ' body ' });
+    const one = await tools.callTool('render_view', { role: ' skinbase ' });
     assert.ok(!one.isError, one.content[0].text);
   } finally {
     await stop();

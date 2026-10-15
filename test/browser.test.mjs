@@ -704,7 +704,7 @@ test('switching to the car view never leaves a blank editor', { skip: BROWSER ? 
 
 test('a livery with no region ids at all is still editable', { skip: BROWSER ? false : 'no browser' }, async () => {
   // The case that made the editor useless in practice. neon-grid — the original,
-  // car-specific design — has 95 regions and not one `id`, so every row read
+  // car-specific design — has dozens of regions and not one `id`, so every row read
   // "no id" and nothing could be selected. The tool did exactly what it was told
   // and was of no use whatever, which is a flaw in the design and not the code.
   //
@@ -729,7 +729,7 @@ test('a livery with no region ids at all is still editable', { skip: BROWSER ? f
       say('boxes: ' + document.querySelectorAll('#overlay .box').length);
       done();
     })();
-  `, { fitPath, livery: 'neon-grid', car: 'rss_formula_rss_4' });
+  `, { fitPath, livery: 'neon-grid', car: 'tatuusfa1' });
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   assert.notEqual(find('rows: '), 'rows: 0');

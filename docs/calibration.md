@@ -127,7 +127,7 @@ Because a filename matching nothing overrides nothing — silently and harmlessl
 
 ```sh
 node bin/liverykit.mjs <livery> --uvgrid \
-  --probe RSS4_Tire_D.dds,RSS4_Tire.dds,RSS4_Tyre_D.dds,tyres_all.dds
+  --probe Tire_D.dds,Tire.dds,Tyre_D.dds,tyres_all.dds
 ```
 
 Each candidate ships in its own loud color with its own filename printed on it.

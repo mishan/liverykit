@@ -8,7 +8,7 @@
 // artwork itself is public domain) — a real flag rather than an invented one,
 // since a flag is the thing people actually reach for a decal to put on a car.
 //
-//   node bin/liverykit.mjs decal-demo --profile cars/rss_formula_rss_4.json
+//   node bin/liverykit.mjs decal-demo --profile cars/tatuusfa1.json
 export default {
   name: 'Decal demo',
   folder: 'decal_demo',

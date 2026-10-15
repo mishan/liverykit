@@ -401,7 +401,7 @@ test('the sweep runs on the shipped profiles with no model on the machine', () =
   const out = join(dir, 'sweep.json');
   const { stdout } = await run(process.execPath, [tool('sweep.mjs'), 'neon-grid-any', '--out', out]);
   const records = JSON.parse(await readFile(out, 'utf8'));
-  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ac_friends_honda_nsx_gt3_evo', 'rss_formula_rss_4']);
+  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ac_friends_honda_nsx_gt3_evo', 'tatuusfa1']);
   for (const r of records) {
     assert.equal(r.error, undefined, `${r.id}: ${r.error}`);
     assert.equal(r.from, 'profile');

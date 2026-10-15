@@ -180,8 +180,8 @@ is over-cautious.
   needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
 - **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
   them and exits 0. liverykit refuses these outright.
-- **Not every texture is a DDS.** Models bind `.png` textures too — on the
-  example car the wheel faces are a 28×28 PNG covering nearly twenty thousand
+- **Not every texture is a DDS.** Models bind `.png` textures too — on one
+  mod car the wheel faces are a 28×28 PNG covering nearly twenty thousand
   vertices. Those are written as PNG; forcing a DDS would produce a filename
   that matches nothing.
 - **AC is a DX9 engine and silently ignores DDS files with a DX10 header.** The

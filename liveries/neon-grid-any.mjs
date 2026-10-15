@@ -6,7 +6,7 @@
 // and the same treatments written entirely in the shared VOCABULARY, so it
 // renders on any car whose profile carries a `bind` table.
 //
-//   node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json
+//   node bin/liverykit.mjs neon-grid-any --profile cars/tatuusfa1.json
 //   node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
 //
 // Two rules follow from being portable, and both are real constraints rather
@@ -19,8 +19,8 @@
 //   and edge-anchored bands look deliberate wherever the unwrap puts them.
 //   Position-dependent artwork is what breaks.
 //
-//   NO PER-ROLE DIFFERENCES. A term can bind to several textures — `body` on
-//   the RSS4 covers both chassis textures — and a design that has never seen the
+//   NO PER-ROLE DIFFERENCES. A term can bind to several textures — `body`
+//   covers two chassis sheets on some cars — and a design that has never seen the
 //   car cannot say "and something different on the rear one". Portable means
 //   coarser. That is the trade, and it is worth being explicit about it rather
 //   than pretending the layer is free.
@@ -70,7 +70,7 @@ export default {
 
         // Selected by TAG rather than by panel name, which is what lets this run
         // on a car nobody wrote it for. Each of these renders once per matching
-        // panel: on the RSS4 the left flank is 10 islands and on the Abarth 12,
+        // panel: on the Tatuus the left side is 12 islands and on the Abarth 6,
         // and the design does not need to know or care.
         //
         // `visible` keeps the work where someone can see it. A third of a car's
@@ -85,7 +85,7 @@ export default {
         // above skip it and this one catches it.
         //
         // How much falls here is a fact about the car's unwrap, not about the
-        // design: the RSS Formula 4 has none on its bodywork, since an
+        // design: the Tatuus has none on its bodywork, since an
         // open-wheeler unwraps each flank separately for asymmetric aero and
         // sponsor space. The Abarth has five, because a mass-produced road car
         // mirrors its sides to halve the texture.
@@ -109,15 +109,15 @@ export default {
         // texture) and on the formula car's flank without either being named.
         //
         // The three `at` rects do not overlap, which matters because they do
-        // not always land on separate panels: on the RSS4 the number and the
+        // not always land on separate panels: on the Tatuus the number and the
         // team name both resolve to `left_mid`, and they stack instead of
         // colliding. Placement within a panel is the one thing a portable
         // design still has to guess at — nothing here knows which part of a
         // panel is flat — so these sit centred and clear of the edges.
         //
-        // `once` keeps identity on the term's PRIMARY texture. `body` on the
-        // RSS4 covers two chassis textures, and without this the car wears its
-        // number twice.
+        // `once` keeps identity on the term's PRIMARY texture. Where `body`
+        // covers two chassis textures, without this the car wears its number
+        // twice.
         //
         // The `id`s are how a FIT adjusts these for one particular car without
         // touching the design — see docs/fitting.md and fits/. Only regions
