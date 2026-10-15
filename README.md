@@ -768,9 +768,9 @@ Proposals land in the editor's proposal banner (`#proposal-banner`) where the hu
 
 See [docs/mcp.md](docs/mcp.md) for full protocol details and design rationale.
 
-[`autolivery/`](autolivery/README.md) is an agent built on these tools. It takes
-a brief, iterates on a draft until the fitment check and a critic both pass, and
-then sends the result here for a person to accept.
+[autolivery](https://github.com/mishan/autolivery) is an agent built on these
+tools. It takes a brief, iterates on a draft until the fitment check and a critic
+both pass, and then sends the result here for a person to accept.
 
 ---
 

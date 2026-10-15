@@ -166,9 +166,9 @@ A brush. See above.
 
 An agent that places artwork. `docs/mcp.md` already made this argument and it
 holds: the eye is load-bearing, and step 3 makes the eye more useful rather
-than less necessary. `autolivery/` is not that agent: it drafts, measures and
+than less necessary. [autolivery](https://github.com/mishan/autolivery) is not that agent: it drafts, measures and
 proposes, never commits, and a person still decides in the editor's inbox —
-see the trust boundary in [its README](../autolivery/README.md).
+see the trust boundary in [its README](https://github.com/mishan/autolivery#readme).
 
 A renderer that competes with the game. Two renderers already disagree about
 the car, and `docs/backlog.md` is a list of the places they do. The preview
