@@ -399,9 +399,9 @@ export function resolveTargets(profile, livery) {
             'so regenerate the profile with --skins, or record it under "bind" by hand'
           : SCORABLE.includes(term)
             ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
-              `editor's Bindings panel, and record it under "bind" in cars/${profile.id}.json`
+              `editor's Bindings panel, and record it under "bind" in ${profile.id}.json`
             : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
-              `cars/${profile.id}.json under "bind"`,
+              `${profile.id}.json under "bind"`,
       });
       continue;
     }

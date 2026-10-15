@@ -897,7 +897,7 @@ test('an unbound term the classifier does not score is sent to the profile, not 
   );
   const floor = notes.find((n) => n.term === 'floor').text;
   assert.doesNotMatch(floor, /--explain/);
-  assert.match(floor, /bind it by hand in cars\/car\.json/);
+  assert.match(floor, /bind it by hand in car\.json/);
   const ranked = notes.find((n) => n.term === scored).text;
   assert.match(ranked, /--explain <kn5> --all/, scored);
   assert.match(ranked, /Bindings panel/, scored);
