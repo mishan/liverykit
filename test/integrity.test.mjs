@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { mipCount } from '../src/engine/pipeline.mjs';
-import { validateProfile, resolveRect, panel, texture } from '../src/profile.mjs';
+import { validateProfile, resolveRect, panel, texture, PROFILE_SCHEMA } from '../src/profile.mjs';
 import { makeProbes, gridShape } from '../src/engine/uvgrid.mjs';
 import { makeZip } from '../src/engine/zip.mjs';
 import { packageZip } from '../src/engine/package.mjs';
@@ -77,6 +77,55 @@ test('profile refuses a UV set nothing can read, and allows one it can', () => {
   assert.throws(() => validateProfile(car({ uvSet: 1.5 })), /non-negative integer/);
   assert.throws(() => validateProfile(car({ uvSet: '0' })), /non-negative integer/,
     'a string that looks like a set is not one');
+});
+
+test('a profile knows the model it was measured from, and says when the car has changed', async () => {
+  // A car update can move every island while keeping every filename, and a
+  // profile measured from the old model then places artwork on the old
+  // layout with nothing to say so.
+  const { staleModel } = await import('../src/profile.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-model-'));
+  const bytes = carKn5();
+  await writeFile(join(dir, 'car.kn5'), bytes);
+  const p = await profileFromKn5(join(dir, 'car.kn5'), { visibility: false, log: () => {} });
+  await rm(dir, { recursive: true, force: true });
+
+  assert.equal(p.calibration.model.bytes, bytes.length);
+  assert.equal(staleModel(p, bytes), null);
+  assert.match(staleModel(p, Buffer.concat([bytes, Buffer.from([0])])), /different version of car\.kn5/);
+  const { model, ...older } = p.calibration;
+  assert.equal(staleModel({ ...p, calibration: older }, bytes), null, 'nothing to compare is not a mismatch');
+});
+
+test('a profile is written one panel to a line', async () => {
+  // A regenerated car changes some panels and not others, and a profile is
+  // published, so a diff should show which. Pretty-printed, a panel is
+  // hundreds of lines of numbers; on one line it is one changed line.
+  const { profileJson } = await import('../src/profile.mjs');
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
+  const text = profileJson(p);
+  assert.deepEqual(JSON.parse(text), p);
+  const lines = text.split('\n');
+  const from = lines.indexOf('  "panels": {');
+  const block = lines.slice(from + 1, lines.findIndex((l, i) => i > from && /^ {2}\}/.test(l)));
+  const expected = Object.values(p.panels).reduce((n, ps) => n + (Object.keys(ps).length ? Object.keys(ps).length + 2 : 1), 0);
+  assert.equal(block.length, expected, 'a line per panel, and an opening and closing line per texture');
+});
+
+test('a profile says which format it is in, and a newer one is refused', () => {
+  // Profiles are published apart from the code that reads them, so a reader
+  // will meet one written by a later liverykit. Read with yesterday's rules, a
+  // field that changed meaning is silently misread.
+  const car = (extra) => ({ id: 'x', ...extra,
+    textures: { body: { file: 'a.dds', width: 64, height: 64 } }, panels: { body: { p: { rect: [0, 0, 1, 1] } } } });
+  assert.doesNotThrow(() => validateProfile(car()), 'written before the field existed');
+  assert.doesNotThrow(() => validateProfile(car({ schemaVersion: PROFILE_SCHEMA })));
+  assert.throws(() => validateProfile(car({ schemaVersion: PROFILE_SCHEMA + 1 })), /newer liverykit/);
+  assert.throws(() => validateProfile(car({ schemaVersion: '1' })), /positive integer/);
 });
 
 test('a generated profile says which UV set it measured', async () => {

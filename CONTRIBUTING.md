@@ -16,7 +16,10 @@ node bin/liverykit.mjs --from-kn5 <car>.kn5 --skins <car>/skins \
 ```
 
 Then add an `aliases` block giving friendly names to the panels a livery would
-actually use, and open a PR with the JSON.
+actually use, and open a PR with the JSON — to
+[liverykit-profiles](https://github.com/mishan/liverykit-profiles), which holds
+the cars that come with the game. A profile of a mod car is a measurement of its
+author's work, so it is published only with that author's permission.
 
 **Never commit the kn5 itself**, or any game texture. A profile is
 measurements — filenames, dimensions, rectangles — which is yours to share.

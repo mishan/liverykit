@@ -644,6 +644,11 @@ test('a car states its own name, and the profile stops shipping an empty one', a
   // An explicit name still wins. It is the one a person chose.
   assert.equal((await car('{"name":"From the file"}', { name: 'From the flag' })).name, 'From the flag');
 
+  // Kunos writes its descriptions with raw line breaks inside the string, which
+  // strict JSON refuses, so most of the base game's cars read as nameless.
+  // Content Manager reads them, and so does this.
+  assert.equal((await car('{\n\t"name": "Tatuus FA01",\n\t"description": "Safety first.</br>\n- quality\n"\n}')).name, 'Tatuus FA01');
+
   // Every way this file goes wrong is a shrug and a note, never a throw: a
   // profile is worth generating without a display name, and refusing to measure
   // a car because its metadata has a trailing comma would be absurd.

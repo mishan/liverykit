@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 import { startUi, confirmBinding, bindingsReport } from '../src/ui/server.mjs';
-import { loadProfile, mergeBindings, validateProfile, resolveTargets } from '../src/profile.mjs';
+import { loadProfile, mergeBindings, validateProfile, resolveTargets, profileJson } from '../src/profile.mjs';
 import { loadLivery } from '../src/livery.mjs';
 import { portability } from '../src/portability.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
@@ -296,7 +296,7 @@ test('Confirm writes "human" on that one term, and changes nothing else in the f
 
     const want = JSON.parse(e.text);
     want.bind.brakes.source = 'human';
-    assert.equal(await readFile(e.profilePath, 'utf8'), JSON.stringify(want, null, 2) + '\n',
+    assert.equal(await readFile(e.profilePath, 'utf8'), profileJson(want),
       'the file with one field changed, in the generator\'s own formatting');
     assert.deepEqual(await readdir(e.dir), ['abarth500.json'], 'no temporary file left beside it');
 

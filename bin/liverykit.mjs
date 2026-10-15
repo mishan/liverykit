@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
-import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates } from '../src/profile.mjs';
+import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
@@ -76,7 +76,10 @@ Options
                       cannot be measured at this size. A choice, not a fact.
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
-  --profile <path>    override the car profile (default: cars/<livery.car>.json)
+  --profile <path>    override the car profile: a file, or a car id looked up
+                      like the livery's own car (default: <livery.car>)
+  --profiles <dir>    a directory of <carId>.json profiles, such as a checkout
+                      of liverykit-profiles, searched after ./cars/
   --fit <path>        per-car placement overrides for this design
                       (default: fits/<livery>@<car>.json, if it exists)
   --ui                open the fitting editor instead of building
@@ -90,6 +93,7 @@ Options
   --pack <module>     load an extra treatment pack (repeatable)
 
 Environment
+  LIVERYKIT_PROFILES  the same as --profiles
   LIVERYKIT_PRIOR_DIR where --from-kn5 and --explain --all look for the car's
                       existing <id>.json, whose hand-work they keep
                       (default: cars/ here, then the bundled cars/)
@@ -119,6 +123,7 @@ const { values, positionals } = parseArgs({
     'car-name': { type: 'string' },
     skins: { type: 'string' },
     profile: { type: 'string' },
+    profiles: { type: 'string' },
     fit: { type: 'string' },
     ui: { type: 'boolean', default: false },
     model: { type: 'string' },
@@ -202,7 +207,7 @@ if (values['from-kn5']) {
 
   const outPath = join(values.out, `${profile.id}.json`);
   await mkdir(values.out, { recursive: true });
-  await writeFile(outPath, JSON.stringify(profile, null, 2) + '\n');
+  await writeFile(outPath, profileJson(profile));
 
   const panelCount = Object.values(profile.panels).reduce((s, p) => s + Object.keys(p).length, 0);
   console.log(`\n  ${outPath}`);
@@ -390,9 +395,24 @@ if (!livery.car && !values.profile) {
 }
 if (!livery.folder) throw new Error(`${liveryArg} has no "folder" — that is the skin directory name`);
 
+// A profile by car id, from the working directory's cars/, then --profiles or
+// LIVERYKIT_PROFILES (a checkout of liverykit-profiles, for the cars this
+// package does not bundle), then the bundled cars/. Missing, it says where it
+// looked: "no such file" names one path and hides the rest.
+function findProfile(id) {
+  const dirs = [join(WORK, 'cars'), values.profiles ?? process.env.LIVERYKIT_PROFILES, join(ROOT, 'cars')];
+  const tried = [...new Set(dirs.filter(Boolean).map((d) => join(resolve(d), `${id}.json`)))];
+  const hit = tried.find((p) => existsSync(p));
+  if (!hit) {
+    fail(new Error(`No profile for "${id}". Looked in:\n  ${tried.join('\n  ')}\n` +
+      'Generate one with --from-kn5, or point --profiles at a checkout of liverykit-profiles.'));
+  }
+  return hit;
+}
+const byId = (p) => !/[\\/]/.test(p) && !p.endsWith('.json');
 const profilePath = values.profile
-  ? resolve(values.profile)
-  : lookUp('cars', `${livery.car}.json`);
+  ? (byId(values.profile) ? findProfile(values.profile) : resolve(values.profile))
+  : findProfile(livery.car);
 const profile = await loadProfile(profilePath);
 
 // A fit adjusts where THIS design's artwork sits on THIS car — see
@@ -428,11 +448,16 @@ async function findCarModel(profile, explicit) {
     // Named outright, so a miss is an error rather than a fallback: quietly
     // ignoring the flag would be the worst of both.
     await stat(p).catch(() => fail(new Error(`--model ${p} does not exist.`)));
+    const stale = staleModel(profile, await readFile(p));
+    if (stale) console.log(`  ! ${p}: ${stale}`);
     return { path: p, looked: [p] };
   }
   const looked = carModelCandidates(profile, { root: ROOT, env: process.env });
   for (const p of looked) {
-    if (await stat(p).then(() => true, () => false)) return { path: p, looked };
+    if (!await stat(p).then(() => true, () => false)) continue;
+    const stale = staleModel(profile, await readFile(p));
+    if (stale) console.log(`  ! ${p}: ${stale}`);
+    return { path: p, looked };
   }
   return { path: null, looked };
 }
