@@ -14,15 +14,17 @@ Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 # Windows: imagemagick.org/script/download.php  (tick "Add to PATH")
 
 npm install
-node bin/liverykit.mjs neon-grid
-# -> dist/neon_grid.zip — drag it onto Content Manager to install
+node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
+# -> dist/neon_grid_any.zip — drag it onto Content Manager to install
 ```
 
 Assetto Corsa 1 only. Competizione uses an unrelated skin system.
 
-> The bundled example targets the RSS Formula RSS 4, a paid mod car. If you
-> don't own it the build still works, you just can't install the result — skip
-> to [Making a livery](#making-a-livery) and point it at a car you have.
+The Abarth 500 comes with the base game, so that skin installs on any copy of
+Assetto Corsa. The build lists the surfaces the design paints that this car
+lacks — on an Abarth, a rear wing among them — and skips them.
+`node bin/liverykit.mjs neon-grid` builds the fuller example, written for the
+RSS Formula RSS 4, a paid mod car.
 
 ---
 
