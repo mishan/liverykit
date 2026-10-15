@@ -222,7 +222,8 @@ test('the CLI finds a livery, its profile and its fit in the working directory',
     palette: { base: '#000000' }, surfaces: { body: { background: 'base', regions: [] } } };`);
   await writeFile(join(dir, 'fits/wd@workdir_car.json'), JSON.stringify({ livery: 'wd', car: 'workdir_car', regions: {} }));
 
-  const child = spawn(process.execPath, [new URL('../bin/liverykit.mjs', import.meta.url).pathname,
+  const { fileURLToPath } = await import('node:url');
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url)),
     'wd', '--ui', '--port', String(20000 + Math.floor(Math.random() * 20000))], { cwd: dir });
   t.after(() => child.kill());
   let out = '';

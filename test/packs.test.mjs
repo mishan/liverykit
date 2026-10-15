@@ -167,7 +167,8 @@ test('a --pack outside the checkout can import liverykit, and registers into the
       "registerPack(definePack('outside', { blank: () => ({ base: '', emissive: '' }) }));",
       "console.log('packs:', listPacks().join(','));",
     ].join('\n'));
-    const bin = new URL('../bin/liverykit.mjs', import.meta.url).pathname;
+    const { fileURLToPath } = await import('node:url');
+    const bin = fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url));
     const { stdout, stderr } = await new Promise((ok) => execFile(process.execPath,
       [bin, 'no-such-livery', '--pack', join(dir, 'p.mjs')], { cwd: dir },
       (err, stdout, stderr) => ok({ stdout, stderr })));

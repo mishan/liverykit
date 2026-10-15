@@ -1803,17 +1803,17 @@ test('a car model is looked for where a person would actually have one', async (
 
   const env = { AC_ROOT: '/games/ac', ASSETTOCORSA: '/other/ac' };
   assert.deepEqual(carModelCandidates(profile, { root: '/repo', env }), [
-    '/games/ac/content/cars/abarth500/abarth500.kn5',
-    '/other/ac/content/cars/abarth500/abarth500.kn5',
-    '/repo/content/cars/abarth500/abarth500.kn5',
-    '/repo/cars/abarth500/abarth500.kn5',
+    join('/games/ac/content/cars/abarth500/abarth500.kn5'),
+    join('/other/ac/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/cars/abarth500/abarth500.kn5'),
   ], 'the game install is asked first, then the checkout, in both layouts');
 
   // No environment: the checkout still works, which is the arrangement for
   // anyone unpacking a car they do not want to keep.
   assert.deepEqual(carModelCandidates(profile, { root: '/repo' }), [
-    '/repo/content/cars/abarth500/abarth500.kn5',
-    '/repo/cars/abarth500/abarth500.kn5',
+    join('/repo/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/cars/abarth500/abarth500.kn5'),
   ]);
 
   // A profile that does not record what it was built from cannot be guessed at,
