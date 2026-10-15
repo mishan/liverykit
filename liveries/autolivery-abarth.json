@@ -1,9 +1,0 @@
-{
-  "name": "Autolivery",
-  "folder": "autolivery",
-  "car": "abarth500",
-  "packs": ["core"],
-  "identity": {},
-  "palette": { "primer": "#8a8d91" },
-  "surfaces": { "body": { "background": "primer", "regions": [] } }
-}

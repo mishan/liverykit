@@ -1,14 +1,16 @@
 {
   "name": "liverykit",
   "version": "0.1.0",
-  "description": "Generate Assetto Corsa livery textures from code, with a UV calibration workflow that measures a car instead of guessing at it",
+  "description": "Generate Assetto Corsa liveries from code, placed by each car's measured UV layout",
   "type": "module",
   "main": "src/index.mjs",
   "exports": {
     ".": "./src/index.mjs",
     "./packs/core": "./src/packs/core.mjs",
     "./packs/synthwave": "./src/packs/synthwave.mjs",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./src/*": "./src/*",
+    "./test/fixtures/kn5.mjs": "./test/fixtures/kn5.mjs"
   },
   "bin": {
     "liverykit": "bin/liverykit.mjs"
@@ -16,9 +18,20 @@
   "files": [
     "bin",
     "src",
-    "cars",
+    "test/fixtures/kn5.mjs",
+    "cars/abarth500.json",
+    "cars/ac_friends_honda_nsx_gt3_evo.json",
+    "cars/tatuusfa1.json",
     "liveries/neon-grid.mjs",
+    "liveries/neon-grid-any.mjs",
+    "liveries/decal-demo",
+    "fits/neon-grid-any@abarth500.json",
     "docs",
+    "!docs/roadmap.md",
+    "!docs/backlog.md",
+    "!docs/portability-plan.md",
+    "!docs/kernel-spike.md",
+    "!docs/images",
     "CONTRIBUTING.md",
     "README.md",
     "LICENSE"

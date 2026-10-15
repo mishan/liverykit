@@ -233,8 +233,8 @@ test('a skin ZIP is laid out for Content Manager, or as the bare skin folder', a
 });
 
 test('the shipped car profile is valid', async () => {
-  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
-  assert.doesNotThrow(() => validateProfile(p, 'rss_formula_rss_4.json'));
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
+  assert.doesNotThrow(() => validateProfile(p, 'tatuusfa1.json'));
   // Every panel must sit inside its texture and name a real role.
   for (const [role, panels] of Object.entries(p.panels)) {
     assert.ok(p.textures[role], `panels for unknown role ${role}`);
@@ -247,12 +247,12 @@ test('the shipped car profile is valid', async () => {
 
 test('the example livery only references panels that exist', async () => {
   const livery = (await import('../liveries/neon-grid.mjs')).default;
-  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
   const treatments = resolveTreatments(livery.packs);
 
   for (const [role, spec] of Object.entries(livery.paint)) {
     assert.ok(p.textures[role], `livery paints unknown role "${role}"`);
-    for (const region of spec.regions) {
+    for (const region of spec.regions ?? []) {
       assert.ok(treatments.has(region.treatment), `unknown treatment "${region.treatment}"`);
       if (region.panel) assert.doesNotThrow(() => panel(p, role, region.panel));
     }
@@ -360,7 +360,7 @@ test('visibility depends on where you stand, not just on the surface', async () 
   // The whole point of a second viewpoint: a surface hidden from trackside can
   // be the one a cockpit driver stares at all race, and vice versa. If these
   // two ever agree everywhere, the cockpit pass has silently stopped working.
-  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
   const pairs = [];
   for (const panels of Object.values(p.panels)) {
     for (const def of Object.values(panels)) {
@@ -377,7 +377,7 @@ test('visibility depends on where you stand, not just on the surface', async () 
 test('tiled UVs are clamped and flagged, never emitted out of range', async () => {
   // Tiling textures run past 0..1 on purpose. Writing the raw bounds produces a
   // rect starting at -0.006, which is not a texture coordinate.
-  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
   for (const [role, panels] of Object.entries(p.panels)) {
     for (const [name, def] of Object.entries(panels)) {
       for (const n of def.rect) {
@@ -399,7 +399,7 @@ test('PNG textures are written as PNG, not forced through the DDS encoder', asyn
 });
 
 test('the shipped profile records what is deliberately left stock', async () => {
-  const p = JSON.parse(await readFile(new URL('../cars/rss_formula_rss_4.json', import.meta.url), 'utf8'));
+  const p = JSON.parse(await readFile(new URL('../cars/tatuusfa1.json', import.meta.url), 'utf8'));
   assert.ok(Array.isArray(p.leaveStock) && p.leaveStock.length,
     'a profile should say which paintable textures it recommends not painting');
   for (const e of p.leaveStock) assert.ok(e.file && e.reason, 'every entry needs a reason');
@@ -740,12 +740,12 @@ test('the vocabulary is fixed, so a livery can rely on it', async () => {
 
 test('the shipped profile binds the vocabulary to real roles', async () => {
   const { loadProfile, binding } = await import('../src/profile.mjs');
-  const p = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
-  assert.deepEqual(binding(p, 'body').roles, ['body', 'bodyRear'], 'both chassis textures');
+  const p = await loadProfile(new URL('../cars/tatuusfa1.json', import.meta.url));
+  assert.deepEqual(binding(p, 'body').roles, ['skinbase']);
   assert.equal(binding(p, 'body').source, 'human');
   // A formula car has no numberplate. Recorded as a decision, not an omission.
   assert.equal(binding(p, 'numberPlate').status, 'absent');
-  assert.equal(binding(p, 'rims').roles[0], 'rimFace', 'not the motion-blur variant');
+  assert.equal(binding(p, 'rims').roles[0], 'rims', 'not the motion-blur variant');
 });
 
 test('an inherited property name is not a vocabulary term', async () => {
@@ -888,7 +888,7 @@ test('a livery may not invent a surface name either', async () => {
 
 test('the example livery resolves against the shipped car', async () => {
   const { loadProfile, resolveTargets } = await import('../src/profile.mjs');
-  const profile = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const profile = await loadProfile(new URL('../cars/tatuusfa1.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid.mjs')).default;
   const { targets, notes } = resolveTargets(profile, livery);
   assert.equal(notes.length, 0, `everything it asks for exists: ${notes.map((n) => n.text)}`);
@@ -950,14 +950,14 @@ test('the portable livery renders on two cars that share no texture names', asyn
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   assert.equal(livery.car, undefined, 'a portable livery has no business naming a car');
 
-  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const fa = await loadProfile(new URL('../cars/tatuusfa1.json', import.meta.url));
   const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  const a = resolveTargets(rss, livery);
+  const a = resolveTargets(fa, livery);
   const b = resolveTargets(ab, livery);
 
-  assert.ok(a.targets.length >= 10, `RSS4 painted ${a.targets.length}`);
+  assert.ok(a.targets.length >= 5, `Tatuus painted ${a.targets.length}`);
   assert.ok(b.targets.length >= 5, `Abarth painted ${b.targets.length}`);
-  const filesA = new Set(a.targets.map((t) => rss.textures[t.role].file));
+  const filesA = new Set(a.targets.map((t) => fa.textures[t.role].file));
   const filesB = new Set(b.targets.map((t) => ab.textures[t.role].file));
   assert.equal([...filesA].filter((f) => filesB.has(f)).length, 1,
     'only ac_crew.dds is common to both cars — everything else is named differently');
@@ -1188,7 +1188,7 @@ test('the portable livery expands onto two cars it was not written for', async (
   const { loadProfile, expandRegions } = await import('../src/profile.mjs');
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const cases = [
-    ['../cars/rss_formula_rss_4.json', 'body'],
+    ['../cars/tatuusfa1.json', 'skinbase'],
     ['../cars/abarth500.json', 'skinbase_default'],
   ];
   for (const [file, role] of cases) {
@@ -1211,9 +1211,9 @@ test('the portable livery expands onto two cars it was not written for', async (
   // The two cars genuinely differ here, which is the whole reason the design has
   // to name `shared` separately rather than relying on left and right.
   const { panelsWithTags } = await import('../src/profile.mjs');
-  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const fa = await loadProfile(new URL('../cars/tatuusfa1.json', import.meta.url));
   const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  assert.equal(panelsWithTags(rss, 'body', ['shared', 'visible']).length, 0,
+  assert.equal(panelsWithTags(fa, 'skinbase', ['shared', 'visible']).length, 0,
     'an open-wheeler unwraps each flank separately, for asymmetric aero');
   assert.ok(panelsWithTags(ab, 'skinbase_default', ['shared', 'visible']).length > 0,
     'a road car mirrors its sides to halve the texture');
@@ -1399,7 +1399,7 @@ test('wheels stacked at the origin give no answer rather than a wrong one', asyn
 
 test('the shipped profiles record axes measured from the wheels', async () => {
   const { loadProfile } = await import('../src/profile.mjs');
-  for (const [file, wb] of [['../cars/rss_formula_rss_4.json', 2.74], ['../cars/abarth500.json', 2.30]]) {
+  for (const [file, wb] of [['../cars/tatuusfa1.json', 2.64], ['../cars/abarth500.json', 2.30]]) {
     const p = await loadProfile(new URL(file, import.meta.url));
     const a = p.calibration.axes;
     assert.equal(a.from, 'wheels');
@@ -1607,7 +1607,7 @@ test('the shipped fits apply cleanly to the cars they name', async () => {
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const ids = regionIds(livery);
 
-  for (const car of ['abarth500', 'rss_formula_rss_4']) {
+  for (const car of ['abarth500']) {
     const fit = await loadFit(new URL(`../fits/neon-grid-any@${car}.json`, import.meta.url));
     assert.equal(fit.car, car);
     assert.equal(fit.livery, 'neon-grid-any');
@@ -1803,17 +1803,17 @@ test('a car model is looked for where a person would actually have one', async (
 
   const env = { AC_ROOT: '/games/ac', ASSETTOCORSA: '/other/ac' };
   assert.deepEqual(carModelCandidates(profile, { root: '/repo', env }), [
-    '/games/ac/content/cars/abarth500/abarth500.kn5',
-    '/other/ac/content/cars/abarth500/abarth500.kn5',
-    '/repo/content/cars/abarth500/abarth500.kn5',
-    '/repo/cars/abarth500/abarth500.kn5',
+    join('/games/ac/content/cars/abarth500/abarth500.kn5'),
+    join('/other/ac/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/cars/abarth500/abarth500.kn5'),
   ], 'the game install is asked first, then the checkout, in both layouts');
 
   // No environment: the checkout still works, which is the arrangement for
   // anyone unpacking a car they do not want to keep.
   assert.deepEqual(carModelCandidates(profile, { root: '/repo' }), [
-    '/repo/content/cars/abarth500/abarth500.kn5',
-    '/repo/cars/abarth500/abarth500.kn5',
+    join('/repo/content/cars/abarth500/abarth500.kn5'),
+    join('/repo/cars/abarth500/abarth500.kn5'),
   ]);
 
   // A profile that does not record what it was built from cannot be guessed at,
@@ -1866,17 +1866,72 @@ test('rotate: auto follows the panel the unwrapper actually made', async () => {
   assert.doesNotMatch(draw('flat'), /rotate\(/, 'no measurement means no rotation');
 });
 
+test('rotate: auto mirrors artwork back on a panel the unwrapper reflected', async () => {
+  // A reflected island is a mirror image in the texture: no turn makes its text
+  // read, and a word painted there reads backwards on the car. The Tatuus FA01's
+  // left flank is one. Rotation is the panel's to supply and so is the flip, and
+  // a text region that has not asked for either is told what it will look like.
+  const p = {
+    id: 't',
+    textures: { body: { file: 'b.dds', width: 512, height: 512 } },
+    panels: { body: {
+      plain: { rect: [0, 0, 0.4, 0.4], textRotation: 0 },
+      reflected: { rect: [0.5, 0, 0.4, 0.4], textRotation: 180, reflected: true },
+    } },
+  };
+  const draw = (panel, rotate) => {
+    const notes = [];
+    const { base } = renderTexture({
+      profile: p, role: 'body',
+      regions: [{ treatment: 'text', panel, rotate, text: 'X', color: 'white' }],
+      treatments: resolveTreatments(['core']), palette: {}, rng: Math.random,
+      font: 'sans-serif', tokens: {}, regionNotes: notes,
+    });
+    return { base, notes: notes.map((n) => n.text).join('\n') };
+  };
+
+  assert.doesNotMatch(draw('plain', 'auto').base, /scale\(-1/);
+  const mirrored = draw('reflected', 'auto');
+  assert.match(mirrored.base, /rotate\(180[^"]*\) scale\(-1,1\)/, 'turned upright, then mirrored left to right');
+  assert.equal(mirrored.notes, '');
+  const unasked = draw('reflected', undefined);
+  assert.doesNotMatch(unasked.base, /scale\(-1/);
+  assert.match(unasked.notes, /reflected.*backwards.*rotate: 'auto'/);
+});
+
+test('a profile marks the panels whose unwrap is a mirror image', async () => {
+  // The synthetic car's front and rear faces are unwrapped mirrored, its flanks
+  // the right way round; see the fixture's corner order.
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-reflect-'));
+  const kn5 = join(dir, 'fixture-car.kn5');
+  await writeFile(kn5, carKn5());
+  const profile = await profileFromKn5(kn5, { visibility: false, log: () => {} });
+  await rm(dir, { recursive: true, force: true });
+  const panels = Object.values(Object.values(profile.panels)[0]);
+  const at = (face) => panels.find((q) => q.rect.every((v, i) => Math.abs(v - CAR.faces[face][i]) < 0.01));
+  assert.deepEqual(['left', 'right', 'front', 'rear'].map((f) => at(f)?.reflected ?? false),
+    [false, false, true, true]);
+});
+
 test('the shipped profiles carry a measured orientation per panel', async () => {
   // The measurement that explains what a car looks like: the Abarth's doors are
-  // laid sideways in its texture, the formula car's flanks are not.
+  // laid sideways in its texture; the Tatuus's right flank is upside down and
+  // its left flank upright but a mirror image.
   const { loadProfile } = await import('../src/profile.mjs');
   const ab = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  const rss = await loadProfile(new URL('../cars/rss_formula_rss_4.json', import.meta.url));
+  const fa = await loadProfile(new URL('../cars/tatuusfa1.json', import.meta.url));
 
   assert.equal(ab.panels.skinbase_default.left_mid.textRotation, 270);
   assert.equal(ab.panels.skinbase_default.right_mid.textRotation, 90);
-  assert.equal(rss.panels.body.left_mid.textRotation, 0);
-  assert.equal(rss.panels.body.right_mid.textRotation, 0);
+  assert.equal(fa.panels.skinbase.right_mid.textRotation, 180);
+  assert.equal(fa.panels.skinbase.right_mid.reflected, undefined);
+  assert.equal(fa.panels.skinbase.left_mid.textRotation, 0);
+  assert.equal(fa.panels.skinbase.left_mid.reflected, true);
 });
 
 test('a surface with no regions builds instead of crashing', async () => {

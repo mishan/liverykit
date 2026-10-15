@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
 import '../src/index.mjs';
@@ -224,6 +225,6 @@ test('a livery can be resolved by name without being told where the liveries are
   assert.equal(dir, null, 'a single-file livery has no folder of its own');
 
   // And the answer is the same one the CLI gets when it does say.
-  const told = await resolveLivery('neon-grid', { root: new URL('..', import.meta.url).pathname });
+  const told = await resolveLivery('neon-grid', { root: fileURLToPath(new URL('..', import.meta.url)) });
   assert.equal(told.path, path);
 });

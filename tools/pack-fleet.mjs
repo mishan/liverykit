@@ -33,7 +33,19 @@ const survey = JSON.parse(await readFile(inPath, 'utf8'));
 const failed = survey.filter((c) => c.error);
 // Sorted by id, so regenerating from the same survey gives the same bytes and a
 // changed fixture is a changed measurement rather than a reshuffle.
-const cars = survey.filter((c) => !c.error).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+//
+// Kunos's own cars only. A mod's measurements are not ours to publish, however
+// little of the author's work they hold, so a car whose ui_car.json names an
+// author is left out — and a record that predates the survey reading it is
+// refused, since it cannot say which it is.
+const unknown = survey.find((c) => !c.error && !('author' in c));
+if (unknown) {
+  throw new Error(`${unknown.id}: no author recorded. This survey predates it; re-run tools/survey.mjs before packing.`);
+}
+const cars = survey.filter((c) => !c.error && c.author === null)
+  .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+const mods = survey.filter((c) => !c.error && c.author !== null);
+if (mods.length) console.log(`left out ${mods.length} car(s) by other authors: ${mods.map((c) => c.id).join(', ')}`);
 
 // Refused rather than packed without. A texture with no island count would
 // read as a texture with none, and the classifier is about to exclude exactly

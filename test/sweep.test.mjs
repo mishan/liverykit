@@ -237,7 +237,7 @@ test('two models of one size go by name, whatever order the folder lists them in
 
 test('the packer reads its input with or without --out, and refuses a survey without skin counts', () => inTmp(async (dir) => {
   const record = {
-    id: 'x', skinCount: 4,
+    id: 'x', author: null, skinCount: 4,
     roles: { body: { file: 'b.dds', panels: 12, cover: 0.4, box: [0, 1, 0, 1, 0, 1], straddles: true,
       wheelIslands: 0, sidewalls: 0, instances: 2, skins: 2, shaders: ['ksPerPixel'] } },
   };
@@ -347,7 +347,7 @@ test('the summary names a tie as a tie, not as the first tag', () => {
 });
 
 const surveyCar = {
-  id: 'x', skinCount: 4,
+  id: 'x', author: null, skinCount: 4,
   roles: {
     body: { file: 'b.dds', w: 2048, h: 2048, panels: 12, cover: 0.4, meshes: 3, box: [0, 1, 0, 1, 0, 1],
       straddles: true, visible: 0.7, cockpit: 0.05, wheelIslands: 0, sidewalls: 0, instances: 2,
@@ -395,13 +395,23 @@ test('the packer keeps what the classifier reads, and refuses a survey without i
   delete noWheels.roles.body.wheelIslands;
   await writeFile(survey, JSON.stringify([noWheels]));
   await assert.rejects(run(process.execPath, [tool('pack-fleet.mjs'), survey, '--out', out]), /no wheel-island count/);
+
+  // A mod's measurements are not ours to publish: a car that names an author
+  // is left out and said to be, and one that cannot say is refused.
+  await writeFile(survey, JSON.stringify([surveyCar, { ...surveyCar, id: 'mod', author: 'Someone' }]));
+  const { stdout } = await run(process.execPath, [tool('pack-fleet.mjs'), survey, '--out', out]);
+  assert.deepEqual(JSON.parse(gunzipSync(await readFile(out)).toString('utf8')).cars.map((c) => c.id), ['x']);
+  assert.match(stdout, /left out 1 car\(s\) by other authors: mod/);
+  const { author, ...unknown } = surveyCar;
+  await writeFile(survey, JSON.stringify([unknown]));
+  await assert.rejects(run(process.execPath, [tool('pack-fleet.mjs'), survey, '--out', out]), /x: no author recorded/);
 }));
 
 test('the sweep runs on the shipped profiles with no model on the machine', () => inTmp(async (dir) => {
   const out = join(dir, 'sweep.json');
   const { stdout } = await run(process.execPath, [tool('sweep.mjs'), 'neon-grid-any', '--out', out]);
   const records = JSON.parse(await readFile(out, 'utf8'));
-  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ac_friends_honda_nsx_gt3_evo', 'rss_formula_rss_4']);
+  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ac_friends_honda_nsx_gt3_evo', 'tatuusfa1']);
   for (const r of records) {
     assert.equal(r.error, undefined, `${r.id}: ${r.error}`);
     assert.equal(r.from, 'profile');

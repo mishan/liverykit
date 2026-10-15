@@ -476,13 +476,21 @@ test('--explain on a kit term says it is named from the skins, and what it looks
   assert.throws(() => rank([], 'crew'), /named from the skins folder[\s\S]*ac_crew\.dds/);
 });
 
-test('on the RSS4 the named kit is what a person bound by hand', async () => {
-  const p = await loadProfile(join(ROOT, 'cars/rss_formula_rss_4.json'));
-  const proposed = proposeDriverKit(p.textures);
-  for (const term of Object.keys(DRIVER_KIT)) {
-    assert.equal(p.bind[term].source, 'human', `${term} was bound by hand`);
-    assert.deepEqual(proposed[term]?.roles, p.bind[term].roles, term);
-  }
+test('the named kit is what a person bound by hand', () => {
+  // The skins-folder textures of a car whose driver kit was bound by hand
+  // before naming existed — the RSS Formula RSS 4's, no longer shipped — and
+  // the roles the person chose for each.
+  const textures = {
+    helmet: { file: 'HELMET_2012.dds', width: 2048, height: 512 },
+    helmet_2: { file: 'Helmet_2012_Glass.dds', width: 512, height: 128 },
+    suit: { file: '2016_SUIT_DIFF.dds', width: 1024, height: 1024 },
+    suit_2: { file: 'DRIVER_SUIT_PSD.dds', width: 1024, height: 1024 },
+    gloves: { file: '2016_Gloves_DIFF.dds', width: 1024, height: 512 },
+    crew: { file: 'ac_crew.dds', width: 1024, height: 1024 },
+  };
+  const human = { helmet: ['helmet'], suit: ['suit'], gloves: ['gloves'], crew: ['crew'] };
+  const proposed = proposeDriverKit(textures);
+  for (const term of Object.keys(DRIVER_KIT)) assert.deepEqual(proposed[term]?.roles, human[term], term);
 });
 
 test('a named binding is checked, said to be named, and kept out of the confidence means', () => {

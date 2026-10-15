@@ -371,7 +371,7 @@ The before/after these tools' descriptions ask for never quite worked. A proposa
 reaches the working state only once accepted, so checking after proposing
 measured the design *without* the change. With nobody at the editor, the change
 could not be measured at all, which is what an agent iterating by itself
-(`autolivery/`) ran into first. The rejected alternative was letting an agent
+([autolivery](https://github.com/mishan/autolivery)) ran into first. The rejected alternative was letting an agent
 accept its own proposals behind a flag, which would have made the inbox optional.
 A draft is staged by the same code as a proposal, so one that measures clean is
 one the inbox will take.

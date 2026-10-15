@@ -67,8 +67,8 @@ face spoke  console                   (steering wheel)
 gripLeft  gripRight                   (grips)
 ```
 
-`cars/rss_formula_rss_4.json` uses these; copy its `aliases` block as a starting
-point, and pick panels by `visibleFromCockpit` rather than by eye.
+`cars/tatuusfa1.json` has an `aliases` block to start from. Pick cockpit
+panels by `visibleFromCockpit` rather than by eye.
 
 If a car genuinely has something these don't cover, add it and say so in the PR
 — if it recurs, it belongs on this list.

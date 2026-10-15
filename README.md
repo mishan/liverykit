@@ -20,9 +20,8 @@ node bin/liverykit.mjs neon-grid
 
 Assetto Corsa 1 only. Competizione uses an unrelated skin system.
 
-> The bundled example targets the RSS Formula RSS 4, a paid mod car. If you
-> don't own it the build still works, you just can't install the result — skip
-> to [Making a livery](#making-a-livery) and point it at a car you have.
+The example is written for the Tatuus FA01, which comes with the base game, so
+the skin installs on any copy of Assetto Corsa.
 
 ---
 
@@ -97,8 +96,8 @@ rather than guessing — regenerate with `--from-kn5` to get it.
 **Which panels are visible, and from where.** Being inside a UV island doesn't
 mean anyone can see it — duct interiors, bulkhead backs and floor undersides are
 all ordinary parts of an island. liverykit ray-casts against the whole car,
-wheels and wings included, and reports `visible` per panel. On the example car
-87 panels are completely unseeable from trackside.
+wheels and wings included, and reports `visible` per panel. On the Tatuus FA01
+78 panels are completely unseeable from trackside.
 
 Clicking a part the design does not paint names its texture and offers to take
 it into the design — which is how you find out which of the four 1024-square
@@ -122,8 +121,8 @@ car, whose embedded textures are 1×1 placeholders. Gray means *this part is not
 yours and could not be shown*, never a guess at what belongs there.
 
 It also reports `visibleFromCockpit`, cast from the driver's eye, and the two
-disagree sharply: the flanks score 99% outside and 6% from the seat, the tub
-interior the other way about. If you race in cockpit view, that second number is
+disagree sharply: the flanks score 100% outside and 0% from the seat, the
+cockpit's side walls 0% and 62%. If you race in cockpit view, that second number is
 the one that matters — and the surfaces you stare at all race are on entirely
 separate textures from the bodywork, so an exterior-only livery leaves them
 stock. `liveries/neon-grid.mjs` paints them.
@@ -185,7 +184,7 @@ that's where the game runs.*
 ### 1. Generate a profile for your car
 
 `<carId>` is the folder name under `content/cars/` — `ks_ferrari_488_gt3`,
-`rss_formula_rss_4`, and so on.
+`tatuusfa1`, and so on.
 
 ```sh
 node bin/liverykit.mjs --from-kn5 "$AC_ROOT/content/cars/<carId>/<carId>.kn5" \
@@ -357,9 +356,13 @@ surfaces: {
 
 Panels also carry a measured **`textRotation`**: how far the unwrapper laid the
 panel from upright. A road car routinely turns a door sideways to pack its
-texture sheet — the Abarth's doors measure 270° and 90°, the Formula 4's flanks
-0° — so text placed without compensating reads vertically down the door. Write
-`rotate: 'auto'` and artwork follows the panel. Near-horizontal panels like a
+texture sheet — the Abarth's doors measure 270° and 90°, the Tatuus's flanks
+180° and 0° — so text placed without compensating reads vertically down the
+door, or upside down. An unwrapper may also lay a panel out as a mirror image,
+as the Tatuus's left flank is, and no turn makes lettering on that read; the
+profile marks such a panel `reflected`. Write `rotate: 'auto'` and artwork
+follows the panel, mirrored back where it has to be; text on a reflected panel
+without it is reported as reading backwards. Near-horizontal panels like a
 roof have no meaningful "up" and are left alone rather than turned by a number
 derived from rounding error.
 
@@ -371,7 +374,7 @@ trackside), `cockpit` (readable from the driver's seat), `mirrored`,
 Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
 once and rolled out as a strip, u round the circumference and v from rim to
-shoulder. The Abarth's is a disc; the NSX's and the RSS4's are strips. A design
+shoulder. The Abarth's is a disc; the NSX's is a strip. A design
 that draws rings is right on the first and draws one big circle across the
 second, which on the car is a few stray arcs where the circle crosses the
 strip. The profile measures which it is, from the wheel centres AC requires
@@ -401,7 +404,7 @@ instead of letting you find out in-game.
 so you choose one at build time:
 
 ```sh
-node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json
+node bin/liverykit.mjs neon-grid-any --profile cars/tatuusfa1.json
 node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
 ```
 
@@ -765,9 +768,9 @@ Proposals land in the editor's proposal banner (`#proposal-banner`) where the hu
 
 See [docs/mcp.md](docs/mcp.md) for full protocol details and design rationale.
 
-[`autolivery/`](autolivery/README.md) is an agent built on these tools. It takes
-a brief, iterates on a draft until the fitment check and a critic both pass, and
-then sends the result here for a person to accept.
+[autolivery](https://github.com/mishan/autolivery) is an agent built on these
+tools. It takes a brief, iterates on a draft until the fitment check and a critic
+both pass, and then sends the result here for a person to accept.
 
 ---
 
@@ -826,6 +829,7 @@ Per panel:
 | `wheel` | on a tire part: `part` (sidewall or tread), `unwrap` (strip or annulus), `radiusM` [rim, shoulder]; for a strip `around` (which coordinate runs round the circumference), `rim` (which panel edge is the rim) and `across` [at rim, at shoulder]; for an annulus `hub` and `radiusUv`. `fit` is the correlation the verdict rests on |
 | `seams` | for each adjacent panel, the affine `matrix` from this sheet to its sheet, fitted in meters from the vertices they share; `here` is where the seam sits in this sheet, `points` and `rmsMm` how much the fit rests on and how far it misses. See [docs/spanning.md](docs/spanning.md) |
 | `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
+| `reflected` | the island is a mirror image in the texture, so lettering needs `rotate: 'auto'` to read |
 | `visible` | fraction of the panel readable from trackside |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |

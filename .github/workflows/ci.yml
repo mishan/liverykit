@@ -63,6 +63,24 @@ jobs:
         env:
           LIVERYKIT_REQUIRE_BROWSER: '1'
 
+  # Most Assetto Corsa players are on Windows and liverykit is developed on
+  # Linux, so paths, line endings and spawning are where it would break unseen.
+  # The quick suites only: they need no browser and no ImageMagick.
+  windows:
+    name: fast tests (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run test:fast
+
   build:
     name: build a livery end to end
     runs-on: ubuntu-latest
@@ -93,19 +111,19 @@ jobs:
       # this needs no game content.
       - name: build the portable livery on two unrelated cars
         run: |
-          node bin/liverykit.mjs neon-grid-any --profile cars/rss_formula_rss_4.json --out dist-rss
+          node bin/liverykit.mjs neon-grid-any --profile cars/tatuusfa1.json --out dist-fa
           node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --out dist-abarth
           python3 - <<'PY'
           import glob, sys
-          rss = {f.split('/')[-1] for f in glob.glob('dist-rss/neon_grid_any/*')}
+          fa = {f.split('/')[-1] for f in glob.glob('dist-fa/neon_grid_any/*')}
           ab  = {f.split('/')[-1] for f in glob.glob('dist-abarth/neon_grid_any/*')}
-          if not rss or not ab:
+          if not fa or not ab:
               sys.exit('one of the cars produced nothing')
           # ui_skin.json and preview.jpg are ours; the textures are the cars'.
           # livery.png is the Content Manager thumbnail we write, not a car texture.
           ours = {'ui_skin.json', 'preview.jpg', 'livery.png'}
-          shared = (rss & ab) - ours
-          print(f'RSS4 {len(rss - ours)} textures, Abarth {len(ab - ours)}, shared names: {sorted(shared)}')
+          shared = (fa & ab) - ours
+          print(f'Tatuus {len(fa - ours)} textures, Abarth {len(ab - ours)}, shared names: {sorted(shared)}')
           if len(shared) > 1:
               sys.exit(f'expected at most ac_crew.dds in common, got {sorted(shared)}')
           PY

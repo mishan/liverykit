@@ -3,6 +3,8 @@ import { stat, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { register } from 'node:module';
+import { existsSync } from 'node:fs';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
@@ -19,13 +21,21 @@ import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+// Liveries, profiles and fits are looked for where liverykit is run, then
+// beside the code, where the bundled examples are. Installed from npm, the code
+// is inside node_modules, and a design kept there would go with the next install.
+const WORK = process.cwd();
+const SEARCH = [...new Set([WORK, ROOT])];
+const lookUp = (dir, file) => SEARCH.map((r) => join(r, dir, file)).find((p) => existsSync(p))
+  ?? join(WORK, dir, file);
+
 // Where --from-kn5 and --explain --all find the profile whose hand-work a
 // regeneration keeps. One function, so the block --all prints and the file
 // the generator writes cannot be merged against different priors. The
 // variable lets a test supply a prior without writing into cars/, where a
 // stray one would pass for a shipped car.
-const priorProfilePath = (id) => join(process.env.LIVERYKIT_PRIOR_DIR
-  ? resolve(process.env.LIVERYKIT_PRIOR_DIR) : join(ROOT, 'cars'), `${id}.json`);
+const priorProfilePath = (id) => process.env.LIVERYKIT_PRIOR_DIR
+  ? join(resolve(process.env.LIVERYKIT_PRIOR_DIR), `${id}.json`) : lookUp('cars', `${id}.json`);
 
 const USAGE = `
 liverykit — generate Assetto Corsa liveries from code
@@ -82,7 +92,7 @@ Options
 Environment
   LIVERYKIT_PRIOR_DIR where --from-kn5 and --explain --all look for the car's
                       existing <id>.json, whose hand-work they keep
-                      (default: cars/ in this checkout)
+                      (default: cars/ here, then the bundled cars/)
 `;
 
 const { values, positionals } = parseArgs({
@@ -347,11 +357,22 @@ if (!liveryArg) { console.log(USAGE); process.exit(1); }
 
 // Extra packs load BEFORE the livery, since the livery names the packs it wants
 // and they have to be registered by then.
+//
+// A pack imports 'liverykit', and usually lives where nothing installs it. Its
+// bare specifier is resolved as if from this package, through its own exports,
+// so it gets the running copy: an installed second copy has a registry of its
+// own that the build never reads.
+if (values.pack.length) {
+  const self = JSON.stringify(pathToFileURL(join(ROOT, 'package.json')).href);
+  register('data:text/javascript,' + encodeURIComponent(
+    `export const resolve = (s, c, next) => s === 'liverykit' || s.startsWith('liverykit/')
+      ? next(s, { ...c, parentURL: ${self} }) : next(s, c);`));
+}
 for (const p of values.pack) {
   await import(pathToFileURL(resolve(p)).href);
 }
 
-const { path: liveryPath, dir: liveryOwnDir } = await resolveLivery(liveryArg, { root: ROOT });
+const { path: liveryPath, dir: liveryOwnDir } = await resolveLivery(liveryArg, { root: SEARCH });
 const livery = await loadLivery(liveryPath);
 // Loaded ONCE per run and handed to whatever draws — the build and the editor
 // both. Every decal is inlined into every document that places it, so reading
@@ -371,7 +392,7 @@ if (!livery.folder) throw new Error(`${liveryArg} has no "folder" — that is th
 
 const profilePath = values.profile
   ? resolve(values.profile)
-  : join(ROOT, 'cars', `${livery.car}.json`);
+  : lookUp('cars', `${livery.car}.json`);
 const profile = await loadProfile(profilePath);
 
 // A fit adjusts where THIS design's artwork sits on THIS car — see
@@ -381,7 +402,7 @@ const profile = await loadProfile(profilePath);
 const liveryName = fitLiveryId(liveryPath);
 const fitPath = values.fit
   ? resolve(values.fit)
-  : join(ROOT, 'fits', `${liveryName}@${profile.id}.json`);
+  : lookUp('fits', `${liveryName}@${profile.id}.json`);
 const fit = await loadFit(fitPath).catch((e) => {
   // An explicitly requested fit that will not load is an error; a missing
   // conventional one is just a car nobody has tuned yet.
@@ -449,7 +470,7 @@ if (values.ui) {
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
   });
   console.log(`  fitting editor at ${url}`);
-  console.log(`  writes ${fitPath.replace(ROOT + '/', '')} when you press Save`);
+  console.log(`  writes ${fitPath} when you press Save`);
   console.log('  ctrl-c to stop');
 } else if (values.uvgrid) {
   const pngDir = join(values.out, `${folder}_png`);

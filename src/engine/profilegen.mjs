@@ -590,6 +590,7 @@ export async function profileFromKn5(path, {
       // panels, where "up" has no meaning on the surface and any answer would be
       // rounding error.
       if (i.textRotation !== null && i.textRotation !== undefined) p.textRotation = i.textRotation;
+      if (i.handed === 1 && i.uAxis && i.vAxis) p.reflected = true;
       if (i.safe) p.safe = i.safe;
       if (i.visibleFraction !== undefined) p.visible = i.visibleFraction;
       if (i.cockpitFraction !== undefined) p.visibleFromCockpit = i.cockpitFraction;

@@ -8,7 +8,7 @@
 //
 // So this scores it against a HELD-OUT LABEL — the cars whose filename is
 // unambiguous, which the classifier never sees — over a fixture of measurements
-// taken from a survey of all 252 cars in the fleet.
+// taken from a survey of the fleet, Kunos cars only.
 //
 // THE FIXTURE CONTAINS NO GAME ASSETS. It is areas, bounding boxes, shader
 // names, filenames and skin-override counts: numbers about cars, of the same
@@ -36,11 +36,10 @@ import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;
 const DEFINITELY_NOT = /int_|interior|cockpit|_nm|_map|occlusion|_occ|glass|rim|tyre|tire|blur|damage|dirt|driver|crew|helmet|suit|glove|plate/i;
 
-// Measured at 192/195 when the fixture was last taken, on 2026-09-13, with the
-// island count as an input. Two of the disagreements are the label being wrong
+// Measured at 141/143 on the fixture's Kunos cars, the only ones it holds, with
+// the island count as an input. Both disagreements are the label being wrong
 // rather than the classifier (the Evora GTE and its carbon variant; see
-// docs/naming.md). The third is tando_buddies_180sx, whose label names a LOD
-// texture with no islands while the pick is the paint nine skins override.
+// docs/naming.md).
 const FLOOR = 0.95;
 
 async function fleet() {
@@ -60,14 +59,12 @@ const PICK_LABELS = {
   interior: { looks: /interior|cockpit/i, not: /_nm|normal|_map|occ|_ao|glass|blur|belt|seat|steer|lod|decal|wind|net|pedal|stich|stitch|detail|gauge|display|screen|dash/i },
 };
 
-// Measured on 2026-09-13 at rims 225/246 and interior 124/168; 228 and 125
-// once a rim was bound with its blur twin and a role left to one term. The
-// floors sit a
-// few points under, so a change that costs the fleet a handful of cars fails
+// Measured at rims 178/180 and interior 113/143 on the fixture's Kunos cars.
+// The floors sit a few points under, so a change that costs the fleet a handful of cars fails
 // here rather than surfacing months later as unpainted wheels.
 test('rims and interior land on a labelled texture on most of the fleet', async () => {
   const cars = await fleet();
-  for (const [term, floor, least] of [['rims', 0.9, 230], ['interior', 0.7, 160]]) {
+  for (const [term, floor, least] of [['rims', 0.9, 170], ['interior', 0.7, 135]]) {
     const { looks, not } = PICK_LABELS[term];
     let n = 0, right = 0;
     for (const car of cars) {
@@ -83,8 +80,7 @@ test('rims and interior land on a labelled texture on most of the fleet', async 
 
   // What the figure cannot see: a binding holding a texture a label calls
   // another term's. The interior held the body skin on three open-wheelers
-  // before a role was left to one term; the one left is civic_body_in.dds,
-  // the Civic's cabin sheet, which only the body label calls a body.
+  // before a role was left to one term.
   const other = {
     body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
     tyres: (f) => /tyre|tire|tread/i.test(f.file) && !/_nm|normal|_map|blur|glow|_ao|rim/i.test(f.file),
@@ -101,7 +97,7 @@ test('rims and interior land on a labelled texture on most of the fleet', async 
       }
     }
   }
-  assert.deepEqual(over, ['btcc_honda_civic: interior bound civic_body_in.dds, labelled body']);
+  assert.deepEqual(over, []);
 });
 
 test('the rims and interior scorers leave out what their evidence rules out', () => {
@@ -186,7 +182,7 @@ function labelled(cars) {
 
 test('the classifier finds the bodywork on the fleet', async () => {
   const cars = labelled(await fleet());
-  assert.ok(cars.length > 150, `only ${cars.length} labelled cars in the fixture`);
+  assert.ok(cars.length > 130, `only ${cars.length} labelled cars in the fixture`);
 
   const wrong = [];
   for (const car of cars) {
@@ -369,9 +365,9 @@ test('tyres and brakes bind every texture their names say they are, across the f
   // names: filenames that plainly say tire or tread, disc or rotor. These terms
   // bind every texture only their shader draws, so a car may have several
   // labelled textures, and the binding is right when it holds all of them.
-  // Measured at 182/184 for tires and 193/202 for brakes; seven of the brake
-  // misses are discs no ksBrakeDisc material draws, which no binding rule that
-  // reads the shader can reach.
+  // Measured at 126/126 for tires and 154/156 for brakes on the fixture's Kunos
+  // cars; the brake misses are discs no ksBrakeDisc material draws, which no
+  // binding rule that reads the shader can reach.
   const cars = await fleet();
   const score = (term, looks, not) => {
     let right = 0, n = 0;
@@ -387,13 +383,11 @@ test('tyres and brakes bind every texture their names say they are, across the f
   };
   const tyres = score('tyres', /tyre|tire|tread/i, /_nm|normal|_map|blur|glow|_ao|rim/i);
   const brakes = score('brakes', /disc|disk|rotor/i, /_nm|normal|_map|blur|glow|cal/i);
-  assert.ok(tyres.n > 150 && tyres.right / tyres.n >= 0.97, `tyres ${tyres.right}/${tyres.n}`);
+  assert.ok(tyres.n > 120 && tyres.right / tyres.n >= 0.97, `tyres ${tyres.right}/${tyres.n}`);
   assert.ok(brakes.n > 150 && brakes.right / brakes.n >= 0.93, `brakes ${brakes.right}/${brakes.n}`);
 
   // What they bind that a label calls something else, which "binds every
-  // labelled texture" cannot see. The Civic's author drew its disc with
-  // ksTyres, and nothing measured tells that disc from a tire, so it is
-  // known and listed here; a new one is a change to look at.
+  // labelled texture" cannot see. A new one is a change to look at.
   const is = {
     body: (f) => LOOKS_LIKE_BODY.test(f.file) && !DEFINITELY_NOT.test(f.file) && f.area > 0.03 && f.straddles,
     tyres: (f) => /tyre|tire|tread/i.test(f.file) && !/_nm|normal|_map|blur|glow|_ao|rim/i.test(f.file),
@@ -409,7 +403,7 @@ test('tyres and brakes bind every texture their names say they are, across the f
       }
     }
   }
-  assert.deepEqual(over, ['jtc_honda_civic_eg_gra: tyres bound disk_d_1.dds, labelled brakes']);
+  assert.deepEqual(over, []);
 });
 
 test('a role one term binds is not a candidate for a later one', () => {

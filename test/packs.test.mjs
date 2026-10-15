@@ -150,3 +150,32 @@ test('describing is optional, and describing a typo is not', () => {
   assert.throws(() => definePack('enum', { a: draw }, { a: { options: { x: { type: 'enum' } } } }),
     /an enum needs "values"/);
 });
+
+// A pack lives wherever its author keeps it, usually nowhere near a
+// node_modules that holds liverykit, and the README tells it to import
+// 'liverykit'. It must get the running copy: a second copy would register into a
+// registry the build never reads.
+test('a --pack outside the checkout can import liverykit, and registers into the running copy', async () => {
+  const { execFile } = await import('node:child_process');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-pack-'));
+  try {
+    await writeFile(join(dir, 'p.mjs'), [
+      "import { definePack, registerPack, listPacks } from 'liverykit';",
+      "registerPack(definePack('outside', { blank: () => ({ base: '', emissive: '' }) }));",
+      "console.log('packs:', listPacks().join(','));",
+    ].join('\n'));
+    const { fileURLToPath } = await import('node:url');
+    const bin = fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url));
+    const { stdout, stderr } = await new Promise((ok) => execFile(process.execPath,
+      [bin, 'no-such-livery', '--pack', join(dir, 'p.mjs')], { cwd: dir },
+      (err, stdout, stderr) => ok({ stdout, stderr })));
+    assert.doesNotMatch(stderr, /Cannot find package 'liverykit'/);
+    const [, names] = stdout.match(/packs: (.*)/) ?? [];
+    assert.deepEqual(names?.split(',').sort(), [...listPacks(), 'outside'].sort());
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

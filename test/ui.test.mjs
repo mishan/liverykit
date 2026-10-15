@@ -1134,7 +1134,7 @@ test('a mirrored placement is measured, not assumed', async () => {
 test('the shipped profiles record which way their panels run', async () => {
   // Without these the mirror silently falls back to copying, which is the bug
   // that started this. A profile that has lost them looks completely fine.
-  for (const car of ['rss_formula_rss_4', 'abarth500']) {
+  for (const car of ['tatuusfa1', 'abarth500']) {
     const p = JSON.parse(await readFile(new URL(`../cars/${car}.json`, import.meta.url), 'utf8'));
     const measured = Object.values(p.panels).flatMap((ps) => Object.values(ps))
       .filter((x) => x.confidence === 'measured');

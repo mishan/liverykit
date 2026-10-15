@@ -98,6 +98,20 @@ const done = new Set(results.map((r) => r.id));
 const todo = plan.filter((p) => !done.has(p.id)).slice(0, limit);
 console.log(`${plan.length} planned, ${done.size} already done, ${todo.length} this pass\n`);
 
+// Who made the car, from ui/ui_car.json: the `author` field, or null when the
+// file has none. Kunos ships its own cars without one, and in a 252-car survey
+// every mod named its author, two carrying a ks_ prefix among them, so this
+// is what tells the game's cars from the community's. Read as text because
+// some of these files are not valid JSON, and decoded first because some are
+// UTF-16.
+async function authorOf(carDir) {
+  const raw = await readFile(join(carDir, 'ui', 'ui_car.json')).catch(() => null);
+  if (!raw) return '(no ui_car.json)';
+  const text = raw[0] === 0xFF && raw[1] === 0xFE ? raw.subarray(2).toString('utf16le') : raw.toString('utf8');
+  const m = text.match(/"author"\s*:\s*(null|"((?:[^"\\]|\\.)*)")/);
+  return m ? (m[2] ?? '') : null;
+}
+
 // --- the sweep --------------------------------------------------------------
 
 for (const { id, klass } of todo) {
@@ -150,6 +164,7 @@ for (const { id, klass } of todo) {
     const panels = Object.fromEntries(Object.entries(prof.panels).map(([r, p]) => [r, Object.keys(p).length]));
     results.push({
       id, klass, ms: Date.now() - t0,
+      author: await authorOf(join(carsDir, id)),
       model: basename(kn5),
       skinCount,
       roles: Object.fromEntries(Object.entries(prof.textures).map(([role, t]) => {

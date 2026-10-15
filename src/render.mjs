@@ -224,6 +224,10 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       );
     }
     const rot = (((asked ?? 0) % 360) + 360) % 360;
+    // A reflected panel is a mirror image in the texture, so turning it upright
+    // still leaves a word reading backwards on the car. 'auto' means the panel's
+    // own orientation, and that includes undoing the mirror.
+    const flip = region.rotate === 'auto' && frac.panel?.reflected === true;
     const quarter = rot === 90 || rot === 270;
     const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     const drawn = quarter
@@ -263,8 +267,12 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     const out = entry.fn(drawn,
       { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering,
         panel: frac.panel ?? null, decals, note });
-    const spin = (svg) => (rot === 0 || !svg ? svg
-      : `<g transform="rotate(${r2(rot)},${r2(cx)},${r2(cy)})">${svg}</g>`);
+    if (frac.panel?.reflected && !flip && (opts.text !== undefined || region.treatment === 'decal')) {
+      note(`its panel is reflected in the texture, so it reads backwards on the car; rotate: 'auto' mirrors it back`);
+    }
+    const turn = [rot !== 0 && `rotate(${r2(rot)},${r2(cx)},${r2(cy)})`, flip && `translate(${r2(2 * cx)},0) scale(-1,1)`]
+      .filter(Boolean).join(' ');
+    const spin = (svg) => (!turn || !svg ? svg : `<g transform="${turn}">${svg}</g>`);
 
     // A spanning region is drawn ONCE, above, in its home panel's frame, and
     // then placed on every panel it reaches under that panel's seam map —

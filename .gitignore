@@ -5,6 +5,7 @@ dist/
 # Private liveries. Anything matching this pattern is yours and stays out of
 # the repo — useful for work in progress, or a design you don't want to publish.
 liveries/*.local.mjs
+fits/*.local@*.json
 
 # Personal working notes.
 HANDOFF.md
