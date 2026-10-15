@@ -8,7 +8,7 @@ import { join, isAbsolute, resolve } from 'node:path';
 import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, magickBin } from './engine/pipeline.mjs';
+import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize } from './engine/pipeline.mjs';
 import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -68,7 +68,6 @@ const CLEAR_SHEET = 4;
  * pixel.
  */
 export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, log = console.log }) {
-  await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   // Intermediate PNGs go in a SIBLING directory, never in the skin folder —
@@ -364,7 +363,6 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
   // to surface only after wiping the previous output and encoding six textures.
   const probeList = makeProbes(probes);
 
-  await magickBin();
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   if (pngDir) await mkdir(pngDir, { recursive: true });

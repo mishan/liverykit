@@ -52,10 +52,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb xauth x11-utils libgl1-mesa-dri
 
-      # The unit tests deliberately avoid ImageMagick — they cover the things
-      # that fail *silently* (DDS header maths, mip chain lengths, ZIP
-      # integrity, UV rect validation) and none of those need the encoder.
-      #
       # LIVERYKIT_REQUIRE_BROWSER turns "no browser, so skip" into a failure.
       # Locally a skip is right; here it would mean the editor tests silently
       # stopped running and nobody found out, because a skip prints a green tick.
@@ -65,9 +61,9 @@ jobs:
 
   # Most Assetto Corsa players are on Windows and liverykit is developed on
   # Linux, so paths, line endings and spawning are where it would break unseen.
-  # The quick suites only: they need no browser and no ImageMagick.
+  # The quick suites, which need no browser, and a build.
   windows:
-    name: fast tests (windows)
+    name: fast tests and a build (windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +77,13 @@ jobs:
 
       - run: npm run test:fast
 
+      # Nothing to install first: the build needs only what npm installed.
+      - name: build the example livery
+        run: node bin/liverykit.mjs neon-grid --out dist
+      - name: check the build produced the skin
+        shell: bash
+        run: test -f dist/neon_grid.zip && ls dist/neon_grid
+
   build:
     name: build a livery end to end
     runs-on: ubuntu-latest
@@ -92,13 +95,12 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # ImageMagick does the DDS encoding, and it is a subprocess, so no unit
-      # test reaches it. Fonts matter too: librsvg silently substitutes a
-      # missing face, and the text comes out a different width with no warning.
-      - name: install ImageMagick and fonts
+      # Fonts matter: librsvg silently substitutes a missing face, and the text
+      # comes out a different width with no warning.
+      - name: install fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends imagemagick fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends fonts-dejavu-core
 
       - run: npm ci
 
@@ -138,7 +140,7 @@ jobs:
           python3 - <<'PY'
           import glob, math, struct, sys
 
-          files = sorted(glob.glob('dist/neon_grid/*.dds'))
+          files = sorted(glob.glob('dist/neon_grid/*.[dD][dD][sS]'))  # the Tatuus writes .DDS
           if not files:
               sys.exit('no DDS files were produced')
 

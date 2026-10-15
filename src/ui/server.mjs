@@ -956,7 +956,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   };
   // The same textures again, decoded, for the renderer that has no GPU to hand
   // a DDS to. Kept for the life of the server: the car's own artwork does not
-  // change while the editor is up, and decoding is an ImageMagick run per
+  // change while the editor is up, and decoding is a full-sheet decode per
   // texture — thirty-odd of them for one shot of a GT3 car, and all of them
   // again for every other angle somebody asks for.
   const stockSheets = new Map();

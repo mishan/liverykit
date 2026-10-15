@@ -2,8 +2,8 @@
 // DDS, decoded to plain RGBA in JavaScript.
 //
 // SHARED BY BOTH RENDERERS, which is the whole reason it is its own file. The
-// browser needs it for the formats the GPU cannot take as blocks; Node needs it
-// for the formats ImageMagick refuses, and those are the same formats. Kept
+// browser needs it for the formats the GPU cannot take as blocks, and Node for
+// every DDS it reads, so the two cannot disagree about a texture. Kept
 // here beside `uses.js`, the other module both sides import, and served to the
 // browser by name — see SERVABLE in server.mjs.
 //

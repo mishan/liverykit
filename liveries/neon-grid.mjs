@@ -54,7 +54,7 @@ export default {
   render: {
     seed: 'neon-grid-01',   // any string; --seed re-rolls all procedural placement
     glowSigma: 14,          // scales with render size automatically
-    font: 'DejaVu Sans',    // must be installed and visible to fontconfig
+    font: 'DejaVu Sans, Verdana, sans-serif',   // the first one installed is used
   },
 
   // `paint` names this car's textures directly, by the role the profile gave

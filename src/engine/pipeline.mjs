@@ -1,38 +1,15 @@
 import sharp from 'sharp';
 import { decodeDds as decodeDdsHere } from '../ui/dds.js';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { access, constants, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
-
-const run = promisify(execFile);
-
-let cachedBin = null;
-export async function magickBin() {
-  if (cachedBin) return cachedBin;
-  for (const bin of ['magick', 'convert']) {
-    try {
-      await run(bin, ['-version']);
-      cachedBin = bin;
-      return bin;
-    } catch { /* try next */ }
-  }
-  throw new Error('Neither `magick` nor `convert` found — install imagemagick.');
-}
+import { encodeDds } from './dds.mjs';
+import { copyFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 /**
  * Mip chain length, driven by the LONGER edge — a 2048x512 texture still needs
  * 12 levels, not the 10 that log2(512)+1 would give.
  *
- * Floored, because a non-power-of-two size otherwise yields a fraction like
- * 12.55, and ImageMagick writes a chain length of 1 when it can't parse the
- * define — no error, exit 0, and a car that shimmers badly at any distance.
- *
- * Floor rather than ceil: 3000px halves to 1px in 12 steps, not 13, and asking
- * for more levels than the image can produce gets rejected the same way. For
- * powers of two the two agree, which is why the bug survived the first fix.
+ * Floored: 3000px halves to 1px in 12 steps, not 13. For powers of two floor
+ * and ceil agree.
  */
 export const mipCount = (w, h = w) => Math.floor(Math.log2(Math.max(w, h))) + 1;
 
@@ -80,12 +57,6 @@ export async function composeLayers({ base, emissive, hasEmissive, glowSigma = 1
 }
 
 /**
- * ImageMagick picks DXT1 when there is no alpha channel and DXT5 when there is,
- * regardless of what you ask for — so alpha presence is forced explicitly.
- * Note: dds:mipmaps=0 means NO mipmaps here (unlike texconv's -m 0), so the
- * full chain length is passed in.
- */
-/**
  * True when a texture should be written as PNG rather than encoded to DDS.
  *
  * AC binds .png textures directly — the wheel faces on the car this was built
@@ -105,48 +76,14 @@ export async function toPNG(srcPath, outPath) {
 /**
  * The reverse of toDDS: the car's own compressed texture, as raw RGBA — for a
  * renderer that has no GPU to hand a DDS to directly, the way the browser
- * does. ImageMagick decodes it same as it encodes it; downsized on the way
- * out, since a 2048 sheet is far more than a few hundred pixels of car can
- * show and decoding it at full size is seconds spent on nothing anybody
- * would see.
+ * does. Decoded by the same module the browser uses, so the two renderers
+ * cannot disagree about a texture, and downsized on the way out, since a 2048
+ * sheet is far more than a few hundred pixels of car can show.
  *
- * ImageMagick FIRST and the shared JS decoder behind it, because ImageMagick
- * is faster and downsizes on the way out — and because it refuses formats that
- * are really in these cars. It reads DXT and turns down 16-bit
- * luminance-plus-alpha, which on the Abarth is INTERNAL_Glass.dds: a
- * 2048-square sheet whose alpha carries the black band at the base of the
- * windscreen. The browser has decoded that since its detail maps turned out
- * not to be DXT either, so for a while the two renderers were drawing
- * different cars. Same decoder now — see src/ui/dds.js.
- *
- * `null` only when NEITHER can make sense of it: one texture no renderer can
+ * `null` when the decoder cannot make sense of it: one texture no renderer can
  * decode is a part drawn gray, not a build that stops.
  */
 export async function decodeDds(buffer, { maxSize = 512 } = {}) {
-  const bin = await magickBin().catch(() => null);
-  const id = randomBytes(8).toString('hex');
-  const src = join(tmpdir(), `liverykit-dds-${id}.dds`);
-  const dst = join(tmpdir(), `liverykit-dds-${id}.png`);
-  try {
-    if (!bin) throw new Error('no ImageMagick');
-    await writeFile(src, buffer);
-    await run(bin, [src, '-resize', `${maxSize}x${maxSize}>`, dst]);
-    const { data, info } = await sharp(await readFile(dst))
-      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    return { data, w: info.width, h: info.height };
-  } catch {
-    return decodeHere(buffer, maxSize);
-  } finally {
-    await unlink(src).catch(() => {});
-    await unlink(dst).catch(() => {});
-  }
-}
-
-/**
- * The same picture, decoded in process and downsized the way the path above
- * would have, so a caller cannot tell which decoder answered.
- */
-async function decodeHere(buffer, maxSize) {
   const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   const img = decodeDdsHere(view);
   if (!img) return null;
@@ -161,28 +98,21 @@ async function decodeHere(buffer, maxSize) {
 }
 
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {
-  const bin = await magickBin();
-  // Not a warning: ImageMagick refuses to build a mip chain for a
-  // non-power-of-two DDS at all, whatever `dds:mipmaps` asks for. The file
-  // encodes fine and ships with a single mip level, which in AC means a car
-  // that shimmers badly at any distance. Since there is no way to produce a
-  // correct file at this size, refuse rather than emit a broken one.
+  // Direct3D 9, which AC is, gives a non-power-of-two texture no mip chain on
+  // hardware that supports one only conditionally, and a mipless texture
+  // shimmers badly at any distance. There is no correct file to write at this
+  // size, so it is refused rather than written broken.
   if (!isPow2(width) || !isPow2(height)) {
     throw new Error(
       `Cannot encode ${ddsPath} at ${width}x${height}: DDS dimensions must be powers of two.\n` +
-      `  ImageMagick will not generate mipmaps for a non-power-of-two DDS, and a\n` +
-      `  mipless texture shimmers badly at distance in-game.\n` +
+      `  A non-power-of-two DDS cannot be relied on to keep its mip chain in a DX9 game,\n` +
+      `  and a mipless texture shimmers badly at distance in-game.\n` +
       `  Use a power-of-two size (512, 1024, 2048, 4096).`
     );
   }
-  const args = [
-    pngPath,
-    '-alpha', alpha ? 'on' : 'off',
-    '-define', `dds:compression=${alpha ? 'dxt5' : 'dxt1'}`,
-    '-define', `dds:mipmaps=${mipCount(width, height)}`,
-    ddsPath,
-  ];
-  await run(bin, args);
+  const { data, info } = await sharp(pngPath, { unlimited: true })
+    .resize(width, height, { fit: 'fill' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  await writeFile(ddsPath, encodeDds(data, info.width, info.height, { alpha }));
 }
 
 /** Showroom preview placeholder and the 128px car-list badge. */

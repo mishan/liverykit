@@ -55,7 +55,7 @@ export default {
   render: {
     seed: 'neon-grid-01',
     glowSigma: 14,
-    font: 'DejaVu Sans',
+    font: 'DejaVu Sans, Verdana, sans-serif',
   },
 
   surfaces: {

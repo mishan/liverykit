@@ -1227,8 +1227,8 @@ export function createViewer(canvas) {
     // The decoder below already reads all of it — `uploadDetail` has used it
     // for exactly this reason since the carbon weave turned out to be plain
     // BGRA — so the two upload paths disagreeing was the whole bug. The
-    // software renderer has never had this problem, since ImageMagick decodes
-    // whatever it is handed; two renderers, one car, different pictures.
+    // software renderer decoded every format it was handed; two renderers, one
+    // car, different pictures.
     if (!format) return uploadDecoded(target, buffer);
 
     gl.bindTexture(gl.TEXTURE_2D, target);
