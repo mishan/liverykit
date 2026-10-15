@@ -3,6 +3,7 @@ import { stat, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
+import { register } from 'node:module';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
@@ -347,6 +348,17 @@ if (!liveryArg) { console.log(USAGE); process.exit(1); }
 
 // Extra packs load BEFORE the livery, since the livery names the packs it wants
 // and they have to be registered by then.
+//
+// A pack imports 'liverykit', and usually lives where nothing installs it. Its
+// bare specifier is resolved as if from this package, through its own exports,
+// so it gets the running copy: an installed second copy has a registry of its
+// own that the build never reads.
+if (values.pack.length) {
+  const self = JSON.stringify(pathToFileURL(join(ROOT, 'package.json')).href);
+  register('data:text/javascript,' + encodeURIComponent(
+    `export const resolve = (s, c, next) => s === 'liverykit' || s.startsWith('liverykit/')
+      ? next(s, { ...c, parentURL: ${self} }) : next(s, c);`));
+}
 for (const p of values.pack) {
   await import(pathToFileURL(resolve(p)).href);
 }
