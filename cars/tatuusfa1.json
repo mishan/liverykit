@@ -5,7 +5,7 @@
         "skinbase"
       ],
       "confidence": 0.94,
-      "source": "auto"
+      "source": "human"
     },
     "brakes": {
       "roles": [
@@ -23,24 +23,27 @@
     },
     "interior": {
       "roles": [
-        "interior_2"
+        "interior"
       ],
-      "confidence": 0.66,
-      "source": "auto"
+      "source": "human"
     },
     "rims": {
       "roles": [
         "rims"
       ],
       "confidence": 0.02,
-      "source": "auto"
+      "source": "human"
     },
     "tyres": {
       "roles": [
         "gomma_base2"
       ],
       "confidence": 1,
-      "source": "auto"
+      "source": "human"
+    },
+    "numberPlate": {
+      "roles": [],
+      "source": "human"
     }
   },
   "id": "tatuusfa1",

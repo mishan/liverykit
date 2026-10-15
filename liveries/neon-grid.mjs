@@ -244,10 +244,5 @@ export default {
     // No tyres: this car's tyre texture is a tiled material, its UVs repeating
     // round the tyre rather than mapping it once, so nothing can be placed on
     // it and the build would only be able to say so.
-    // The pit crew show up during stops and in replays. Free win, usually
-    // forgotten.
-    crew: {
-      background: 'base',
-    },
   },
 };
