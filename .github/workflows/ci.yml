@@ -63,6 +63,24 @@ jobs:
         env:
           LIVERYKIT_REQUIRE_BROWSER: '1'
 
+  # Most Assetto Corsa players are on Windows and liverykit is developed on
+  # Linux, so paths, line endings and spawning are where it would break unseen.
+  # The quick suites only: they need no browser and no ImageMagick.
+  windows:
+    name: fast tests (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run test:fast
+
   build:
     name: build a livery end to end
     runs-on: ubuntu-latest
