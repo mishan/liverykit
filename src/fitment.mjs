@@ -334,7 +334,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     unreadable(placed, profile, t, sayHere, skip);
     tooSmall(placed, t, sayHere, size, design.identity ?? {}, skip);
     unmirrored(placed, profile, t, sayHere);
-    if (seen) unseen(placed, profile, t, seen, sayHere);
+    if (seen) unseen(placed, profile, t, seen, sayHere, skip);
     if (seen) margins(placed, profile, t, seen, sayHere);
   }
 
@@ -2659,7 +2659,7 @@ function unmirrored(placed, profile, t, say) {
  * forty-nine directions the profile was built with, so this and `visible` are
  * the same measurement asked at different scales rather than two opinions.
  */
-function unseen(placed, profile, t, seen, say) {
+function unseen(placed, profile, t, seen, say, skip) {
   // A mismatch between the profile and the model is a FINDING, not a quiet
   // return. Both geometry checks live in this function, so bailing out here
   // skipped them while `checked` still claimed they had run — the exact shape
@@ -2671,6 +2671,13 @@ function unseen(placed, profile, t, seen, say) {
     say({ kind: 'unresolvable', severity: 'fatal', surface: t.from, ids: [],
       why: `${t.role} has no texture in this car's profile, so nothing about where ` +
         `it lands on the model could be checked: ${e.message}` });
+    return;
+  }
+  // The pit crew and the driver's kit are drawn by models of their own, and
+  // the profile says so; this car's model is the wrong place to look.
+  if (texture(profile, t.role).inModel === false) {
+    const why = `${file} is drawn by another model (the driver's or the pit crew's), not this car's`;
+    skip(`unseen for ${t.from}: ${why}`, { check: 'unseen', surface: t.from, role: t.role, ids: [], why });
     return;
   }
   const meshes = meshesUsingTexture(seen.model, file);

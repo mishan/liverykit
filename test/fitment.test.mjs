@@ -2360,3 +2360,28 @@ test('a stripe without the model says which of its checks did not run', async ()
   assert.equal(d.surfaces.body.regions[0].constraints.stripe, 'centre');
 });
 
+
+test('a texture another model draws is not checked against this one, and says so', () => {
+  // The pit crew, the driver's suit and helmet are drawn by their own models,
+  // and the profile knows it: they come from the skins folder, inModel: false.
+  // Looked for in the car's model they were "fatal: the profile and the model
+  // disagree", on every design that painted the crew, the example included.
+  const model = plane({ rows: 4, cols: 4 });
+  const car = { ...profile,
+    textures: { ...profile.textures,
+      crew: { file: 'ac_crew.dds', width: 512, height: 512, inModel: false },
+      lost: { file: 'gone.dds', width: 512, height: 512 } },
+    bind: { ...profile.bind, crew: { roles: ['crew'], source: 'human' } } };
+  const crewOnly = { ...design([]), surfaces: { crew: { background: 'ink', regions: [{ treatment: 'fill', color: 'ink' }] } } };
+  const r = fitment(crewOnly, car, null, { model });
+
+  assert.deepEqual(r.findings.filter((f) => f.severity === 'fatal'), []);
+  assert.ok(r.notChecked.some((s) => /unseen for surfaces\.crew: .*another model/.test(s)), JSON.stringify(r.notChecked));
+  assert.ok(r.unsupported.some((u) => u.check === 'unseen' && u.role === 'crew'));
+
+  // A texture the profile says IS on this car, and is not, is still the
+  // disagreement it always was.
+  const lost = fitment({ ...design([]), paint: { lost: { background: 'ink', regions: [{ treatment: 'fill', color: 'ink' }] } } },
+    car, null, { model });
+  assert.equal(lost.findings.find((f) => f.severity === 'fatal')?.kind, 'unresolvable');
+});
