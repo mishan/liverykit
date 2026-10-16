@@ -1,0 +1,32 @@
+{
+  "livery": "grand-touring-any",
+  "car": "abarth500",
+  "notes": [
+    "The number and the team go on the door, as neon-grid-any's fit puts them.",
+    "The doors are laid sideways in this texture, 270 degrees on the left and",
+    "90 on the right, so number over name on the car is number beside name in",
+    "the sheet. The right door is the left mirrored the way this car flips it.",
+    "The hockey stick and the twin stripes are dropped. Along the car, on a",
+    "door laid sideways, means across the sheet, and the door is already the",
+    "number board and the name; a 500 has no second flank panel to carry them.",
+    "The sponsors go on the rear quarter, behind the door, along it. On this",
+    "car the quarter's island is the whole body side and runs on under the",
+    "door, where find_space's largest clean strip was: measured clean, and",
+    "drawn under the door's own panel. Its rear third is the part anybody sees."
+  ],
+  "regions": {
+    "board-left": { "panel": "left_mid", "at": [0.05, 0.43, 0.72, 0.26] },
+    "board-right": { "panel": "right_mid", "at": [0.23, 0.43, 0.72, 0.26] },
+    "number-left": { "panel": "left_mid", "at": [0.0727, 0.4545, 0.6748, 0.2121] },
+    "number-right": { "panel": "right_mid", "at": [0.2525, 0.4545, 0.6748, 0.2121] },
+    "team-left": { "panel": "left_mid", "at": [0.708, 0.1691, 0.1929, 0.7828] },
+    "team-right": { "panel": "right_mid", "at": [0.0991, 0.1691, 0.1929, 0.7828] },
+    "sponsors-left": { "panel": "left_rear", "at": [0.701, 0.10, 0.189, 0.25] },
+    "sponsors-right": { "panel": "right_rear", "at": [0.11, 0.10, 0.189, 0.25] },
+
+    "stick-left": { "drop": true },
+    "stick-right": { "drop": true },
+    "stripes-left": { "drop": true },
+    "stripes-right": { "drop": true }
+  }
+}

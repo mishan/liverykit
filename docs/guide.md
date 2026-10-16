@@ -286,6 +286,10 @@ node bin/liverykit.mjs neon-grid-any --profile cars/tatuusfa1.json
 node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
 ```
 
+`liveries/grand-touring-any.mjs` is the same idea in another vocabulary: the
+`classic` pack's hockey stick, twin stripes, checkers and sponsor row over a
+`gradient`, a number on a white board, and fits for the Abarth and the NSX.
+
 Anything a given car lacks is **reported and skipped**, never silently dropped.
 
 ### Filling in the binding
@@ -627,7 +631,11 @@ than between two tags, escape it yourself.
 Then list `'my-team'` in the livery's `packs`. `--pack` is repeatable and loads
 before the livery, so the names are registered by the time it needs them.
 [`src/packs/synthwave.mjs`](../src/packs/synthwave.mjs) is the worked example;
-`core` holds the primitives and no house style.
+`core` holds the primitives and no house style, `gradient` among them, and
+`classic` the shapes racing liveries are made of: `chevrons`, `checkers`,
+`racingStripes`, `hockeyStick` and `sponsorRow`. Anything meant to be square on
+the car is drawn square through the panel's anisotropy, and a `sponsorRow` is
+lettering to the fitment check as `text` is.
 
 Two notes on the registry: it's module-global, so two copies of liverykit in one
 dependency tree get two of them; and `liverykit/packs/*` subpath imports hand you

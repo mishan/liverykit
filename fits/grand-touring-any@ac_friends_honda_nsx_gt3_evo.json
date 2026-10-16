@@ -1,0 +1,18 @@
+{
+  "livery": "grand-touring-any",
+  "car": "ac_friends_honda_nsx_gt3_evo",
+  "notes": [
+    "The design lays its right side out for a flank unwrapped like the Tatuus's,",
+    "flipped both ways. This car flips its right flank top to bottom only, so",
+    "these are the left side's rects flipped the way this car is.",
+    "The number goes on the rear quarter, the largest panel of each side, and",
+    "so did the sponsors, onto it. They move to the door, below the name."
+  ],
+  "regions": {
+    "board-right": { "panel": "right_rear", "at": [0.28, 0.23, 0.24, 0.60] },
+    "number-right": { "panel": "right_rear", "at": [0.30, 0.26, 0.20, 0.54] },
+    "team-right": { "panel": "right_mid", "at": [0.54, 0.46, 0.38, 0.22] },
+    "sponsors-left": { "panel": "left_mid", "at": [0.08, 0.60, 0.74, 0.14] },
+    "sponsors-right": { "panel": "right_mid", "at": [0.08, 0.26, 0.74, 0.14] }
+  }
+}
