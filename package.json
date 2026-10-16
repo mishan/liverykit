@@ -55,6 +55,7 @@
     "node": ">=20.9.0"
   },
   "dependencies": {
+    "ac-cardata": "^0.1.0",
     "colord": "^2.10.0",
     "sharp": "^0.35.5"
   },

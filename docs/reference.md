@@ -77,7 +77,10 @@ Per panel:
 
 Top level: `schemaVersion` (a profile from a newer liverykit is refused rather
 than misread), `calibration.model` (the size and SHA-256 of the kn5 it was
-measured from; a different model is reported as stale), `textures` (role → file,
+measured from; a different model is reported as stale), `calibration.eye` (where
+the driver's eyes are, `from` the car's `car.ini` or, where its data could not be
+read, estimated from a steering wheel mesh; driver's-seat visibility is measured
+from here, and the editor's cockpit view stands here), `textures` (role → file,
 size, alpha), `aliases`, `caseCollisions`, and two different "don't paint this"
 lists:
 

@@ -17,6 +17,7 @@
 // ---------------------------------------------------------------------------
 
 import { readFile } from 'node:fs/promises';
+import { readCarFile, driverEyes } from 'ac-cardata';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
@@ -132,11 +133,16 @@ export async function profileFromKn5(path, {
         `${axes.confident ? '' : ', which are inconclusive here'}`);
   }
 
-  // `front` matters: cockpitEye sits BACK from the steering wheel, and on a
-  // model where +Z is rearward that offset has to flip or the eye ends up out
-  // in front of the car.
-  const eye = visibility ? cockpitEye(model, { front: axes.front }) : null;
-  if (eye) log(`  driver's eye estimated at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)}) from ${eye.from}`);
+  // Where the driver sits, as the car's own car.ini states it: the cockpit
+  // camera, in the model's frame. Estimated from the steering wheel only where
+  // the car's data cannot be read, which put the Abarth's eye 7 cm low.
+  //
+  // `front` matters to the estimate: cockpitEye sits BACK from the steering
+  // wheel, and on a model where +Z is rearward that offset has to flip or the
+  // eye ends up out in front of the car.
+  const stated = visibility ? await statedEye(dirname(path), log) : null;
+  const eye = stated ?? (visibility ? cockpitEye(model, { front: axes.front }) : null);
+  if (eye) log(`  driver's eye ${stated ? 'from car.ini' : 'estimated'} at (${eye.x.toFixed(2)}, ${eye.y.toFixed(2)}, ${eye.z.toFixed(2)})${stated ? '' : ` from ${eye.from}`}`);
   // Say so. Silently omitting visibleFromCockpit from every panel looks
   // identical to a car that genuinely has no interior.
   else if (visibility) log('  ! no steering wheel mesh found — visibleFromCockpit will be omitted.\n' +
@@ -735,6 +741,9 @@ export async function profileFromKn5(path, {
       // second for paint, and reading the wrong one fails silently. See
       // `checkUvSet` in src/profile.mjs.
       uvSet: 0,
+      // For the editor's cockpit camera, which has to stand where the
+      // driver's-seat visibility was measured from.
+      ...(eye ? { eye: { at: [eye.x, eye.y, eye.z].map((v) => Math.round(v * 1000) / 1000), from: stated ? 'car.ini' : eye.from } } : {}),
       axes: {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',
@@ -849,4 +858,25 @@ async function fingerprint(path) {
 }
 
 const basename = (p) => p.split(/[\\/]/).pop();
+/**
+ * The driver's eye from `car.ini` beside the model, as `{ x, y, z }`, or null
+ * where the car's data has none: a model on its own, an archive this cannot
+ * open, or a car.ini without the line. Each says why, since the estimate that
+ * replaces it is a guess.
+ */
+async function statedEye(carDir, log) {
+  const ini = await readCarFile(carDir, 'car.ini').catch((e) => {
+    log(`  ! the car's data could not be read (${e.message}), so the driver's eye is estimated`);
+    return null;
+  });
+  if (!ini) return null;
+  try {
+    const [x, y, z] = driverEyes(ini.toString('latin1'));
+    return { x, y, z };
+  } catch (e) {
+    log(`  ! ${e.message}, so the driver's eye is estimated`);
+    return null;
+  }
+}
+
 const basenameNoExt = (p) => basename(p).replace(/\.kn5$/i, '');

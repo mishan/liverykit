@@ -129,10 +129,12 @@ JSON. Revert your fix, watch the new test fail, then put it back.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, two runtime dependencies (`sharp`
-and `colord`). Please keep it small — but small is the goal, not zero: `colord`
-replaced a regex that called `red` an unresolved palette name and told `#00F0FF`
-from `gulf-bleu` by its first character, which is not a wheel worth rebuilding.
+No build step, no transpiler, ESM throughout, three runtime dependencies
+(`sharp`, `colord` and `ac-cardata`). Please keep it small — but small is the
+goal, not zero: `colord` replaced a regex that called `red` an unresolved palette
+name and told `#00F0FF` from `gulf-bleu` by its first character, which is not a
+wheel worth rebuilding, and `ac-cardata` reads `data.acd`, an archive format
+shared with other tools rather than reimplemented here.
 
 The browser gets `colord` through an **import map** in `src/ui/index.html`, and
 the server hands over the package's own `.mjs` from `node_modules`. So a bare

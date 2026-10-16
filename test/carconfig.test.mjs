@@ -517,3 +517,26 @@ test('a texture the model names twice is written as most of the car\'s skins spe
   assert.deepEqual(bodyFiles(bare), ['body.dds']);
   assert.match(lines.join('\n'), /body\.dds is written: the model's first; pass --skins/);
 });
+
+test('the driver sits where the car says, and the cockpit camera stands there too', async () => {
+  // The eye was estimated from the steering wheel, 7 cm low on the Abarth,
+  // and a car without one had no driver's-seat view at all; the fixture is
+  // such a car. car.ini states it.
+  const { wholeModelGeometry } = await import('../src/engine/geometry.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-eye-'));
+  const car = join(dir, 'fixture_car');
+  await mkdir(join(car, 'data'), { recursive: true });
+  await writeFile(join(car, 'fixture.kn5'), carKn5());
+  const bare = await profileFromKn5(join(car, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  assert.equal(bare.calibration.eye, undefined, 'no wheel to estimate from, and no data');
+
+  await writeFile(join(car, 'data', 'car.ini'), '[GRAPHICS]\nDRIVEREYES=0.3, 0.9, 0.1\n');
+  const p = await profileFromKn5(join(car, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  assert.deepEqual(p.calibration.eye, { at: [0.3, 0.9, 0.1], from: 'car.ini' });
+  const panels = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+  assert.ok(panels.every((q) => typeof q.visibleFromCockpit === 'number'), 'measured from the seat it names');
+
+  const model = parseKn5Buffer(carKn5());
+  const g = wholeModelGeometry(model, [{ role: 'body', file: 'body.dds' }], { profile: p });
+  assert.deepEqual([g.cockpit.x, g.cockpit.y, g.cockpit.z], [0.3, 0.9, 0.1]);
+});
