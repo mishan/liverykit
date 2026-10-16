@@ -40,11 +40,11 @@ export { mipCount, toDDS, rasterize, composeLayers } from './engine/pipeline.mjs
 // Motif geometry, for writing your own treatments.
 export * as motifs from './motifs.mjs';
 
-// Built-in packs, both registered on import of this module.
+// Built-in packs, all registered on import of this module.
 //
 // "Opt-in" happens at the livery level, not the import level: a livery lists the
 // packs it wants and only those treatments resolve, so `packs: ['core']` never
-// sees a synthwave treatment even though the pack is loaded. Registering both
+// sees a synthwave treatment even though the pack is loaded. Registering them all
 // here keeps the CLI from having to guess what to import, at the cost of a few
 // KB of unused code.
 //
@@ -54,8 +54,10 @@ export * as motifs from './motifs.mjs';
 import { registerPack } from './registry.mjs';
 import corePack from './packs/core.mjs';
 import synthwavePack from './packs/synthwave.mjs';
+import classicPack from './packs/classic.mjs';
 
 registerPack(corePack);
 registerPack(synthwavePack);
+registerPack(classicPack);
 
-export { corePack, synthwavePack };
+export { corePack, synthwavePack, classicPack };

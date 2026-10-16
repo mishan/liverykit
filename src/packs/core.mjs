@@ -34,6 +34,30 @@ const treatments = {
   fill: (r, c) => ({ base: rect(r, c.color(c.opts.color ?? 'pink')), emissive: '' }),
 
   /**
+   * A fill that changes color across the region, at `angle` degrees: 0 runs
+   * left to right, 90 top to bottom. `via` adds a middle color, and `fade`
+   * takes the far end to nothing rather than to `to`, which is how a color
+   * band dissolves into the paint under it without halftone's dots.
+   *
+   * Across the BOX, not the car: the angle is in the region's own frame, so
+   * with `rotate: 'auto'` 0 runs along the car on any panel. The id comes from
+   * the seeded rng, as `decal`'s clip does, so it is unique in the document
+   * and the same on every build.
+   */
+  gradient: (r, c) => {
+    const a = ((Number(c.opts.angle) || 0) * Math.PI) / 180;
+    const dx = Math.cos(a) / 2, dy = Math.sin(a) / 2;
+    const id = `lk-grad-${Math.floor(c.rng() * 1e9).toString(36)}`;
+    const stop = (at, color, extra = '') => `<stop offset="${at}" stop-color="${c.color(color)}"${extra}/>`;
+    const g = `<linearGradient id="${id}" x1="${r2(0.5 - dx)}" y1="${r2(0.5 - dy)}" x2="${r2(0.5 + dx)}" y2="${r2(0.5 + dy)}">` +
+      stop(0, c.opts.from ?? 'black') +
+      (c.opts.via !== undefined ? stop(0.5, c.opts.via) : '') +
+      stop(1, c.opts.to ?? c.opts.from ?? 'white', c.opts.fade ? ' stop-opacity="0"' : '') +
+      `</linearGradient>` + rect(r, `url(#${id})`);
+    return { base: g, emissive: '' };
+  },
+
+  /**
    * A stripe is just a fill you meant to be thin. Separate treatment because
    * `glow: true` is overwhelmingly what you want on one and not the other.
    */
@@ -287,6 +311,18 @@ export default definePack('core', treatments, {
     options: {
       color: { type: 'color', hint: 'cyan' },
       glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  gradient: {
+    label: 'Gradient',
+    summary: 'A fill that changes from one color to another across the region, or fades to nothing.',
+    options: {
+      from: { type: 'color', hint: 'black', label: 'From' },
+      to: { type: 'color', hint: 'white, or from with fade', label: 'To' },
+      via: { type: 'color', hint: 'none', label: 'Through' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0 — left to right; 90 is top to bottom' },
+      fade: { type: 'boolean', hint: 'false — the far end is transparent instead of "to"', label: 'Fade out' },
     },
   },
 
