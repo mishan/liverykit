@@ -365,7 +365,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     name: profile.name || profile.id,
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !NEEDS_MODEL.includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'curved', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
+    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'off-panel', 'curved', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
       ...(wantsStripe ? ['stripe-offset', 'stripe-gap'] : [])]), ...unmeasured],
     // The entries of notChecked that nothing in a design can make run, each
     // with the entry it explains. Still in notChecked, so nothing that reads
@@ -458,7 +458,7 @@ export function fitmentVerdict(r) {
  * records about it.
  */
 const islandCache = new WeakMap();
-function islandOf(model, meshes, pan) {
+export function islandOf(model, meshes, pan) {
   const mesh = pan?.source?.mesh && meshes.find((m) => m.name === pan.source.mesh);
   if (!mesh) return null;
   let byMesh = islandCache.get(model);
@@ -486,10 +486,10 @@ function preparedFor(model, profile) {
 }
 
 const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'ungrouped', 'unmirrored',
-  'unseen', 'off-mesh', 'curved', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
+  'unseen', 'off-mesh', 'off-panel', 'curved', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
 
 /** The checks that stand on the car's geometry, and do not run without its model. */
-const NEEDS_MODEL = ['unseen', 'off-mesh', 'curved', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
+const NEEDS_MODEL = ['unseen', 'off-mesh', 'off-panel', 'curved', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -637,7 +637,12 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }, identity = {}) {
   for (let a = 0; a < placed.length; a++) {
     for (let b = a + 1; b < placed.length; b++) {
       const A = placed[a], B = placed[b];
-      if (A.region.panel !== B.region.panel) continue;
+      // Boxes are in the sheet, and two on different panels can share texels:
+      // a panel's box takes in whatever the unwrap packed inside it. Between
+      // patterns that is layering; between two pieces of lettering, one of
+      // them is gone wherever they meet.
+      const across = A.region.panel !== B.region.panel;
+      if (across && !(lettering(A.region) && lettering(B.region))) continue;
       const over = intersect(A.frac, B.frac);
       if (!over) continue;
       const smaller = Math.min(area(A.frac), area(B.frac));
@@ -721,7 +726,8 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }, identity = {}) {
           ? `${name(t, crossed === A ? B.id : A.id)} covers ${(share * 100).toFixed(0)}% of ` +
             `${name(t, crossed.id)}, which asked to be kept clear`
           : `${name(t, B.id)} covers ${(share * 100).toFixed(0)}% of ${name(t, A.id)}` +
-            (bothText ? ', and both are text' : ''),
+            (bothText ? ', and both are text' : '') +
+            (across ? ` — on ${A.region.panel} and ${B.region.panel}, whose boxes share those texels` : ''),
       });
     }
   }
@@ -2818,11 +2824,26 @@ function unseen(placed, profile, t, seen, say) {
       });
       continue;
     }
+    // On the car is not the same as on its panel. A box is a box, and the
+    // unwrap packs other islands into a panel's: the Abarth's door sits
+    // inside its rear quarter's, so lettering placed on the quarter there
+    // was on the car, seen, flat, and painted on the door over its number.
+    const own = island ? sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }], island)[0].points : onCar.points;
+    if (carries && island && own.length / onCar.points.length < MUST_LAND_ON) {
+      say({
+        kind: 'off-panel', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
+        onPanel: round(own.length / onCar.points.length),
+        why: `${name(t, p.id)} is placed on ${p.region.panel}, and ${pct(1 - own.length / onCar.points.length)}% of ` +
+          'what it paints is texture another panel wears, which its box takes in: it is drawn there, on that ' +
+          'panel, and not where it was put. find_space measures the panel itself',
+      });
+      continue;
+    }
     // Lettering is read from one place, so it has to be on one face of the
     // car. Asked only of a placement on a panel: across a whole sheet the
     // normals are those of every island on it, and say nothing about a surface.
     if (carries && p.frac.panel) {
-      const bend = bendDeg(island ? sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }], island)[0].points : onCar.points);
+      const bend = bendDeg(own);
       if (bend > CURVED_DEG) {
         say({
           kind: 'curved', severity: bend > WRAPPED_DEG ? 'high' : 'low',

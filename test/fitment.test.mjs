@@ -224,7 +224,7 @@ test('a check that did not run is named, not counted as passed', () => {
     { id: 'a', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: 'X' },
   ]), profile);
 
-  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh', 'curved', 'unpainted-twin'],
+  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh', 'off-panel', 'curved', 'unpainted-twin'],
     'it says which checks it could not make');
   assert.ok(!r.checked.includes('unseen'));
   assert.ok(r.checked.includes('overlap'), 'and which it did');
@@ -745,6 +745,54 @@ test('lettering that wraps round the car is reported, and find_space keeps to th
       profile, null, { model: half });
     assert.deepEqual(held.findings.filter((f) => f.kind === 'curved'), [], `a spot find_space offers is flat enough: ${JSON.stringify(c)}`);
   }
+});
+
+/**
+ * A sheet with a hole in its middle, and a door elsewhere on the car wearing
+ * exactly the texels of that hole: the side's box takes in the door, as the
+ * Abarth's rear quarter's does.
+ */
+function sideAndDoor() {
+  const side = plane({ rows: 9, cols: 9 });
+  const s = { ...side.meshes[0], name: 'side' };
+  let q = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++, q++) {
+      // An index past the vertex count is a triangle `triangles` leaves out.
+      if (r >= 2 && r < 6 && c >= 2 && c < 6) for (let k = 0; k < 6; k++) side.buf.writeUInt16LE(65535, s.indexStart + (q * 6 + k) * 2);
+    }
+  }
+  const door = plane({ rows: 5, cols: 5, uv: [0.1, 0.1, 0.2, 0.2] });
+  const world = [...door.meshes[0].world];
+  world[12] = 5;
+  const d = { ...door.meshes[0], name: 'door', world,
+    vertexStart: side.buf.length, indexStart: side.buf.length + door.meshes[0].indexStart };
+  const car = { ...profile, panels: { body: {
+    L: { ...profile.panels.body.L, source: { mesh: 'side' } },
+    D: { rect: [0.1, 0.1, 0.2, 0.2], anisotropy: 1, metresPerUv: [8, 8], visible: 1, tags: ['visible'], source: { mesh: 'door' } },
+  } } };
+  return { model: { ...side, buf: Buffer.concat([side.buf, door.buf]), meshes: [s, d] }, car };
+}
+
+test('a panel is its island, not its box: what another panel wears inside it is not space on it', async () => {
+  // On the Abarth the door sits inside the rear quarter's box. find_space
+  // swept the box, offered the door's clean texels as the roomiest strip on
+  // the quarter, and sponsors placed there were drawn on the door over its
+  // number, with nothing reported: on the car, seen, flat, and on no panel
+  // any check asked about.
+  const { model, car } = sideAndDoor();
+  const kinds = (regions) => fitment(design(regions), car, null, { model }).findings
+    .filter((f) => f.severity === 'high').map((f) => f.kind).sort();
+
+  const inHole = { id: 'name', treatment: 'text', panel: 'L', at: [0.3, 0.3, 0.4, 0.4], text: '{team}' };
+  assert.deepEqual(kinds([inHole]), ['off-panel']);
+  assert.deepEqual(kinds([{ id: 'number', treatment: 'text', panel: 'D', at: [0, 0, 1, 1], text: '{number}' },
+    { ...inHole, id: 'later' }]).filter((k) => k === 'overlap'), ['overlap'], 'and it is drawn over what the door carries');
+
+  const { findSpace } = await import('../src/space.mjs');
+  const found = findSpace({ profile: car, model, prepared: occupancyFor(model), role: 'body', panel: 'L',
+    widthMm: 600, cellMm: 50 });
+  assert.deepEqual(found.candidates, [], `the side's own bodywork is a 400 mm ring: ${JSON.stringify(found.candidates)}`);
 });
 
 /** The same sheet with a second mesh floating `gap` meters in front of it. */
