@@ -372,6 +372,11 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // did not, so on such a car the cockpit view sat out in front of the
     // windscreen looking back, at a point no panel's `readable from the
     // driver's seat` tag was ever measured from.
-    cockpit: cockpitEye(model, { front: (axesFromWheels(model) ?? axisHints(model))?.front ?? 1 }),
+    //
+    // The profile's own eye first, which is the car's car.ini where it could be
+    // read and where the profile's driver's-seat visibility was measured from.
+    cockpit: profile?.calibration?.eye?.at
+      ? { x: profile.calibration.eye.at[0], y: profile.calibration.eye.at[1], z: profile.calibration.eye.at[2], from: profile.calibration.eye.from }
+      : cockpitEye(model, { front: (axesFromWheels(model) ?? axisHints(model))?.front ?? 1 }),
   };
 }

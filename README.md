@@ -78,9 +78,10 @@ npm install
 ```
 
 Node 20.9 or newer — that is what sharp's prebuilt binaries require, so it is
-the real floor rather than a preference. Two npm dependencies — `sharp`, which
-ships prebuilt binaries so there's no build toolchain, and `colord`, which is 8 KB
-and has none of its own. Nothing else: DDS textures are encoded in JavaScript.
+the real floor rather than a preference. Three npm dependencies — `sharp`, which
+ships prebuilt binaries so there's no build toolchain, `colord`, which is 8 KB
+and has none of its own, and `ac-cardata`, which reads a car's own `car.ini` for
+where its driver sits. Nothing else: DDS textures are encoded in JavaScript.
 
 Text is drawn in the first installed font of the livery's `render.font`. The
 examples ask for `DejaVu Sans, Verdana, sans-serif`: DejaVu on Linux, Verdana,
