@@ -869,7 +869,7 @@ test('every tool reads what its schema declares, and declares what it reads', as
   };
 
   const SAMPLE = {
-    role: 'body', panel: 'left_mid', tag: 'left', view: 'left', seed: 's', why: 'a schema test',
+    role: 'body', panel: 'left_mid', tag: 'left', view: 'left', seed: 's', why: 'a schema test', id: 'r', x: 10, y: 10,
     width: 300, height: 200, widthMm: 200, heightMm: 200, marginMm: 0, count: 1, aspect: 1, cellMm: 100,
     minVisibility: 0, minArea: 0, maxAnisotropy: 10,
     proposal: { design: [], fit: [] }, design: [{ op: 'set-palette', name: 'ink', value: '#101014' }], fit: [],
@@ -1692,3 +1692,50 @@ test('the framed camera is actually centred, and fills the frame', async () => {
       `${name}: overflows the frame`);
   }
 });
+
+test('place_at puts a region where the picture shows the pixel it names', async (t) => {
+  // An agent cannot click the editor; it can look at render_car's picture.
+  // The pick has to agree with that picture to the pixel, or a region asked
+  // for at the door lands on the wing: so a red box is painted, found in the
+  // picture by its color, pointed at, and has to come back where it was.
+  const sharp = (await import('sharp')).default;
+  const dir = await mkdtemp(join(tmpdir(), 'lk-mcp-place-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const role = profile.bind.body.roles[0];
+  const left = Object.entries(profile.panels[role]).find(([, q]) => q.tags?.includes('left'))[0];
+  const { server, url } = await startUi({
+    livery: { name: 'Mark', folder: 'mark', car: 'fixture_car', packs: ['core'], identity: {}, palette: {},
+      surfaces: { body: { background: '#101014', regions: [
+        { id: 'mark', treatment: 'fill', panel: left, at: [0.4, 0.4, 0.2, 0.2], color: '#ff0000' }] } } },
+    profile, modelPath, fitPath: join(dir, 'mark@fixture_car.json'),
+    liveryId: 'mark', liveryPath: join(dir, 'mark.json'), port: 0, log: () => {},
+  });
+  t.after(() => { server.closeAllConnections?.(); server.close(); });
+  const client = createEditorClient(url);
+
+  const { png } = await client.shoot('left', 760, 460);
+  const { data, info } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+  let sx = 0, sy = 0, n = 0;
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const o = (y * info.width + x) * info.channels;
+      if (data[o] > 150 && data[o + 1] < 60 && data[o + 2] < 60) { sx += x; sy += y; n++; }
+    }
+  }
+  assert.ok(n > 50, 'the red box is in the picture');
+
+  const to = await client.place({ id: 'mark', view: 'left', x: sx / n, y: sy / n });
+  assert.equal(to.panel, left);
+  to.at.forEach((v, i) => assert.ok(Math.abs(v - [0.4, 0.4, 0.2, 0.2][i]) < 0.02, `back where it was: ${to.at}`));
+
+  const tools = createToolHandler(client);
+  const r = await tools.callTool('place_at', { id: 'mark', view: 'left', x: sx / n, y: sy / n, why: 'a test' });
+  assert.equal(JSON.parse(r.content[0].text).status, 'proposed', r.content[0].text);
+  const miss = await tools.callTool('place_at', { id: 'mark', view: 'left', x: 2, y: 2, why: 'a test' });
+  assert.ok(miss.isError);
+  assert.match(miss.content[0].text, /nothing of the car is at 2,2/);
+});
+

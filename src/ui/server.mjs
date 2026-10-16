@@ -25,6 +25,7 @@
 //   POST /api/portability  what the working design would find on one of them
 //   POST /api/fitment      what is wrong with the working design ON THIS car
 //   GET  /api/shot         a PNG of the car, for a caller with no browser
+//   POST /api/place        where a pixel of that picture would put a region
 //   POST /api/render       a working fit -> SVG + where each region landed
 //   GET  /api/model        the geometry a texture is painted on, packed binary
 //   GET  /api/stock        the car's own texture for a surface the design skips
@@ -50,9 +51,9 @@ import { serialisableDesign, validateDesign } from '../livery.mjs';
 import { portability } from '../portability.mjs';
 import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
-import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque } from '../engine/shot.mjs';
+import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque, pickAt } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
-import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
+import { applyDesignOp, applyFitOp, applyProposalDiff, placedAt } from './ops.js';
 import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
 import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
@@ -1314,6 +1315,49 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       //
       // POST takes a PROPOSAL and draws the working design with it applied,
       // adopting nothing — see /api/proposal/evaluate for why that exists.
+      // Where a region would go if this pixel of /api/shot's picture were
+      // shift-clicked in the editor: the answer `place_at` proposes. A query
+      // like /api/fitment, so nothing is assigned; the fit changes only when
+      // a person accepts the proposal.
+      if (req.method === 'POST' && url.pathname === '/api/place') {
+        const sent = await body();
+        const m = await getModel();
+        if (!m) return json(404, { error: modelError ?? 'no model, so there is no picture to point at' });
+        const view = sent.view ?? 'left';
+        if (!Object.hasOwn(VIEWS, view)) {
+          return json(400, { error: `no view called ${JSON.stringify(view)}. Known views: ${Object.keys(VIEWS).join(', ')}` });
+        }
+        // Clamped as /api/shot clamps its size, so a pixel names the same
+        // point of the same picture.
+        const clamp = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Number(v ?? d) || d));
+        const width = clamp(sent.width, 200, 1400, 760), height = clamp(sent.height, 150, 900, 460);
+        const design = workingDesign ?? livery, useFit = workingFit ?? fit;
+        const { g } = carFor(m, design);
+        const { sheets } = await carSheets(g.groups, stockTexture, { cache: stockSheets });
+        const hit = pickAt(g, g.groups, sheets, { view, width, height, x: Number(sent.x), y: Number(sent.y) });
+        if (!hit) return json(422, { error: `nothing of the car is at ${sent.x},${sent.y} in the ${view} view at ${width}x${height}` });
+
+        const target = resolveTargets(profile, design).targets.find((t) => t.role === hit.role);
+        const sel = target && renderSurface({ livery: design, profile, fit: useFit, role: hit.role, decals })
+          .placed.find((q) => q.id === sent.id);
+        if (!sel) {
+          return json(422, { error: `${sent.x},${sent.y} is on ${hit.file ?? 'a part'}` +
+            (hit.role ? ` (${hit.role})` : ', which this design does not paint') +
+            `, and ${JSON.stringify(sent.id)} is not a region placed on it` });
+        }
+        const panels = Object.entries(profile.panels?.[hit.role] ?? {}).map(([name, q]) => ({ name, ...q }));
+        const to = placedAt(panels, sel, { u: hit.u, v: hit.v });
+        if (!to) return json(422, { error: `${sent.x},${sent.y} is on ${hit.role}, but on none of its panels` });
+        const host = panels.find((q) => q.name === to.panel);
+        // Kept on the panel, as the editor keeps a drag: `at` is panel-relative
+        // and the renderer refuses one outside 0..1.
+        const [bx, by, bw, bh] = host.rect;
+        const [x, y, w, h] = to.abs;
+        const cw = Math.min(w, bw), ch = Math.min(h, bh);
+        const abs = [Math.min(Math.max(bx, x), bx + bw - cw), Math.min(Math.max(by, y), by + bh - ch), cw, ch];
+        return json(200, { id: sent.id, role: hit.role, panel: to.panel, at: toPanelRelative(host.rect, abs), uv: [hit.u, hit.v] });
+      }
+
       if ((req.method === 'GET' || req.method === 'POST') && url.pathname === '/api/shot') {
         let design = workingDesign ?? livery;
         let useFit = workingFit ?? fit;

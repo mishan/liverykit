@@ -145,6 +145,7 @@ the editor's inbox until a person accepts it.
 
 - **`propose_design`**: Propose design changes (palette, regions, options, identity, constraints) to the editor's inbox, optionally with the fit operations that place what it adds, so they are reviewed as one change.
 - **`propose_fit`**: Propose fit placement overrides or copies to the editor's inbox.
+- **`place_at`**: Point at a pixel of a `render_car` picture and propose moving a region there, as shift-clicking the car does in the editor: on the panel under it, centred, at the same size on the car in millimetres.
 
 Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect, drag, and **Accept** or **Discard** them using the undo stack. The MCP server never writes directly to disk.
 

@@ -787,7 +787,8 @@ test('shift-clicking the car puts the selected region there, at the size it had 
   assert.ok(Math.abs(now[0] - was[1]) < 1e-4 && Math.abs(now[1] - was[0]) < 1e-4,
     `${was.map((m) => (m * 1000).toFixed(1))} mm became ${now.map((m) => (m * 1000).toFixed(1))} on a door laid a quarter turn`);
 
-  assert.equal(mod.placedAt(panels, { panel: from.name, abs: [0, 0, 0.1, 0.1] }, { u: -1, v: -1 }), null,
+  const { placedAt } = await import('../src/ui/ops.js');
+  assert.equal(placedAt(panels, { panel: from.name, abs: [0, 0, 0.1, 0.1] }, { u: -1, v: -1 }), null,
     'off every panel there is nowhere to put it');
 });
 
