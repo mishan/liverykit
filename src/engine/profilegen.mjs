@@ -609,6 +609,7 @@ export async function profileFromKn5(path, {
       if (i.handed === 1 && i.uAxis && i.vAxis) p.reflected = true;
       if (i.safe) p.safe = i.safe;
       if (i.visibleFraction !== undefined) p.visible = i.visibleFraction;
+      if (typeof i.bend === 'number') p.bend = i.bend;
       if (i.cockpitFraction !== undefined) p.visibleFromCockpit = i.cockpitFraction;
       if (i.hidden) p.hidden = true;
       if (i.tiled) { p.tiled = true; p.uvBounds = i.uvBounds; }

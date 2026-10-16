@@ -9,9 +9,9 @@ differently.
 
 Adding identity text made the cost concrete. A car number has to go *somewhere*,
 and the tool can pick the largest visible panel on the correct side — that much
-is measured. What it cannot know is **which part of that panel is flat**, which
-way is up on it, or whether the middle of the rectangle lands on a door or wraps
-over a wheel arch. So the number sits centred, clear of the edges, and hopes.
+is measured, and so is which parts of that panel are flat. What it cannot know
+is **which of them the design wants**, or which way is up on it. So the number
+sits centred, clear of the edges, and the check says when that was wrong.
 
 That is the right default and it will never be better than a guess. The fix is
 not a cleverer heuristic; it is a person looking at the car for thirty seconds.

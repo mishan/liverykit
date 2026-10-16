@@ -26,8 +26,8 @@
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from './engine/kn5.mjs';
-import { rectVisibility, gridVisibility } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm } from './fitment.mjs';
+import { rectVisibility, gridVisibility, bendDeg } from './engine/visibility.mjs';
+import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -177,9 +177,25 @@ export function cleanGrid({ profile, model, prepared, role, panel: asked, cellMm
   // One walk over the car's triangles for the whole panel, not one per cell:
   // the walk costs the same however small the rectangle, and 609 of them
   // over the NSX door took half a minute.
-  const clean = gridVisibility(model, prepared, meshes, pan.rect, cols, rows, { per: across })
-    .map((row) => row.map((v) => v.samples > 0 && v.samples / v.of >= CLEAN && v.fraction >= CLEAN));
-  return { role, name, rect: pan.rect, boxMm, cols, rows, clean, meshes };
+  const cells = gridVisibility(model, prepared, meshes, pan.rect, cols, rows, { per: across });
+  const clean = cells.map((row) => row.map((v) => v.samples > 0 && v.samples / v.of >= CLEAN && v.fraction >= CLEAN));
+  const normals = cells.map((row) => row.map((v) => v.normal));
+  return { role, name, rect: pan.rect, boxMm, cols, rows, clean, normals, meshes };
+}
+
+/**
+ * How far the surface turns under the cells from (c0, r0) to (c1, r1),
+ * exclusive, by their mean normals: the figure the fitment check holds
+ * lettering to (`curved`), so a spot handed out here is not reported there.
+ * Every cell of a gently rolling panel can be flat while a name across ten of
+ * them goes round a corner.
+ */
+function cellBend(g, c0, r0, c1, r1) {
+  const ns = [];
+  for (let r = Math.max(0, r0); r < Math.min(g.rows, r1); r++) {
+    for (let c = Math.max(0, c0); c < Math.min(g.cols, c1); c++) if (g.normals?.[r]?.[c]) ns.push(g.normals[r][c]);
+  }
+  return ns.length ? bendDeg(ns) : 0;
 }
 
 export function findSpace({
@@ -219,13 +235,15 @@ export function findSpace({
           for (let c = c0; c < c0 + wc; c++) if (!clean[r][c]) { whole = false; break; }
         }
         if (!whole) continue;
+        const bend = cellBend(g, c0, r0, c0 + wc, r0 + hc);
+        if (bend > CURVED_DEG) continue;
         // The shape centred in the run of clean cells it fits.
         const x0 = c0 * cw + (wc * cw - widthMm) / 2, y0 = r0 * ch + (hc * ch - heightMm) / 2;
         const shape = [x0, y0, x0 + widthMm, y0 + heightMm];
         let clearance = Math.min(shape[0], shape[1], boxMm[0] - shape[2], boxMm[1] - shape[3]);
         for (const u of unclean) clearance = Math.min(clearance, gap(shape, u));
         if (clearance + 1e-6 < marginMm) continue;
-        found.push({ shape, clearance });
+        found.push({ shape, clearance, bend });
       }
     }
   }
@@ -239,7 +257,7 @@ export function findSpace({
   found.sort((a, b) => b.clearance - a.clearance);
   const tried = [];
   const candidates = [];
-  for (const { shape, clearance } of found) {
+  for (const { shape, clearance, bend } of found) {
     if (candidates.length >= count || tried.length >= tries) break;
     if (tried.some((s) => overlapShare(s, shape) > 0.5)) continue;
     tried.push(shape);
@@ -247,7 +265,7 @@ export function findSpace({
     // The cells' answer alone, unmeasured and said to be: for a caller that
     // ranks many sizes before measuring the few it will use (groupLayout).
     if (!fine) {
-      candidates.push({ at: at.map(r3), marginMm: Math.floor(clearance), onCar: null, visible: null, coarse: true });
+      candidates.push({ at: at.map(r3), marginMm: Math.floor(clearance), onCar: null, visible: null, bendDeg: bend, coarse: true });
       continue;
     }
     const v = rectVisibility(model, prepared, g.meshes,
@@ -297,7 +315,7 @@ export function findSpace({
         }
       }
     }
-    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible) });
+    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: bend });
   }
 
   return {
@@ -882,7 +900,7 @@ function coarseFits(g, [x, y, w, h], marginMm) {
       if (!g.clean[r][c]) return false;
     }
   }
-  return true;
+  return cellBend(g, Math.floor(x / cw), Math.floor(y / ch), Math.ceil((x + w) / cw), Math.ceil((y + h) / ch)) <= CURVED_DEG;
 }
 
 /**

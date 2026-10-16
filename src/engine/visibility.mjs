@@ -408,6 +408,23 @@ export function islandSamples(model, isl, count = 196) {
 }
 
 /**
+ * How far a surface turns across a set of its points, in degrees: the angle
+ * between their mean normal and the normals at the 90th percentile of it. Not
+ * the largest, which one sample on a rolled edge decides. A flat door reads
+ * a few degrees; lettering wrapped round a wheel arch, fifty and more.
+ */
+export function bendDeg(points) {
+  if (!points.length) return null;
+  let x = 0, y = 0, z = 0;
+  for (const p of points) { x += p.nx; y += p.ny; z += p.nz; }
+  const l = Math.hypot(x, y, z);
+  if (!l) return 90;
+  const angles = points.map((p) => Math.acos(Math.max(-1, Math.min(1, (p.nx * x + p.ny * y + p.nz * z) / l))))
+    .sort((a, b) => a - b);
+  return Math.round(angles[Math.floor(angles.length * 0.9)] * 180 / Math.PI);
+}
+
+/**
  * A safe area confined to its panel.
  *
  * The safe area is the bounds of the readable vertices, taken from their raw
@@ -473,6 +490,7 @@ export function computeSafeAreas(model, islands, {
 
     // How much is seen, by area; see `islandSamples`.
     const points = islandSamples(model, isl);
+    isl.bend = bendDeg(points);
     const seen = points.filter(sees);
     const fraction = seen.length / points.length;
 
@@ -830,11 +848,13 @@ export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per 
   const { occ, dirs, maxSteps, near } = prepared;
   const nu = cols * per, nv = rows * per;
   const hit = scanGrid(model, meshes, rect, nu, nv);
-  const tally = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ samples: 0, seen: 0 })));
+  const tally = Array.from({ length: rows }, () => Array.from({ length: cols },
+    () => ({ samples: 0, seen: 0, nx: 0, ny: 0, nz: 0 })));
   hit.forEach((p, slot) => {
     if (!p) return;
     const cell = tally[Math.floor(Math.floor(slot / nu) / per)][Math.floor((slot % nu) / per)];
     cell.samples++;
+    cell.nx += p.nx; cell.ny += p.ny; cell.nz += p.nz;
     if (near && covered(near, p) >= 0) return;     // on the car, and under something
     let clear = 0;
     for (const [dx, dy, dz] of dirs) {
@@ -843,9 +863,15 @@ export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per 
     }
     if (clear >= minDirections) cell.seen++;
   });
-  return tally.map((row) => row.map((c) => ({
-    samples: c.samples, of: per * per, fraction: c.samples ? c.seen / c.samples : 0,
-  })));
+  // The cell's mean normal too, so a question about a spot several cells
+  // across can ask how far the surface turns under it; see `bendDeg`.
+  return tally.map((row) => row.map((c) => {
+    const l = Math.hypot(c.nx, c.ny, c.nz);
+    return {
+      samples: c.samples, of: per * per, fraction: c.samples ? c.seen / c.samples : 0,
+      normal: l ? { nx: c.nx / l, ny: c.ny / l, nz: c.nz / l } : null,
+    };
+  }));
 }
 
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {

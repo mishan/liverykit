@@ -255,6 +255,20 @@ test('a panel is measured by its area, not by where its modeller put the vertice
   assert.ok(panel.visible > 0.1 && panel.visible < 0.35, `a fifth of it can be seen: ${panel.visible}`);
 });
 
+test('a profile records how far each panel turns, and tags the flat ones', async () => {
+  // A design can then ask for `flat` rather than guess which part of a car is.
+  // The fixture's faces are planes, so every one of them is.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-flat-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5());
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const panels = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+  assert.ok(panels.length > 0);
+  for (const q of panels) {
+    assert.equal(q.bend, 0, JSON.stringify(q.rect));
+    assert.ok(q.tags.includes('flat'), JSON.stringify(q.tags));
+  }
+});
+
 test('a motion-blur rim is measured as the rim it stands in for, not as something behind it', async () => {
   // AC swaps WHEEL_xx/RIM_xx for WHEEL_xx/RIM_BLUR_xx by wheel speed, so the
   // two are never drawn together. The NSX's rim sheet is also worn by its

@@ -26,7 +26,7 @@ import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresN
 import { applyFit, mirrorAt, mirrorFlips } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
-import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects } from './engine/visibility.mjs';
+import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects, bendDeg } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
 import { findIslands } from './engine/islands.mjs';
 import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from './engine/kn5.mjs';
@@ -365,7 +365,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     name: profile.name || profile.id,
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !NEEDS_MODEL.includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
+    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'curved', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
       ...(wantsStripe ? ['stripe-offset', 'stripe-gap'] : [])]), ...unmeasured],
     // The entries of notChecked that nothing in a design can make run, each
     // with the entry it explains. Still in notChecked, so nothing that reads
@@ -486,10 +486,10 @@ function preparedFor(model, profile) {
 }
 
 const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'ungrouped', 'unmirrored',
-  'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
+  'unseen', 'off-mesh', 'curved', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
 
 /** The checks that stand on the car's geometry, and do not run without its model. */
-const NEEDS_MODEL = ['unseen', 'off-mesh', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
+const NEEDS_MODEL = ['unseen', 'off-mesh', 'curved', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -1329,6 +1329,16 @@ function unreadable(placed, profile, t, say, skip) {
  * a long name is shrunk to fit its box's WIDTH, so a 150 mm box held 47 mm
  * letters. Run 16's name, which a person called too small to read, is 40.
  */
+/**
+ * How far the surface under lettering may turn, in degrees, before it is
+ * reported: past CURVED_DEG the far letters are visibly foreshortened, and
+ * past WRAPPED_DEG the text goes round a corner, as it does over a wheel arch.
+ * The shipped placements sit at 5 to 12 on the Abarth and the Tatuus; the
+ * NSX's name on the roll of its door top, at 41.
+ */
+export const CURVED_DEG = 30;
+export const WRAPPED_DEG = 45;
+
 export const NUMBER_MM = 140;
 export const NAME_MM = 45;
 
@@ -2800,6 +2810,24 @@ function unseen(placed, profile, t, seen, say) {
       });
       continue;
     }
+    // Lettering is read from one place, so it has to be on one face of the
+    // car. Asked only of a placement on a panel: across a whole sheet the
+    // normals are those of every island on it, and say nothing about a surface.
+    if (carries && p.frac.panel) {
+      const bend = bendDeg(island ? sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }], island)[0].points : onCar.points);
+      if (bend > CURVED_DEG) {
+        say({
+          kind: 'curved', severity: bend > WRAPPED_DEG ? 'high' : 'low',
+          surface: t.from, panel: p.region.panel, ids: [p.id], bendDeg: bend,
+          why: `${name(t, p.id)} is on bodywork that turns ${bend} degrees across it` +
+            (bend > WRAPPED_DEG
+              ? ', so it wraps round the car and no one place sees all of it'
+              : ', so its far end is foreshortened from where its near end reads') +
+            '; move it to a flatter part of the panel, which find_space measures',
+        });
+      }
+    }
+
     // A declared floor replaces the default one, and makes the finding high:
     // the design said how much of this has to be seen, and it is not.
     const askedSeen = typeof p.constraints.minVisible === 'number' ? p.constraints.minVisible : null;
