@@ -424,6 +424,32 @@ export function letterHeights(design, profile, fit = null) {
   return out;
 }
 
+const RANK = { fatal: 0, high: 1, low: 2 };
+
+/** The worst severity in a report, or 'none'. */
+export const worstOf = (findings) => findings.map((f) => f.severity)
+  .sort((a, b) => RANK[a] - RANK[b])[0] ?? 'none';
+
+export const worstFirst = (findings) => [...findings].sort((a, b) => RANK[a.severity] - RANK[b.severity]);
+
+/**
+ * One line that cannot be skimmed into good news: the worst severity, the
+ * counts, and whether every check ran. The MCP tool and `--check` both lead
+ * with it, so an agent and a person reading the same car read the same words.
+ */
+export function fitmentVerdict(r) {
+  const findings = r.findings ?? [];
+  const count = (sev) => findings.filter((f) => f.severity === sev).length;
+  const partial = (r.notChecked?.length ?? 0) > 0 || (r.notPlaced?.length ?? 0) > 0;
+  const worst = worstOf(findings);
+  return worst === 'none'
+    ? (partial
+        ? 'Nothing found BY THE CHECKS THAT RAN. Some did not run — see notChecked and notPlaced.'
+        : 'Every check ran and found nothing.')
+    : `Worst finding is ${worst}. ${count('fatal')} fatal, ${count('high')} high, ` +
+      `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
+}
+
 /** Whether every mesh wearing this role's sheet is in the HR cockpit of a car that has an LR one. */
 function seatOnly(model, profile, role) {
   const file = profile.textures[role]?.file;

@@ -464,6 +464,11 @@ The panel leads with what it could **not** check. "No findings" from a run that
 skipped the geometry and "no findings" from a run that did all of it are the same
 sentence and opposite facts, so the two are never allowed to look alike.
 
+The same check runs without the editor, for a script or a CI job:
+`liverykit <livery> --check` prints the findings worst first and exits 1 on
+anything high or fatal (`--fail-on low` to be stricter, `--json` for the whole
+report).
+
 ### One region across several panels
 
 A rectangle lives in one island's sheet. A band that runs from the door onto

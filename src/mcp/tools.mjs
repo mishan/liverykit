@@ -1,4 +1,4 @@
-import { CONSTRAINTS } from '../fitment.mjs';
+import { CONSTRAINTS, fitmentVerdict, worstFirst } from '../fitment.mjs';
 import { VIEWS } from '../engine/shot.mjs';
 import { EditorUnreachable } from './client.mjs';
 
@@ -288,17 +288,7 @@ async function toolCheckFitment(client, args = {}) {
     return failed(e);
   }
   const findings = r.findings ?? [];
-  const count = (sev) => findings.filter((f) => f.severity === sev).length;
-
-  const partial = (r.notChecked?.length ?? 0) > 0 || (r.notPlaced?.length ?? 0) > 0;
-  const worst = count('fatal') ? 'fatal' : count('high') ? 'high' : count('low') ? 'low' : 'none';
-
-  const verdict = worst === 'none'
-    ? (partial
-        ? 'Nothing found BY THE CHECKS THAT RAN. Some did not run — see notChecked and notPlaced.'
-        : 'Every check ran and found nothing.')
-    : `Worst finding is ${worst}. ${count('fatal')} fatal, ${count('high')} high, ` +
-      `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
+  const verdict = fitmentVerdict(r);
 
   return {
     content: [{ type: 'text', text: JSON.stringify({
@@ -311,8 +301,7 @@ async function toolCheckFitment(client, args = {}) {
       unsupported: r.unsupported ?? [],
       notPlaced: r.notPlaced ?? [],
       // Worst first, so truncation loses the least important end.
-      findings: [...findings].sort((a, b) =>
-        ({ fatal: 0, high: 1, low: 2 })[a.severity] - ({ fatal: 0, high: 1, low: 2 })[b.severity]),
+      findings: worstFirst(findings),
       // Passed through when the editor counted it, which it does for a
       // proposal: how much of each whole piece each view shows.
       ...(r.inView ? { inView: r.inView, inViewAt: r.inViewAt } : {}),

@@ -46,6 +46,8 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit --explain <kn5>           rank which texture is the bodywork, with
                                       the evidence, so you can confirm it
   liverykit <livery> --ui             open the fitting editor for this car
+  liverykit <livery> --check          run the fitment check the editor runs, and
+                                      exit 1 if it finds anything high or worse
   liverykit --mcp                     start MCP server attached to editor
 
 Arguments
@@ -83,6 +85,10 @@ Options
   --fit <path>        per-car placement overrides for this design
                       (default: fits/<livery>@<car>.json, if it exists)
   --ui                open the fitting editor instead of building
+  --check             report what the fitment check finds instead of building
+  --fail-on <level>   with --check: the severity that fails the run: fatal,
+                      high or low (default: high)
+  --json              with --check: print the report as JSON on stdout
   --model <kn5>       car model for the editor's 3D views. Searched for, if not
                       given, under $AC_ROOT, $ASSETTOCORSA and this checkout —
                       content/cars/<car>/ or cars/<car>/. Never shipped: the
@@ -126,6 +132,9 @@ const { values, positionals } = parseArgs({
     profiles: { type: 'string' },
     fit: { type: 'string' },
     ui: { type: 'boolean', default: false },
+    check: { type: 'boolean', default: false },
+    'fail-on': { type: 'string', default: 'high' },
+    json: { type: 'boolean', default: false },
     model: { type: 'string' },
     port: { type: 'string' },
     mcp: { type: 'boolean', default: false },
@@ -163,6 +172,14 @@ function num(value, name, { min, max, integer = false }) {
 }
 
 if (values.help) { console.log(USAGE); process.exit(0); }
+
+const FAIL_ON = ['fatal', 'high', 'low'];
+if (!FAIL_ON.includes(values['fail-on'])) {
+  fail(new Error(`--fail-on must be one of: ${FAIL_ON.join(', ')}; got "${values['fail-on']}".`));
+}
+// The report is the only thing on stdout, so it can be piped; everything this
+// run says on the way there goes to stderr instead.
+if (values.check && values.json) console.log = console.error;
 
 // --- profile generation from the model --------------------------------------
 //
@@ -497,6 +514,35 @@ if (values.ui) {
   console.log(`  fitting editor at ${url}`);
   console.log(`  writes ${fitPath} when you press Save`);
   console.log('  ctrl-c to stop');
+} else if (values.check) {
+  // The editor's check, for a script or a CI job: the same profile, fit and
+  // model lookup as a build, and an exit code. Without the model, the checks
+  // that stand on geometry are named as not run, never passed.
+  const { path: modelPath, looked } = await findCarModel(profile, values.model);
+  if (!modelPath) {
+    console.log('  no car model found, so the checks that need its geometry will not run. Looked in:');
+    for (const p of looked) console.log(`    ${p}`);
+  }
+  const { fitment, fitmentVerdict, worstOf, worstFirst } = await import('../src/fitment.mjs');
+  const model = modelPath ? await parseKn5(modelPath, { keepTextureData: false }) : null;
+  const report = fitment(livery, profile, fit, { model });
+  const verdict = fitmentVerdict(report);
+  const worst = worstOf(report.findings);
+  const failed = worst !== 'none' && FAIL_ON.indexOf(worst) <= FAIL_ON.indexOf(values['fail-on']);
+  if (values.json) {
+    process.stdout.write(JSON.stringify({ verdict, ...report, findings: worstFirst(report.findings) }, null, 2) + '\n');
+  } else {
+    console.log(`  ${verdict}\n`);
+    for (const f of worstFirst(report.findings)) {
+      const what = [f.kind, ...(f.ids?.length ? [f.ids.join(', ')] : [])].join('  ');
+      console.log(`  ${f.severity.toUpperCase().padEnd(5)}  ${what}\n         ${f.why}`);
+    }
+    if (report.notChecked.length) {
+      console.log('\n  Not checked:');
+      for (const n of report.notChecked) console.log(`    ${n}`);
+    }
+  }
+  process.exit(failed ? 1 : 0);
 } else if (values.uvgrid) {
   const pngDir = join(values.out, `${folder}_png`);
   await buildCalibration({
