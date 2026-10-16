@@ -64,9 +64,9 @@ export default {
     body: {
       background: 'base',
       regions: [
-        { treatment: 'grid', pitch: 0.045, color: 'accent', opacity: 0.18, width: 1.5 },
-        { treatment: 'traces', lanes: 22, width: 4, color: 'accent', opacity: 0.75, glow: true },
-        { treatment: 'halftone', color: 'violet', cell: 38, dot: 0.12, opacity: 0.35 },
+        { treatment: 'grid', color: 'accent', width: 1.5 },
+        { treatment: 'traces', lanes: 22, width: 4, color: 'accent' },
+        { treatment: 'halftone', color: 'violet', cell: 38, dot: 0.12 },
 
         // Selected by TAG rather than by panel name, which is what lets this run
         // on a car nobody wrote it for. Each of these renders once per matching
@@ -95,7 +95,7 @@ export default {
         // working, and the build should not report it as a skip.
         { treatment: 'piping', tags: ['shared', 'visible'], at: [0, 0.06, 1, 0.10], count: 1, color: 'accent', width: 6, glow: true, safe: false, optional: true },
 
-        { treatment: 'halftone', tags: ['upper', 'visible'], color: 'hot', cell: 30, dot: 0.10, opacity: 0.30, safe: false },
+        { treatment: 'halftone', tags: ['upper', 'visible'], color: 'hot', cell: 30, dot: 0.10, safe: false },
 
         { treatment: 'stripe', at: [0, 0.47, 1, 0.022], color: 'hot', glow: true },
         { treatment: 'scanlines', opacity: 0.12 },
@@ -108,12 +108,22 @@ export default {
         // match, so this lands on the Abarth's rear quarter (14.8% of the
         // texture) and on the formula car's flank without either being named.
         //
-        // The three `at` rects do not overlap, which matters because they do
-        // not always land on separate panels: on the Tatuus the number and the
-        // team name both resolve to `left_mid`, and they stack instead of
-        // colliding. Placement within a panel is the one thing a portable
-        // design still has to guess at — nothing here knows which part of a
-        // panel is flat — so these sit centred and clear of the edges.
+        // All three go on the side's main panel, the number beside the two
+        // names rather than above them: a formula car's flank is three times
+        // longer than it is tall, and stacked, nothing on it reaches the 140 mm
+        // a number and the 45 mm a name need to read from trackside. Placement
+        // within a panel is still a guess — nothing here knows which part of a
+        // panel is flat — so these sit clear of the edges, and of the bottom of
+        // the Tatuus's flank, which is partly off the mesh.
+        //
+        // The right side is the left flipped both ways, which is how the Tatuus
+        // lays its right flank out, so the group mirrors on the car instead of
+        // swapping ends and lines. Other cars flip differently — the NSX only
+        // top to bottom — and a fit says so for each.
+        //
+        // The lettering glows, which is what puts it in front of the stripe:
+        // the emissive layer composites above everything else, and a stripe
+        // that glows ate the names' letters wherever it crossed them.
         //
         // `once` keeps identity on the term's PRIMARY texture. Where `body`
         // covers two chassis textures, without this the car wears its number
@@ -129,27 +139,27 @@ export default {
         // the formula car's 0. Without this the team name reads vertically down
         // the door, which looks like a bug and is really the texture being
         // honest about its layout.
-        { id: 'driver-left', treatment: 'text', tags: ['left', 'mid', 'upper', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
-        { id: 'driver-right', treatment: 'text', tags: ['right', 'mid', 'upper', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.05, 0.84, 0.10], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10 },
-
         { id: 'number-left', treatment: 'text', tags: ['left', 'visible'], limit: 1, once: true,
-          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
+          at: [0.30, 0.20, 0.20, 0.54], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04, glow: true },
         { id: 'number-right', treatment: 'text', tags: ['right', 'visible'], limit: 1, once: true,
-          at: [0.25, 0.22, 0.50, 0.48], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04 },
+          at: [0.50, 0.26, 0.20, 0.54], rotate: 'auto', text: '{number}', color: 'white', tracking: 0.04, glow: true },
 
         { id: 'team-left', treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
+          at: [0.52, 0.28, 0.40, 0.20], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14, glow: true },
         { id: 'team-right', treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
-          at: [0.08, 0.78, 0.84, 0.13], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14 },
+          at: [0.08, 0.52, 0.40, 0.20], rotate: 'auto', text: '{team}', color: 'accent', tracking: 0.14, glow: true },
+
+        { id: 'driver-left', treatment: 'text', tags: ['left', 'mid', 'visible'], limit: 1, once: true,
+          at: [0.52, 0.52, 0.40, 0.18], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10, glow: true },
+        { id: 'driver-right', treatment: 'text', tags: ['right', 'mid', 'visible'], limit: 1, once: true,
+          at: [0.08, 0.30, 0.40, 0.18], rotate: 'auto', text: '{driver}', color: 'white', tracking: 0.10, glow: true },
       ],
     },
 
     wing: {
       background: 'ink',
       regions: [
-        { treatment: 'traces', lanes: 10, width: 3, color: 'accent', glow: true },
+        { treatment: 'traces', lanes: 10, width: 3, color: 'accent' },
         { treatment: 'scanlines', opacity: 0.18 },
       ],
     },
@@ -161,7 +171,7 @@ export default {
       regions: [
         { treatment: 'ring', radius: 0.44, width: 0.020, color: 'accent', opacity: 0.9, glow: true },
         { treatment: 'ring', radius: 0.36, width: 0.010, color: 'hot', opacity: 0.7 },
-        { treatment: 'halftone', color: 'violet', cell: 30, dot: 0.14, opacity: 0.4 },
+        { treatment: 'halftone', color: 'violet', cell: 30, dot: 0.14 },
       ],
     },
 
@@ -178,7 +188,7 @@ export default {
     interior: {
       background: 'ink',
       regions: [
-        { treatment: 'traces', lanes: 14, width: 3, color: 'accent', opacity: 0.5 },
+        { treatment: 'traces', lanes: 14, width: 3, color: 'accent' },
         { treatment: 'scanlines', opacity: 0.2 },
       ],
     },
@@ -198,21 +208,21 @@ export default {
     steeringWheel: {
       background: 'ink',
       regions: [
-        { treatment: 'traces', lanes: 8, width: 3, color: 'accent', glow: true },
+        { treatment: 'traces', lanes: 8, width: 3, color: 'accent' },
       ],
     },
 
     metalTrim: {
       background: 'ink',
       regions: [
-        { treatment: 'halftone', color: 'accent', cell: 26, dot: 0.16, opacity: 0.5 },
+        { treatment: 'halftone', color: 'accent', cell: 26, dot: 0.16 },
       ],
     },
 
     heatShield: {
       background: 'ink',
       regions: [
-        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.15, opacity: 0.6 },
+        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.15 },
         { treatment: 'scanlines', opacity: 0.18 },
       ],
     },
@@ -231,7 +241,7 @@ export default {
     suit: {
       background: 'ink',
       regions: [
-        { treatment: 'halftone', color: 'accent', cell: 34, dot: 0.14, opacity: 0.45 },
+        { treatment: 'halftone', color: 'accent', cell: 34, dot: 0.14 },
         { treatment: 'stripe', at: [0, 0.12, 1, 0.02], color: 'accent', glow: true },
       ],
     },
@@ -246,7 +256,7 @@ export default {
     crew: {
       background: 'ink',
       regions: [
-        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.12, opacity: 0.4 },
+        { treatment: 'halftone', color: 'accent', cell: 30, dot: 0.12 },
       ],
     },
 
