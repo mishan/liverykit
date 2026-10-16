@@ -70,7 +70,7 @@ those correctly, it is **194/195**. The one left is `tando_buddies_180sx`,
 where the label names a LOD texture with no islands and the classifier picks
 the paint nine stock skins override, so it may well be the label again.
 `mclaren_mp412c_gt3`, which picked a swatch no island lives on, was fixed by
-counting islands; see step 2 of [portability-plan.md](portability-plan.md).
+counting islands; see step 2 of [portability-plan.md](dev/portability-plan.md).
 The first measurement, on 175 labelled cars, gave 158, 172 and 174.
 
 `rims` and `interior` are scored too, since step 5 of the portability plan, and
