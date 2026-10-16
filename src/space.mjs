@@ -27,7 +27,7 @@
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from './engine/kn5.mjs';
 import { rectVisibility, gridVisibility, bendDeg } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm } from './fitment.mjs';
+import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -177,10 +177,15 @@ export function cleanGrid({ profile, model, prepared, role, panel: asked, cellMm
   // One walk over the car's triangles for the whole panel, not one per cell:
   // the walk costs the same however small the rectangle, and 609 of them
   // over the NSX door took half a minute.
-  const cells = gridVisibility(model, prepared, meshes, pan.rect, cols, rows, { per: across });
+  // On the panel's own island only. Its box is a box, and the unwrap packs
+  // other islands into it: on the Abarth the door sits inside the rear
+  // quarter's box, and swept as part of it the door's clean, visible texels
+  // were the roomiest spot on the quarter, painted on the door over its number.
+  const island = islandOf(model, meshes, pan);
+  const cells = gridVisibility(model, prepared, meshes, pan.rect, cols, rows, { per: across, island });
   const clean = cells.map((row) => row.map((v) => v.samples > 0 && v.samples / v.of >= CLEAN && v.fraction >= CLEAN));
   const normals = cells.map((row) => row.map((v) => v.normal));
-  return { role, name, rect: pan.rect, boxMm, cols, rows, clean, normals, meshes };
+  return { role, name, rect: pan.rect, boxMm, cols, rows, clean, normals, meshes, island };
 }
 
 /**
@@ -269,7 +274,7 @@ export function findSpace({
       continue;
     }
     const v = rectVisibility(model, prepared, g.meshes,
-      [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph], { across: 16 });
+      [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph], { across: 16, island: g.island });
     const onCar = v ? v.samples / v.of : 0;
     const visible = v ? v.fraction : 0;
     if (onCar < CLEAN || visible < CLEAN) continue;
@@ -912,7 +917,7 @@ function fineFits(g, model, prepared, at, marginMm) {
   const [px, py, pw, ph] = g.rect;
   const [bw, bh] = g.boxMm;
   const v = rectVisibility(model, prepared, g.meshes, [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph],
-    { across: 16 });
+    { across: 16, island: g.island });
   if (!v || v.samples / v.of < CLEAN || v.fraction < CLEAN) return false;
   if (!(marginMm > 0)) return true;
   const m = [at[0] * bw - marginMm, at[1] * bh - marginMm, (at[0] + at[2]) * bw + marginMm, (at[1] + at[3]) * bh + marginMm];

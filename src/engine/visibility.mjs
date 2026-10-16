@@ -768,8 +768,8 @@ export function sampleRects(model, meshes, list, island = null) {
  * times over one door, it took half a minute to do 609 times what it could
  * have done once.
  */
-function scanGrid(model, meshes, rect, nu, nv, asked = null) {
-  return scanGrids(model, meshes, [{ rect, nu, nv, asked }])[0];
+function scanGrid(model, meshes, rect, nu, nv, asked = null, island = null) {
+  return scanGrids(model, meshes, [{ rect, nu, nv, asked }], island)[0];
 }
 
 /**
@@ -844,10 +844,10 @@ export function scanGrids(model, meshes, grids, island = null) {
  * `per` grid inside it either way — and the same rule for a point being seen:
  * clear of the car in at least `minDirections` of the directions it faces.
  */
-export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per = 5, minDirections = 4 } = {}) {
+export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per = 5, minDirections = 4, island = null } = {}) {
   const { occ, dirs, maxSteps, near } = prepared;
   const nu = cols * per, nv = rows * per;
-  const hit = scanGrid(model, meshes, rect, nu, nv);
+  const hit = scanGrid(model, meshes, rect, nu, nv, null, island);
   const tally = Array.from({ length: rows }, () => Array.from({ length: cols },
     () => ({ samples: 0, seen: 0, nx: 0, ny: 0, nz: 0 })));
   hit.forEach((p, slot) => {

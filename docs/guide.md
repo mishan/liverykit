@@ -449,9 +449,10 @@ and several other things:
 | `unmatched` | a region whose tags select no panel, or whose panel this car lacks — it paints nothing |
 | `overflows` | a ring drawn past its own box, so part of it is outside everything the checks measure |
 | `margin` | a region that asked for clean bodywork all round it (`minMargin`) is too near an edge, gap or hidden area |
-| `overlap` | two placements share space and at least one is text; high when both are, or when a ring's edge runs through text |
+| `overlap` | two placements share space and at least one is text; high when both are, or when a ring's edge runs through text. Lettering on two different panels is compared too, since a panel's box can take in another panel's texels |
 | `crossed` | something is painted across a region that asked to be kept clear |
 | `off-mesh` | the box lands on texture space no triangle uses |
+| `off-panel` | lettering whose box is mostly texture another panel wears, so it is drawn on that panel and not on the one it names |
 | `unseen` | the bodywork hides it from trackside, or a fitting stands on it (a door handle, a number plate) |
 | `curved` | lettering on bodywork that turns more than 30 degrees under it, so its far end is foreshortened; high past 45, where it wraps round the car as it would over a wheel arch |
 | `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
