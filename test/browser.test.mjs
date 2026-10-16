@@ -336,146 +336,159 @@ async function inBrowser(driver, {
   //
   // Together with MOZ_X11_EGL and LIBGL_ALWAYS_SOFTWARE this gives a complete
   // software GL stack, and the renderer tests stop being decorative.
-  const hasDisplay = displayWorks();
-  const useXvfb = !hasDisplay && onPath('xvfb-run');
-  const profileDir = await mkdtemp(join(tmpdir(), 'lk-ff-'));
-  await writeFile(join(profileDir, 'user.js'), [
-    'user_pref("webgl.force-enabled", true);',
-    'user_pref("webgl.disabled", false);',
-    'user_pref("webgl.forbid-software", false);',
-    // The one that actually mattered: no GPU process in a sandbox.
-    'user_pref("webgl.out-of-process", false);',
-    'user_pref("layers.acceleration.disabled", true);',
-    'user_pref("gfx.webrender.software", true);',
-    'user_pref("gfx.x11-egl.force-enabled", true);',
-
-    // --- and nothing off this machine -------------------------------------
-    //
-    // These tests talk to 127.0.0.1 and nowhere else, but a stock Firefox on a
-    // COLD PROFILE does not know that. On every launch it resolves and calls
-    // out to safebrowsing lists, telemetry, remote settings, the addon
-    // blocklist, update servers, the captive-portal probe and the DoH canary —
-    // and this harness starts a fresh profile per test, several tests per run,
-    // and SIGKILLs the browser so nothing is ever cached or cleanly closed.
-    //
-    // Measured with strace: 114 DNS lookups PER LAUNCH before these prefs, 6
-    // after. At several launches per run and many runs an afternoon, that is
-    // enough to trip a filtering resolver's rate limit and get the whole
-    // machine blocked — which is exactly what it did. None of it was buying
-    // anything: a test of a local editor has no business making a single
-    // external request.
-    'user_pref("network.dns.disablePrefetch", true);',
-    'user_pref("network.prefetch-next", false);',
-    'user_pref("network.predictor.enabled", false);',
-    'user_pref("network.captive-portal-service.enabled", false);',
-    'user_pref("network.connectivity-service.enabled", false);',
-    // 5 = DoH off and the canary lookup skipped with it.
-    'user_pref("network.trr.mode", 5);',
-    'user_pref("browser.safebrowsing.malware.enabled", false);',
-    'user_pref("browser.safebrowsing.phishing.enabled", false);',
-    'user_pref("browser.safebrowsing.downloads.enabled", false);',
-    'user_pref("browser.safebrowsing.provider.google4.updateURL", "");',
-    'user_pref("browser.safebrowsing.provider.mozilla.updateURL", "");',
-    'user_pref("toolkit.telemetry.enabled", false);',
-    'user_pref("toolkit.telemetry.unified", false);',
-    'user_pref("toolkit.telemetry.server", "");',
-    'user_pref("datareporting.healthreport.uploadEnabled", false);',
-    'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
-    'user_pref("app.update.enabled", false);',
-    'user_pref("app.update.auto", false);',
-    'user_pref("extensions.update.enabled", false);',
-    'user_pref("extensions.blocklist.enabled", false);',
-    'user_pref("extensions.systemAddon.update.enabled", false);',
-    'user_pref("services.settings.server", "");',
-    'user_pref("browser.region.network.url", "");',
-    'user_pref("browser.newtabpage.activity-stream.feeds.telemetry", false);',
-    'user_pref("browser.discovery.enabled", false);',
-    'user_pref("browser.ping-centre.telemetry", false);',
-    'user_pref("dom.push.connection.enabled", false);',
-    'user_pref("network.http.speculative-parallel-limit", 0);',
-    // The backstop: everything except loopback goes through a proxy that is not
-    // there. A request that slips past the prefs above fails immediately and
-    // locally instead of becoming a DNS lookup.
-    'user_pref("network.proxy.type", 1);',
-    'user_pref("network.proxy.http", "127.0.0.1");',
-    'user_pref("network.proxy.http_port", 1);',
-    'user_pref("network.proxy.ssl", "127.0.0.1");',
-    'user_pref("network.proxy.ssl_port", 1);',
-    'user_pref("network.proxy.allow_hijacking_localhost", false);',
-    'user_pref("network.proxy.no_proxies_on", "127.0.0.1,localhost");',
-  ].join('\n'));
-
-  // The isolation above is written into a Firefox PROFILE, so it applies to
-  // Firefox and to nothing else. A Chromium here would have taken none of it and
-  // the suite would still have claimed to be offline, so it gets the equivalent
-  // switches rather than an assurance that does not cover it: no first-run
-  // network calls, no variations fetch, and a proxy pointing nowhere with
-  // loopback exempted.
-  const args = BROWSER === 'firefox'
-    ? ['--headless', '--window-size=1400,900', '--profile', profileDir, url]
-    : [
-      '--headless=new', '--disable-gpu', '--window-size=1400,900',
-      `--user-data-dir=${profileDir}`,
-      '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
-      '--disable-component-update', '--disable-domain-reliability', '--disable-sync',
-      '--metrics-recording-only', '--disable-client-side-phishing-detection',
-      '--variations-server-url=', '--disable-features=OptimizationHints',
-      '--proxy-server=http://127.0.0.1:1',
-      '--proxy-bypass-list=127.0.0.1;localhost',
-      url,
-    ];
-  // Force the software rasterizer. A headless box has no GPU, and Firefox
-  // otherwise reports "Exhausted GL driver options" on some runs and works on
-  // others — which made the GL-dependent tests pass by taking their own skip
-  // branch, green for no reason at all.
   //
-  // MOZ_X11_EGL only where there is an X server to talk to. Exported without
-  // one it asks for an X11 EGL path that cannot exist, so on a box with no X at
-  // all the settings meant to GIVE these tests a GL stack become the reason the
-  // browser never starts — and the failure arrives as silence.
-  const child = await launch(
-    useXvfb ? 'xvfb-run' : BROWSER,
-    useXvfb ? ['-a', '-s', '-screen 0 1400x900x24', BROWSER, ...args] : args,
-    {
-      LIBGL_ALWAYS_SOFTWARE: '1',
-      MOZ_WEBRENDER: '0',
-      MOZ_ACCELERATED: '0',
-      ...(hasDisplay || useXvfb ? { MOZ_X11_EGL: '1' } : {}),
-    },
-  );
+  // ONE RELAUNCH, and only for a browser that never asked for the driver. CI
+  // has twice had Firefox fetch the document, log a software-compositor
+  // failure and sit there for the full limit with not one script requested, on
+  // a different Node each time and a different commit. None of the test ran,
+  // so trying again cannot hide a fault in it; a page that is really broken
+  // stops the same way twice and still fails. Said aloud when it happens, so
+  // how often it does is not a secret either.
+  let child, waited;
+  for (let attempt = 1; ; attempt++) {
+    const hasDisplay = displayWorks();
+    const useXvfb = !hasDisplay && onPath('xvfb-run');
+    const profileDir = await mkdtemp(join(tmpdir(), 'lk-ff-'));
+    await writeFile(join(profileDir, 'user.js'), [
+      'user_pref("webgl.force-enabled", true);',
+      'user_pref("webgl.disabled", false);',
+      'user_pref("webgl.forbid-software", false);',
+      // The one that actually mattered: no GPU process in a sandbox.
+      'user_pref("webgl.out-of-process", false);',
+      'user_pref("layers.acceleration.disabled", true);',
+      'user_pref("gfx.webrender.software", true);',
+      'user_pref("gfx.x11-egl.force-enabled", true);',
 
-  // Longer than a dev box needs, because a CI runner is not a dev box: a cold
-  // browser start on two shared cores is several times slower than here, and a
-  // timeout that only fails on the slow machine is the worst kind. Overridable
-  // for anyone whose box is slower still.
-  // 40s, down from 90. The page carries a 25s watchdog that reports whatever
-  // it managed, so anything still silent at 40 is a browser that never ran the
-  // script at all — and waiting another fifty seconds to learn that costs a
-  // minute per run and tells you nothing extra.
-  const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 40000;
-  const deadline = Date.now() + limit;
-  // `child.done` too, so a browser that exits without loading the page fails in
-  // a second with its own error message rather than after the full timeout with
-  // none.
-  while (!report && !child.done && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 200));
+      // --- and nothing off this machine -------------------------------------
+      //
+      // These tests talk to 127.0.0.1 and nowhere else, but a stock Firefox on a
+      // COLD PROFILE does not know that. On every launch it resolves and calls
+      // out to safebrowsing lists, telemetry, remote settings, the addon
+      // blocklist, update servers, the captive-portal probe and the DoH canary —
+      // and this harness starts a fresh profile per test, several tests per run,
+      // and SIGKILLs the browser so nothing is ever cached or cleanly closed.
+      //
+      // Measured with strace: 114 DNS lookups PER LAUNCH before these prefs, 6
+      // after. At several launches per run and many runs an afternoon, that is
+      // enough to trip a filtering resolver's rate limit and get the whole
+      // machine blocked — which is exactly what it did. None of it was buying
+      // anything: a test of a local editor has no business making a single
+      // external request.
+      'user_pref("network.dns.disablePrefetch", true);',
+      'user_pref("network.prefetch-next", false);',
+      'user_pref("network.predictor.enabled", false);',
+      'user_pref("network.captive-portal-service.enabled", false);',
+      'user_pref("network.connectivity-service.enabled", false);',
+      // 5 = DoH off and the canary lookup skipped with it.
+      'user_pref("network.trr.mode", 5);',
+      'user_pref("browser.safebrowsing.malware.enabled", false);',
+      'user_pref("browser.safebrowsing.phishing.enabled", false);',
+      'user_pref("browser.safebrowsing.downloads.enabled", false);',
+      'user_pref("browser.safebrowsing.provider.google4.updateURL", "");',
+      'user_pref("browser.safebrowsing.provider.mozilla.updateURL", "");',
+      'user_pref("toolkit.telemetry.enabled", false);',
+      'user_pref("toolkit.telemetry.unified", false);',
+      'user_pref("toolkit.telemetry.server", "");',
+      'user_pref("datareporting.healthreport.uploadEnabled", false);',
+      'user_pref("datareporting.policy.dataSubmissionEnabled", false);',
+      'user_pref("app.update.enabled", false);',
+      'user_pref("app.update.auto", false);',
+      'user_pref("extensions.update.enabled", false);',
+      'user_pref("extensions.blocklist.enabled", false);',
+      'user_pref("extensions.systemAddon.update.enabled", false);',
+      'user_pref("services.settings.server", "");',
+      'user_pref("browser.region.network.url", "");',
+      'user_pref("browser.newtabpage.activity-stream.feeds.telemetry", false);',
+      'user_pref("browser.discovery.enabled", false);',
+      'user_pref("browser.ping-centre.telemetry", false);',
+      'user_pref("dom.push.connection.enabled", false);',
+      'user_pref("network.http.speculative-parallel-limit", 0);',
+      // The backstop: everything except loopback goes through a proxy that is not
+      // there. A request that slips past the prefs above fails immediately and
+      // locally instead of becoming a DNS lookup.
+      'user_pref("network.proxy.type", 1);',
+      'user_pref("network.proxy.http", "127.0.0.1");',
+      'user_pref("network.proxy.http_port", 1);',
+      'user_pref("network.proxy.ssl", "127.0.0.1");',
+      'user_pref("network.proxy.ssl_port", 1);',
+      'user_pref("network.proxy.allow_hijacking_localhost", false);',
+      'user_pref("network.proxy.no_proxies_on", "127.0.0.1,localhost");',
+    ].join('\n'));
+
+    // The isolation above is written into a Firefox PROFILE, so it applies to
+    // Firefox and to nothing else. A Chromium here would have taken none of it and
+    // the suite would still have claimed to be offline, so it gets the equivalent
+    // switches rather than an assurance that does not cover it: no first-run
+    // network calls, no variations fetch, and a proxy pointing nowhere with
+    // loopback exempted.
+    const args = BROWSER === 'firefox'
+      ? ['--headless', '--window-size=1400,900', '--profile', profileDir, url]
+      : [
+        '--headless=new', '--disable-gpu', '--window-size=1400,900',
+        `--user-data-dir=${profileDir}`,
+        '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
+        '--disable-component-update', '--disable-domain-reliability', '--disable-sync',
+        '--metrics-recording-only', '--disable-client-side-phishing-detection',
+        '--variations-server-url=', '--disable-features=OptimizationHints',
+        '--proxy-server=http://127.0.0.1:1',
+        '--proxy-bypass-list=127.0.0.1;localhost',
+        url,
+      ];
+    // Force the software rasterizer. A headless box has no GPU, and Firefox
+    // otherwise reports "Exhausted GL driver options" on some runs and works on
+    // others — which made the GL-dependent tests pass by taking their own skip
+    // branch, green for no reason at all.
+    //
+    // MOZ_X11_EGL only where there is an X server to talk to. Exported without
+    // one it asks for an X11 EGL path that cannot exist, so on a box with no X at
+    // all the settings meant to GIVE these tests a GL stack become the reason the
+    // browser never starts — and the failure arrives as silence.
+    child = await launch(
+      useXvfb ? 'xvfb-run' : BROWSER,
+      useXvfb ? ['-a', '-s', '-screen 0 1400x900x24', BROWSER, ...args] : args,
+      {
+        LIBGL_ALWAYS_SOFTWARE: '1',
+        MOZ_WEBRENDER: '0',
+        MOZ_ACCELERATED: '0',
+        ...(hasDisplay || useXvfb ? { MOZ_X11_EGL: '1' } : {}),
+      },
+    );
+
+    // Longer than a dev box needs, because a CI runner is not a dev box: a cold
+    // browser start on two shared cores is several times slower than here, and a
+    // timeout that only fails on the slow machine is the worst kind. Overridable
+    // for anyone whose box is slower still.
+    // 40s, down from 90. The page carries a 25s watchdog that reports whatever
+    // it managed, so anything still silent at 40 is a browser that never ran the
+    // script at all — and waiting another fifty seconds to learn that costs a
+    // minute per run and tells you nothing extra.
+    const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 40000;
+    const deadline = Date.now() + limit;
+    // `child.done` too, so a browser that exits without loading the page fails in
+    // a second with its own error message rather than after the full timeout with
+    // none.
+    while (!report && !child.done && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    waited = Date.now() - (deadline - limit);
+    child.kill();
+    // Before the assertions, so a failing run cleans up too. Nothing removed the
+    // profile, and each launch leaves one of about 40 MB: 240 of them, 7.8 GB,
+    // filled a tmpfs /tmp until the suite began failing with ENOSPC somewhere
+    // unrelated. The group was SIGKILLed above, so nothing is still writing to it;
+    // the retries cover a process the kernel has not reaped yet.
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    if (report || attempt > 1 || trail.includes('/driver.js')) break;
+    console.warn(`  ! the browser never fetched the driver; relaunching once. ${child.why(waited)}`);
   }
-  const waited = Date.now() - (deadline - limit);
   // ORDER AND AWAIT. The browser goes first so nothing new arrives, then the
   // forwards already running are allowed to finish, then both servers are
   // closed and WAITED for. Firing all three and returning left rejected fetches
   // landing after the test had ended.
-  child.kill();
   await Promise.allSettled([...inFlight]);
   await new Promise((ok) => proxy.close(ok));
   if (typeof real.server.closeAllConnections === 'function') real.server.closeAllConnections();
   await new Promise((ok) => real.server.close(ok));
-  // Before the assertions, so a failing run cleans up too. Nothing removed the
-  // profile, and each launch leaves one of about 40 MB: 240 of them, 7.8 GB,
-  // filled a tmpfs /tmp until the suite began failing with ENOSPC somewhere
-  // unrelated. The group was SIGKILLed above, so nothing is still writing to it;
-  // the retries cover a process the kernel has not reaped yet.
-  await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 
   assert.ok(report, 'the browser never reported back. ' + child.why(waited)
     + '\n' + howFar(trail));
