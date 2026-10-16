@@ -575,7 +575,7 @@ function placements(profile, t, spec, fit, say = () => {}) {
           kind: 'clipped',
           // Words stop being words when half of them is missing; a band that
           // stops short is wrong and legible.
-          severity: r.treatment === 'text' || r.treatment === 'radialText' ? 'high' : 'low',
+          severity: lettering(r) ? 'high' : 'low',
           surface: t.from,
           panel: r.panel,
           ids: [key],
@@ -654,8 +654,8 @@ function overlaps(placed, t, say, size = { w: 1, h: 1 }, identity = {}) {
       //
       // Text is different because it means something. A number under a team
       // name is not a layer, it is one of them lost, and neither can be read.
-      const aText = A.region.treatment === 'text';
-      const bText = B.region.treatment === 'text';
+      const aText = lettering(A.region);
+      const bText = lettering(B.region);
 
       // A RING and some text: measured by the circle, not by the boxes.
       //
@@ -1231,7 +1231,7 @@ function hiddenFace(placed, profile, t, say) {
       kind: 'hidden-face',
       // Text is the case that matters: a name or a number painted where the
       // world cannot read it is the whole point of the surface being missed.
-      severity: onOut < 0.15 || p.region.treatment === 'text' ? 'high' : 'low',
+      severity: onOut < 0.15 || lettering(p.region) ? 'high' : 'low',
       surface: t.from,
       panel: p.region.panel,
       ids: [p.id],
@@ -1338,6 +1338,14 @@ function unreadable(placed, profile, t, say, skip) {
  */
 export const CURVED_DEG = 30;
 export const WRAPPED_DEG = 45;
+
+/**
+ * Whether a region is lettering, whatever draws it: `text`, `radialText`, a
+ * row of sponsors. By the text it carries rather than by a list of treatment
+ * names, which a new pack's lettering was missing from, so a sponsor row
+ * piled onto a race number was two layers and nothing to report.
+ */
+const lettering = (r) => typeof r?.text === 'string';
 
 export const NUMBER_MM = 140;
 export const NAME_MM = 45;
@@ -2785,7 +2793,7 @@ function unseen(placed, profile, t, seen, say) {
     // not a visibility verdict and must not be reported as one.
     if (!onCar.points.length) {
       say({
-        kind: 'off-mesh', severity: p.region.treatment === 'text' ? 'high' : 'low',
+        kind: 'off-mesh', severity: lettering(p.region) ? 'high' : 'low',
         surface: t.from, panel: p.region.panel, ids: [p.id], coverage: 0,
         why: `${name(t, p.id)} lands on no geometry at all — it is painted into ` +
           'texture space this car does not use, so none of it appears',
@@ -2797,7 +2805,7 @@ function unseen(placed, profile, t, seen, say) {
     // tenth of a placement is a true sentence that misleads completely, and
     // whichever of the two is said first is the one that gets acted on.
     const coverage = onCar.points.length / onCar.cells;
-    const carries = p.region.treatment === 'text';
+    const carries = lettering(p.region);
     const asked = typeof p.constraints.minOnCar === 'number' ? p.constraints.minOnCar : null;
     if (coverage < (asked ?? (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW))) {
       say({
