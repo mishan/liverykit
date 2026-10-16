@@ -200,7 +200,7 @@ test('a body with a tiled texture says so whichever role it is, and the car line
   const { stdout } = await sweep('neon-grid-any', '--profiles', profiles, '--out', out);
   const [record] = JSON.parse(await readFile(out, 'utf8'));
   assert.equal(record.bindings.body.uvLayout, 'tiled');
-  assert.deepEqual(record.bindings.body.uvLayouts, { skinbase_default: 'tiled' });
+  assert.deepEqual(record.bindings.body.uvLayouts, { skin: 'unwrapped', skinbase_default: 'tiled' });
 
   // The mp412c's regions were all `unplaceable`, and its line said "0
   // region(s) missing".
