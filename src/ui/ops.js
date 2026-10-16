@@ -352,3 +352,32 @@ export function applyProposalDiff({ design: currentDesign, fit: currentFit }, pr
 
   return { design, fit };
 }
+
+/**
+ * Where a region goes when the car is shift-clicked, or when an agent names a
+ * point on a picture of it (`place_at`): centred on the point, on the smallest
+ * panel under it, at the size it had on the car. Kept in
+ * millimetres rather than texture fractions, because two panels are not drawn
+ * to the same scale: the Abarth's door is 1.2 m across 0.27 of its sheet and
+ * its quarter 2.5 m across 0.33, and a number moved between them as fractions
+ * changes size. Its width and height trade places when the new panel is laid a
+ * quarter turn from the old, so a name stays as long as it was along the car.
+ *
+ * `null` when no panel is under the point.
+ */
+export function placedAt(panels, sel, uv) {
+  const over = panels
+    .filter((p) => uv.u >= p.rect[0] && uv.u <= p.rect[0] + p.rect[2]
+      && uv.v >= p.rect[1] && uv.v <= p.rect[1] + p.rect[3])
+    .sort((a, b) => a.rect[2] * a.rect[3] - b.rect[2] * b.rect[3])[0];
+  if (!over) return null;
+  const from = panels.find((p) => p.name === sel.panel);
+  let [, , w, h] = sel.abs;
+  const a = from?.metresPerUv, b = over.metresPerUv;
+  if (a && b) {
+    const turn = ((((from.textRotation ?? 0) - (over.textRotation ?? 0)) % 180) + 180) % 180;
+    const [mmW, mmH] = [w * a[0], h * a[1]];
+    [w, h] = turn === 90 ? [mmH / b[0], mmW / b[1]] : [mmW / b[0], mmH / b[1]];
+  }
+  return { panel: over.name, abs: [uv.u - w / 2, uv.v - h / 2, w, h] };
+}

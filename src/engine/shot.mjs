@@ -1160,6 +1160,24 @@ function passOne(model, groups, sheets, view, width, height) {
  * own alpha says it is there, which needs its sheet; a design's own surfaces are
  * not rasterized for this, and count as covering everywhere.
  */
+/**
+ * What a picture shows at one pixel: the texture and the UV there, from the
+ * same first pass `piecesInView` counts with, so it agrees with `shoot` about
+ * what is in front. How an agent, which cannot click the editor, points at
+ * the car: it is handed a picture and names a pixel of it. Null for a pixel
+ * the car does not cover.
+ */
+export function pickAt(model, groups, sheets, { view = 'left', width = 760, height = 460, x, y } = {}) {
+  groups = clearBasesOpaque(groups, sheets);
+  const px = Math.floor(x), py = Math.floor(y);
+  if (!(px >= 0 && py >= 0 && px < width && py < height)) return null;
+  const { who, hitU, hitV, groupOf } = passOne(model, groups, sheets, view, width, height);
+  const at = py * width + px;
+  if (who[at] < 0) return null;
+  const g = groups[groupOf[who[at] / 3]];
+  return { u: hitU[at], v: hitV[at], role: g?.role ?? null, file: g?.file ?? null };
+}
+
 export function piecesInView(model, groups, sheets, pieces, { view = 'left', width = 900, height = 540, triangles = null } = {}) {
   groups = clearBasesOpaque(groups, sheets);
   const { positions, uvs, normals, indices } = model;

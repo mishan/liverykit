@@ -62,6 +62,11 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(proposal ? { ...proposal, ...(count ? { count } : {}) } : {}),
     }),
+    place: async (args) => request('api/place', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(args ?? {}),
+    }),
     findSpace: async (args) => request('api/space', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

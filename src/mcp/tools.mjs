@@ -408,6 +408,24 @@ async function toolProposeDesign(client, args) {
   }
 }
 
+async function toolPlaceAt(client, args = {}) {
+  if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
+    return { content: [{ type: 'text', text: 'Refusal: place_at requires a non-empty "why" field.' }], isError: true };
+  }
+  let to;
+  try {
+    to = await client.place({ id: args.id, view: args.view, x: args.x, y: args.y, width: args.width, height: args.height });
+  } catch (e) {
+    return failed(e);
+  }
+  return toolProposeFit(client, {
+    why: args.why,
+    fit: [{ op: 'set-override', id: to.id, panel: to.panel, at: to.at }],
+  }).then((r) => (r.isError ? r : {
+    content: [{ type: 'text', text: JSON.stringify({ ...JSON.parse(r.content[0].text), panel: to.panel, at: to.at }) }],
+  }));
+}
+
 async function toolProposeFit(client, args) {
   if (!args.why || typeof args.why !== 'string' || !args.why.trim()) {
     return {
@@ -674,6 +692,30 @@ export function createToolHandler(client) {
       },
     },
     {
+      name: 'place_at',
+      description:
+        'Move a region to a point on the car you can see in a render_car picture, as the editor ' +
+        'does when a person shift-clicks the car: on the panel under that pixel, centred on it, at ' +
+        'the size it had on the car in millimetres, turned to suit a panel laid a quarter turn from ' +
+        'its old one. Give the view and the size of the picture you are pointing at, and the pixel. ' +
+        'The move goes to the editor\'s inbox as a fit proposal for human review, like propose_fit; ' +
+        'a linked twin on the other side is not moved with it, so place that one too. ' +
+        'Not for a "sheet" picture: name a single view. ' + PROMPT_NOTE,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The region to move, by id as read_design and read_fit list them' },
+          view: { type: 'string', description: `One of: ${Object.keys(VIEWS).join(', ')}` },
+          x: { type: 'number', description: 'Pixels from the left of that picture' },
+          y: { type: 'number', description: 'Pixels from the top of that picture' },
+          width: { type: 'number', description: 'The picture\'s width as you asked render_car for it (default 760)' },
+          height: { type: 'number', description: 'The picture\'s height (default 460)' },
+          why: { type: 'string', description: 'Required justification for the proposal' },
+        },
+        required: ['id', 'view', 'x', 'y', 'why'],
+      },
+    },
+    {
       name: 'propose_fit',
       description: `Propose placement override or copy changes for this car to the running editor's inbox for human review. ${PROMPT_NOTE}`,
       inputSchema: {
@@ -750,6 +792,7 @@ export function createToolHandler(client) {
       case 'render_view': return toolRenderView(client, args);
       case 'propose_design': return toolProposeDesign(client, args);
       case 'propose_fit': return toolProposeFit(client, args);
+      case 'place_at': return toolPlaceAt(client, args);
       default:
         return {
           content: [{ type: 'text', text: `Unknown tool: ${name}` }],

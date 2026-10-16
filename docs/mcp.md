@@ -190,6 +190,7 @@ worst severity and the counts: "nine low and one high" is otherwise summarized a
 |---|---|
 | `propose_design` | add, change or reorder regions; palette and identity |
 | `propose_fit` | placement overrides for this car — `panel`, `at`, `rotate`, `drop` |
+| `place_at` | a move named by pointing: a view, a picture size and a pixel of `render_car`'s picture, proposed as the `panel` and `at` a shift-click there would give, same size on the car |
 
 `propose_design` also carries `set-constraint`, which is often the right proposal
 when `check_fitment` reports the same problem twice: a constraint states the
