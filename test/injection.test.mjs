@@ -26,7 +26,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import '../src/index.mjs';
-import { resolveTreatments } from '../src/registry.mjs';
+import { resolveTreatments, listPacks } from '../src/registry.mjs';
 import { renderTexture, safe } from '../src/render.mjs';
 import { mulberry32, r2 } from '../src/engine/rng.mjs';
 
@@ -88,7 +88,7 @@ function draw({ region, palette = {}, background = 'black', tokens = {} }) {
     role: 'body',
     regions: [region],
     background,
-    treatments: resolveTreatments(['core', 'synthwave']),
+    treatments: resolveTreatments(listPacks()),
     palette,
     rng: mulberry32(1),
     font: 'sans',
@@ -142,7 +142,7 @@ function attempts(label, render, failures, unprobed) {
 }
 
 test('no value a livery supplies can become markup', () => {
-  const treatments = resolveTreatments(['core', 'synthwave']);
+  const treatments = resolveTreatments(listPacks());
   const failures = new Set();
   const unprobed = [];
   let checked = 0;
@@ -171,8 +171,9 @@ test('no value a livery supplies can become markup', () => {
   }
 
   // Identity tokens are the same problem arriving by another road: `{driver}`
-  // is substituted into `text` from a block the same file supplies.
-  for (const t of ['text', 'radialText']) {
+  // is substituted into `text` from a block the same file supplies. Every
+  // treatment that takes text, by its description, as the options are found.
+  for (const t of [...treatments].filter(([, e]) => e.describe?.options?.text).map(([n]) => n)) {
     if (attempts(`${t}: an identity token`, (v) =>
       draw({ region: { id: 'r', panel: 'L', treatment: t, text: '{who}' }, tokens: { who: v } }),
     failures, unprobed)) checked += 1;

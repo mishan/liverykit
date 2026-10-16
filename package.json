@@ -8,6 +8,7 @@
     ".": "./src/index.mjs",
     "./packs/core": "./src/packs/core.mjs",
     "./packs/synthwave": "./src/packs/synthwave.mjs",
+    "./packs/classic": "./src/packs/classic.mjs",
     "./package.json": "./package.json",
     "./src/*": "./src/*",
     "./test/fixtures/kn5.mjs": "./test/fixtures/kn5.mjs"
