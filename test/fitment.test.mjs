@@ -13,6 +13,14 @@ import assert from 'node:assert/strict';
 import '../src/index.mjs';
 import { fitment, wholePieces, panelOnCar, stripeAt } from '../src/fitment.mjs';
 import { occupancyFor, rectVisibility } from '../src/engine/visibility.mjs';
+import { execFile } from 'node:child_process';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { profileJson } from '../src/profile.mjs';
+import { carKn5 } from './fixtures/kn5.mjs';
 
 const probe = (model, rect) =>
   rectVisibility(model, occupancyFor(model), model.meshes, rect);
@@ -2435,4 +2443,39 @@ test('a texture another model draws is not checked against this one, and says so
   const lost = fitment({ ...design([]), paint: { lost: { background: 'ink', regions: [{ treatment: 'fill', color: 'ink' }] } } },
     car, null, { model });
   assert.equal(lost.findings.find((f) => f.severity === 'fatal')?.kind, 'unresolvable');
+});
+
+test('--check runs the fitment check from the command line, and fails the run on what it finds', async (t) => {
+  // For a CI job or a league script, which has no editor to look at: the
+  // exit code is the answer, and --json is the whole report on stdout alone.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-check-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const kn5 = join(dir, 'fixture-car.kn5');
+  await writeFile(kn5, carKn5());
+  const car = await profileFromKn5(kn5, { visibility: false, log: () => {} });
+  await writeFile(join(dir, 'car.json'), profileJson(car));
+  await writeFile(join(dir, 'l.mjs'), `export default { name: 'L', folder: 'l', packs: ['core'],
+    palette: { ink: '#101014' },
+    surfaces: { body: { regions: [{ treatment: 'fill', color: 'ink', bogus: 1 }] } } };`);
+  const check = (...args) => new Promise((ok) => execFile(process.execPath,
+    [fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url)), join(dir, 'l.mjs'),
+      '--profile', join(dir, 'car.json'), '--check', ...args],
+    { cwd: dir }, (e, out, err) => ok({ code: e?.code ?? 0, stdout: out, stderr: err })));
+
+  const plain = await check('--model', kn5);
+  assert.equal(plain.code, 1, plain.stderr);
+  assert.match(plain.stdout, /Worst finding is high\. 0 fatal, 1 high/);
+  assert.match(plain.stdout, /HIGH {3}unknown-field {2}surfaces\.body#0\n\s+surfaces\.body#0 has "bogus"/);
+  assert.equal((await check('--model', kn5, '--fail-on', 'fatal')).code, 0, 'a lower bar passes the same report');
+
+  // Without a model the geometry checks are named as not run, and the report
+  // is still the only thing on stdout.
+  const json = await check('--json');
+  const report = JSON.parse(json.stdout);
+  assert.equal(json.code, 1);
+  assert.ok(report.notChecked.includes('unseen'), report.notChecked.join(', '));
+  assert.match(json.stderr, /no car model found/);
+  const typo = await check('--model', kn5, '--fail-on', 'medium');
+  assert.equal(typo.code, 1);
+  assert.match(typo.stderr, /--fail-on must be one of: fatal, high, low; got "medium"/);
 });

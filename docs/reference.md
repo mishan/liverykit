@@ -26,6 +26,12 @@ rather type `liverykit`. `--help` is authoritative.
   --model <car>.kn5                 model for the editor's 3D views; defaults to
                                     the one the profile was generated from
   --port 7391                       where to serve it (loopback only)
+<livery> --check                  run the editor's fitment check and exit 1 on
+                                  a high or fatal finding; finds the model as
+                                  --ui does, and names the checks it cannot run
+                                  without one
+  --fail-on low                     fail on low findings too (fatal, high, low)
+  --json                            the whole report on stdout, for a script
 <livery> --pack ./my-pack.mjs     load an extra treatment pack (repeatable)
 <livery> --uvgrid                 build a calibration skin (see the guide)
 <livery> --uvgrid --cells 40      finer grid, for small parts
