@@ -23,7 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresNarrowest, metresAcross, spanPlacements, panel as panelOf, panelName, axesOf } from './profile.mjs';
-import { applyFit } from './fit.mjs';
+import { applyFit, mirrorAt, mirrorFlips } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects } from './engine/visibility.mjs';
@@ -2656,17 +2656,20 @@ function unmirrored(placed, profile, t, say) {
 
     const a = p.region.at ?? [0, 0, 1, 1];
     const b = q.region.at ?? [0, 0, 1, 1];
-    // The convention the fits already follow: a v-flip about the panel.
-    const want = 1 - (a[1] + a[3]);
-    if (Math.abs(want - b[1]) < 0.02 && Math.abs(a[3] - b[3]) < 0.02
-      && Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[2] - b[2]) < 0.02) continue;
+    // Which way the twin runs is measured where both panels have axes, because
+    // cars differ: the Tatuus reverses both, the NSX v, the Abarth u. Without
+    // them, the convention the fits already follow: a v-flip about the panel.
+    const [pa, qa] = [p.frac.panel, q.frac.panel];
+    const measured = [pa, qa].every((x) => Array.isArray(x?.uAxis) && Array.isArray(x?.vAxis));
+    const want = mirrorAt(a, measured ? mirrorFlips(pa, qa) : { u: false, v: true });
+    if (want.every((w, i) => Math.abs(w - b[i]) < 0.02)) continue;
     say({
       kind: 'unmirrored',
       severity: 'low',
       surface: t.from,
       ids: [p.id, other],
       why: `${p.id} is at [${a.map(round).join(', ')}] and ${other} at ` +
-        `[${b.map(round).join(', ')}]; a mirrored pair would put ${other} at y ${round(want)}`,
+        `[${b.map(round).join(', ')}]; a mirrored pair would put ${other} at [${want.map(round).join(', ')}]`,
     });
   }
 }

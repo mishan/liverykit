@@ -175,6 +175,26 @@ test('text landing on text is reported, and layered artwork is not', () => {
     'artwork over artwork is the design working');
 });
 
+test('a pair mirrors the way its two panels were measured to, not always top to bottom', () => {
+  // The Abarth lays its doors out along u, reversed on the right. Held to a
+  // flip top to bottom, the find_space layout that mirrors on the car was
+  // reported unmirrored, and the one that does not mirror would have passed.
+  const axes = (u) => ({ uAxis: [0, 0, u], vAxis: [0, -1, 0] });
+  const car = { ...profile, panels: { body: {
+    L: { ...profile.panels.body.L, ...axes(1) },
+    R: { ...profile.panels.body.R, ...axes(-1) },
+  } } };
+  const unmirrored = (right) => fitment(design([
+    { id: 'name-left', treatment: 'text', panel: 'L', at: [0.1, 0.6, 0.5, 0.2], text: '{team}' },
+    { id: 'name-right', treatment: 'text', panel: 'R', at: right, text: '{team}' },
+  ]), car).findings.filter((f) => f.kind === 'unmirrored');
+
+  assert.deepEqual(unmirrored([0.4, 0.6, 0.5, 0.2]), []);
+  const flipped = unmirrored([0.1, 0.2, 0.5, 0.2]);
+  assert.equal(flipped.length, 1);
+  assert.match(flipped[0].why, /would put name-right at \[0\.4, 0\.6, 0\.5, 0\.2\]/);
+});
+
 test('a check that did not run is named, not counted as passed', () => {
   // The distinction the whole module turns on. Region visibility needs the
   // car's model, which most runs will not have — and "no findings" from a
