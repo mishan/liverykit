@@ -616,6 +616,35 @@ test('something behind a panel does not stand in front of it', () => {
   assert.equal(behind.fraction, 1, `a shell 5 mm behind the paint hides nothing, got ${behind.fraction}`);
 });
 
+test('the two cockpits are never in the same picture, and glass hides nothing', () => {
+  // A car with both draws COCKPIT_LR from outside and COCKPIT_HR only from the
+  // driver's seat. Counted together, the Abarth's LR cabin read 1% visible from
+  // trackside under the HR copy, the pair was reported as an unpainted twin,
+  // and the Tatuus's HR cockpit read 0% under the LR one.
+  const inside = (model, base, plate, material = {}) => ({
+    ...model,
+    materials: [model.materials[0], { slots: { txDiffuse: 'plate.dds' }, ...material }],
+    meshes: [{ ...model.meshes[0], path: `car/${base}/m` }, { ...model.meshes[1], path: `car/${plate}/m` }],
+  });
+  const fill = design([{ id: 'art', treatment: 'fill', panel: 'L', at: [0, 0, 1, 1], color: 'ink' }]);
+  const kinds = (model) => fitment(fill, profile, null, { model }).findings.map((f) => f.kind);
+
+  const plated = withPlate(plane({ rows: 6, cols: 6 }), 0.005);
+  assert.ok(kinds(inside(plated, 'BODY', 'BODY')).includes('unseen'));
+  assert.deepEqual(kinds(inside(plated, 'COCKPIT_LR', 'COCKPIT_HR')), []);
+  // Window glass blends, and what is behind it is seen through it.
+  assert.deepEqual(kinds(inside(plated, 'BODY', 'BODY', { alphaBlendMode: 1, shader: 'ksWindscreen' })), []);
+
+  const twinned = withPlate(plane({ rows: 4, cols: 4 }), 0.0005);
+  assert.ok(kinds(inside(twinned, 'BODY', 'BODY')).includes('unpainted-twin'));
+  assert.ok(!kinds(inside(twinned, 'COCKPIT_LR', 'COCKPIT_HR')).includes('unpainted-twin'));
+
+  // A sheet only the driver's seat shows is not asked about from trackside, and says why.
+  const seat = fitment(fill, profile, null, { model: inside(plated, 'COCKPIT_HR', 'COCKPIT_LR') });
+  assert.ok(seat.notChecked.some((s) => /unseen for surfaces\.body: .*COCKPIT_HR/.test(s)), JSON.stringify(seat.notChecked));
+  assert.deepEqual(seat.findings.filter((f) => f.kind === 'unseen'), []);
+});
+
 /** The same sheet with a second mesh floating `gap` meters in front of it. */
 function withPlate(model, gap) {
   const m = model.meshes[0];

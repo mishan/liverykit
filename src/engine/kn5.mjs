@@ -745,6 +745,13 @@ export function motionBlurOnly(name) {
   return /(^|_|rim|wheel|disc|tyre|tire)blur\d*(_|$)/i.test(String(name ?? ''));
 }
 
+// AC hides the NODE, so a mesh under `RIM_BLUR_RR` is an alternate whatever it
+// is called — and the Tatuus calls its blur rims `polymsh3_SUB1`, which the name
+// alone missed, so the twin check reported every design that painted its rims.
+export function motionBlurMesh(mesh) {
+  return motionBlurOnly(mesh.name) || String(mesh.path ?? '').split('/').some(motionBlurOnly);
+}
+
 /**
  * Whether this shader's diffuse texture is a plausible standalone image —
  * safe to show a part wearing, when the design does not paint it.
@@ -881,4 +888,18 @@ export function meshesUsingTexture(model, textureName) {
     const mat = model.materials[m.materialId];
     return mat && (mat.slots.txDiffuse ?? '').toLowerCase() === want;
   });
+}
+
+/**
+ * Which of a car's two cockpits a mesh belongs to, 'HR' or 'LR', or null for
+ * one that is not in either. Both renderers draw HR and never LR; why is
+ * beside the grouping in `wholeModelGeometry`. Handed out so a question about
+ * what the picture shows — the fitment check's view of the car from above —
+ * leaves out the same meshes.
+ */
+export function cockpitLod(m) {
+  const path = m.path ?? '';
+  if (/(^|\/)COCKPIT_HR(\/|$)/i.test(path)) return 'HR';
+  if (/(^|\/)COCKPIT_LR(\/|$)/i.test(path)) return 'LR';
+  return null;
 }

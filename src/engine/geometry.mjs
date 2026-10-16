@@ -8,22 +8,8 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurOnly, baseNormal } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurMesh, baseNormal, cockpitLod } from './kn5.mjs';
 import { cockpitEye } from './visibility.mjs';
-
-/**
- * Which of a car's two cockpits a mesh belongs to, 'HR' or 'LR', or null for
- * one that is not in either. Both renderers draw HR and never LR; why is
- * beside the grouping in `wholeModelGeometry`. Handed out so a question about
- * what the picture shows — the fitment check's view of the car from above —
- * leaves out the same meshes.
- */
-export function cockpitLod(m) {
-  const path = m.path ?? '';
-  if (/(^|\/)COCKPIT_HR(\/|$)/i.test(path)) return 'HR';
-  if (/(^|\/)COCKPIT_LR(\/|$)/i.test(path)) return 'LR';
-  return null;
-}
 
 /**
  * The WHOLE car, grouped by which texture paints each part.
@@ -266,7 +252,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // renderers read as "draw this whatever the camera". See `cockpitLod`.
   const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
     && !damageOnly(model.materials?.[m.materialId]?.shader)
-    && !motionBlurOnly(m.name);
+    && !motionBlurMesh(m);
 
   for (const { role, file } of files) {
     const meshes = meshesUsingTexture(model, file).filter(drawn);

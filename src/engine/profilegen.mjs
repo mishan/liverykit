@@ -20,7 +20,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurOnly, SHEET_SPAN } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, SHEET_SPAN } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
 import { PROFILE_SCHEMA } from '../profile.mjs';
@@ -210,7 +210,7 @@ export async function profileFromKn5(path, {
   // so that is said wherever such a mesh carries a panel.
   const twinned = visibility ? blurTwins(model) : new Map();
   const unpaired = new Set(model.meshes
-    .filter((m, i) => motionBlurOnly(m.name) && !twinned.has(i)).map((m) => m.name));
+    .filter((m, i) => motionBlurMesh(m) && !twinned.has(i)).map((m) => m.name));
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and

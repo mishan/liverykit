@@ -26,10 +26,9 @@ import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresN
 import { applyFit } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
-import { occupancyFor, rectVisibility, carOccluders, sampleRects } from './engine/visibility.mjs';
+import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
-import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurOnly, damageOnly } from './engine/kn5.mjs';
-import { cockpitLod } from './engine/geometry.mjs';
+import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from './engine/kn5.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
 // From the editor's op module, because the BROWSER needs this list too — to
@@ -335,9 +334,16 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     tooSmall(placed, t, sayHere, size, design.identity ?? {}, skip);
     unmirrored(placed, profile, t, sayHere);
     // The pit crew and the driver's kit are drawn by models of their own, and
-    // the profile says so; this car's model is the wrong place to look.
-    if (seen && profile.textures[t.role]?.inModel === false) {
-      const why = `${profile.textures[t.role].file} is drawn by another model (the driver's or the pit crew's), not this car's`;
+    // the profile says so; this car's model is the wrong place to look. Nor is
+    // trackside the place to look at a sheet only the driver's-seat cockpit
+    // wears, which the game swaps for the other one outside.
+    const why = !seen ? null
+      : profile.textures[t.role]?.inModel === false
+        ? `${profile.textures[t.role].file} is drawn by another model (the driver's or the pit crew's), not this car's`
+        : seatOnly(model, profile, t.role)
+          ? `${texture(profile, t.role).file} is only in COCKPIT_HR, which the game draws from the driver's seat and swaps for COCKPIT_LR outside`
+          : null;
+    if (why) {
       skip(`unseen for ${t.from}: ${why}`, { check: 'unseen', surface: t.from, role: t.role, ids: [], why });
       for (const p of placed.filter((q) => typeof q.constraints.minMargin === 'number')) {
         skip(`margin for ${p.id}: ${why}`, { check: 'margin', surface: t.from, role: t.role, ids: [p.id], why });
@@ -418,12 +424,20 @@ export function letterHeights(design, profile, fit = null) {
   return out;
 }
 
+/** Whether every mesh wearing this role's sheet is in the HR cockpit of a car that has an LR one. */
+function seatOnly(model, profile, role) {
+  const file = profile.textures[role]?.file;
+  const meshes = file ? meshesUsingTexture(model, file) : [];
+  return meshes.length > 0 && meshes.every((m) => cockpitLod(m) === 'HR')
+    && model.meshes.some((m) => cockpitLod(m) === 'LR');
+}
+
 const preparedCache = new WeakMap();
 function preparedFor(model, profile) {
   const hides = JSON.stringify(Object.keys(profile?.hiddenByCar?.meshes ?? {}).sort());
   let byHides = preparedCache.get(model);
   if (!byHides) preparedCache.set(model, (byHides = new Map()));
-  if (!byHides.has(hides)) byHides.set(hides, occupancyFor(model, { occluders: carOccluders(model, profile) }));
+  if (!byHides.has(hides)) byHides.set(hides, occupancyFor(model, { occluders: tracksideOccluders(model, profile) }));
   return byHides.get(hides);
 }
 
@@ -2934,7 +2948,7 @@ function stacked(model, profile, targets, say, { design = {} } = {}) {
     // at speed, a crack after a crash. The renderers leave them out for that
     // reason (see wholeModelGeometry), and counted here the Abarth's blurred
     // rims failed every design that painted its wheels.
-    if (motionBlurOnly(mesh.name) || damageOnly(model.materials?.[mesh.materialId]?.shader)) continue;
+    if (motionBlurMesh(mesh) || damageOnly(model.materials?.[mesh.materialId]?.shader)) continue;
     const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
     if (!file || designHides.has(file)) continue;
     if (!byFile.has(file)) byFile.set(file, []);
@@ -2961,6 +2975,9 @@ function stacked(model, profile, targets, say, { design = {} } = {}) {
           if (s < A_TWIN) continue;
           const dot = mine.face[0] * q.face[0] + mine.face[1] * q.face[1] + mine.face[2] * q.face[2];
           if (dot < SAME_FACING) continue;      // an inner shell, not a twin
+          // The two cockpits are the same cabin twice, and never drawn together.
+          const lods = [cockpitLod(mine.mesh), cockpitLod(q.mesh)];
+          if (lods[0] && lods[1] && lods[0] !== lods[1]) continue;
           said.add(pair);
 
           say({
