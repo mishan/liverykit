@@ -68,6 +68,7 @@ Per panel:
 | `outline` | the island's boundary polygon in sheet fractions, on panels with seams — a `rect` is a box and islands are not |
 | `reflected` | the island is a mirror image in the texture, so lettering needs `rotate: 'auto'` to read |
 | `visible` | fraction of the panel readable from trackside |
+| `bend` | how far the surface turns across the panel, in degrees: the angle between its mean normal and the normals at the 90th percentile. Under 25, the panel is tagged `flat` |
 | `visibleFromCockpit` | the same, cast from the driver's eye — inverts the answer for interior surfaces |
 | `safe` | the sub-rect that's actually visible, when smaller than `rect` |
 | `tiled` | the UVs run past 0..1 because the texture repeats, so `rect` is clamped and panel-relative coordinates mean little |
@@ -116,7 +117,7 @@ the editor's inbox until a person accepts it.
 
 - **`describe_car`**: Profile metadata, texture roles, panel counts, bind table, and axes.
 - **`find_panels`**: Query panels filtered by `role`, `tag`, `minVisibility`, `minArea`, `maxAnisotropy`, or `hasMirror`.
-- **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, and furthest from any edge — as ranked panel-relative spots with their clearance in mm, measured by the same ray casting as `check_fitment`. With `largest` and an `aspect`, the largest shape of that proportion that fits. With `layout: { number, name }`, a race number in a roundel with the name under it, laid out as large as the panel allows and returned as regions ready to use.
+- **`find_space`**: Where a shape of a given size fits whole on a panel — on the car, visible, on bodywork turning no more than 30 degrees, and furthest from any edge — as ranked panel-relative spots with their clearance in mm and `bendDeg`, measured by the same ray casting as `check_fitment`. With `largest` and an `aspect`, the largest shape of that proportion that fits. With `layout: { number, name }`, a race number in a roundel with the name under it, laid out as large as the panel allows and returned as regions ready to use.
 - **`list_treatments`**: Catalog of all loaded treatment options and schemas.
 - **`list_constraints`**: The constraints a region may declare, and what each enforces.
 - **`read_design`**: Read working design data held in the running editor.

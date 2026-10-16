@@ -212,7 +212,7 @@ test('a check that did not run is named, not counted as passed', () => {
     { id: 'a', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: 'X' },
   ]), profile);
 
-  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh', 'unpainted-twin'],
+  assert.deepEqual(r.notChecked, ['unseen', 'off-mesh', 'curved', 'unpainted-twin'],
     'it says which checks it could not make');
   assert.ok(!r.checked.includes('unseen'));
   assert.ok(r.checked.includes('overlap'), 'and which it did');
@@ -671,6 +671,68 @@ test('the two cockpits are never in the same picture, and glass hides nothing', 
   const seat = fitment(fill, profile, null, { model: inside(plated, 'COCKPIT_HR', 'COCKPIT_LR') });
   assert.ok(seat.notChecked.some((s) => /unseen for surfaces\.body: .*COCKPIT_HR/.test(s)), JSON.stringify(seat.notChecked));
   assert.deepEqual(seat.findings.filter((f) => f.kind === 'unseen'), []);
+});
+
+test('a rectangle on one island is measured on that island, not on another over the same texels', () => {
+  // The Abarth's rear quarter is two islands of one mesh on one patch of the
+  // sheet. Sampled across both, each cell answered for whichever covered it,
+  // and paint on the visible one was reported unseen behind the other's bumper.
+  const base = withPlate(plane({ rows: 6, cols: 6 }), 0.005);   // mesh 0 covered by a plate
+  const open = { ...base.meshes[0], world: [...base.meshes[0].world] };
+  open.world[12] = 5;                                            // the same texels, 5 m away in the clear
+  const model = { ...base, meshes: [...base.meshes, open] };
+  const [covered, , clear] = model.meshes;
+  const every = new Set(Array.from({ length: 36 }, (_, i) => i));
+  const seen = (island) => rectVisibility(model, occupancyFor(model), [covered, clear],
+    [0.02, 0.02, 0.36, 0.36], { island }).fraction;
+
+  assert.equal(seen(new Map([[clear, every]])), 1);
+  assert.equal(seen(new Map([[covered, every]])), 0);
+});
+
+/**
+ * `plane`'s sheet, flat up to `flat` of the way across and then rolling
+ * through `sweep` degrees, as bodywork does over a wheel arch.
+ */
+function bent({ rows, cols, flat = 0, sweep }) {
+  const model = plane({ rows, cols });
+  const stride = 32, rad = (sweep * Math.PI) / 180, R = ((1 - flat) * 1.6) / rad;
+  for (let i = 0; i < rows * cols; i++) {
+    const su = (i % cols) / (cols - 1), o = i * stride;
+    const th = su <= flat ? 0 : ((su - flat) / (1 - flat)) * rad;
+    model.buf.writeFloatLE(su <= flat ? su * 1.6 : flat * 1.6 + R * Math.sin(th), o);
+    model.buf.writeFloatLE(su <= flat ? 0 : -R * (1 - Math.cos(th)), o + 8);
+    model.buf.writeFloatLE(Math.sin(th), o + 12);
+    model.buf.writeFloatLE(Math.cos(th), o + 20);
+  }
+  return model;
+}
+
+test('lettering that wraps round the car is reported, and find_space keeps to the flat part', async () => {
+  // The roadmap's test for flatness: the checker names a rectangle that wraps
+  // a wheel arch. Visibility could not: every point of such a name can be seen,
+  // from somewhere.
+  const name = design([{ id: 'team', treatment: 'text', panel: 'L', at: [0.05, 0.4, 0.9, 0.2], text: '{team}' }]);
+  const curved = (model) => fitment(name, profile, null, { model }).findings.filter((f) => f.kind === 'curved');
+
+  assert.deepEqual(curved(bent({ rows: 9, cols: 25, sweep: 10 })), [], 'ten degrees is a door, not a corner');
+  const wrapped = curved(bent({ rows: 9, cols: 25, sweep: 120 }));
+  assert.equal(wrapped.length, 1);
+  assert.equal(wrapped[0].severity, 'high');
+  assert.match(wrapped[0].why, /turns \d+ degrees across it, so it wraps round the car/);
+  assert.equal(curved(bent({ rows: 9, cols: 25, sweep: 75 }))[0]?.severity, 'low', 'and a gentler roll is foreshortened');
+
+  const { findSpace } = await import('../src/space.mjs');
+  const half = bent({ rows: 9, cols: 33, flat: 0.35, sweep: 180 });
+  const found = findSpace({ profile, model: half, prepared: occupancyFor(half), role: 'body', panel: 'L',
+    widthMm: 500, heightMm: 200, cellMm: 50 });
+  assert.ok(found.candidates.length > 0, JSON.stringify(found));
+  for (const c of found.candidates) {
+    assert.ok(c.bendDeg <= 30, JSON.stringify(c));
+    const held = fitment(design([{ id: 'team', treatment: 'text', panel: 'L', at: c.at, text: '{team}' }]),
+      profile, null, { model: half });
+    assert.deepEqual(held.findings.filter((f) => f.kind === 'curved'), [], `a spot find_space offers is flat enough: ${JSON.stringify(c)}`);
+  }
 });
 
 /** The same sheet with a second mesh floating `gap` meters in front of it. */
@@ -1537,7 +1599,8 @@ test('a panel swept in one pass measures every cell exactly as asking cell by ce
     for (let c = 0; c < cols; c++) {
       const one = rectVisibility(half, prepared, meshes,
         [px + c * pw / cols, py + r * ph / rows, pw / cols, ph / rows], { across: 4 });
-      assert.deepEqual(grid[r][c], one ? { samples: one.samples, of: one.of, fraction: one.fraction }
+      const { normal, ...seen } = grid[r][c];
+      assert.deepEqual(seen, one ? { samples: one.samples, of: one.of, fraction: one.fraction }
         : { samples: 0, of: 16, fraction: 0 }, `cell ${r},${c}`);
     }
   }

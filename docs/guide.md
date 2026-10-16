@@ -245,8 +245,9 @@ derived from rounding error.
 
 Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
-trackside), `cockpit` (readable from the driver's seat), `mirrored`,
-`shared`, and on the tire texture `sidewall` and `tread`.
+trackside), `cockpit` (readable from the driver's seat), `flat` (the surface
+turns 25 degrees or less across most of the panel), `mirrored`, `shared`, and
+on the tire texture `sidewall` and `tread`.
 
 Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
@@ -331,8 +332,9 @@ they are proposed from AC's own exact filenames (`ac_crew.dds`,
 ### Fitting a portable design to one car
 
 A portable design places its artwork on the largest visible panel of the right
-side. That is the best a measurement can do — nothing in the tool knows which
-PART of a panel is flat, or whether the middle of it wraps over a wheel arch.
+side. Where on that panel is still the design's guess: the check reports
+lettering that lands on a curve, and `find_space` measures where the flat part
+is, but choosing the spot belongs to the pair of them.
 
 A **fit** records the adjustment, and belongs to neither the design nor the car
 but to the pair of them:
@@ -447,6 +449,7 @@ and several other things:
 | `crossed` | something is painted across a region that asked to be kept clear |
 | `off-mesh` | the box lands on texture space no triangle uses |
 | `unseen` | the bodywork hides it from trackside, or a fitting stands on it (a door handle, a number plate) |
+| `curved` | lettering on bodywork that turns more than 30 degrees under it, so its far end is foreshortened; high past 45, where it wraps round the car as it would over a wheel arch |
 | `hidden-in-view` | part of a number, word or ring is behind something in the view that shows it best, counted in the renderer's own pixels; only when a draft is measured over MCP |
 | `low-contrast` | text in a color too close to what is painted under it: under 3:1 will not read from trackside |
 | `unreadable` | too small in millimeters at the car's real scale |

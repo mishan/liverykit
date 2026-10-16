@@ -506,7 +506,8 @@ export function createToolHandler(client) {
       name: 'find_space',
       description:
         'Where on a panel a shape of a given size fits whole: all of it on the car, all of it ' +
-        'visible from trackside, and as far as possible from any edge, shut line or hidden area. ' +
+        'visible from trackside, on bodywork that turns no more than 30 degrees under it (bendDeg, ' +
+        'which check_fitment holds lettering to), and as far as possible from any edge, shut line or hidden area. ' +
         'Measured by sweeping the panel with the ray casting check_fitment uses. A panel\'s box is ' +
         'not the panel — its middle is often against a window frame, an arch or a shut line — so ' +
         'ask this before placing a roundel, logo or number box. Returns the roomiest spots as ' +

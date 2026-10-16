@@ -62,9 +62,9 @@ the words `car`, `livery` and `skin` are in every identifier.
 2. **Spanning is one seam deep.** Seam maps take an island to its neighbor.
    A stripe around a whole car needs a path of seams composed into one
    flattened canvas, and nothing walks that graph.
-3. **Nothing measures flatness.** The profile says whether a spot is visible
-   and not whether it is curved. The normals are in the model; the number is
-   computable per rectangle and is not computed.
+3. **Flatness is measured, not chosen.** Each panel records `bend`, the check
+   reports lettering on a curve, and `find_space` keeps to flat bodywork; which
+   flat spot a design wants is still a person's call.
 
 **A caution about the market.** Free painting on one object is a solved and
 crowded problem: Substance Painter, Blender, Mari, ArmorPaint. Building a

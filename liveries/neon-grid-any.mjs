@@ -112,9 +112,9 @@ export default {
         // names rather than above them: a formula car's flank is three times
         // longer than it is tall, and stacked, nothing on it reaches the 140 mm
         // a number and the 45 mm a name need to read from trackside. Placement
-        // within a panel is still a guess — nothing here knows which part of a
-        // panel is flat — so these sit clear of the edges, and of the bottom of
-        // the Tatuus's flank, which is partly off the mesh.
+        // within a panel is still a guess, which the fitment check measures on
+        // each car, so these sit clear of the edges, and of the bottom of the
+        // Tatuus's flank, which is partly off the mesh.
         //
         // The right side is the left flipped both ways, which is how the Tatuus
         // lays its right flank out, so the group mirrors on the car instead of

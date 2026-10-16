@@ -13,6 +13,7 @@
 //   level     upper | lower
 //   visible   readable from trackside
 //   cockpit   readable from the driver's seat
+//   flat      turns less than FLAT_DEG across the whole panel (`bend`)
 //   mirrored  has a mirror-image partner on the other side
 //   sidewall  a tire's sidewall; tread, its tread — from the wheel measurement
 //
@@ -46,6 +47,9 @@
 // ---------------------------------------------------------------------------
 
 /** Cut points as fractions of the car's length, tail (0) to nose (1). */
+/** A panel whose surface turns this far or less across most of it is `flat`. */
+export const FLAT_DEG = 25;
+
 const SECTIONS = [
   [0.82, 'nose'], [0.62, 'front'], [0.38, 'mid'], [0.18, 'rear'], [-Infinity, 'tail'],
 ];
@@ -239,6 +243,10 @@ export function computeTags(profile) {
       // mean the same thing on two cars anyway.
       if (typeof p.visible === 'number' && p.visible >= 0.5) tags.push('visible');
       if (typeof p.visibleFromCockpit === 'number' && p.visibleFromCockpit >= 0.3) tags.push('cockpit');
+      // A whole panel turns more than any rectangle on it, so this asks less
+      // of a panel than the check asks of lettering: the Tatuus's flank reads
+      // 18 degrees across all of it, the Abarth's door 27 and the NSX's 43.
+      if (typeof p.bend === 'number' && p.bend <= FLAT_DEG) tags.push('flat');
       if (p.mirrorOf) tags.push('mirrored');
       // Tire parts, from the wheel measurement. `sidewall` is what a design
       // means by "the tire": the part with the lettering, that a spectator

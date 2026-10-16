@@ -8,10 +8,9 @@ idea, because it contradicts the one claim the whole tool rests on.
 
 liverykit exists because **nothing in a texture tells you which bit of it lands
 on the sidepod**. The fitting editor exists on top of that because no measurement
-knows which *part* of a panel is flat, which way is up on it, or whether the
-middle of a rectangle wraps over a wheel arch — only a person looking at the car
-can say. A model with no eyes is in exactly the position this project spent its
-whole history saying is untenable. An MCP whose selling point is that it places
+says which way is up on a panel or which of its flat parts a design wants —
+only a person looking at the car can say. A model with no eyes is in exactly
+the position this project spent its whole history saying is untenable. An MCP whose selling point is that it places
 your artwork would be a machine confidently doing the single job the tool was
 built to say a machine cannot do.
 
@@ -175,7 +174,7 @@ question when this was written — see below.
 | tool | answers |
 |---|---|
 | `check_fitment` | what is wrong with the design where it actually sits: overlaps, readable areas, size in millimeters, mirroring, coverage, occlusion |
-| `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, clear of edges — as ranked spots with their clearance in mm; with `largest` and an `aspect`, the largest shape of that proportion that fits, found by sweeping sizes; with `layout: { number, name }` instead of a size, a race number in a roundel with the name under it, laid out as large as the panel allows with the letters sized by `check_fitment`'s own arithmetic, returned as regions ready to use; with `stripe: { widthMm, offsetMm }`, a stripe along the car, a piece on every panel its band crosses seen from above; with `aero: { heightMm }`, a ground-effect kit — splitter, side skirts, diffuser — as the car's lowest panels all round up to that height, filled whole, and a taller panel on a flank drawn to their line. Each is a separate question: `layout`, `stripe` and `aero` are refused beside each other or beside `largest`, `widthMm` or `heightMm` |
+| `find_space` | where on a panel a shape of a given size fits whole — on the car, visible, flat enough for lettering, clear of edges — as ranked spots with their clearance in mm and `bendDeg`; with `largest` and an `aspect`, the largest shape of that proportion that fits, found by sweeping sizes; with `layout: { number, name }` instead of a size, a race number in a roundel with the name under it, laid out as large as the panel allows with the letters sized by `check_fitment`'s own arithmetic, returned as regions ready to use; with `stripe: { widthMm, offsetMm }`, a stripe along the car, a piece on every panel its band crosses seen from above; with `aero: { heightMm }`, a ground-effect kit — splitter, side skirts, diffuser — as the car's lowest panels all round up to that height, filled whole, and a taller panel on a flank drawn to their line. Each is a separate question: `layout`, `stripe` and `aero` are refused beside each other or beside `largest`, `widthMm` or `heightMm` |
 | `render_view` | the rendered texture and placements for one surface, or all of them |
 | `render_car` | a picture of the working design on the car |
 

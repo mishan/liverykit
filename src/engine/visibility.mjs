@@ -177,7 +177,11 @@ function buildOccupancy(model, meshes, cellSize) {
         Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z),
         Math.hypot(p2.x - p0.x, p2.y - p0.y, p2.z - p0.z)
       );
-      const n = Math.min(12, Math.max(1, Math.ceil(span / (cellSize * 0.6))));
+      // Dense enough that a surface marks every cell it passes through. At
+      // twelve steps a side, a metre-long triangle left most of its own cells
+      // to whatever lay behind it, and a ray cast from inside it stopped on
+      // the door shell 2 mm back: vertices, at the corners, never noticed.
+      const n = Math.min(256, Math.max(1, Math.ceil(span / (cellSize * 0.6))));
       for (let s = 0; s <= n; s++) {
         for (let t = 0; t + s <= n; t++) {
           const u = s / n, v = t / n, w = 1 - u - v;
@@ -340,6 +344,87 @@ function covered(near, p, reach = 0.05, floor = 0.001) {
 }
 
 /**
+ * Whether a point is clear of the car in at least `minDirections` of the
+ * directions it faces.
+ *
+ * Cast from the surface itself, with no lift. `escapes` steps BEFORE it
+ * tests, so any lift at all skips past the cell the surface stands in, which
+ * is precisely the cell a flush occluder shares with it; self-occlusion is
+ * handled by ownership instead.
+ */
+function seenFrom({ occ, dirs, maxSteps }, p, minDirections) {
+  let clear = 0;
+  for (const [dx, dy, dz] of dirs) {
+    // A ray heading into the surface tells you nothing.
+    if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
+    if (escapes(occ, p.x, p.y, p.z, dx, dy, dz, maxSteps, p.mesh) && ++clear >= minDirections) return true;
+  }
+  return false;
+}
+
+/**
+ * Points spread over an island's own triangles in proportion to their area,
+ * the same number for every island.
+ *
+ * What a panel's `visible` is measured on, because its vertices were the
+ * wrong sample for the reason `sampleRect` gives: they are where the modeller
+ * put them. The Abarth's rear quarter keeps its vertices along the edge you
+ * can see and spans the rest in a few triangles that run under the bumper, so
+ * it measured 59% visible by vertex and 9% by area — and the fitment check,
+ * which samples by area, reported paint there as unseen on a panel the
+ * profile had tagged visible. Spread over the island's triangles rather than
+ * across its uv rectangle, so another island laid over the same texels — that
+ * panel has two — is not measured in its place.
+ */
+export function islandSamples(model, isl, count = 196) {
+  const mesh = isl.meshRef;
+  const own = model.meshes.indexOf(mesh);
+  const tris = (isl.triangles ?? []).map(([a, b, c]) => {
+    const A = vertex(model, mesh, a), B = vertex(model, mesh, b), C = vertex(model, mesh, c);
+    const ex = B.x - A.x, ey = B.y - A.y, ez = B.z - A.z;
+    const fx = C.x - A.x, fy = C.y - A.y, fz = C.z - A.z;
+    return { A, B, C, area: Math.hypot(ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx) / 2 };
+  }).filter((t) => t.area > 0);
+  const total = tris.reduce((s, t) => s + t.area, 0);
+  if (!total) return isl.vertices.map((i) => ({ ...vertex(model, mesh, i), mesh: own }));
+
+  const out = [];
+  let at = 0, upto = tris[0].area;
+  for (let k = 0; k < count; k++) {
+    const target = ((k + 0.5) / count) * total;
+    while (upto < target && at < tris.length - 1) upto += tris[++at].area;
+    const { A, B, C } = tris[at];
+    // A low-discrepancy pair folded into the triangle, so the points in one
+    // triangle do not line up along a single edge.
+    let r1 = (k * 0.7548776662466927) % 1, r2 = (k * 0.5698402909980532) % 1;
+    if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
+    const b0 = 1 - r1 - r2;
+    const mix = (key) => A[key] * b0 + B[key] * r1 + C[key] * r2;
+    const nx = mix('nx'), ny = mix('ny'), nz = mix('nz');
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    out.push({ x: mix('x'), y: mix('y'), z: mix('z'), nx: nx / nl, ny: ny / nl, nz: nz / nl, u: mix('u'), v: mix('v'), mesh: own });
+  }
+  return out;
+}
+
+/**
+ * How far a surface turns across a set of its points, in degrees: the angle
+ * between their mean normal and the normals at the 90th percentile of it. Not
+ * the largest, which one sample on a rolled edge decides. A flat door reads
+ * a few degrees; lettering wrapped round a wheel arch, fifty and more.
+ */
+export function bendDeg(points) {
+  if (!points.length) return null;
+  let x = 0, y = 0, z = 0;
+  for (const p of points) { x += p.nx; y += p.ny; z += p.nz; }
+  const l = Math.hypot(x, y, z);
+  if (!l) return 90;
+  const angles = points.map((p) => Math.acos(Math.max(-1, Math.min(1, (p.nx * x + p.ny * y + p.nz * z) / l))))
+    .sort((a, b) => a - b);
+  return Math.round(angles[Math.floor(angles.length * 0.9)] * 180 / Math.PI);
+}
+
+/**
  * A safe area confined to its panel.
  *
  * The safe area is the bounds of the readable vertices, taken from their raw
@@ -390,43 +475,41 @@ export function computeSafeAreas(model, islands, {
   shrinkThreshold = 0.02,           // ignore trims smaller than this, as noise
   log = () => {},
 } = {}) {
-  const { occ, dirs, maxSteps, near } = prepared ?? occupancyFor(model, { occluders, cellSize });
-  // Was cellSize * 1.6 — 4 cm, chosen to clear the surface's own voxel, and so
-  // wide it stepped over anything sitting closer than that. Ownership clears
-  // the surface instead, and `escapes` tests only AFTER stepping, so a lift of
-  // any size skips the cell where a flush occluder would be found.
-  const lift = 0;
+  const prep = prepared ?? occupancyFor(model, { occluders, cellSize });
+  const { near } = prep;
 
   for (const isl of islands) {
     const own = model.meshes.indexOf(isl.meshRef);
-    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
-    let visible = 0;
+    // A plate or a handle standing on the paint shares its voxels, which
+    // `escapes` steps over, so it is asked about exactly here. And several
+    // directions, not one: "visible from at least one angle out of forty-nine"
+    // is a much weaker claim than it sounds, and the lower edge of a sidepod,
+    // tucked under an overhang and half behind a wheel, passes it and is still
+    // no place to put a driver's name.
+    const sees = (p) => covered(near, p) < 0 && seenFrom(prep, p, minDirections);
 
+    // How much is seen, by area; see `islandSamples`.
+    const points = islandSamples(model, isl);
+    isl.bend = bendDeg(points);
+    const seen = points.filter(sees);
+    const fraction = seen.length / points.length;
+
+    // Where it is seen, by vertex, as before. A safe area is the bounds of
+    // what can be seen in the island's own uv, and on a tiled island the area
+    // samples sit far off the sheet, where those bounds mean nothing.
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
     for (const i of isl.vertices) {
-      const p = vertex(model, isl.meshRef, i);
-      // A plate or a handle standing on the paint shares its voxels, which
-      // `escapes` now steps over, so it is asked about exactly here.
-      if (covered(near, { ...p, mesh: own }) >= 0) continue;
-      const sx = p.x + p.nx * lift, sy = p.y + p.ny * lift, sz = p.z + p.nz * lift;
-      // Count the directions, don't stop at the first. "Visible from at least
-      // one angle out of forty-nine" is a much weaker claim than it sounds: the
-      // lower edge of a sidepod, tucked under an overhang and half behind a
-      // wheel, passes that test and is still no place to put a driver's name.
-      // Requiring several viewing angles distinguishes a surface you can see
-      // from one you can read.
-      let clear = 0;
-      for (const [dx, dy, dz] of dirs) {
-        // A ray heading into the surface tells you nothing.
-        if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
-        if (escapes(occ, sx, sy, sz, dx, dy, dz, maxSteps, own)) clear++;
-      }
-      if (clear < minDirections) continue;
-      visible++;
+      const p = { ...vertex(model, isl.meshRef, i), mesh: own };
+      if (!sees(p)) continue;
       if (p.u < u0) u0 = p.u; if (p.u > u1) u1 = p.u;
       if (p.v < v0) v0 = p.v; if (p.v > v1) v1 = p.v;
     }
-
-    const fraction = visible / isl.vertexCount;
+    // Seen between its vertices and at none of them: the samples are all
+    // there is to bound it by.
+    if (u0 === Infinity && seen.length) {
+      u0 = Math.min(...seen.map((p) => p.u)); u1 = Math.max(...seen.map((p) => p.u));
+      v0 = Math.min(...seen.map((p) => p.v)); v1 = Math.max(...seen.map((p) => p.v));
+    }
     isl.visibleFraction = Math.round(fraction * 100) / 100;
 
     if (fraction < minVisibleFraction) {
@@ -535,6 +618,8 @@ export function tracksideOccluders(model, profile) {
 
 /** The bare grid, for a caller keeping one across many casts at a cell size of its own: the cockpit's. */
 export const occupancyGrid = (model, occluders, cellSize) => buildOccupancy(model, occluders, cellSize);
+/** And the index of what stands flush on a surface, for the same caller. */
+export const nearIndex = (model, occluders) => buildNear(model, occluders);
 
 export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025 } = {}) {
   const occ = buildOccupancy(model, occluders, cellSize);
@@ -572,19 +657,14 @@ export function occupancyFor(model, { occluders = model.meshes, cellSize = 0.025
  * really a design painting a diagonal.
  */
 export function rectVisibility(model, prepared, meshes, rect, {
-  minDirections = 4, across = 14, poly = null, grid = null,
+  minDirections = 4, across = 14, poly = null, grid = null, island = null,
 } = {}) {
-  const { occ, cellSize, dirs, maxSteps, near } = prepared;
+  const { near } = prepared;
   // `grid` is [columns, rows] for a rectangle that is not square on the car:
   // a team name is ten times wider than it is tall, and `across` cells each
   // way spend nine tenths of the samples on its height.
   const [nu, nv] = grid ?? [across, across];
-  // Zero, and that is the point. `escapes` steps BEFORE it tests, so any lift
-  // at all skips past the cell the surface stands in — which is precisely the
-  // cell a flush occluder shares with it. Self-occlusion is handled by
-  // ownership now, so the ray has no reason to start anywhere but the surface.
-  const lift = 0;
-  const { points, cells } = sampleRect(model, meshes, rect, nu, nv, poly);
+  const { points, cells } = sampleRect(model, meshes, rect, nu, nv, poly, island);
   if (!points.length) return null;
 
   let seen = 0;
@@ -596,13 +676,7 @@ export function rectVisibility(model, prepared, meshes, rect, {
       under[n] = (under[n] ?? 0) + 1;
       continue;
     }
-    const sx = p.x + p.nx * lift, sy = p.y + p.ny * lift, sz = p.z + p.nz * lift;
-    let clear = 0;
-    for (const [dx, dy, dz] of dirs) {
-      if (dx * p.nx + dy * p.ny + dz * p.nz <= 0.05) continue;
-      if (escapes(occ, sx, sy, sz, dx, dy, dz, maxSteps, p.mesh) && ++clear >= minDirections) break;
-    }
-    if (clear >= minDirections) seen++;
+    if (seenFrom(prepared, p, minDirections)) seen++;
   }
   return {
     fraction: seen / points.length, samples: points.length, of: cells,
@@ -633,8 +707,8 @@ export function rectVisibility(model, prepared, meshes, rect, {
  * counted, so the coverage figure stays a fraction of the artwork rather than
  * of the box drawn around it.
  */
-function sampleRect(model, meshes, rect, nu, nv, poly = null) {
-  return sampleRects(model, meshes, [{ rect, nu, nv, poly }])[0];
+function sampleRect(model, meshes, rect, nu, nv, poly = null, island = null) {
+  return sampleRects(model, meshes, [{ rect, nu, nv, poly }], island)[0];
 }
 
 /**
@@ -647,8 +721,13 @@ function sampleRect(model, meshes, rect, nu, nv, poly = null) {
  * the NSX's bonnet, sampled over its box, measured 1234 mm wide where it was
  * 500: the rest was the tops of both front wings, laid out in the same
  * stretch of the sheet.
+ *
+ * `island`, a Map from mesh to the vertex indices of one island on it, keeps
+ * only that island's triangles. An outline cannot tell apart two islands laid
+ * over the same texels, and the Abarth's rear quarter has two: sampled across
+ * both, a rectangle on one measured whichever happened to cover each cell.
  */
-export function sampleRects(model, meshes, list) {
+export function sampleRects(model, meshes, list, island = null) {
   const plans = list.map(({ rect: [rx, ry, rw, rh], nu, nv, poly = null, within = null }) => {
     if (!(rw > 0) || !(rh > 0)) return null;
     // Which cells are in play, decided once: the inner loop runs per triangle
@@ -672,7 +751,7 @@ export function sampleRects(model, meshes, list) {
     }
     return cells ? { rect: [rx, ry, rw, rh], nu, nv, asked, cells } : null;
   });
-  const hits = scanGrids(model, meshes, plans.filter(Boolean));
+  const hits = scanGrids(model, meshes, plans.filter(Boolean), island);
   let k = 0;
   return plans.map((plan) => (plan
     ? { points: hits[k++].filter(Boolean), cells: plan.cells }
@@ -702,11 +781,14 @@ function scanGrid(model, meshes, rect, nu, nv, asked = null) {
  * `grids` is `[{ rect, nu, nv, asked }]`; the answer is one hit list per grid,
  * each exactly what `scanGrid` returns for it alone.
  */
-export function scanGrids(model, meshes, grids) {
+export function scanGrids(model, meshes, grids, island = null) {
   const hits = grids.map(({ nu, nv }) => new Array(nu * nv).fill(null));
   for (const mesh of meshes) {
     const own = model.meshes.indexOf(mesh);
+    const keep = island?.get(mesh);
+    if (island && !keep) continue;
     for (const [ia, ib, ic] of triangles(model, mesh)) {
+      if (keep && !keep.has(ia)) continue;            // another island's triangle
       const A = vertex(model, mesh, ia), B = vertex(model, mesh, ib), C = vertex(model, mesh, ic);
       const umin = Math.min(A.u, B.u, C.u), umax = Math.max(A.u, B.u, C.u);
       const vmin = Math.min(A.v, B.v, C.v), vmax = Math.max(A.v, B.v, C.v);
@@ -766,11 +848,13 @@ export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per 
   const { occ, dirs, maxSteps, near } = prepared;
   const nu = cols * per, nv = rows * per;
   const hit = scanGrid(model, meshes, rect, nu, nv);
-  const tally = Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ samples: 0, seen: 0 })));
+  const tally = Array.from({ length: rows }, () => Array.from({ length: cols },
+    () => ({ samples: 0, seen: 0, nx: 0, ny: 0, nz: 0 })));
   hit.forEach((p, slot) => {
     if (!p) return;
     const cell = tally[Math.floor(Math.floor(slot / nu) / per)][Math.floor((slot % nu) / per)];
     cell.samples++;
+    cell.nx += p.nx; cell.ny += p.ny; cell.nz += p.nz;
     if (near && covered(near, p) >= 0) return;     // on the car, and under something
     let clear = 0;
     for (const [dx, dy, dz] of dirs) {
@@ -779,9 +863,15 @@ export function gridVisibility(model, prepared, meshes, rect, cols, rows, { per 
     }
     if (clear >= minDirections) cell.seen++;
   });
-  return tally.map((row) => row.map((c) => ({
-    samples: c.samples, of: per * per, fraction: c.samples ? c.seen / c.samples : 0,
-  })));
+  // The cell's mean normal too, so a question about a spot several cells
+  // across can ask how far the surface turns under it; see `bendDeg`.
+  return tally.map((row) => row.map((c) => {
+    const l = Math.hypot(c.nx, c.ny, c.nz);
+    return {
+      samples: c.samples, of: per * per, fraction: c.samples ? c.seen / c.samples : 0,
+      normal: l ? { nx: c.nx / l, ny: c.ny / l, nz: c.nz / l } : null,
+    };
+  }));
 }
 
 export function cockpitEye(model, { back = 0.42, up = 0.18, front = 1 } = {}) {

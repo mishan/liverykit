@@ -224,6 +224,51 @@ test('a mesh behind the paint stands in front of nothing either, and one flush i
   assert.ok(flush < bare - 0.2, `a plate 4 mm proud covers the flank: ${flush} against ${bare}`);
 });
 
+test('a panel is measured by its area, not by where its modeller put the vertices', async () => {
+  // The Abarth's rear quarter keeps its vertices along the edge you can see
+  // and spans the rest in a few triangles running under the bumper. Measured
+  // at its vertices it was 59% visible, the profile tagged it so, and the
+  // fitment check, which samples by area, found the paint there 9% visible.
+  // Here the rows crowd toward the top edge and a plate 4 mm proud covers the
+  // lower four fifths: about two thirds of the vertices are clear, and a fifth
+  // of the area.
+  const N = 40, tail = { name: 'TAIL_L', verts: [], indices: [] };
+  for (let j = 0; j <= N; j++) {
+    const y = 1.3 - ((N - j) / N) ** 4;
+    for (let i = 0; i <= N; i++) {
+      tail.verts.push(vert(0.96, y, -0.6 + 1.2 * (i / N), 0.7 + 0.25 * (i / N), 0.55 + 0.4 * (y - 0.3), [1, 0, 0]));
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const a = j * (N + 1) + i;
+      tail.indices.push(a, a + 1, a + N + 2, a, a + N + 2, a + N + 1);
+    }
+  }
+  const cover = { name: 'COVER_L', indices: [0, 1, 2, 0, 2, 3], verts: [
+    vert(0.964, 0.25, -0.7, 0.999, 0.999), vert(0.964, 0.25, 0.7, 0.999, 0.999),
+    vert(0.964, 1.1, 0.7, 0.999, 0.999), vert(0.964, 1.1, -0.7, 0.999, 0.999)] };
+  const dir = await mkdtemp(join(tmpdir(), 'lk-area-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5({ extraMeshes: [tail, cover] }));
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const panel = Object.values(p.panels).flatMap((ps) => Object.values(ps)).find((q) => q.source?.mesh === 'TAIL_L');
+  assert.ok(panel.visible > 0.1 && panel.visible < 0.35, `a fifth of it can be seen: ${panel.visible}`);
+});
+
+test('a profile records how far each panel turns, and tags the flat ones', async () => {
+  // A design can then ask for `flat` rather than guess which part of a car is.
+  // The fixture's faces are planes, so every one of them is.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-flat-'));
+  await writeFile(join(dir, 'fixture.kn5'), carKn5());
+  const p = await profileFromKn5(join(dir, 'fixture.kn5'), { id: 'fixture_car', log: () => {} });
+  const panels = Object.values(p.panels).flatMap((ps) => Object.values(ps));
+  assert.ok(panels.length > 0);
+  for (const q of panels) {
+    assert.equal(q.bend, 0, JSON.stringify(q.rect));
+    assert.ok(q.tags.includes('flat'), JSON.stringify(q.tags));
+  }
+});
+
 test('a motion-blur rim is measured as the rim it stands in for, not as something behind it', async () => {
   // AC swaps WHEEL_xx/RIM_xx for WHEEL_xx/RIM_BLUR_xx by wheel speed, so the
   // two are never drawn together. The NSX's rim sheet is also worn by its

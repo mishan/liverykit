@@ -26,8 +26,9 @@ import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresN
 import { applyFit, mirrorAt, mirrorFlips } from './fit.mjs';
 import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
-import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects } from './engine/visibility.mjs';
+import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects, bendDeg } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
+import { findIslands } from './engine/islands.mjs';
 import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from './engine/kn5.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
@@ -364,7 +365,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     name: profile.name || profile.id,
     checked: model ? ALL_CHECKS : ALL_CHECKS.filter((c) => !NEEDS_MODEL.includes(c)),
     // Named, so "no findings" cannot be mistaken for "nothing was skipped".
-    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
+    notChecked: [...(model ? [] : ['unseen', 'off-mesh', 'curved', 'unpainted-twin', ...(wantsMargin ? ['margin'] : []),
       ...(wantsStripe ? ['stripe-offset', 'stripe-gap'] : [])]), ...unmeasured],
     // The entries of notChecked that nothing in a design can make run, each
     // with the entry it explains. Still in notChecked, so nothing that reads
@@ -450,6 +451,23 @@ export function fitmentVerdict(r) {
       `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
 }
 
+/**
+ * The island a panel was measured from, as the vertices to keep on its mesh,
+ * or null where that cannot be told and the whole sheet is sampled as before.
+ * Found again by the profile's source mesh and rectangle, the two things it
+ * records about it.
+ */
+const islandCache = new WeakMap();
+function islandOf(model, meshes, pan) {
+  const mesh = pan?.source?.mesh && meshes.find((m) => m.name === pan.source.mesh);
+  if (!mesh) return null;
+  let byMesh = islandCache.get(model);
+  if (!byMesh) islandCache.set(model, (byMesh = new Map()));
+  if (!byMesh.has(mesh)) byMesh.set(mesh, findIslands(model, [mesh], { minVertices: 1, bigEnough: 0 }));
+  const same = byMesh.get(mesh).filter((i) => i.rect.every((v, k) => Math.abs(v - pan.rect[k]) < 0.002));
+  return same.length ? new Map([[mesh, new Set(same.flatMap((i) => i.vertices))]]) : null;
+}
+
 /** Whether every mesh wearing this role's sheet is in the HR cockpit of a car that has an LR one. */
 function seatOnly(model, profile, role) {
   const file = profile.textures[role]?.file;
@@ -468,10 +486,10 @@ function preparedFor(model, profile) {
 }
 
 const ALL_CHECKS = ['unmatched', 'unknown-field', 'overflows', 'margin', 'overlap', 'low-contrast', 'outside-safe', 'hidden-face', 'unreadable', 'too-small', 'ungrouped', 'unmirrored',
-  'unseen', 'off-mesh', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
+  'unseen', 'off-mesh', 'curved', 'crossed', 'clipped', 'bad-constraint', 'unpainted-twin', 'stripe-across', 'stripe-offset', 'stripe-gap'];
 
 /** The checks that stand on the car's geometry, and do not run without its model. */
-const NEEDS_MODEL = ['unseen', 'off-mesh', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
+const NEEDS_MODEL = ['unseen', 'off-mesh', 'curved', 'unpainted-twin', 'margin', 'stripe-offset', 'stripe-gap'];
 
 /**
  * Where each region actually lands, after the fit has had its say.
@@ -1311,6 +1329,16 @@ function unreadable(placed, profile, t, say, skip) {
  * a long name is shrunk to fit its box's WIDTH, so a 150 mm box held 47 mm
  * letters. Run 16's name, which a person called too small to read, is 40.
  */
+/**
+ * How far the surface under lettering may turn, in degrees, before it is
+ * reported: past CURVED_DEG the far letters are visibly foreshortened, and
+ * past WRAPPED_DEG the text goes round a corner, as it does over a wheel arch.
+ * The shipped placements sit at 5 to 12 on the Abarth and the Tatuus; the
+ * NSX's name on the roll of its door top, at 41.
+ */
+export const CURVED_DEG = 30;
+export const WRAPPED_DEG = 45;
+
 export const NUMBER_MM = 140;
 export const NAME_MM = 45;
 
@@ -2741,12 +2769,21 @@ function unseen(placed, profile, t, seen, say) {
     // instead, a piece that arrived through a seam spends half its samples on
     // texture it does not paint, and both answers below — how much is on the
     // car, how much can be seen — come back describing that empty half.
-    const answer = rectVisibility(seen.model, seen.prepared, meshes, at,
-      { poly: p.frac.poly ?? null, grid: fineGrid(p) });
+    const poly = p.frac.poly ?? null, grid = fineGrid(p);
+    // On the car is asked of the whole sheet, since paint on texels another
+    // island wears is still on the car. Seen is asked of the panel's own
+    // island where it can be found, since paint on the panel is what it is
+    // about, and on the Abarth's rear quarter a second island laid over the
+    // same texels answered for it.
+    const [nu, nv] = grid ?? [14, 14];
+    const onCar = sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }])[0];
+    const island = islandOf(seen.model, meshes, p.frac.panel);
+    const answer = (island && rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid, island }))
+      || rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid });
 
     // Nothing there at all: the rectangle is off the model entirely, which is
     // not a visibility verdict and must not be reported as one.
-    if (!answer) {
+    if (!onCar.points.length) {
       say({
         kind: 'off-mesh', severity: p.region.treatment === 'text' ? 'high' : 'low',
         surface: t.from, panel: p.region.panel, ids: [p.id], coverage: 0,
@@ -2759,7 +2796,7 @@ function unseen(placed, profile, t, seen, say) {
     // Partly there. Reported before visibility, because "86% visible" of a
     // tenth of a placement is a true sentence that misleads completely, and
     // whichever of the two is said first is the one that gets acted on.
-    const coverage = answer.samples / answer.of;
+    const coverage = onCar.points.length / onCar.cells;
     const carries = p.region.treatment === 'text';
     const asked = typeof p.constraints.minOnCar === 'number' ? p.constraints.minOnCar : null;
     if (coverage < (asked ?? (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW))) {
@@ -2773,6 +2810,24 @@ function unseen(placed, profile, t, seen, say) {
       });
       continue;
     }
+    // Lettering is read from one place, so it has to be on one face of the
+    // car. Asked only of a placement on a panel: across a whole sheet the
+    // normals are those of every island on it, and say nothing about a surface.
+    if (carries && p.frac.panel) {
+      const bend = bendDeg(island ? sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }], island)[0].points : onCar.points);
+      if (bend > CURVED_DEG) {
+        say({
+          kind: 'curved', severity: bend > WRAPPED_DEG ? 'high' : 'low',
+          surface: t.from, panel: p.region.panel, ids: [p.id], bendDeg: bend,
+          why: `${name(t, p.id)} is on bodywork that turns ${bend} degrees across it` +
+            (bend > WRAPPED_DEG
+              ? ', so it wraps round the car and no one place sees all of it'
+              : ', so its far end is foreshortened from where its near end reads') +
+            '; move it to a flatter part of the panel, which find_space measures',
+        });
+      }
+    }
+
     // A declared floor replaces the default one, and makes the finding high:
     // the design said how much of this has to be seen, and it is not.
     const askedSeen = typeof p.constraints.minVisible === 'number' ? p.constraints.minVisible : null;
