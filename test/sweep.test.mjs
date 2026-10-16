@@ -190,13 +190,17 @@ test('the body counts the panels on every texture it binds, not only the first',
 
 test('a body with a tiled texture says so whichever role it is, and the car line counts what it refused', () => inTmp(async (dir) => {
   // The tiled sheet is the body's second texture, where reading only the
-  // first said nothing about it.
-  const { profiles } = await twoTextureBody(dir, (p) => { p.textures.skinbase_default.uvLayout = 'tiled'; });
+  // first said nothing about it. The first is made unwrapped here: measured,
+  // the Abarth's Skin.DDS is tiled too.
+  const { profiles } = await twoTextureBody(dir, (p) => {
+    p.textures.skin.uvLayout = 'unwrapped';
+    p.textures.skinbase_default.uvLayout = 'tiled';
+  });
   const out = join(dir, 'sweep.json');
   const { stdout } = await sweep('neon-grid-any', '--profiles', profiles, '--out', out);
   const [record] = JSON.parse(await readFile(out, 'utf8'));
   assert.equal(record.bindings.body.uvLayout, 'tiled');
-  assert.deepEqual(record.bindings.body.uvLayouts, { skinbase_default: 'tiled' });
+  assert.deepEqual(record.bindings.body.uvLayouts, { skin: 'unwrapped', skinbase_default: 'tiled' });
 
   // The mp412c's regions were all `unplaceable`, and its line said "0
   // region(s) missing".

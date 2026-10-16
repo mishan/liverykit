@@ -1,6 +1,6 @@
 {
   "name": "liverykit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Generate Assetto Corsa liveries from code, placed by each car's measured UV layout",
   "type": "module",
   "main": "src/index.mjs",

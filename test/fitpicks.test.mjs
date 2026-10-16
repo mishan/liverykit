@@ -53,10 +53,10 @@ async function picks(car) {
 
 const PINNED = {
   abarth500: {
-    'skinbase_default #3': ['left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper', 'left_rear', 'left_rear_lower'],
-    'skinbase_default #4': ['right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper', 'right_mid_upper_2', 'right_rear', 'right_rear_lower', 'right_tail_lower_2'],
-    'skinbase_default #5': ['left_front_upper', 'left_mid_lower_2', 'left_mid_lower_3', 'left_tail', 'left_tail_lower'],
-    'skinbase_default #6': ['centre_front_upper', 'centre_mid', 'centre_nose', 'centre_rear', 'centre_tail_lower', 'centre_tail_upper_4', 'left_front_upper', 'left_mid_lower_2', 'left_mid_lower_3', 'left_mid_upper', 'left_rear', 'left_rear_lower', 'right_mid_upper', 'right_mid_upper_2', 'right_rear', 'right_rear_lower'],
+    'skinbase_default #3': ['left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper', 'left_mid_upper_2', 'left_rear', 'left_rear_lower_2'],
+    'skinbase_default #4': ['right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper', 'right_mid_upper_2', 'right_rear', 'right_rear_lower'],
+    'skinbase_default #5': ['left_front_upper_2', 'left_mid_lower_2', 'left_mid_lower_3', 'left_tail', 'left_tail_lower'],
+    'skinbase_default #6': ['centre_front_upper', 'centre_mid', 'centre_nose', 'centre_rear', 'centre_tail_lower', 'centre_tail_upper_5', 'left_front', 'left_front_upper_2', 'left_mid', 'left_mid_lower_2', 'left_mid_lower_3', 'left_mid_upper', 'left_mid_upper_2', 'left_rear', 'left_rear_lower_2', 'right_front', 'right_mid', 'right_mid_upper', 'right_mid_upper_2', 'right_rear', 'right_rear_lower'],
     'skinbase_default number-left': ['left_mid'],
     'skinbase_default number-right': ['right_mid'],
     'skinbase_default team-left': ['left_mid'],
