@@ -20,11 +20,11 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, SHEET_SPAN } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, cockpitLod, SHEET_SPAN } from './kn5.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
 import { PROFILE_SCHEMA } from '../profile.mjs';
-import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, occupancyFor, occupancyGrid, blurTwins } from './visibility.mjs';
+import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, tracksideOccluders, occupancyFor, occupancyGrid, nearIndex, blurTwins } from './visibility.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, proposeBindings } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -197,13 +197,17 @@ export async function profileFromKn5(path, {
   // to count here, and once the visibility cast learned to find a fitting
   // standing flush on the paint, the NSX's sixteen door plates — hidden by
   // its config, drawn by nothing — took its doors from 88% visible to 56%.
-  const occluders = carOccluders(model, { hiddenByCar: { meshes: Object.fromEntries(hides?.hidden ?? []) } });
+  const carHides = { hiddenByCar: { meshes: Object.fromEntries(hides?.hidden ?? []) } };
+  const occluders = carOccluders(model, carHides);
   // Built once for the car, not once per texture: the grid and the index of
-  // triangles depend on the car alone.
-  const prepared = visibility ? occupancyFor(model, { occluders }) : null;
+  // triangles depend on the car alone. From trackside, as the fitment check
+  // casts, without the cockpit the game does not draw there or the glass it
+  // sees through; the driver's-seat measurement below keeps every mesh.
+  const prepared = visibility ? occupancyFor(model, { occluders: tracksideOccluders(model, carHides) }) : null;
   // The cockpit's too, at its own finer cells. Only the triangle index was
   // shared with it, and its grid was still rebuilt for every texture.
   const cockpitGrid = visibility && eye ? occupancyGrid(model, occluders, 0.02) : null;
+  const cockpitNear = visibility && eye ? nearIndex(model, occluders) : null;
   // A motion-blur mesh is measured as the drawn one it is swapped with, found
   // by the node above it (see `blurTwins`). One whose twin could not be found
   // is measured against whatever is drawn in its place, and reads low for it,
@@ -534,7 +538,7 @@ export async function profileFromKn5(path, {
       // Visibility isn't a property of a surface, it's a property of a surface
       // and a place to stand. A cockpit-view driver stares at the tub and the
       // steering wheel all race — surfaces the trackside pass scores near zero.
-      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: prepared.near, grid: cockpitGrid, log });
+      if (eye) computeCockpitVisibility(model, keep, { eye, occluders, near: cockpitNear, grid: cockpitGrid, log });
       const alone = [...new Set(keep.filter((i) => unpaired.has(i.mesh)).map((i) => i.mesh))];
       if (alone.length) {
         log(`  ! ${alone.join(', ')}: motion-blur mesh(es) with no drawn twin under a sibling node, ` +
@@ -549,6 +553,16 @@ export async function profileFromKn5(path, {
         i.hidden = true;
         delete i.safe;
         if (i.cockpitFraction !== undefined) i.cockpitFraction = 0;
+      }
+      // Nor, from trackside, is an island in the cockpit the game draws only
+      // from the driver's seat: outside, the other one is drawn instead. It
+      // keeps what the seat sees of it, which is the whole of its audience.
+      if (model.meshes.some((m) => cockpitLod(m) === 'LR')) {
+        for (const i of keep) {
+          if (cockpitLod(i.meshRef) !== 'HR') continue;
+          i.visibleFraction = 0;
+          delete i.safe;
+        }
       }
     }
 

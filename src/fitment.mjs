@@ -28,6 +28,7 @@ import { getPack } from './registry.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
+import { findIslands } from './engine/islands.mjs';
 import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from './engine/kn5.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
@@ -448,6 +449,23 @@ export function fitmentVerdict(r) {
         : 'Every check ran and found nothing.')
     : `Worst finding is ${worst}. ${count('fatal')} fatal, ${count('high')} high, ` +
       `${count('low')} low.${partial ? ' Some checks did not run — see notChecked and notPlaced.' : ''}`;
+}
+
+/**
+ * The island a panel was measured from, as the vertices to keep on its mesh,
+ * or null where that cannot be told and the whole sheet is sampled as before.
+ * Found again by the profile's source mesh and rectangle, the two things it
+ * records about it.
+ */
+const islandCache = new WeakMap();
+function islandOf(model, meshes, pan) {
+  const mesh = pan?.source?.mesh && meshes.find((m) => m.name === pan.source.mesh);
+  if (!mesh) return null;
+  let byMesh = islandCache.get(model);
+  if (!byMesh) islandCache.set(model, (byMesh = new Map()));
+  if (!byMesh.has(mesh)) byMesh.set(mesh, findIslands(model, [mesh], { minVertices: 1, bigEnough: 0 }));
+  const same = byMesh.get(mesh).filter((i) => i.rect.every((v, k) => Math.abs(v - pan.rect[k]) < 0.002));
+  return same.length ? new Map([[mesh, new Set(same.flatMap((i) => i.vertices))]]) : null;
 }
 
 /** Whether every mesh wearing this role's sheet is in the HR cockpit of a car that has an LR one. */
@@ -2741,12 +2759,21 @@ function unseen(placed, profile, t, seen, say) {
     // instead, a piece that arrived through a seam spends half its samples on
     // texture it does not paint, and both answers below — how much is on the
     // car, how much can be seen — come back describing that empty half.
-    const answer = rectVisibility(seen.model, seen.prepared, meshes, at,
-      { poly: p.frac.poly ?? null, grid: fineGrid(p) });
+    const poly = p.frac.poly ?? null, grid = fineGrid(p);
+    // On the car is asked of the whole sheet, since paint on texels another
+    // island wears is still on the car. Seen is asked of the panel's own
+    // island where it can be found, since paint on the panel is what it is
+    // about, and on the Abarth's rear quarter a second island laid over the
+    // same texels answered for it.
+    const [nu, nv] = grid ?? [14, 14];
+    const onCar = sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }])[0];
+    const island = islandOf(seen.model, meshes, p.frac.panel);
+    const answer = (island && rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid, island }))
+      || rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid });
 
     // Nothing there at all: the rectangle is off the model entirely, which is
     // not a visibility verdict and must not be reported as one.
-    if (!answer) {
+    if (!onCar.points.length) {
       say({
         kind: 'off-mesh', severity: p.region.treatment === 'text' ? 'high' : 'low',
         surface: t.from, panel: p.region.panel, ids: [p.id], coverage: 0,
@@ -2759,7 +2786,7 @@ function unseen(placed, profile, t, seen, say) {
     // Partly there. Reported before visibility, because "86% visible" of a
     // tenth of a placement is a true sentence that misleads completely, and
     // whichever of the two is said first is the one that gets acted on.
-    const coverage = answer.samples / answer.of;
+    const coverage = onCar.points.length / onCar.cells;
     const carries = p.region.treatment === 'text';
     const asked = typeof p.constraints.minOnCar === 'number' ? p.constraints.minOnCar : null;
     if (coverage < (asked ?? (carries ? MUST_LAND_ON : BLEED_IS_FINE_BELOW))) {

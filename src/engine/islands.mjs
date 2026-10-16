@@ -200,6 +200,7 @@ function measure(model, mesh, verts, tris) {
     textRotation: upright,
     vertices: verts,
     vertexCount: n,
+    triangles: tris,
     tiled,
     uvBounds: tiled ? [round(u0), round(v0), round(u1 - u0), round(v1 - v0)] : undefined,
     rect: [round(cu0), round(cv0), round(cu1 - cu0), round(cv1 - cv0)],

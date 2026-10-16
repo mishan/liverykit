@@ -673,6 +673,23 @@ test('the two cockpits are never in the same picture, and glass hides nothing', 
   assert.deepEqual(seat.findings.filter((f) => f.kind === 'unseen'), []);
 });
 
+test('a rectangle on one island is measured on that island, not on another over the same texels', () => {
+  // The Abarth's rear quarter is two islands of one mesh on one patch of the
+  // sheet. Sampled across both, each cell answered for whichever covered it,
+  // and paint on the visible one was reported unseen behind the other's bumper.
+  const base = withPlate(plane({ rows: 6, cols: 6 }), 0.005);   // mesh 0 covered by a plate
+  const open = { ...base.meshes[0], world: [...base.meshes[0].world] };
+  open.world[12] = 5;                                            // the same texels, 5 m away in the clear
+  const model = { ...base, meshes: [...base.meshes, open] };
+  const [covered, , clear] = model.meshes;
+  const every = new Set(Array.from({ length: 36 }, (_, i) => i));
+  const seen = (island) => rectVisibility(model, occupancyFor(model), [covered, clear],
+    [0.02, 0.02, 0.36, 0.36], { island }).fraction;
+
+  assert.equal(seen(new Map([[clear, every]])), 1);
+  assert.equal(seen(new Map([[covered, every]])), 0);
+});
+
 /** The same sheet with a second mesh floating `gap` meters in front of it. */
 function withPlate(model, gap) {
   const m = model.meshes[0];
