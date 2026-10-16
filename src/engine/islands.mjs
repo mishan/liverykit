@@ -28,9 +28,12 @@ import { polyArea } from './poly.mjs';
 /**
  * Decompose the given meshes into UV islands.
  * `minVertices` drops slivers — bolt heads and tiny trim pieces that would
- * otherwise bury the panels worth naming.
+ * otherwise bury the panels worth naming — unless the island covers at least
+ * `bigEnough` square meters of the car. A flat surface can be a handful of
+ * triangles, and a vertex count alone dropped the Tatuus's wing planes and an
+ * eight-vertex island of 1.6 m² on the Abarth's body sheet.
  */
-export function findIslands(model, meshes, { minVertices = 24 } = {}) {
+export function findIslands(model, meshes, { minVertices = 24, bigEnough = 0.1 } = {}) {
   const islands = [];
 
   for (const mesh of meshes) {
@@ -57,8 +60,9 @@ export function findIslands(model, meshes, { minVertices = 24 } = {}) {
     }
 
     for (const [root, verts] of members) {
-      if (verts.length < minVertices) continue;
+      if (verts.length < 3) continue;
       const isl = measure(model, mesh, verts, trisByRoot.get(root) ?? []);
+      if (verts.length < minVertices && !(isl.area3d >= bigEnough)) continue;
       // An island collapsed to a line or a point in UV space has no area to
       // paint. Street cars produce a lot of these — trim strips and badges
       // pinned to a single texel — and they otherwise flood the profile with

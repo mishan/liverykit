@@ -75,10 +75,10 @@ const PINNED = {
     'ext_skin_sponsors team-right': ['right_mid'],
   },
   tatuusfa1: {
-    'skinbase #3': ['left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper', 'left_mid_upper_2', 'left_nose', 'left_nose_lower', 'left_rear', 'left_rear_lower', 'left_rear_upper', 'left_tail', 'left_tail_lower'],
-    'skinbase #4': ['right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper', 'right_mid_upper_2', 'right_nose', 'right_nose_lower', 'right_rear', 'right_rear_lower', 'right_rear_upper', 'right_tail', 'right_tail_lower'],
+    'skinbase #3': ['left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper', 'left_mid_upper_2', 'left_nose', 'left_nose_lower', 'left_nose_upper', 'left_nose_upper_2', 'left_rear', 'left_rear_lower', 'left_rear_upper', 'left_tail', 'left_tail_lower', 'left_tail_lower_2'],
+    'skinbase #4': ['right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper', 'right_mid_upper_2', 'right_nose', 'right_nose_lower', 'right_nose_upper', 'right_nose_upper_2', 'right_rear', 'right_rear_lower', 'right_rear_upper', 'right_tail', 'right_tail_lower', 'right_tail_lower_2'],
     'skinbase #5': [],
-    'skinbase #6': ['centre_front', 'centre_mid', 'centre_mid_lower', 'centre_rear', 'centre_rear_lower', 'centre_rear_lower_2', 'centre_rear_upper', 'centre_tail', 'left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper_2', 'left_rear_lower', 'left_tail', 'left_tail_lower', 'right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper_2', 'right_rear_lower', 'right_tail', 'right_tail_lower'],
+    'skinbase #6': ['centre_front', 'centre_mid', 'centre_mid_lower', 'centre_rear', 'centre_rear_lower', 'centre_rear_lower_2', 'centre_rear_upper', 'centre_tail_lower', 'centre_tail_lower_3', 'left_front', 'left_mid', 'left_mid_lower', 'left_mid_upper_2', 'left_rear_lower', 'left_tail', 'left_tail_lower', 'left_tail_lower_2', 'right_front', 'right_mid', 'right_mid_lower', 'right_mid_upper_2', 'right_rear_lower', 'right_tail', 'right_tail_lower', 'right_tail_lower_2'],
     'skinbase driver-left': ['left_mid_upper_2'],
     'skinbase driver-right': ['right_mid_upper_2'],
     'skinbase number-left': ['left_mid'],

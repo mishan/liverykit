@@ -9,10 +9,6 @@ Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 *The fitting editor: a design described as named regions over a palette, fitted onto the car's own model.*
 
 ```sh
-# Linux:  sudo apt install imagemagick fonts-dejavu-core
-# macOS:  brew install imagemagick
-# Windows: imagemagick.org/script/download.php  (tick "Add to PATH")
-
 npm install
 node bin/liverykit.mjs neon-grid
 # -> dist/neon_grid.zip — drag it onto Content Manager to install
@@ -138,12 +134,12 @@ npm install
 Node 20.9 or newer — that is what sharp's prebuilt binaries require, so it is
 the real floor rather than a preference. Two npm dependencies — `sharp`, which
 ships prebuilt binaries so there's no build toolchain, and `colord`, which is 8 KB
-and has none of its own — plus **ImageMagick on your PATH** — it's called as a
-subprocess and works with either `magick` (IM7) or `convert` (IM6).
+and has none of its own. Nothing else: DDS textures are encoded in JavaScript.
 
-Text rendering needs a font the renderer can find. The examples use DejaVu Sans;
-on Windows or macOS, change `render.font` in your livery to something installed
-locally.
+Text is drawn in the first installed font of the livery's `render.font`. The
+examples ask for `DejaVu Sans, Verdana, sans-serif`: DejaVu on Linux, Verdana,
+which is near enough the same width, on Windows and macOS. A font that is not
+installed is passed over without a word, so name a fallback.
 
 ### You supply the game's files
 
@@ -509,7 +505,7 @@ node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json --ui
 Drag a region to move it, drag a corner to resize, click a panel outline to send
 it there. Every box you see is the rectangle the **renderer** resolved, not the
 editor's own idea of where things are, so the two cannot quietly drift apart. The
-re-render is a couple of milliseconds of JavaScript — no ImageMagick, no DDS
+re-render is a couple of milliseconds of JavaScript — no rasterizing, no DDS
 encode — which is the whole reason this is worth having.
 
 Three views, because the sheet is not the question:

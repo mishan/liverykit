@@ -197,7 +197,7 @@ export function carTextureFiles(groups) {
  *
  * `cache` is a Map the caller keeps between calls, holding a decoded sheet or
  * the sentence saying why there is none. The car's own artwork does not change
- * while a process is up, and decoding is an ImageMagick run per texture —
+ * while a process is up, and decoding is a full-sheet decode per texture —
  * thirty-odd of them for one shot of a GT3 car, and all of them again for the
  * next angle somebody asks for.
  */

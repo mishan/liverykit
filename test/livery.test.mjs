@@ -257,7 +257,7 @@ test('a profile is found by car id in --profiles, and a missing one names every 
   assert.match(missing.stderr, /No profile for "library_car"/);
   assert.ok(missing.stderr.includes(join(dir, 'cars', 'library_car.json')), missing.stderr);
 
-  // Found, the editor opens on it, which needs neither ImageMagick nor a model.
+  // Found, the editor opens on it, which needs no model.
   const { spawn } = await import('node:child_process');
   const opens = (args, env = {}) => new Promise((ok, fail) => {
     const child = spawn(process.execPath, [bin, 'neon-grid-any', '--profile', 'library_car', '--ui',

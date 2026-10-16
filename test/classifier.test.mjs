@@ -250,18 +250,19 @@ test('the mp412c finds its body once a sheet with no islands cannot be it', asyn
 });
 
 test('a large, visible sheet with no islands does not become the body', async () => {
-  // A canopy over the synthetic car, twice the body's area, unwelded so that
-  // no island reaches the panel threshold. On area alone it wins.
+  // A canopy over the synthetic car, twice the body's area, unwelded into
+  // quarter-metre cells so that no island reaches the panel threshold, by
+  // vertices or by size on the car. On area alone it wins.
   const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
   const { carKn5, vert } = await import('./fixtures/kn5.mjs');
   const { writeFile, mkdtemp, rm } = await import('node:fs/promises');
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
 
-  const N = 8, verts = [], indices = [];
+  const N = 32, C = 8 / N, verts = [], indices = [];
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
-      const [x0, x1, z0, z1] = [-4 + i, -3 + i, -4 + j, -3 + j];
+      const [x0, x1, z0, z1] = [-4 + i * C, -4 + (i + 1) * C, -4 + j * C, -4 + (j + 1) * C];
       const [u0, u1, v0, v1] = [i / N, (i + 1) / N, j / N, (j + 1) / N];
       const at = verts.length;
       verts.push(vert(x0, 2, z0, u0, v0), vert(x1, 2, z0, u1, v0), vert(x1, 2, z1, u1, v1),

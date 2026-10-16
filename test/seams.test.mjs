@@ -464,3 +464,16 @@ test('an outline is coarse enough not to redraw the unwrap, and still traces the
   const far = Math.max(...outline.map(([u, v]) => Math.hypot(u - 0.5, v - 0.5)));
   assert.ok(far > 0.38 && far < 0.43, `the outline reaches the rim: ${far}`);
 });
+
+test('a low-polygon island is kept when it is big on the car', async () => {
+  // Islands under the vertex floor were dropped as slivers, bolt heads and trim,
+  // which a flat surface modeled with a handful of triangles is not: the
+  // Tatuus's wing planes went, and an eight-vertex island of 1.6 m² on the
+  // Abarth's body sheet. Size on the car is what tells a wing from a bolt.
+  const quad = (name, size, u0) => ({ name, verts: [
+    vert(0, 0, 0, u0, 0), vert(size, 0, 0, u0 + 0.1, 0), vert(size, 0, size, u0 + 0.1, 0.1), vert(0, 0, size, u0, 0.1),
+  ], indices: [0, 1, 2, 0, 2, 3] });
+  const m = parseKn5Buffer(buildKn5({ bodyMesh: quad('wing', 1, 0), extraMeshes: [quad('bolt', 0.02, 0.5)] }));
+  const kept = findIslands(m, meshesUsingTexture(m, 'body.dds'), { minVertices: 40 });
+  assert.deepEqual(kept.map((i) => i.mesh), ['wing']);
+});

@@ -334,8 +334,18 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     unreadable(placed, profile, t, sayHere, skip);
     tooSmall(placed, t, sayHere, size, design.identity ?? {}, skip);
     unmirrored(placed, profile, t, sayHere);
-    if (seen) unseen(placed, profile, t, seen, sayHere);
-    if (seen) margins(placed, profile, t, seen, sayHere);
+    // The pit crew and the driver's kit are drawn by models of their own, and
+    // the profile says so; this car's model is the wrong place to look.
+    if (seen && profile.textures[t.role]?.inModel === false) {
+      const why = `${profile.textures[t.role].file} is drawn by another model (the driver's or the pit crew's), not this car's`;
+      skip(`unseen for ${t.from}: ${why}`, { check: 'unseen', surface: t.from, role: t.role, ids: [], why });
+      for (const p of placed.filter((q) => typeof q.constraints.minMargin === 'number')) {
+        skip(`margin for ${p.id}: ${why}`, { check: 'margin', surface: t.from, role: t.role, ids: [p.id], why });
+      }
+    } else if (seen) {
+      unseen(placed, profile, t, seen, sayHere);
+      margins(placed, profile, t, seen, sayHere);
+    }
   }
 
   // Across surfaces rather than within one, so these cannot live in the loop above.

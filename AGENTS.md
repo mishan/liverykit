@@ -172,14 +172,14 @@ is over-cautious.
 - **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
   nothing, so glow is done at the raster stage instead. Don't put filters in
   generated SVG.
-- **ImageMagick picks the DXT variant from alpha presence**, not from your
-  `dds:compression` define. Ask for dxt5 on an image without alpha and you get
-  DXT1.
-- **`dds:mipmaps=0` means zero mipmaps** — the opposite of texconv's `-m 0`.
-  Chain length is `log2(max(w,h)) + 1`; note the `max`, so a 2048×512 texture
-  needs 12 levels, not 10. No mipmaps means heavy shimmering at distance.
-- **Non-power-of-two DDS gets no mipmaps at all.** ImageMagick won't generate
-  them and exits 0. liverykit refuses these outright.
+- **A DDS needs its whole mip chain.** Chain length is `log2(max(w,h)) + 1`;
+  note the `max`, so a 2048×512 texture needs 12 levels, not 10. No mipmaps
+  means heavy shimmering at distance. `src/engine/dds.mjs` writes them; it
+  replaced ImageMagick, which picked DXT1 or DXT5 from the image's alpha
+  whatever it was asked for and wrote a chain of one from a define it could not
+  parse, both with exit 0.
+- **Non-power-of-two DDS cannot be trusted to keep its mipmaps** in a DX9
+  game. liverykit refuses these outright.
 - **Not every texture is a DDS.** Models bind `.png` textures too — on one
   mod car the wheel faces are a 28×28 PNG covering nearly twenty thousand
   vertices. Those are written as PNG; forcing a DDS would produce a filename

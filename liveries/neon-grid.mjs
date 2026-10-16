@@ -17,7 +17,7 @@
 //
 // reads "this literal rectangle in the texture", and only makes sense for the
 // one model it was measured against. Both are supported — the second is the
-// escape hatch for parts nobody has mapped, like the wings below.
+// escape hatch for parts nobody has mapped, like the front wing's end flaps below.
 //
 // It is written for the Tatuus FA01, which comes with the base game.
 //
@@ -54,7 +54,7 @@ export default {
   render: {
     seed: 'neon-grid-01',   // any string; --seed re-rolls all procedural placement
     glowSigma: 14,          // scales with render size automatically
-    font: 'DejaVu Sans',    // must be installed and visible to fontconfig
+    font: 'DejaVu Sans, Verdana, sans-serif',   // the first one installed is used
   },
 
   // `paint` names this car's textures directly, by the role the profile gave
@@ -140,11 +140,12 @@ export default {
         { treatment: 'stripe', panel: 'airbox', at: [0.47, 0, 0.06, 1], color: 'accent', glow: true, safe: false },
 
         // --- WINGS ----------------------------------------------------------
-        // The endplates are panels. The wing planes are not: the profile
-        // drops islands under 40 vertices as slivers, and these are flat,
-        // low-polygon surfaces whose islands fall under that. So they are
+        // Flat, low-polygon surfaces: each wing plane is a few triangles, but
+        // a big one, so the profile keeps it as a panel. Two small flaps at
+        // the ends of the front wing are below both of its floors — too few
+        // vertices and too small on the car — and have no panel, so they are
         // painted by absolute texture rectangle, measured once against this
-        // car's model — the escape hatch. Flat color survives being a little
+        // car's model: the escape hatch. Flat color survives being a little
         // out; lettering would not.
         { treatment: 'fill',   panel: 'rearWingEndplateRight', color: 'ink', safe: false },
         { treatment: 'fill',   panel: 'rearWingEndplateLeft',  color: 'ink', safe: false },
@@ -152,14 +153,19 @@ export default {
         { treatment: 'stripe', panel: 'rearWingEndplateLeft',  at: [0, 0.2750, 1, 0.0625], color: 'accent', glow: true },
         { treatment: 'stripe', panel: 'rearWingEndplateRight', at: [0, 0.3875, 1, 0.0375], color: 'violet' },
         { treatment: 'stripe', panel: 'rearWingEndplateLeft',  at: [0, 0.3875, 1, 0.0375], color: 'violet' },
-        { treatment: 'fill',   at: [0.4255, 0.0016, 0.2292, 0.2462], color: 'ink' },    // rear wing planes
-        { treatment: 'stripe', at: [0.6110, 0.0019, 0.0080, 0.2459], color: 'accent', glow: true },
+        { treatment: 'fill',   panel: 'rearWing', color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'rearWing', at: [0.447, 0, 0.107, 1], color: 'accent', glow: true, safe: false },
 
-        { treatment: 'fill', panel: 'frontWingEndplateRight', color: 'ink', safe: false },
-        { treatment: 'fill', panel: 'frontWingEndplateLeft',  color: 'ink', safe: false },
-        { treatment: 'fill', at: [0.0022, 0.0051, 0.1544, 0.2521], color: 'ink' },    // front wing flaps
-        { treatment: 'fill', at: [0.3352, 0.0017, 0.0832, 0.2458], color: 'ink' },    // front wing main plane
-        { treatment: 'stripe', at: [0.3352, 0.1180, 0.0832, 0.0120], color: 'accent', glow: true },
+        { treatment: 'fill',   panel: 'frontWingEndplateRight', color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWingEndplateLeft',  color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWing',          color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWingRight',     color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWingLeft',      color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWingFlapRight', color: 'ink', safe: false },
+        { treatment: 'fill',   panel: 'frontWingFlapLeft',  color: 'ink', safe: false },
+        { treatment: 'stripe', panel: 'frontWing', at: [0, 0.443, 1, 0.102], color: 'accent', glow: true, safe: false },
+        { treatment: 'fill', at: [0.0022, 0.0053, 0.0752, 0.0953], color: 'ink' },    // front wing end flap
+        { treatment: 'fill', at: [0.0814, 0.0051, 0.0752, 0.0942], color: 'ink' },    // and its twin
 
         // No panel and no `at` means the whole texture.
         { treatment: 'scanlines', opacity: 0.07 },

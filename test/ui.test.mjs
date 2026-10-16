@@ -4753,8 +4753,7 @@ test('a format ImageMagick refuses is decoded anyway, by the decoder the viewer 
   // black band at the base of the windscreen — so the software renderer drew
   // the glass without it and the browser drew it with.
   //
-  // Same decoder now, with ImageMagick still first: it is faster, and it
-  // downsizes on the way out.
+  // Same decoder now, and only that one.
   const { decodeDds } = await import('../src/engine/pipeline.mjs');
 
   // 2x2 of 16-bit A8L8, which is what the interior glass and the brushed metal
