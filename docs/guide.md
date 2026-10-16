@@ -382,7 +382,9 @@ Three views, because the sheet is not the question:
 - **UV** — the texture, with panel outlines over it.
 - **Car** — the same texture on the actual geometry. Whether a spot is flat, or
   faces the camera, or wraps over a wheel arch, is not visible on a flat sheet.
-  You can drag on the car itself, and the artwork follows the surface.
+  You can drag on the car itself, and the artwork follows the surface, or
+  shift-click a spot to put the selected region there, centred on it and the
+  same size on the car, on whichever panel you clicked.
 - **Whole car** — every painted surface at once. A stripe can meet the bodywork
   perfectly and miss the sidepod beside it.
 

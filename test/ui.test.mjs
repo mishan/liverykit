@@ -754,6 +754,43 @@ test('a pointer on the car decides between orbit, select, move and resize', asyn
     'the small region on top must win, not the fill underneath it');
 });
 
+test('shift-clicking the car puts the selected region there, at the size it had on the car', async () => {
+  // A plain click selects whatever is under it, and a design's patterns cover
+  // every panel, so placement has a gesture of its own. The Abarth's door is
+  // laid a quarter turn from its sheet and drawn at its own scale, so a number
+  // moved there as texture fractions came out a different size and turned.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+  const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
+  const render = renderSurface({ livery, profile, fit: null, role });
+  const id = state.surfaces[0].regions[0].id;
+  const panels = state.surfaces[0].panels;
+  const from = panels.find((q) => q.textRotation === 0 && q.metresPerUv);
+  const door = panels.find((q) => q.name === 'left_mid');
+  render.placed = [{ ...render.placed[0], id, panel: from.name, abs: [from.rect[0], from.rect[1], 0.02, 0.01] }];
+
+  const { mod, calls } = await runApp({ state, render });
+  const ev = { preventDefault() {} };
+  mod.claimCarPointer({ u: from.rect[0] + 0.005, v: from.rect[1] + 0.005 }, ev);    // select it
+  const [x, y, w, h] = door.rect;
+  assert.equal(mod.claimCarPointer({ u: x + w / 2, v: y + h / 2 }, { ...ev, shiftKey: true }), true);
+  await new Promise((r) => setTimeout(r, 30));
+
+  const fit = calls.filter((c) => c.body?.fit).at(-1).body.fit.regions[id];
+  assert.equal(fit.panel, 'left_mid');
+  const [ax, ay, aw, ah] = fit.at;
+  assert.ok(Math.abs(ax + aw / 2 - 0.5) < 1e-3 && Math.abs(ay + ah / 2 - 0.5) < 1e-3, `centred on the click: ${fit.at}`);
+  // 20 mm-ish by 10 on the sheet it came from, the same on the door, along the car.
+  const mm = (at, q) => [at[0] * q.metresPerUv[0], at[1] * q.metresPerUv[1]];
+  const [was, now] = [mm([0.02, 0.01], from), mm([aw * w, ah * h], door)];
+  assert.ok(Math.abs(now[0] - was[1]) < 1e-4 && Math.abs(now[1] - was[0]) < 1e-4,
+    `${was.map((m) => (m * 1000).toFixed(1))} mm became ${now.map((m) => (m * 1000).toFixed(1))} on a door laid a quarter turn`);
+
+  assert.equal(mod.placedAt(panels, { panel: from.name, abs: [0, 0, 0.1, 0.1] }, { u: -1, v: -1 }), null,
+    'off every panel there is nowhere to put it');
+});
+
 test('a whole-car view that cannot open falls back to something usable', async () => {
   // Opening it needs WebGL and a model, and this harness has neither — which is
   // exactly the situation of anyone whose machine has no GL driver. What matters
