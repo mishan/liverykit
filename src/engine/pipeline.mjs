@@ -1,13 +1,8 @@
 import sharp from 'sharp';
 import { decodeDds as decodeDdsHere } from '../ui/dds.js';
 import { encodeDds } from './dds.mjs';
-import { copyFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
-const run = promisify(execFile);
+import { copyFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 export { mipCount } from './dds.mjs';
 
@@ -78,17 +73,15 @@ export async function toPNG(srcPath, outPath) {
  * cannot disagree about a texture, and downsized on the way out, since a 2048
  * sheet is far more than a few hundred pixels of car can show.
  *
- * BC7, which a few hundred stock sheets in a 254-car fleet are, the shared
- * decoder does not read. ImageMagick does, and is asked when it happens to be
- * installed; it is never required.
- *
- * `null` when nothing here can make sense of it: one texture no renderer can
- * decode is a part drawn gray, not a build that stops.
+ * `null` when the decoder cannot make sense of it: one texture no renderer can
+ * decode is a part drawn gray, not a build that stops. In a 254-car fleet that
+ * is 21 sheets of 17,254, all BC4 and BC5, which hold normals and gloss rather
+ * than color.
  */
 export async function decodeDds(buffer, { maxSize = 512 } = {}) {
   const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   const img = decodeDdsHere(view);
-  if (!img) return viaImageMagick(buffer, maxSize);
+  if (!img) return null;
   const big = Math.max(img.width, img.height);
   if (big <= maxSize) return { data: Buffer.from(img.pixels), w: img.width, h: img.height };
   const scale = maxSize / big;
@@ -97,23 +90,6 @@ export async function decodeDds(buffer, { maxSize = 512 } = {}) {
     .resize(Math.max(1, Math.round(img.width * scale)), Math.max(1, Math.round(img.height * scale)))
     .raw().toBuffer({ resolveWithObject: true });
   return { data, w: info.width, h: info.height };
-}
-
-async function viaImageMagick(buffer, maxSize) {
-  const dir = await mkdtemp(join(tmpdir(), 'liverykit-dds-'));
-  try {
-    await writeFile(join(dir, 'in.dds'), buffer);
-    for (const bin of ['magick', 'convert']) {
-      try {
-        await run(bin, [join(dir, 'in.dds'), '-resize', `${maxSize}x${maxSize}>`, join(dir, 'out.png')]);
-      } catch { continue; }
-      const { data, info } = await sharp(join(dir, 'out.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-      return { data, w: info.width, h: info.height };
-    }
-    return null;
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
 }
 
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {

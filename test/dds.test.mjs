@@ -112,3 +112,33 @@ test('a DXT block format behind a DX10 header decodes like the classic one', () 
   dx10.write('DX10', 84, 'latin1');
   assert.deepEqual(decode(dx10).pixels, decode(classic).pixels);
 });
+
+test('BC7 decodes as ImageMagick decodes it, in every mode', async () => {
+  // About 240 stock sheets in a 254-car fleet are BC7, and without a decoder
+  // here they were drawn gray wherever ImageMagick was not installed. The
+  // blocks are random bytes, seeded, with the mode bits set so each of the
+  // eight modes is a sixteenth of them; any 128 bits are a valid BC7 block,
+  // so this reaches every partition and every rotation the format has. The
+  // hash is of ImageMagick's own decode of the same file.
+  const { createHash } = await import('node:crypto');
+  let seed = 20261016;
+  const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 16 & 255;
+  const w = 128, h = 64, blocks = Buffer.alloc((w / 4) * (h / 4) * 16);
+  for (let b = 0; b < blocks.length / 16; b++) {
+    for (let k = 0; k < 16; k++) blocks[b * 16 + k] = rnd();
+    const mode = b % 8;
+    blocks[b * 16] = (blocks[b * 16] & ~((2 << mode) - 1)) | (1 << mode);
+  }
+  const head = Buffer.alloc(148);
+  head.write('DDS ', 0, 'latin1');
+  head.writeUInt32LE(124, 4);
+  head.writeUInt32LE(h, 12);
+  head.writeUInt32LE(w, 16);
+  head.writeUInt32LE(1, 28);
+  head.write('DX10', 84, 'latin1');
+  head.writeUInt32LE(98, 128);                    // DXGI_FORMAT_BC7_UNORM
+  const img = decode(Buffer.concat([head, blocks]));
+  assert.ok(img, 'decoded at all');
+  assert.equal(createHash('sha256').update(img.pixels).digest('hex'),
+    '8e2df30d53f49e6541bd70cb131a8dba62e8e8ff3f44eae89db2bb57a2de23ea');
+});
