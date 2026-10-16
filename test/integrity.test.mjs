@@ -2487,7 +2487,7 @@ test('every MCP tool is documented, in both places', async () => {
   const names = (await createToolHandler({}).listTools()).map((t) => t.name);
   assert.ok(names.length >= 10, `expected the full tool set, got ${names.length}`);
 
-  for (const file of ['README.md', 'docs/mcp.md']) {
+  for (const file of ['docs/reference.md', 'docs/mcp.md']) {
     const text = await readFile(new URL(`../${file}`, import.meta.url), 'utf8');
     const missing = names.filter((n) => !text.includes(`\`${n}\``));
     assert.deepEqual(missing, [], `${file} does not mention: ${missing.join(', ')}`);
@@ -2496,9 +2496,9 @@ test('every MCP tool is documented, in both places', async () => {
 
 test('every constraint is documented where somebody would look for it', async () => {
   const { CONSTRAINTS } = await import('../src/ui/ops.js');
-  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
-  const missing = Object.keys(CONSTRAINTS).filter((k) => !readme.includes(k));
-  assert.deepEqual(missing, [], `README does not mention: ${missing.join(', ')}`);
+  const guide = await readFile(new URL('../docs/guide.md', import.meta.url), 'utf8');
+  const missing = Object.keys(CONSTRAINTS).filter((k) => !guide.includes(k));
+  assert.deepEqual(missing, [], `docs/guide.md does not mention: ${missing.join(', ')}`);
 });
 
 test('the wheel is where the model hangs it, not what the artist called it', async () => {
