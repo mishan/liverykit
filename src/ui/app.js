@@ -1458,6 +1458,10 @@ export function claimCarPointer(uv, e) {
   if (!uv) return false;
 
   const sel = state.placed.find((p) => p.id === state.selected);
+  // Shift-click puts the selection where you clicked. A plain click cannot:
+  // a design's patterns cover whole panels, so there is a region under every
+  // point of the car and a click there selects it.
+  if (e?.shiftKey && sel) { placeHere(sel, uv); return true; }
   const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
   const area = (p) => p.abs[2] * p.abs[3];
 
@@ -1484,6 +1488,49 @@ export function claimCarPointer(uv, e) {
   const corner = uv.u > x + w * 0.75 && uv.v > y + h * 0.75;
   startCarDrag(e, corner ? 'resize' : 'move', uv);
   return true;
+}
+
+/**
+ * Where a region goes when the car is shift-clicked: centred on the point, on
+ * the smallest panel under it, at the size it had on the car. Kept in
+ * millimetres rather than texture fractions, because two panels are not drawn
+ * to the same scale: the Abarth's door is 1.2 m across 0.27 of its sheet and
+ * its quarter 2.5 m across 0.33, and a number moved between them as fractions
+ * changes size. Its width and height trade places when the new panel is laid a
+ * quarter turn from the old, so a name stays as long as it was along the car.
+ *
+ * `null` when no panel is under the point.
+ */
+export function placedAt(panels, sel, uv) {
+  const over = panels
+    .filter((p) => uv.u >= p.rect[0] && uv.u <= p.rect[0] + p.rect[2]
+      && uv.v >= p.rect[1] && uv.v <= p.rect[1] + p.rect[3])
+    .sort((a, b) => a.rect[2] * a.rect[3] - b.rect[2] * b.rect[3])[0];
+  if (!over) return null;
+  const from = panels.find((p) => p.name === sel.panel);
+  let [, , w, h] = sel.abs;
+  const a = from?.metresPerUv, b = over.metresPerUv;
+  if (a && b) {
+    const turn = ((((from.textRotation ?? 0) - (over.textRotation ?? 0)) % 180) + 180) % 180;
+    const [mmW, mmH] = [w * a[0], h * a[1]];
+    [w, h] = turn === 90 ? [mmH / b[0], mmW / b[1]] : [mmW / b[0], mmH / b[1]];
+  }
+  return { panel: over.name, abs: [uv.u - w / 2, uv.v - h / 2, w, h] };
+}
+
+function placeHere(sel, uv) {
+  const to = placedAt(state.surface.panels, sel, uv);
+  if (!to) {
+    status(`no panel of ${state.surface.role} under that point, so ${sel.id} stays where it is`);
+    return;
+  }
+  remember(`place ${sel.id}`);
+  sel.panel = to.panel;
+  sel.abs = clampToPanel(sel, to.abs);
+  drawOverlay();
+  setDirty(true);
+  commit(sel);
+  status(`placed ${sel.id} on ${to.panel}`);
 }
 
 /**

@@ -398,6 +398,10 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
         reachOnly: reach[t.role]?.[name] ?? [],
         instances: p.instances,
         anisotropy: p.anisotropy ?? 1,
+        // A click on the car moves a region here at the size it had on the
+        // car, which takes each panel's scale and which way it is laid.
+        metresPerUv: p.metresPerUv,
+        textRotation: p.textRotation,
         visible: p.visible,
         // Which way the sheet runs across this panel. The editor needs it to
         // mirror a placement onto the opposite flank; without it, copying `at`
