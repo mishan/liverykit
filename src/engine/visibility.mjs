@@ -35,7 +35,7 @@
 // It is still a heuristic, and it is labelled as one in the profile it produces.
 // ---------------------------------------------------------------------------
 
-import { vertex, triangles, damageOnly, motionBlurOnly } from './kn5.mjs';
+import { vertex, triangles, damageOnly, motionBlurOnly, motionBlurMesh, cockpitLod, isGlass, blends } from './kn5.mjs';
 import { inPoly } from './poly.mjs';
 
 /**
@@ -79,14 +79,14 @@ export function blurTwins(model) {
   const paths = model.meshes.map((m) => String(m.path ?? m.name ?? '').split('/'));
   const out = new Map();
   model.meshes.forEach((m, i) => {
-    if (!motionBlurOnly(m.name)) return;
+    if (!motionBlurMesh(m)) return;
     const at = paths[i].findIndex((s) => motionBlurOnly(s));
     if (at < 0) return;
     const drawn = paths[i][at].replace(/(^|_)blur(_static)?(?=_|$)/i, '').replace(/^_/, '').toLowerCase();
     const twins = new Set();
     model.meshes.forEach((o, j) => {
       const p = paths[j];
-      if (motionBlurOnly(o.name) || p.length <= at || p[at].toLowerCase() !== drawn) return;
+      if (motionBlurMesh(o) || p.length <= at || p[at].toLowerCase() !== drawn) return;
       for (let k = 0; k < at; k++) if (p[k] !== paths[i][k]) return;
       twins.add(j);
     });
@@ -270,7 +270,7 @@ function buildNear(model, meshes) {
   for (const mesh of meshes) {
     // Not drawn until the car is damaged, or only when a wheel is spinning:
     // nothing that covers paint in any view a livery is judged in.
-    if (damageOnly(model.materials?.[mesh.materialId]?.shader) || motionBlurOnly(mesh.name)) continue;
+    if (damageOnly(model.materials?.[mesh.materialId]?.shader) || motionBlurMesh(mesh)) continue;
     const own = model.meshes.indexOf(mesh);
     for (const [a, b, c] of triangles(model, mesh)) {
       const A = vertex(model, mesh, a), B = vertex(model, mesh, b), C = vertex(model, mesh, c);
@@ -516,7 +516,21 @@ const round = (n) => Math.round(n * 10000) / 10000;
 export function carOccluders(model, profile) {
   const hidden = new Set(Object.keys(profile?.hiddenByCar?.meshes ?? {}));
   return model.meshes.filter((m) => !hidden.has(m.name)
-    && !damageOnly(model.materials?.[m.materialId]?.shader) && !motionBlurOnly(m.name));
+    && !damageOnly(model.materials?.[m.materialId]?.shader) && !motionBlurMesh(m));
+}
+
+/**
+ * The occluders for a look from trackside, which is a look at the car's OTHER
+ * cockpit. A car that ships both draws COCKPIT_LR from outside and COCKPIT_HR
+ * only from the driver's seat, and counted together the cabin was in front of
+ * itself: the Abarth's LR interior read 1% visible through its own windows,
+ * every point of it under the HR copy the game does not draw there. And not
+ * the windows either: blended glass is seen through, not stopped at.
+ */
+export function tracksideOccluders(model, profile) {
+  const lr = model.meshes.some((m) => cockpitLod(m) === 'LR');
+  return carOccluders(model, profile).filter((m) => (!lr || cockpitLod(m) !== 'HR')
+    && !(blends(model.materials?.[m.materialId]) && isGlass(model.materials?.[m.materialId]?.shader)));
 }
 
 /** The bare grid, for a caller keeping one across many casts at a cell size of its own: the cockpit's. */

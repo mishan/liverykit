@@ -53,7 +53,7 @@ import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff } from './ops.js';
-import { occupancyFor, carOccluders } from '../engine/visibility.mjs';
+import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
 import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
@@ -1705,7 +1705,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           if (spaces.has(key)) {
             remember(spaces, key, spaces.get(key), 256);
           } else {
-            spacePrepared ??= occupancyFor(m, { occluders: carOccluders(m, profile) });
+            spacePrepared ??= occupancyFor(m, { occluders: tracksideOccluders(m, profile) });
             const gridKey = JSON.stringify([where.role, q.panel, cellMm]);
             const grid = remember(grids, gridKey, grids.get(gridKey) ?? cleanGrid({ profile, model: m,
               prepared: spacePrepared, role: where.role, panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);

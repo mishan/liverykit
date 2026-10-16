@@ -47,7 +47,7 @@
 // not the same as trustworthy without looking.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, motionBlurOnly, triangles, vertex } from './kn5.mjs';
+import { meshesUsingTexture, motionBlurMesh, triangles, vertex } from './kn5.mjs';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';
@@ -147,7 +147,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       if (b[4] < z0) z0 = b[4]; if (b[5] > z1) z1 = b[5];
     }
     const bound = ms.length > 0 && x0 <= x1;
-    const blur = ms.length > 0 && ms.every((m) => motionBlurOnly(m.name));
+    const blur = ms.length > 0 && ms.every((m) => motionBlurMesh(m));
     const twins = blur
       ? [...new Set(ms.flatMap((m) => [...(twinned.get(model.meshes.indexOf(m)) ?? [])])
         .map((j) => model.materials[model.meshes[j].materialId]?.slots?.txDiffuse)

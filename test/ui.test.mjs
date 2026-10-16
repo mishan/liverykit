@@ -4044,7 +4044,7 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   // somebody else's model, which is the kind of rule that is wrong quietly:
   // too broad and geometry vanishes, too narrow and it draws twice. Both have
   // happened on this project, and both were found by looking at a picture.
-  const { motionBlurOnly, detailLayer, trustworthyDiffuse } = await import('../src/engine/kn5.mjs');
+  const { motionBlurOnly, motionBlurMesh, detailLayer, trustworthyDiffuse } = await import('../src/engine/kn5.mjs');
 
   // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
   // two blurred stand-ins it swaps in with speed — and all three are in the
@@ -4059,6 +4059,12 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   for (const no of ['EXT_RIM_LF', 'blurton_decal', 'BLURRED', 'unblurred', 'rimblurred', '', null]) {
     assert.equal(motionBlurOnly(no), false, `${JSON.stringify(no)} is a real part`);
   }
+  // The Tatuus names its blur rims `polymsh3_SUB1`, and says what they are only
+  // in the node AC hides them by.
+  const tatuus = 'Tatus_Abarth_LOD_0.fbx/SUSP_RR/WHEEL_RR';
+  assert.equal(motionBlurMesh({ name: 'polymsh3_SUB1', path: `${tatuus}/RIM_BLUR_RR/polymsh3/polymsh3_SUB1` }), true);
+  assert.equal(motionBlurMesh({ name: 'Geometry45', path: `${tatuus}/RIM_RR/Geometry45/Geometry45` }), false);
+  assert.equal(motionBlurMesh({ name: 'GEO_rimblur1_SUB0' }), true);
 
   // TWO-LAYER MATERIALS. Only when the shader says its diffuse cannot stand
   // alone, the material asks for detail, both textures are real, and the tiling
