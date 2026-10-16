@@ -337,13 +337,15 @@ async function inBrowser(driver, {
   // Together with MOZ_X11_EGL and LIBGL_ALWAYS_SOFTWARE this gives a complete
   // software GL stack, and the renderer tests stop being decorative.
   //
-  // ONE RELAUNCH, and only for a browser that never asked for the driver. CI
-  // has twice had Firefox fetch the document, log a software-compositor
-  // failure and sit there for the full limit with not one script requested, on
-  // a different Node each time and a different commit. None of the test ran,
-  // so trying again cannot hide a fault in it; a page that is really broken
-  // stops the same way twice and still fails. Said aloud when it happens, so
-  // how often it does is not a secret either.
+  // ONE RELAUNCH, and only for a page whose app never asked the server for
+  // anything. CI has had Firefox log a software-compositor failure and then
+  // freeze for the full limit, on a different Node each time and a different
+  // commit: twice before loading a script, once after loading five of the
+  // app's modules, with even the page's own watchdog silent. Until the app
+  // asks for its state there is nothing for a driver to do but wait for it,
+  // so trying again cannot hide a fault in a test; a page that is really
+  // broken stops the same way twice and still fails. Said aloud when it
+  // happens, so how often it does is not a secret either.
   let child, waited;
   for (let attempt = 1; ; attempt++) {
     const hasDisplay = displayWorks();
@@ -478,8 +480,8 @@ async function inBrowser(driver, {
     // unrelated. The group was SIGKILLed above, so nothing is still writing to it;
     // the retries cover a process the kernel has not reaped yet.
     await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    if (report || attempt > 1 || trail.includes('/driver.js')) break;
-    console.warn(`  ! the browser never fetched the driver; relaunching once. ${child.why(waited)}`);
+    if (report || attempt > 1 || trail.some((u) => u.startsWith('/api/'))) break;
+    console.warn(`  ! the app never asked the server for anything; relaunching once. ${child.why(waited)}`);
   }
   // ORDER AND AWAIT. The browser goes first so nothing new arrives, then the
   // forwards already running are allowed to finish, then both servers are
