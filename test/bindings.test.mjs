@@ -469,7 +469,7 @@ test('--explain on a kit term says it is named from the skins, and what it looks
   const f = (role, file) => ({ role, file, area: 0, box: null, straddles: false, skinFraction: 0, shaders: [] });
   const text = explain([f('body', 'b.dds'), f('helmet', 'HELMET_2012.dds')], 'helmet');
   assert.match(text, /named from the skins folder by AC's exact filenames/);
-  assert.match(text, new RegExp(DRIVER_KIT.helmet.join(', ').replace(/\./g, '\\.')));
+  assert.match(text, new RegExp(DRIVER_KIT.helmet.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(text, /named here: helmet \(HELMET_2012\.dds\)/);
   assert.doesNotMatch(text, /Bind it by hand/);
   assert.match(explain([f('body', 'b.dds')], 'crew'), /none of this car's textures[\s\S]*--skins/);
