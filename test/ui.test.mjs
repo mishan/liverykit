@@ -165,7 +165,7 @@ test('the editor escapes what it puts in the page', async () => {
 
   const { dom } = await runApp({ state, render });
   const html = dom.querySelector('#surface').innerHTML + dom.querySelector('#panels').innerHTML;
-  assert.doesNotMatch(html, /<script>/, 'a panel name must not become a tag');
+  assert.doesNotMatch(html, /<script/i, 'a panel name must not become a tag');
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /evil&quot;\.dds/, 'a quote in a filename must not end the attribute');
 });
