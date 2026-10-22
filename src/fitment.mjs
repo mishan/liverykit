@@ -134,7 +134,7 @@ const BLEED_IS_FINE_BELOW = 0.15;
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'role', 'limit', 'optional', 'constraints', '__key',
+  'span', 'once', 'role', 'limit', 'optional', 'constraints', 'mirror', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */

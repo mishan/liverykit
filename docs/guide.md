@@ -415,6 +415,12 @@ same way round, and copying the coordinates across puts the artwork at the wrong
 end of the car. You can unlink a pair, pair two regions the convention missed, or
 mirror one onto the other once.
 
+A design can write only one half: `mirror: true` on a region placed on a panel
+paints it again on that panel's twin, placed by the two panels' measured axes,
+under its id with the side swapped (`number-left` gives `number-right`) or with
+`-mirror` added. A fit can still move or drop the twin by that id. A panel with
+no twin draws the region once and the build says so.
+
 **Copies.** A fit may not add artwork, with one exception: it can say that an
 existing region *also* appears somewhere else.
 

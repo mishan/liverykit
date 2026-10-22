@@ -4785,3 +4785,44 @@ test('a panel map names every panel the world sees, in the frame its `at` is in'
   assert.match(svg, />x</);
   assert.match(svg, />y</);
 });
+
+test('a design region can ask for its mirror on the twin panel', async () => {
+  // Every left-side region of the Raiden livery was copied out by hand for
+  // the right, each `at` flipped by working out that the NSX's right flank is
+  // unwrapped upside down, and the result still drew "unmirrored" findings.
+  // The car's own profile already says which panel is the twin and which way
+  // its axes run.
+  const { applyFit, regionIds, allRegionKeys } = await import('../src/fit.mjs');
+  const profile = {
+    panels: { body: {
+      left_mid: { rect: [0, 0, 0.4, 0.4], mirrorOf: 'right_mid', uAxis: [0, 0, 1], vAxis: [0, -1, 0] },
+      right_mid: { rect: [0.5, 0, 0.4, 0.4], mirrorOf: 'left_mid', uAxis: [0, 0, 1], vAxis: [0, 1, 0] },
+      nose: { rect: [0, 0.5, 0.4, 0.4] },
+    } },
+  };
+  const regions = [
+    { id: 'number-left', panel: 'left_mid', at: [0.1, 0.2, 0.3, 0.4], treatment: 'text', text: '27', mirror: true },
+    { id: 'stripe', panel: 'left_mid', at: [0, 0.6, 1, 0.1], treatment: 'stripe', mirror: true },
+    { id: 'badge', panel: 'nose', at: [0.1, 0.1, 0.2, 0.2], treatment: 'text', text: 'X', mirror: true },
+  ];
+  const notes = [];
+  const out = applyFit(regions, null, { profile, role: 'body', surfaceKey: 'surfaces.body', notes });
+  const by = Object.fromEntries(out.regions.map((r) => [r.__key, r]));
+
+  // Named for the other side, so the editor links the two as one idea.
+  assert.equal(by['number-right']?.panel, 'right_mid', JSON.stringify(Object.keys(by)));
+  assert.deepEqual(by['number-right'].at, [0.1, 0.4, 0.3, 0.4], 'flipped top to bottom, as this twin is');
+  assert.equal(by['number-right'].text, '27');
+  assert.equal(by['stripe-mirror']?.panel, 'right_mid');
+  assert.deepEqual(out.regions.map((r) => r.__key), ['number-left', 'number-right', 'stripe', 'stripe-mirror', 'badge'],
+    'each twin painted straight after its source, so the layers stay in order');
+  // A panel with no twin is drawn once and says so.
+  assert.ok(notes.some((n) => n.term === 'badge' && /no twin/.test(n.text)), JSON.stringify(notes));
+
+  // Its id is one a fit can address and nothing else may take.
+  const livery = { name: 'x', surfaces: { body: { regions } } };
+  assert.ok(regionIds(livery).has('number-right'));
+  assert.ok(allRegionKeys([{ from: 'surfaces.body', spec: { regions } }]).has('stripe-mirror'));
+  assert.throws(() => regionIds({ name: 'x', surfaces: { body: { regions: [...regions, { id: 'number-right', treatment: 'fill' }] } } }),
+    /twice/);
+});

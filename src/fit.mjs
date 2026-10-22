@@ -210,6 +210,18 @@ export function regionKey(surfaceKey, region, index) {
 }
 
 /**
+ * The id of the twin a `mirror: true` region gets: its own with the side
+ * swapped where it names one, so `number-left` and `number-right` are the pair
+ * the editor already links by that convention, and `<id>-mirror` where it
+ * does not.
+ */
+export function mirrorId(id) {
+  const swap = { left: 'right', right: 'left', Left: 'Right', Right: 'Left', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+  const side = /(?<![a-z])(left|right|LEFT|RIGHT)(?![a-z])|(?<=[a-z\d])(Left|Right)(?![a-z])/;
+  return side.test(id) ? id.replace(side, (m) => swap[m]) : `${id}-mirror`;
+}
+
+/**
  * Every key a fit could address, across the whole livery.
  *
  * Takes resolved targets rather than the livery, because a positional key is
@@ -221,7 +233,10 @@ export function regionKey(surfaceKey, region, index) {
 export function allRegionKeys(targets = []) {
   const keys = new Set();
   for (const t of targets) {
-    (t.spec?.regions ?? []).forEach((r, i) => keys.add(regionKey(t.from, r, i)));
+    (t.spec?.regions ?? []).forEach((r, i) => {
+      keys.add(regionKey(t.from, r, i));
+      if (r.mirror && typeof r.id === 'string') keys.add(mirrorId(r.id));
+    });
   }
   return keys;
 }
@@ -246,14 +261,16 @@ export function regionIds(livery) {
       if (typeof r.id !== 'string' || !r.id) {
         throw new Error(`Livery "${livery.name}": a region on "${where}" has a non-string id.`);
       }
-      if (seen.has(r.id)) {
-        throw new Error(
-          `Livery "${livery.name}" uses the region id "${r.id}" twice — on ` +
-          `"${seen.get(r.id)}" and "${where}". Ids are how a fit addresses a region, ` +
-          `so they have to be unique across the livery.`
-        );
+      for (const id of r.mirror ? [r.id, mirrorId(r.id)] : [r.id]) {
+        if (seen.has(id)) {
+          throw new Error(
+            `Livery "${livery.name}" uses the region id "${id}" twice — on ` +
+            `"${seen.get(id)}" and "${where}"${id === r.id ? '' : `, as the mirror of "${r.id}"`}. ` +
+            'Ids are how a fit addresses a region, so they have to be unique across the livery.'
+          );
+        }
+        seen.set(id, where);
       }
-      seen.set(r.id, where);
     }
   }
   return seen;
@@ -281,19 +298,17 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   const overrides = fit?.regions ?? {};
 
   const out = [];
-  for (const [i, region] of regions.entries()) {
-    const key = regionKey(surfaceKey, region, i);
-    // After the key, so a region left off this texture does not move the
-    // positional key of every region after it.
-    if (!drawnOn(region, role, primary)) continue;
+  // A region as the fit leaves it: stamped with its key, overridden, or null
+  // where the fit drops it.
+  const place = (region, key) => {
     // Stamped on every region, overridden or not, so everything downstream —
     // the overlay, the placement report — can name it without recomputing the
     // index it came from.
     const o = overrides[key];
-    if (!o) { out.push({ ...region, __key: key }); continue; }
+    if (!o) return { ...region, __key: key };
     used.add(key);
 
-    if (o.drop) continue;
+    if (o.drop) return null;
 
     const next = { ...region, __key: key };
     for (const k of OVERRIDABLE) {
@@ -308,8 +323,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
           text: `fit: "${key}" points at panel "${o.panel}", which ${role} does not have — ` +
                 `the region was left as the livery placed it`,
         });
-        out.push({ ...region, __key: key });
-        continue;
+        return { ...region, __key: key };
       }
       // An explicit panel replaces the tag selection outright. Leaving the tags
       // in place would trip the "both panel and tags" guard, and keeping both
@@ -319,8 +333,43 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       delete next.limit;
       delete next.optional;
     }
+    return next;
+  };
 
-    out.push(next);
+  // `mirror: true` paints the region again on its panel's twin, placed by the
+  // two panels' measured axes, straight after it so the layers keep their
+  // order. From the region as fitted, so moving it moves its twin; the twin has
+  // an id of its own, so a fit can still place or drop it on one car.
+  const twinOf = (src) => {
+    const why = typeof src.id !== 'string' ? 'it has no id for its twin to be named after'
+      : typeof src.panel !== 'string' ? 'it is placed by tags, and a twin needs one panel to mirror'
+        : null;
+    const name = why ? null : (profile?.aliases?.[role]?.[src.panel] ?? src.panel);
+    const here = name && profile?.panels?.[role]?.[name];
+    const there = here?.mirrorOf && profile.panels[role][here.mirrorOf];
+    if (!there) {
+      notes.push({ term: src.__key, status: 'mirror',
+        text: `mirror: "${src.__key}" is drawn once — ${why ?? `${name} has no twin on ${role} in this car's profile`}` });
+      return null;
+    }
+    const flips = mirrorFlips(here, there);
+    const { mirror, __key, ...art } = src;
+    return place({ ...art, id: mirrorId(src.id), panel: here.mirrorOf,
+      at: mirrorAt(src.at ?? [0, 0, 1, 1], flips), rotate: mirrorRotation(src.rotate, flips) }, mirrorId(src.id));
+  };
+
+  for (const [i, region] of regions.entries()) {
+    const key = regionKey(surfaceKey, region, i);
+    // After the key, so a region left off this texture does not move the
+    // positional key of every region after it.
+    if (!drawnOn(region, role, primary)) continue;
+    const placed = place(region, key);
+    if (!placed) continue;
+    out.push(placed);
+    if (region.mirror) {
+      const twin = twinOf(placed);
+      if (twin) out.push(twin);
+    }
   }
 
   // --- mirrored copies ------------------------------------------------------
