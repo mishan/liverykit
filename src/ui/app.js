@@ -2993,7 +2993,7 @@ async function showView(which, look) {
     if (which === 'all') await loadWholeCar();
     else if (which === 'cockpit') await loadCockpit();
     else await loadCarGeometry();
-    if (look) state.viewer.look(look);
+    if (look && Object.keys(look).length) state.viewer.look(look);
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine. Neither is a model
