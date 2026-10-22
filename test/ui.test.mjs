@@ -385,7 +385,7 @@ test('the car geometry survives the trip to the browser', async () => {
   // can be. The fixture also lets the assertions be exact: against a real car
   // this said "width between 1.5 and 2.2 m", which tests a Fiat more than it
   // tests the transform stack.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
@@ -559,7 +559,7 @@ test('the camera matrices compose in the convention GLSL reads them', async () =
 test('the whole car packs every mesh exactly once, painted or not', async () => {
   const { wholeModelGeometry, packModel } = await import('../src/ui/server.mjs');
   const { unpackModel } = await import('../src/ui/view3d.js');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
@@ -613,7 +613,7 @@ test('the whole-car header is padded so typed arrays can view the buffer', async
 
 test('an unpainted mesh still reaches the viewer, in its own group', async () => {
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
@@ -679,7 +679,7 @@ test('picking a face of the fixture car returns that face’s UV', async () => {
   // dragging a region on the car, and it is checkable without a GPU.
   const { rayTriangle, cameraRay } = await import('../src/ui/view3d.js');
   const { modelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const g = modelGeometry(parseKn5Buffer(carKn5()), CAR.texture);
@@ -3582,7 +3582,7 @@ test('the geometry the viewer receives carries the normals it lights with', asyn
   // most of what the whole-car view exists to answer.
   const { wholeModelGeometry, modelGeometry, packModel } = await import('../src/ui/server.mjs');
   const { unpackModel } = await import('../src/ui/view3d.js');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
@@ -3664,58 +3664,6 @@ test('an op the editor does not know is refused, not silently dropped', async ()
   assert.equal(design.surfaces.body.regions[0].constraints, undefined);
 });
 
-test('what blends is what the model says blends', async () => {
-  // THREE GUESSES AT A BYTE WE WERE SKIPPING.
-  //
-  // First the profile's `alpha` flag, which means "this DDS carries an alpha
-  // channel" — true of a DXT5 body texture that is entirely opaque, so nearly
-  // every panel went into the blended pass with depth write off, and a car
-  // whose bodywork does not write depth cannot hide its own interior.
-  //
-  // Then a list of shader NAMES. `ksPerPixelReflection` is on it because it
-  // draws side glass; the Abarth also wears it on its bumpers, its exhaust and
-  // its underbody, all sharing the one body sheet — so the painted bodywork
-  // blended, and the front of the car was see-through.
-  //
-  // Then the texture's mean alpha, to tell those apart. Better, and still a
-  // guess: a kn5 material states `alphaBlendMode` two bytes after its shader
-  // name, and the parser had skipped those two bytes since the first commit.
-  const { blends, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const { buildKn5 } = await import('./fixtures/kn5.mjs');
-
-  const model = parseKn5Buffer(buildKn5({
-    materials: [
-      { name: 'CAR_Livrea', shader: 'ksPerPixelMultiMap_damage_dirt' },
-      { name: 'CAR_PLASTICA', shader: 'ksPerPixelReflection' },
-      { name: 'CAR_Vetro', shader: 'ksPerPixelReflection', alphaBlendMode: 1 },
-      { name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 },
-      { name: 'COVERAGE', shader: 'ksPerPixel', alphaBlendMode: 2 },
-    ],
-  }));
-  const [livery, plastic, glass, grille, coverage] = model.materials;
-
-  assert.equal(blends(livery), false, 'the paint');
-  assert.equal(blends(plastic), false,
-    'the same shader as the glass below it, and the model calls it opaque — ' +
-    'this is the Abarth bumper, and the reason the front went transparent');
-  assert.equal(blends(glass), true, 'and this is the window');
-
-  // Alpha TEST is a hard cutout: it neither composites nor needs sorting, and
-  // treating it as blended puts grilles and badges in the sorted pass for
-  // nothing. Read, because it is the difference between a grille and a slab,
-  // and because the byte is right there.
-  assert.equal(grille.alphaTested, true);
-  assert.equal(blends(grille), false, 'alpha test is not alpha blend');
-  // Alpha to coverage is the same bargain, resolved by the multisampler.
-  assert.equal(blends(coverage), false);
-
-  assert.equal(blends(undefined), false, 'and a material we do not have is opaque');
-  assert.equal(blends({ shader: 'ksWindscreen' }), false,
-    'including one carrying nothing but a name: unrecorded means opaque, ' +
-    'because a wrongly opaque surface looks solid and a wrongly blended one ' +
-    'can disappear');
-});
-
 test('a transparent surface with no artwork is skipped and counted, not drawn grey', async () => {
   // The shot has no stock car textures. Drawing glass or an emissive mask as
   // gray would be a lie — gray is opaque and the whole point of those surfaces
@@ -3789,7 +3737,7 @@ test('an emissive sheet adds light instead of covering what is behind it', async
   // Assetto Corsa draws emissive sheets ADDITIVELY: black adds nothing, so the
   // plate shows through. That is the difference, and no amount of getting the
   // alpha pass right would have found it.
-  const { additive } = await import('../src/engine/kn5.mjs');
+  const { additive } = await import('ac-kn5');
 
   assert.equal(additive('IGT_Numberplate_Emissive.dds'), true);
   assert.equal(additive('honda_emissive.dds'), true);
@@ -3885,7 +3833,7 @@ test('a design can name surfaces the car should not draw', async () => {
   // Bounding boxes cannot tell an alternate from a part, which I had already
   // concluded once while building the fitment checker and then ignored.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(carKn5());
@@ -3947,7 +3895,7 @@ test('a texture is clamped on both axes, and the budget measures what it returns
 
 test('hide is guarded, because a design is hand-edited', async () => {
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5 } = await import('./fixtures/kn5.mjs');
   const model = parseKn5Buffer(carKn5());
   const all = wholeModelGeometry(model, []).groups.length;
@@ -3974,7 +3922,7 @@ test('the single-surface payload carries normals too, at the right offset', asyn
   // hides: everything still parses and the numbers belong to someone else.
   const { modelGeometry, packGeometry } = await import('../src/ui/server.mjs');
   const { unpack } = await import('../src/ui/view3d.js');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
 
   const g = modelGeometry(parseKn5Buffer(carKn5()), CAR.texture);
@@ -4082,7 +4030,7 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   // somebody else's model, which is the kind of rule that is wrong quietly:
   // too broad and geometry vanishes, too narrow and it draws twice. Both have
   // happened on this project, and both were found by looking at a picture.
-  const { motionBlurOnly, motionBlurMesh, detailLayer, trustworthyDiffuse } = await import('../src/engine/kn5.mjs');
+  const { motionBlurOnly, motionBlurMesh, detailLayer, trustworthyDiffuse } = await import('ac-kn5');
 
   // MOTION-BLUR ALTERNATES. AC ships a rim three times over — the real one and
   // two blurred stand-ins it swaps in with speed — and all three are in the
@@ -4138,59 +4086,12 @@ test('a rim drawn twice, a cockpit drawn twice, and a material with two layers',
   assert.equal(noNormal.normal, null);
 });
 
-test("a part's own relief is read where the shader says it is, and nowhere else", async () => {
-  // `txNormalDetail` was the only normal map this viewer read, so a surface got
-  // its material's grain — the weave, the nap — and never the relief of the
-  // part itself: the stitching down a seat, a panel seam, the moulding around a
-  // switch. Those live in `txNormal`, at the diffuse's UV rather than tiled.
-  //
-  // The slot cannot simply be trusted, and this car says why twice over.
-  const { baseNormal } = await import('../src/engine/kn5.mjs');
-
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelNM', slots: { txDiffuse: 'plastic.dds', txNormal: 'flat_nm.dds' },
-  }), 'flat_nm.dds');
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelMultiMap_NMDetail',
-    slots: { txDiffuse: 'INT_HR_Occlusion.dds', txNormal: 'INT_HR_Occlusion_NM.dds' },
-  }), 'INT_HR_Occlusion_NM.dds', 'the interior relief, at the bake\'s own UV');
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelAT_NM', slots: { txNormal: 'EXT_Decals_NM.dds' },
-  }), 'EXT_Decals_NM.dds');
-
-  // THE CARPAINT. Its shader is ksPerPixelMultiMap_damage_dirt and the texture
-  // in its normal slot is the relief of a CRASHED panel, which the game blends
-  // in by damage and this project always renders at zero. Read unconditionally
-  // it puts dents down the side of an undamaged car.
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelMultiMap_damage_dirt',
-    slots: { txDiffuse: 'EXT_Skin_Sponsors.dds', txNormal: 'EXT_Damage_NM.dds' },
-  }), null, 'a damage map is not the shape of the part');
-
-  // And a slot bound on a shader that has no normal to sample it into, which
-  // is an ordinary thing for a kn5 to contain — this car's Lumirank panel.
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelMultiMap', slots: { txNormal: 'Lumirank_3_slots_NM.dds' },
-  }), null, 'the shader name is what says the slot is read');
-
-  // An object-space map states its direction in the MODEL'S frame, so putting
-  // it through a tangent basis points every fragment somewhere arbitrary.
-  assert.equal(baseNormal({
-    shader: 'ksPerPixelNM', props: { nmObjectSpace: 1 }, slots: { txNormal: 'EXT_Lights_NM.dds' },
-  }), null);
-
-  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: { txNormal: 'NULL.dds' } }), null,
-    'NULL.dds is how a kn5 says "no texture"');
-  assert.equal(baseNormal({ shader: 'ksPerPixelNM', slots: {} }), null);
-  assert.equal(baseNormal(null), null, 'a mesh with no material at all');
-});
-
 test("a group carries its material's relief, painted or not", async () => {
   // The map has to reach the renderer on the GROUP, next to the lighting
   // constants and for the same reason: a group is one draw call, and the
   // viewer has nothing else to hang a per-part texture on.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { buildKn5 } = await import('./fixtures/kn5.mjs');
 
   const model = parseKn5Buffer(buildKn5({
@@ -4262,7 +4163,7 @@ test('one shiny material on a sheet does not turn the whole car to glass', async
   // Glass does not composite, it REPLACES the alpha with a fresnel that is 0.15
   // head-on — so being wrong about it is a car you can see through.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
 
   // One triangle each: the rules under test read materials and vertex counts,
@@ -4318,7 +4219,7 @@ test('a reflective material is glass only where the model says it composites', a
   // sent me measuring texture alpha. The blend mode separates them exactly,
   // and the model has always carried it.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { buildKn5 } = await import('./fixtures/kn5.mjs');
 
   const car = (shader, alphaBlendMode) =>
@@ -4364,7 +4265,7 @@ test('the whole car keeps both cockpits and tags which is which', async () => {
   // and a design painting it had nothing to paint on. So both survive, tagged,
   // and choosing between them is the renderer's job.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
   const { loadProfile } = await import('../src/profile.mjs');
 
@@ -4653,43 +4554,13 @@ test('the decoder reads every pixel format this fleet actually ships', async () 
   assert.equal(decodeDds(noMagic), null, 'not a DDS at all');
 });
 
-test('an alpha-tested material states a threshold, and an unset one gets AC\'s', async () => {
-  // A hard cutout: the grille, the stitching, the badge on the nose. The model
-  // says which materials are drawn that way in the byte beside `alphaBlendMode`
-  // — the one the parser used to skip — and the threshold itself is a material
-  // property.
-  //
-  // 253 alpha-tested materials across the 64 readable cars here, and 218 of
-  // them state `ksAlphaRef` 0, which is the property being absent rather than a
-  // request to keep every texel. AC's own default for its AT shaders stands in.
-  // The 35 that do state one mostly say 0.5 anyway; the outliers say 0.2, 0.24,
-  // 0.3, 0.4 and — once — 1, meaning nothing but a fully opaque texel survives.
-  const { alphaTest, parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const { buildKn5 } = await import('./fixtures/kn5.mjs');
-
-  assert.equal(alphaTest({ shader: 'ksPerPixelAT', props: {} }), null,
-    'not stated by the model is not alpha tested, whatever the shader is called');
-  assert.equal(alphaTest(undefined), null);
-  assert.equal(alphaTest({ alphaTested: true, props: {} }), 0.5, 'AC\'s own default');
-  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0 } }), 0.5,
-    'and zero is the property missing, not a threshold nothing fails');
-  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 0.24 } }), 0.24);
-  assert.equal(alphaTest({ alphaTested: true, props: { ksAlphaRef: 1 } }), 1);
-
-  // Out of a real header, so the byte and the property arrive together.
-  const model = parseKn5Buffer(buildKn5({
-    materials: [{ name: 'CAR_Griglia', shader: 'ksPerPixelAT_NM', alphaTested: 1 }],
-  }));
-  assert.equal(alphaTest(model.materials[0]), 0.5);
-});
-
 test('a cutout group carries its threshold, and a blended one does not', async () => {
   // On the group, from the DOMINANT material, for the same reason glass is:
   // a sheet is worn by several materials and this one is a fact about how the
   // surface is drawn. The Abarth's stitching is the case — `INT_cuciture_NM`
   // is alpha tested and `INT_cuciture_NM_skin` composites, on one sheet.
   const { wholeModelGeometry } = await import('../src/ui/server.mjs');
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { buildKn5, vert } = await import('./fixtures/kn5.mjs');
 
   const tri = (name, materialId) => ({

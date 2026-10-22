@@ -25,7 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
-import { meshesUsingTexture, blends, isGlass } from './engine/kn5.mjs';
+import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
 import { rectVisibility, gridVisibility, bendDeg } from './engine/visibility.mjs';
 import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
 

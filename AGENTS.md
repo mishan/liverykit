@@ -29,7 +29,7 @@ Firefox; see [Tests](#tests).
 | `src/profile.mjs` | car profiles: roles, bindings, panels, tags |
 | `src/fit.mjs` | fits: per-car placement overrides and copies |
 | `src/render.mjs` | regions -> SVG. Pure, and deliberately fast |
-| `src/engine/` | kn5 parsing, UV islands, visibility casting, encoding |
+| `src/engine/` | UV islands, visibility casting, encoding |
 | `src/ui/` | the fitting editor: a server and a no-build-step browser app |
 | `src/packs/` | treatments. `core` holds primitives and no house style |
 | `cars/`, `liveries/`, `fits/` | data, not code |
@@ -129,12 +129,12 @@ JSON. Revert your fix, watch the new test fail, then put it back.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, three runtime dependencies
-(`sharp`, `colord` and `ac-cardata`). Please keep it small — but small is the
+No build step, no transpiler, ESM throughout, four runtime dependencies
+(`sharp`, `colord`, `ac-cardata` and `ac-kn5`). Please keep it small — but small is the
 goal, not zero: `colord` replaced a regex that called `red` an unresolved palette
 name and told `#00F0FF` from `gulf-bleu` by its first character, which is not a
-wheel worth rebuilding, and `ac-cardata` reads `data.acd`, an archive format
-shared with other tools rather than reimplemented here.
+wheel worth rebuilding, and `ac-cardata` and `ac-kn5` read `data.acd` and the
+kn5 model, formats shared with other tools rather than reimplemented here.
 
 The browser gets `colord` through an **import map** in `src/ui/index.html`, and
 the server hands over the package's own `.mjs` from `node_modules`. So a bare

@@ -38,7 +38,7 @@ import { readdir, writeFile, readFile } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { bestKn5 } from './fleet.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { parseKn5 } from '../src/engine/kn5.mjs';
+import { parseKn5 } from 'ac-kn5';
 import { countSkinOverrides } from '../src/engine/scan.mjs';
 import { textureFeatures } from '../src/engine/classify.mjs';
 

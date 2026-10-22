@@ -38,7 +38,7 @@ import { readFile, writeFile, mkdir, readdir, rename, realpath, stat, chmod, rm 
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from '../engine/kn5.mjs';
+import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from 'ac-kn5';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../profile.mjs';

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseKn5Buffer, meshesUsingTexture } from '../src/engine/kn5.mjs';
+import { parseKn5Buffer, meshesUsingTexture } from 'ac-kn5';
 import { findIslands } from '../src/engine/islands.mjs';
 import { measureWheels } from '../src/engine/wheels.mjs';
 import { buildKn5, vert } from './fixtures/kn5.mjs';

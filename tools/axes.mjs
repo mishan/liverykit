@@ -17,7 +17,7 @@
 
 import { readdir, stat, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parseKn5, axisHints, axesFromWheels } from '../src/engine/kn5.mjs';
+import { parseKn5, axisHints, axesFromWheels } from 'ac-kn5';
 
 const argv = process.argv.slice(2);
 const carsDir = argv.find((a) => !a.startsWith('--')) ?? 'cars';

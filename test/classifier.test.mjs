@@ -30,7 +30,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 import { rank, explain, propose, proposeAll, proposalNotes, featuresFromRecord, textureFeatures } from '../src/engine/classify.mjs';
-import { parseKn5Buffer } from '../src/engine/kn5.mjs';
+import { parseKn5Buffer } from 'ac-kn5';
 import { buildKn5, carKn5, vert } from './fixtures/kn5.mjs';
 
 const LOOKS_LIKE_BODY = /^(ext_)?(skin|body|livery|paint|carpaint)|(body|skin|livery|carpaint)(_|\d|\.dds$)|chassis.*_d\.dds$/i;

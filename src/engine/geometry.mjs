@@ -8,7 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurMesh, baseNormal, cockpitLod } from './kn5.mjs';
+import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurMesh, baseNormal, cockpitLod } from 'ac-kn5';
 import { cockpitEye } from './visibility.mjs';
 
 /**

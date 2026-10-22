@@ -21,7 +21,7 @@ import { readCarFile, driverEyes } from 'ac-cardata';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, cockpitLod, SHEET_SPAN } from './kn5.mjs';
+import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, cockpitLod, SHEET_SPAN } from 'ac-kn5';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
 import { PROFILE_SCHEMA } from '../profile.mjs';
@@ -29,7 +29,7 @@ import { computeSafeAreas, computeCockpitVisibility, cockpitEye, carOccluders, t
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, proposeBindings } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
-import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from './carconfig.mjs';
+import { carConfigBeside, hidePatterns, hiddenMeshes, CAR_CONFIG } from 'ac-kn5';
 import { measureWheels } from './wheels.mjs';
 import { proposalNotes } from './classify.mjs';
 
