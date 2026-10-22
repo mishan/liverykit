@@ -2098,10 +2098,11 @@ test('the editor caps how much it will read from a request', async () => {
   }
 });
 
-test('the vendor route serves two named files and cannot be walked out of', async () => {
-  // The editor needs colord in the browser, and gets it from `node_modules` as
-  // the package's own ESM rather than as a vendored copy — which means the
-  // fitting server now has a route whose job is to read out of `node_modules`.
+test('the vendor route serves its named files and cannot be walked out of', async () => {
+  // The editor needs colord and the DDS decoder in the browser, and gets them
+  // from `node_modules` as each package's own ESM rather than as a vendored
+  // copy — which means the fitting server has a route whose job is to read out
+  // of `node_modules`.
   // That is worth a test rather than a comment: the whole file is built around
   // never joining a request path with a directory, and this is the one place
   // somebody would be tempted to.
@@ -2129,6 +2130,12 @@ test('the vendor route serves two named files and cannot be walked out of', asyn
 
     const names = await fetch(at('/vendor/colord/plugins/names.mjs'));
     assert.equal(names.status, 200);
+
+    // The decoder the viewer imports, which must be one file that imports
+    // nothing: the import map names it alone.
+    const decoder = await fetch(at('/vendor/ac-dds/decode.js'));
+    assert.equal(decoder.status, 200);
+    assert.doesNotMatch(await decoder.text(), /^\s*import\b/m);
 
     // Everything else under the prefix, including the things a path-joining
     // server would hand over. `fetch` normalises `..` before it sends, so the

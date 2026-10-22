@@ -97,9 +97,6 @@ export function validateProfile(p, source = '<inline>') {
   for (const [role, t] of Object.entries(p.textures)) {
     if (!t.file) err(`texture role "${role}" has no file`);
     if (!t.width || !t.height) err(`texture "${t.file}" needs width and height`);
-    if (!isPow2(t.width) || !isPow2(t.height)) {
-      console.warn(`  ! ${t.file} is ${t.width}x${t.height}; DDS mip chains want powers of two.`);
-    }
   }
 
   // Two files differing only in case are ONE file on NTFS. On Windows the
@@ -479,7 +476,6 @@ export function resolveTargets(profile, livery) {
   return { targets, notes };
 }
 
-const isPow2 = (n) => Number.isInteger(Math.log2(n));
 
 function checkRect(r, what, err, { loose = false } = {}) {
   if (!Array.isArray(r) || r.length !== 4) err(`${what} must be [x, y, w, h]`);
