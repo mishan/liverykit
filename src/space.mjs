@@ -530,6 +530,14 @@ const GROW = [1, 1.15, 1.3];
 /** How much of the disc's radius the number's ink may reach: some air inside the rim. */
 const INSIDE = [0.95, 0.9, 0.85];
 
+/**
+ * An outline round the disc, as a ring in the disc's own box: a stroke a
+ * twentieth of the diameter, just inside the rim. Measured with the rest of
+ * the layout, so the number is sized to clear it: added by hand to a layout
+ * sized to the rim, it met the corner of a 7.
+ */
+const OUTLINE = { radius: 0.47, width: 0.05 };
+
 /** How much wider than its letters the number's box is, so the treatment does not shrink them. */
 const SPARE = 1.01;
 
@@ -579,7 +587,7 @@ function divide({ W, Wn = W, H, number, lines, inside, ah, av, ax }) {
 }
 
 export function groupLayout({
-  grid = null, profile, model, prepared, role, panel, number, name, marginMm = 30, cellMm, across,
+  grid = null, profile, model, prepared, role, panel, number, name, marginMm = 30, cellMm, across, outline = false,
 }) {
   for (const [k, v] of [['number', number], ['name', name]]) {
     if (typeof v !== 'string' || !v.trim()) {
@@ -723,6 +731,7 @@ export function groupLayout({
     const h = d.numberEm / NUMBER_SCALE / av, w = number.length * d.numberEm * ADVANCE * ax * SPARE / ah;
     return {
       roundel: { treatment: 'ring', panel: g.name, at: at([(o.W - Dw) / 2, top, Dw, Dh]), radius: 0.25, width: 0.5 },
+      ...(outline ? { outline: { treatment: 'ring', panel: g.name, at: at([(o.W - Dw) / 2, top, Dw, Dh]), ...OUTLINE } } : {}),
       // Heavy, because weight is legibility at distance: run 22's critic called
       // a name the planner left at the default "thin" and likely to blur.
       number: { treatment: 'text', panel: g.name, at: at([(o.W - w) / 2, top + Dh / 2 - h / 2, w, h]),
@@ -744,6 +753,7 @@ export function groupLayout({
   const asDesign = (regions, held = null) => ({ name: 'layout', packs: ['core'], palette: { ink: '#101014', disc: '#ffffff' },
     identity: { number, team: name },
     paint: { [g.role]: { regions: [{ id: 'roundel', ...regions.roundel, color: 'disc', ...(held ? { constraints: held } : {}) },
+      ...(regions.outline ? [{ id: 'outline', ...regions.outline, color: 'ink' }] : []),
       { id: 'number', ...regions.number, color: 'ink' },
       ...regions.name.map((r, i) => ({ id: `name-${i + 1}`, ...r, color: 'ink' }))] } } });
   // Contrast and mirroring are about the design this goes into, which

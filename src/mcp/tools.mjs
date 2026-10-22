@@ -557,6 +557,7 @@ export function createToolHandler(client) {
             properties: {
               number: { type: 'string', description: 'The race number as it is drawn, e.g. "85"' },
               name: { type: 'string', description: 'The name under it, e.g. "NEON DOLL RACING"' },
+              outline: { type: 'boolean', description: 'Also return an outline ring just inside the disc\'s rim, with the number sized to clear it' },
             },
             required: ['number', 'name'],
           },
