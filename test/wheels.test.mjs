@@ -125,3 +125,44 @@ test('band draws a stripe across a strip sidewall and a ring on a disc, where th
   // No measurement: the old ring, so nothing is silently lost.
   assert.match(draw('unknown'), /<circle /);
 });
+
+test('a band with no panel goes round every sidewall its sheet measures', async () => {
+  // The Raiden and Grand Touring liveries both wrote their tyre band with no
+  // panel, as a band round the tyre reads. With no panel there was no wheel
+  // measurement to read, and it fell back to one ring across the whole
+  // sheet: on the NSX a vermilion arc along the top of each tyre and nothing
+  // else, in silence.
+  await import('../src/index.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const sidewall = (rim, across) => ({ part: 'sidewall', unwrap: 'strip', around: 'u', rim, across, radiusM: [0.25, 0.33] });
+  const profile = {
+    id: 't', textures: { tyres: { file: 'tyre.dds', width: 2048, height: 512 } },
+    panels: { tyres: {
+      // The NSX's sheet: the outer sidewall along the top, the inner along the
+      // bottom, rim at either edge, and four wheels' panels on each.
+      left_front: { rect: [0, 0, 1, 0.18], wheel: sidewall('v0', [0.005, 0.18]) },
+      right_front: { rect: [0, 0, 1, 0.18], wheel: sidewall('v0', [0.005, 0.18]) },
+      left_front_lower: { rect: [0, 0.82, 1, 0.18], wheel: sidewall('v1', [0.995, 0.82]) },
+    } },
+  };
+  const notes = [];
+  const svg = renderTexture({
+    profile, role: 'tyres', treatments: resolveTreatments(['core']), palette: {}, rng: Math.random, font: 'sans-serif', tokens: {},
+    regions: [{ treatment: 'band', along: 0.5, width: 0.1, color: '#0ff' }], regionNotes: notes,
+  }).base;
+  const stripes = [...svg.matchAll(/<rect x="0" y="([\d.]+)" width="2048" height="[\d.]+" fill="#0ff"/g)].map((m) => +m[1]);
+  assert.equal(stripes.length, 2, `one stripe per sidewall, not per wheel: ${svg}`);
+  assert.ok(stripes.some((y) => y < 0.18 * 512) && stripes.some((y) => y > 0.82 * 512), JSON.stringify(stripes));
+  assert.doesNotMatch(svg, /<circle /, 'and no ring across the sheet');
+
+  // A sheet nobody has measured still gets the ring, and says why.
+  const bare = { ...profile, panels: { tyres: { tread: { rect: [0, 0.2, 1, 0.6] } } } };
+  const said = [];
+  const ring = renderTexture({
+    profile: bare, role: 'tyres', treatments: resolveTreatments(['core']), palette: {}, rng: Math.random, font: 'sans-serif', tokens: {},
+    regions: [{ treatment: 'band', along: 0.5, width: 0.1, color: '#0ff' }], regionNotes: said,
+  }).base;
+  assert.match(ring, /<circle /);
+  assert.ok(said.some((n) => /no sidewall/.test(n.text)), JSON.stringify(said));
+});
