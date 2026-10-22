@@ -1786,7 +1786,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
             const grid = remember(grids, gridKey, grids.get(gridKey) ?? cleanGrid({ profile, model: m,
               prepared: spacePrepared, role: where.role, panel: q.panel, ...(cellMm ? { cellMm } : {}) }), 64);
             remember(spaces, key, layout
-              ? groupLayout({ grid, profile, model: m, prepared: spacePrepared, ...ask.layout, marginMm: ask.marginMm })
+              ? groupLayout({ grid, profile, model: m, prepared: spacePrepared, number: ask.layout.number, name: ask.layout.name, outline: ask.layout.outline === true, marginMm: ask.marginMm })
               : largest
                 ? largestSpace({ grid, model: m, prepared: spacePrepared, aspect: ask.aspect, marginMm: ask.marginMm })
                 : findSpace({ grid, model: m, prepared: spacePrepared, ...ask }), 256);

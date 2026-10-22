@@ -1543,6 +1543,29 @@ test('a name goes as wide as clean bodywork allows under the roundel, not only a
   assert.ok(mm['team-1'].mm >= 45 && mm.number.mm >= 140, JSON.stringify(mm));
 });
 
+test('a layout can carry an outline round the disc, with the number inside it', async () => {
+  // The Raiden livery added an indigo outline just inside the rim of the
+  // disc find_space laid out, and the top corner of the 7 touched it: the
+  // number was sized to the rim, not to a ring the layout never knew about.
+  const { groupLayout } = await import('../src/space.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const prepared = occupancyFor(model);
+  // Four digits, so the number is as wide as the disc lets it be and its
+  // corners reach the rim, as Raiden's did on a door with no room to spare.
+  const r = groupLayout({ profile, model, prepared, role: 'body', panel: 'L', number: '7777',
+    name: 'RAIDEN', outline: true, cellMm: 100 });
+  assert.ok(r.layout?.regions.outline, JSON.stringify(r));
+  assert.equal(r.layout.regions.outline.treatment, 'ring');
+  assert.deepEqual(r.layout.regions.outline.at, r.layout.regions.roundel.at, 'round the disc, not somewhere else');
+  const outlined = { ...design([
+    { id: 'roundel', ...r.layout.regions.roundel, color: 'white' },
+    { id: 'outline', ...r.layout.regions.outline, color: 'ink' },
+    { id: 'number', ...r.layout.regions.number, color: 'ink' },
+    ...r.layout.regions.name.map((n, i) => ({ id: `team-${i + 1}`, ...n, color: 'ink' })),
+  ]), palette: { ink: '#101014', white: '#ffffff' }, identity: { number: '7777', team: 'RAIDEN' } };
+  assert.deepEqual(fitment(outlined, profile).findings.filter((f) => f.kind === 'overlap' && f.severity === 'high'), []);
+});
+
 function design0(l) {
   return { ...design([
     { id: 'roundel', ...l.regions.roundel, color: 'white' },
