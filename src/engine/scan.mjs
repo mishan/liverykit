@@ -1,25 +1,13 @@
 import { readdir, stat, open } from 'node:fs/promises';
 import { join, basename } from 'node:path';
-
-const DDPF_FOURCC = 0x4;
-const DDPF_ALPHAPIXELS = 0x1;
+import { ddsInfo } from 'ac-dds';
 
 async function readDdsHeader(path) {
   const fh = await open(path, 'r');
   try {
     const buf = Buffer.alloc(128);
     const { bytesRead } = await fh.read(buf, 0, 128, 0);
-    if (bytesRead < 128 || buf.toString('ascii', 0, 4) !== 'DDS ') return null;
-    const pfFlags = buf.readUInt32LE(80);
-    const fourCC = pfFlags & DDPF_FOURCC ? buf.toString('ascii', 84, 88).replace(/\0/g, '') : null;
-    return {
-      width: buf.readUInt32LE(16),
-      height: buf.readUInt32LE(12),
-      mips: buf.readUInt32LE(28),
-      fourCC,
-      // DXT3/DXT5 carry alpha; DXT1 may via 1-bit, but treat it as opaque.
-      alpha: fourCC === 'DXT3' || fourCC === 'DXT5' || (!fourCC && (pfFlags & DDPF_ALPHAPIXELS) !== 0),
-    };
+    return ddsInfo(buf.subarray(0, bytesRead));
   } finally {
     await fh.close();
   }

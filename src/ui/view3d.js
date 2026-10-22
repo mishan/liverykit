@@ -14,7 +14,7 @@
 // anything shaded on top of it would be lying about the colors.
 // ---------------------------------------------------------------------------
 
-import { decodeDds } from './dds.js';
+import { decodeDds } from 'ac-dds/decode';
 
 const VS = `
 attribute vec3 position;

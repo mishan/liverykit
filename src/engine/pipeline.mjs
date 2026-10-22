@@ -1,10 +1,9 @@
 import sharp from 'sharp';
-import { decodeDds as decodeDdsHere } from '../ui/dds.js';
-import { encodeDds } from './dds.mjs';
+import { decodeDds as decodeDdsHere, encodeDds } from 'ac-dds';
 import { copyFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-export { mipCount } from './dds.mjs';
+export { mipCount } from 'ac-dds';
 
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
 

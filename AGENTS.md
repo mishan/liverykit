@@ -129,18 +129,19 @@ JSON. Revert your fix, watch the new test fail, then put it back.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, four runtime dependencies
-(`sharp`, `colord`, `ac-cardata` and `ac-kn5`). Please keep it small — but small is the
+No build step, no transpiler, ESM throughout, five runtime dependencies
+(`sharp`, `colord`, `ac-cardata`, `ac-kn5` and `ac-dds`). Please keep it small — but small is the
 goal, not zero: `colord` replaced a regex that called `red` an unresolved palette
 name and told `#00F0FF` from `gulf-bleu` by its first character, which is not a
-wheel worth rebuilding, and `ac-cardata` and `ac-kn5` read `data.acd` and the
-kn5 model, formats shared with other tools rather than reimplemented here.
+wheel worth rebuilding, and `ac-cardata`, `ac-kn5` and `ac-dds` read and write
+`data.acd`, the kn5 model and DDS, formats shared with other tools rather than
+reimplemented here.
 
-The browser gets `colord` through an **import map** in `src/ui/index.html`, and
-the server hands over the package's own `.mjs` from `node_modules`. So a bare
-specifier means the same package on both sides and the editor and the tests run
-the identical file. That is the pattern to copy if the browser ever needs a
-second one — not a vendored copy, and not a bundler.
+The browser gets `colord` and `ac-dds/decode` through an **import map** in
+`src/ui/index.html`, and the server hands over each package's own ESM from
+`node_modules`. So a bare specifier means the same package on both sides and the
+editor and the tests run the identical file. That is the pattern to copy if the
+browser ever needs another — not a vendored copy, and not a bundler.
 
 Two spaces, semicolons, single quotes.
 
@@ -176,8 +177,8 @@ is over-cautious.
   generated SVG.
 - **A DDS needs its whole mip chain.** Chain length is `log2(max(w,h)) + 1`;
   note the `max`, so a 2048×512 texture needs 12 levels, not 10. No mipmaps
-  means heavy shimmering at distance. `src/engine/dds.mjs` writes them; it
-  replaced ImageMagick, which picked DXT1 or DXT5 from the image's alpha
+  means heavy shimmering at distance. `ac-dds` writes them; it replaced
+  ImageMagick, which picked DXT1 or DXT5 from the image's alpha
   whatever it was asked for and wrote a chain of one from a define it could not
   parse, both with exit 0.
 - **Non-power-of-two DDS cannot be trusted to keep its mipmaps** in a DX9

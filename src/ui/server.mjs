@@ -228,7 +228,7 @@ export function packGeometry(g) {
   return out;
 }
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'dds.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
+const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
 
 /**
  * The one dependency the browser shares with Node, and where it comes from.
@@ -246,6 +246,9 @@ const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'dds.js', 'fields
 const VENDOR = new Map([
   ['/vendor/colord/index.mjs', 'colord'],
   ['/vendor/colord/plugins/names.mjs', 'colord/plugins/names'],
+  // The DDS decoder, for textures the GPU cannot take as blocks; Node's build
+  // and preview read through the same file.
+  ['/vendor/ac-dds/decode.js', 'ac-dds/decode'],
 ]);
 const vendorPath = (pathname) =>
   fileURLToPath(import.meta.resolve(VENDOR.get(pathname)));
@@ -1914,16 +1917,16 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // package — so the editor and the tests agree about what a color is
       // because they are running the identical file.
       //
-      // An allowlist of exactly the two paths in VENDOR, each mapped to a
+      // An allowlist of exactly the paths in VENDOR, each mapped to a
       // package specifier that `import.meta.resolve` turns into a real file.
       // Nothing here is joined with anything from the request, so this stays a
-      // server that can hand over two named files and not one that can be
+      // server that can hand over named files and not one that can be
       // talked into reading `node_modules`.
       if (VENDOR.has(url.pathname)) {
         const data = await readFile(vendorPath(url.pathname)).catch(() => null);
         if (!data) {
           return send(500, 'text/plain',
-            'colord is missing from node_modules — run `npm install`');
+            `${VENDOR.get(url.pathname)} is missing from node_modules — run \`npm install\``);
         }
         return send(200, 'text/javascript', data);
       }
