@@ -290,6 +290,12 @@ node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
 `classic` pack's hockey stick, twin stripes, checkers and sponsor row over a
 `gradient`, a number on a white board, and fits for the Abarth and the NSX.
 
+[`liveries/raiden/`](../liveries/raiden/) goes the other way: written for one
+car, the NSX GT3 Evo, to use as much of liverykit as a traditional design can.
+Its flanks are written once and mirrored, its number, sponsors and name were
+placed with `find_space`, its splitter and skirts are the aero layout, and it
+carries a flag decal and an underglow.
+
 Anything a given car lacks is **reported and skipped**, never silently dropped.
 
 ### Filling in the binding
