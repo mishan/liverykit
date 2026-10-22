@@ -958,6 +958,71 @@ test('a DDS at an odd size is built at the next powers of two, with its whole mi
   }
 });
 
+test('an underglow is placed from the wheels, written for CSP, and lights the floor in the pictures', async () => {
+  // Paint cannot make a light, so an underglow is a Custom Shaders Patch light
+  // in the skin's ext_config.ini, and the renderers draw the same numbers.
+  const { carKn5, CAR } = await import('./fixtures/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
+  const { designLights, extConfigIni, groundGlow } = await import('../src/engine/lights.mjs');
+  const { wholeModelGeometry } = await import('../src/engine/geometry.mjs');
+  const { rasterize } = await import('../src/engine/shot.mjs');
+  const { buildSkin } = await import('../src/build.mjs');
+  const bytes = carKn5();
+  const model = parseKn5Buffer(bytes);
+  const livery = { name: 'L', palette: { pink: '#ff2d95' }, underglow: 'pink' };
+
+  const { lights, notes } = designLights(model, livery);
+  assert.deepEqual(notes, []);
+  assert.equal(lights.length, 3, 'a line under each sill, and one down the middle');
+  const [left, right] = lights;
+  for (const l of [left, right]) {
+    assert.ok(Math.abs(l.from[0]) < CAR.track / 2 && l.from[0] === l.to[0], 'under the sill, inside the wheels');
+    assert.ok(Math.max(l.from[2], l.to[2]) < CAR.wheelbase / 2 && Math.min(l.from[2], l.to[2]) > -CAR.wheelbase / 2,
+      'between the axles');
+    assert.ok(l.from[1] > 0 && l.from[1] < 0.3, 'just off the ground');
+  }
+  assert.ok(Math.sign(left.from[0]) === -Math.sign(right.from[0]), 'one each side');
+
+  const ini = extConfigIni(lights);
+  assert.equal(ini.match(/^\[LIGHT_EXTRA_\.\.\.\]$/gm)?.length, 3);
+  assert.match(ini, /^COLOR = 1, 0\.176, 0\.584, 6$/m, 'RGBM: the palette color, then its strength');
+  assert.match(ini, /^LINE_FROM = /m);
+  assert.match(ini, /^BIND_TO_HEADLIGHTS = 1$/m);
+
+  // Bright on the road under the sill, nothing a few metres off or above it.
+  const under = groundGlow(lights, left.from[0], 0, (left.from[2] + left.to[2]) / 2);
+  assert.ok(under[0] > 0.5 && under[0] > under[1], `pink under the car: ${under}`);
+  assert.deepEqual(groundGlow(lights, 5, 0, 0), [0, 0, 0]);
+  assert.deepEqual(groundGlow(lights, left.from[0], 1, 0), [0, 0, 0], 'a light pointing down lights nothing above it');
+
+  // The pictures: the same floor, with and without the lights.
+  const g = wholeModelGeometry(model, [], { livery });
+  const pink = (data) => { let n = 0; for (let i = 0; i < data.length; i += 4) if (data[i] > data[i + 1] + 60) n++; return n; };
+  const lit = rasterize(g, g.groups, new Map(), { width: 320, height: 200, view: 'three-quarter', samples: 1 });
+  const dark = rasterize({ ...g, lights: [] }, g.groups, new Map(), { width: 320, height: 200, view: 'three-quarter', samples: 1 });
+  assert.ok(pink(lit.data) > 100 && pink(dark.data) === 0, `the floor glows: ${pink(lit.data)} vs ${pink(dark.data)}`);
+
+  // And the build ships it, beside the textures.
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-glow-'));
+  await writeFile(join(dir, 'car.kn5'), bytes);
+  const p = { id: 'car', textures: { body: { file: 'b.dds', width: 64, height: 64 } }, bind: { body: { roles: ['body'], source: 'human' } } };
+  const { files } = await buildSkin({
+    profile: p, livery: { ...livery, surfaces: { body: spec } }, outDir: join(dir, 'skin'), modelPath: join(dir, 'car.kn5'), log: () => {},
+  });
+  assert.ok(files.includes('ext_config.ini'));
+  assert.equal(await readFile(join(dir, 'skin', 'ext_config.ini'), 'utf8'), ini);
+});
+
+test('a light the design cannot place is reported, not written', async () => {
+  const { designLights } = await import('../src/engine/lights.mjs');
+  const { notes, lights } = designLights({}, {
+    underglow: 'pink',
+    lights: [{ color: 'pink' }, { at: [0, 1, 0], color: 'not-a-color' }, { at: [0, 1, 0], color: '#fff' }],
+  });
+  assert.equal(lights.length, 1);
+  assert.deepEqual(notes.map((n) => n.term), ['underglow', 'lights[0]', 'lights[1]']);
+});
+
 test('a stock texture that cannot be decoded is reported, and the build goes on', async () => {
   // One unreadable texture under `background: 'stock'` used to throw out of
   // the build after the files before it were written.

@@ -621,6 +621,32 @@ at its own size and written at the next powers of two up, 2048x2048, so the DDS
 keeps its mip chain. UVs are fractions of the sheet, so the art lands where it
 was drawn.
 
+### Lights: an underglow
+
+Paint cannot make a light. In the game an extra light is a Custom Shaders
+Patch `[LIGHT_EXTRA_...]` section in an `ext_config.ini`, which CSP also reads
+from a skin's own folder, so a design that asks for one gets that file in its
+skin:
+
+```js
+underglow: 'pink',            // or { color: 'pink', intensity: 6, range: 1.2 }
+lights: [                     // any others, in the car's own metres
+  { from: [0.6, 0.15, 1.0], to: [0.6, 0.15, -1.0], color: 'accent' },
+],
+```
+
+`underglow` is placed from the model: a line under each sill, between the
+wheels the car hangs on its `WHEEL_` nodes, and one down the middle, all
+pointing at the road and on with the headlights. It needs the model, so the
+build reads it with `--model` or from the game folder. `lights` take `at` for a
+point or `from` and `to` for a line, and `color`, `intensity`, `range`, `spot`,
+`direction` and `bind` (`headlights`, `brakes`, or anything else for none).
+
+The editor's whole-car view and the build's pictures draw the pool each light
+throws on the floor from the same numbers the config gives the game. Neither
+draws the light on the car itself, and how bright it reads at night is the
+game's to say: check it there.
+
 ### Two honest limits
 
 A fit adjusts placement, so two things it cannot rescue. A portable design cannot

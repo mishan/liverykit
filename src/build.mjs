@@ -17,6 +17,7 @@ import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
 import { parseKn5 } from 'ac-kn5';
+import { designLights, extConfigIni } from './engine/lights.mjs';
 import { wholeModelGeometry } from './engine/geometry.mjs';
 import { carSheets } from './engine/shot.mjs';
 
@@ -77,6 +78,9 @@ async function transparentPng(width, height) {
  * DXT5; at 4x4, the smallest a DXT block allows, they are a few hundred bytes.
  */
 const CLEAR_SHEET = 4;
+
+// The file CSP reads beside a skin's textures for that skin's own config.
+const CAR_CONFIG_NAME = 'ext_config.ini';
 
 /**
  * Render every painted texture in a livery.
@@ -215,6 +219,25 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
       `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB` +
       (outW === width && outH === height ? '' : `  (drawn at ${width}x${height})`));
+  }
+
+  // Lights the design adds, as the Custom Shaders Patch config CSP reads from
+  // a skin's own folder. The underglow is placed from the model, so it needs
+  // one; lights stated in metres do not.
+  if (livery.underglow || livery.lights?.length) {
+    const model = livery.underglow && modelPath
+      ? await parseKn5(modelPath).catch((e) => { log(`  ! could not read ${modelPath} for the lights: ${e.message}`); return null; })
+      : null;
+    if (livery.underglow && !model) {
+      notes.push({ term: 'underglow', status: 'light', text: 'underglow: placed from the car\'s model, and there is none to read; pass --model' });
+    }
+    const { lights, notes: lightNotes } = designLights(model ?? {}, model ? livery : { ...livery, underglow: undefined });
+    notes.push(...lightNotes);
+    if (lights.length) {
+      await writeFile(join(outDir, CAR_CONFIG_NAME), extConfigIni(lights));
+      written.push(CAR_CONFIG_NAME);
+      log(`  ${CAR_CONFIG_NAME.padEnd(24)} ${lights.length} light(s)`.padEnd(46) + 'CSP');
+    }
   }
 
   // Surfaces the design hides. A transparent sheet where one will work; a note

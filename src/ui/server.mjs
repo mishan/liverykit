@@ -186,6 +186,7 @@ export function packModel(g) {
     // JSON `null`, not an absent key, so the client can tell "this car has
     // no cockpit eye" from "this payload predates the field".
     cockpit: g.cockpit ?? null,
+    lights: g.lights ?? [],
   }), 'utf8');
   // PADDED TO FOUR BYTES. The browser takes Float32Array views straight over
   // this buffer, and a typed-array view must start on a multiple of its element

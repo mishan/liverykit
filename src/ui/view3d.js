@@ -358,6 +358,55 @@ void main() {
   gl_FragColor = vec4(c, alpha);
 }`;
 
+// The floor, for the lights a design adds: an underglow is mostly the pool it
+// throws on the road. groundGlow in lights.mjs, line for line, so the editor
+// and the pictures agree about how far it reaches.
+const MAX_LIGHTS = 8;
+const FLOOR_VS = `
+attribute vec2 corner;
+uniform mat4 mvp;
+uniform vec4 extent;   // x0, z0, x1, z1
+uniform float groundY;
+varying vec3 world;
+void main() {
+  world = vec3(mix(extent.x, extent.z, corner.x), groundY, mix(extent.y, extent.w, corner.y));
+  gl_Position = mvp * vec4(world, 1.0);
+}`;
+const FLOOR_FS = `
+precision mediump float;
+uniform vec3 lFrom[${MAX_LIGHTS}];
+uniform vec3 lTo[${MAX_LIGHTS}];
+uniform vec3 lDir[${MAX_LIGHTS}];
+uniform vec3 lColor[${MAX_LIGHTS}];
+uniform vec4 lParam[${MAX_LIGHTS}];   // intensity / 6, range, spot, sharpness
+uniform int count;
+uniform float exposure;
+varying vec3 world;
+void main() {
+  vec3 glow = vec3(0.0);
+  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
+    if (i >= count) break;
+    vec3 e = lTo[i] - lFrom[i];
+    float len2 = dot(e, e);
+    float t = len2 > 0.0 ? clamp(dot(world - lFrom[i], e) / len2, 0.0, 1.0) : 0.0;
+    vec3 d = world - (lFrom[i] + t * e);
+    float dist = length(d);
+    if (dist >= lParam[i].y) continue;
+    float fall = pow(1.0 - dist / lParam[i].y, 2.0);
+    float c = dist > 0.0 ? dot(d, lDir[i]) / (dist * length(lDir[i])) : 1.0;
+    float halfAngle = radians(lParam[i].z * 0.5);
+    float edge = cos(halfAngle), inner = cos(halfAngle * (1.0 - lParam[i].w));
+    float cone = clamp((c - edge) / max(1e-6, inner - edge), 0.0, 1.0);
+    glow += lColor[i] * lParam[i].x * fall * cone;
+  }
+  gl_FragColor = vec4(glow * exposure, 1.0);
+}`;
+// The slot the floor's one attribute is bound to: past every one the car
+// uses, so the car's pointers, set once at upload, are never disturbed.
+const FLOOR_SLOT = 7;
+// The same number as GLOW_EXPOSURE in shot.mjs.
+const GLOW_EXPOSURE = 0.85;
+
 function compile(gl, type, src) {
   const sh = gl.createShader(type);
   gl.shaderSource(sh, src);
@@ -485,6 +534,7 @@ export function unpackModel(buffer) {
   // different problems with different fixes, and `?? null` reported both as
   // "this car has no cockpit eye".
   if ('cockpit' in meta) model.cockpit = meta.cockpit;
+  if (meta.lights) model.lights = meta.lights;
   return model;
 }
 
@@ -723,6 +773,53 @@ export function createViewer(canvas) {
     eye: gl.getUniformLocation(prog, 'eye'),
   };
 
+  const floorProg = gl.createProgram();
+  gl.attachShader(floorProg, compile(gl, gl.VERTEX_SHADER, FLOOR_VS));
+  gl.attachShader(floorProg, compile(gl, gl.FRAGMENT_SHADER, FLOOR_FS));
+  gl.bindAttribLocation(floorProg, FLOOR_SLOT, 'corner');
+  gl.linkProgram(floorProg);
+  if (!gl.getProgramParameter(floorProg, gl.LINK_STATUS)) {
+    throw new Error(`link: ${gl.getProgramInfoLog(floorProg)}`);
+  }
+  const floorLoc = Object.fromEntries(['mvp', 'extent', 'groundY', 'lFrom', 'lTo', 'lDir', 'lColor', 'lParam', 'count', 'exposure']
+    .map((n) => [n, gl.getUniformLocation(floorProg, n)]));
+  const floorCorners = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, floorCorners);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(FLOOR_SLOT);
+  gl.vertexAttribPointer(FLOOR_SLOT, 2, gl.FLOAT, false, 0, 0);
+  // The whole-car view's lights and the plane they light, or null.
+  let floor = null;
+
+  function drawFloor(mvp) {
+    const ls = floor.lights.slice(0, MAX_LIGHTS);
+    const pack = (n, f) => {
+      const out = new Float32Array(MAX_LIGHTS * n);
+      ls.forEach((l, i) => out.set(f(l), i * n));
+      return out;
+    };
+    gl.useProgram(floorProg);
+    gl.uniformMatrix4fv(floorLoc.mvp, false, new Float32Array(mvp));
+    gl.uniform4fv(floorLoc.extent, new Float32Array(floor.extent));
+    gl.uniform1f(floorLoc.groundY, floor.y);
+    gl.uniform3fv(floorLoc.lFrom, pack(3, (l) => l.from));
+    gl.uniform3fv(floorLoc.lTo, pack(3, (l) => l.to));
+    gl.uniform3fv(floorLoc.lDir, pack(3, (l) => l.direction));
+    gl.uniform3fv(floorLoc.lColor, pack(3, (l) => l.color));
+    gl.uniform4fv(floorLoc.lParam, pack(4, (l) => [l.intensity / 6, l.range, l.spot, l.sharpness]));
+    gl.uniform1i(floorLoc.count, ls.length);
+    gl.uniform1f(floorLoc.exposure, GLOW_EXPOSURE);
+    // Added to the room's dark, and not written to depth: the car draws over
+    // it, tires and all, as it stands on the floor.
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.depthMask(false);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.useProgram(prog);
+  }
+
   const buffers = {
     position: gl.createBuffer(), uv: gl.createBuffer(),
     normal: gl.createBuffer(), tangent: gl.createBuffer(), index: gl.createBuffer(),
@@ -856,6 +953,7 @@ export function createViewer(canvas) {
       perspective(0.8, canvas.width / canvas.height, 0.05, 100),
       lookAt(eye, lookTarget(eye), [0, 1, 0]),
     );
+    if (floor?.lights.length) drawFloor(mvp);
     gl.uniformMatrix4fv(loc.mvp, false, new Float32Array(mvp));
     gl.uniform1i(loc.map, 0);
     gl.uniform1i(loc.detail, 1);
@@ -1407,6 +1505,7 @@ export function createViewer(canvas) {
     /** Upload geometry, and frame the camera on whatever it just received. */
     setGeometry({ positions, uvs, normals, tangents, indices }) {
       groups = null;
+      floor = null;
       mesh = { positions, uvs, indices };
       // What is actually in the GPU's buffers, by identity, so setWholeCar can
       // tell "the same car again" from "a different car" without comparing
@@ -1567,6 +1666,12 @@ export function createViewer(canvas) {
       // have that problem, so the existing groups stay and the intermediate
       // frames keep drawing the car instead of nothing.
       if (!same) this.setGeometry(model);
+      // The ground at the car's lowest point, as the pictures put it, and
+      // reaching three metres past the car, further than any light's range.
+      const { lo, hi } = model.bounds ?? {};
+      floor = lo && model.lights?.length
+        ? { y: lo[1], lights: model.lights, extent: [lo[0] - 3, lo[2] - 3, hi[0] + 3, hi[2] + 3] }
+        : null;
 
       // PER SURFACE, and reported.
       //
