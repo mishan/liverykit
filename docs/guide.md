@@ -591,6 +591,36 @@ transparent texture is shipped whether or not the car hides the mesh — it is
 the one thing honored by everything that draws the part — and `hiddenByCar`
 only changes what is reported when no transparent texture would work.
 
+### Painting over the car's own texture
+
+Some surfaces have to start from what the car already has. Glass is the usual
+one: the windows texture's alpha is what makes the windows clear, and a
+windscreen banner sits in an opaque strip of it. `background: 'stock'` paints
+the regions over the car's own texture, read from the model, instead of over a
+fill:
+
+```js
+paint: {
+  windows_civic: {
+    background: 'stock',
+    regions: [
+      { treatment: 'fill', at: [0, 0.4375, 1, 0.1875], color: 'bg' },
+      { treatment: 'text', at: [0.2, 0.53, 0.6, 0.07], text: 'HONDA DOLL' },
+    ],
+  },
+},
+```
+
+The car's alpha is kept exactly, so nothing the design draws can show on the
+glass. It needs the model: the build and the editor both read the texture from
+the kn5, and a car whose kn5 carries only placeholders (see `--skins`) has none
+to give, which is reported and the surface painted on transparency.
+
+A texture whose size is not a power of two — this one is 2048x1280 — is drawn
+at its own size and written at the next powers of two up, 2048x2048, so the DDS
+keeps its mip chain. UVs are fractions of the sheet, so the art lands where it
+was drawn.
+
 ### Two honest limits
 
 A fit adjusts placement, so two things it cannot rescue. A portable design cannot

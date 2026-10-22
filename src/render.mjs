@@ -87,7 +87,7 @@ export function makeColorResolver(palette) {
   };
 }
 
-export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, decals = new Map(), regionNotes = [] }) {
+export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, decals = new Map(), regionNotes = [], stock = null }) {
   const tex = texture(profile, role);
   const { width, height } = tex;
 
@@ -97,7 +97,17 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   // walk both 200 times to arrive at the same answer.
   const safePalette = safeDeep(palette ?? {});
   const safeTokens = safeDeep(tokens ?? {});
-  const base = [`<rect width="${width}" height="${height}" fill="${color(background ?? 'black')}"/>`];
+  // `stock` paints over the car's own texture, handed in as data URIs by
+  // `stockHrefs`, rather than over a fill. Glass is the case: its alpha is
+  // what makes the windows windows, so a banner has to start from the car's
+  // sheet, and the design is masked by that alpha so nothing it draws can
+  // leak onto the glass.
+  const onStock = background === 'stock';
+  if (onStock && !stock) {
+    regionNotes.push({ term: role, status: 'no-stock',
+      text: `${tex.file}: background 'stock' needs the car's own texture, and the model has none to give; painted on transparency` });
+  }
+  const base = onStock ? [] : [`<rect width="${width}" height="${height}" fill="${color(background ?? 'black')}"/>`];
   const emissive = [];
 
   // A region selecting panels by TAG becomes one region per matching panel, so
@@ -326,6 +336,11 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     if (out.emissive) emissive.push(spin(out.emissive));
   }
 
+  if (onStock && stock) {
+    const image = (href) => `<image href="${href}" width="${width}" height="${height}" preserveAspectRatio="none"/>`;
+    clips.push(`<mask id="lk-stock-alpha" mask-type="luminance">${image(stock.alpha)}</mask>`);
+    base.splice(0, base.length, `<g mask="url(#lk-stock-alpha)">${image(stock.color)}${base.join('')}</g>`);
+  }
   const defs = clips.length ? `<defs>${clips.join('')}</defs>` : '';
   const doc = (body) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +

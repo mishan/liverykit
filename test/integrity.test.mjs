@@ -958,26 +958,44 @@ test('the example livery resolves against the shipped car', async () => {
   assert.ok(targets.some((t) => t.from === 'surfaces.rims'), 'rims goes through the vocabulary');
 });
 
-test('a texture too odd a size to encode is skipped and reported, not fatal', async () => {
-  // The Abarth's steering wheel is 68x64. Hitting that mid-build used to abort
-  // after writing five perfectly good files. A surface this tool cannot encode
-  // is effectively one the car does not have.
-  const { resolveTargets } = await import('../src/profile.mjs');
+test('a DDS at an odd size is built at the next powers of two, with its whole mip chain', async () => {
+  // The Abarth's steering wheel is 68x64, and the Civic's glass 2048x1280. A
+  // DDS at either size has no mip chain a DX9 game can be trusted with, and the
+  // build used to skip such a surface. UVs are fractions of the sheet, so the
+  // same art drawn at the size it has and stretched to 128x64 lands in place.
+  const { buildSkin } = await import('../src/build.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-odd-'));
   const p = {
     id: 'car',
-    textures: {
-      good: { file: 'g.dds', width: 512, height: 512 },
-      odd: { file: 'o.dds', width: 68, height: 64 },
-    },
-    bind: {
-      body: { roles: ['good'], source: 'human' },
-      steeringWheel: { roles: ['odd'], source: 'human' },
-    },
+    textures: { odd: { file: 'o.dds', width: 68, height: 64 } },
+    bind: { steeringWheel: { roles: ['odd'], source: 'human' } },
   };
-  // resolveTargets itself does not know about DDS; the pre-flight in buildSkin
-  // does. What matters here is that both resolve, so the build can choose.
-  const { targets } = resolveTargets(p, { name: 'L', surfaces: { body: spec, steeringWheel: spec } });
-  assert.deepEqual(targets.map((t) => t.role), ['good', 'odd']);
+  const { files } = await buildSkin({
+    profile: p, livery: { name: 'L', surfaces: { steeringWheel: spec } }, outDir: join(dir, 'skin'), log: () => {},
+  });
+  assert.deepEqual(files, ['o.dds']);
+  const dds = await readFile(join(dir, 'skin', 'o.dds'));
+  assert.deepEqual([dds.readUInt32LE(16), dds.readUInt32LE(12)], [128, 64], 'width, height');
+  assert.equal(dds.readUInt32LE(28), mipCount(128, 64));
+});
+
+test('a surface painted over the stock texture keeps its alpha, and its own colors', async () => {
+  // Glass: the alpha is what makes a window a window. The design is drawn over
+  // the car's own sheet and masked by its alpha — and drawn over it opaque,
+  // since a banner over half-transparent glass blended with the stock
+  // lettering under it and let the car's own name show through.
+  const sharp = (await import('sharp')).default;
+  const { rasterize, stockHrefs } = await import('../src/engine/pipeline.mjs');
+  const p = { id: 'car', textures: { glass: { file: 'g.dds', width: 4, height: 4, alpha: true } } };
+  const glass = await sharp({ create: { width: 4, height: 4, channels: 4, background: { r: 0, g: 0, b: 255, alpha: 0.5 } } }).png().toBuffer();
+  const layers = renderTexture({
+    profile: p, role: 'glass', background: 'stock', stock: await stockHrefs(glass),
+    regions: [{ treatment: 'fill', at: [0, 0, 0.5, 1], color: '#ff0000', safe: false }],
+    treatments: resolveTreatments(['core']), palette: {}, rng: () => 0.5,
+  });
+  const { data } = await sharp(await rasterize(layers.base)).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([...data.subarray(0, 4)], [255, 0, 0, 128], 'painted: the design color, at the glass alpha');
+  assert.deepEqual([...data.subarray(12, 16)], [0, 0, 255, 128], 'unpainted: the stock texture, as it was');
 });
 
 test('binding to a texture the model never references is flagged', async () => {
