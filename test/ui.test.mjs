@@ -123,6 +123,22 @@ async function runApp({ state, render, server = null, routes = {} }) {
   return { dom, calls, mod, window: g.window };
 }
 
+test('the editor opens on the body, and its surface list says so, when the glass is painted too', async () => {
+  // `paint` resolves before `surfaces`, so a design that also paints over the
+  // glass lists the glass first. The editor opens on the body anyway; the list
+  // was filled before that choice and kept showing the glass above the body's
+  // own regions.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const base = (await import('../liveries/neon-grid-any.mjs')).default;
+  const body = binding(profile, 'body').roles[0];
+  const other = Object.keys(profile.textures).find((r) => r !== body);
+  const livery = { ...base, paint: { [other]: { background: 'stock', regions: [] } } };
+
+  const { dom } = await runApp({ server: { livery, profile, fit: null, role: body } });
+
+  assert.equal(dom.querySelector('#surface').value, 'surfaces.body');
+});
+
 test('the editor module boots instead of dying in a dead zone', async () => {
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;

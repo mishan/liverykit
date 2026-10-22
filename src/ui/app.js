@@ -603,6 +603,8 @@ async function selectSurface(from) {
   if (!found) return status(`this design no longer paints ${from}`);
   state.surface = found;
   state.selected = null;
+  // The list is filled before the editor picks the surface it opens on.
+  drawSurfaces();
   drawPanels();
   await refresh();
   // The viewport shows the geometry THIS texture is painted on, so changing
