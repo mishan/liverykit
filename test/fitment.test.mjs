@@ -447,6 +447,22 @@ test('artwork wholly on the hidden face is the worst case, not a crash', () => {
   assert.match(hidden[0].why, /100% of team is on inside/);
 });
 
+test('a face that shares its texture with the outward one hides nothing', () => {
+  // Glass on the JTC Civic: the windscreen's inside and outside are two meshes
+  // over the SAME piece of texture, so a banner painted there shows on both.
+  // It was reported as showing to the driver and nobody else, with advice to
+  // move it to the outward face, which is where it already was.
+  const glass = structuredClone(profile);
+  glass.panels.body = {
+    inside: { rect: [0.227, 0.529, 0.546, 0.097], anisotropy: 1, metresPerUv: [4, 4], visible: 0, visibleFromCockpit: 0.34 },
+    outside: { rect: [0.228, 0.530, 0.546, 0.096], anisotropy: 1, metresPerUv: [4, 4], visible: 0.98 },
+  };
+  const r = fitment(design([
+    { id: 'banner', treatment: 'text', at: [0.2, 0.525, 0.6, 0.075], text: 'HONDA DOLL' },
+  ]), glass);
+  assert.deepEqual(r.findings.filter((f) => f.kind === 'hidden-face'), []);
+});
+
 test('a placement mostly off the model is reported before its visibility is', () => {
   // The mistake that started all of this, finally caught.
   //
