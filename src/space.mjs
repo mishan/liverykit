@@ -26,7 +26,7 @@
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
-import { rectVisibility, gridVisibility, bendDeg } from './engine/visibility.mjs';
+import { rectVisibility, gridVisibility, bendDeg, sampleRects } from './engine/visibility.mjs';
 import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
 
 /**
@@ -273,11 +273,17 @@ export function findSpace({
       candidates.push({ at: at.map(r3), marginMm: Math.floor(clearance), onCar: null, visible: null, bendDeg: bend, coarse: true });
       continue;
     }
-    const v = rectVisibility(model, prepared, g.meshes,
-      [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph], { across: 16, island: g.island });
+    const rect = [px + at[0] * pw, py + at[1] * ph, at[2] * pw, at[3] * ph];
+    const v = rectVisibility(model, prepared, g.meshes, rect, { across: 16, island: g.island });
     const onCar = v ? v.samples / v.of : 0;
     const visible = v ? v.fraction : 0;
     if (onCar < CLEAN || visible < CLEAN) continue;
+    // The bend too, from the points under the spot as check_fitment samples
+    // them. A cell's mean normal averages away a fold tighter than the cell:
+    // a side skirt turning under went out as 29 degrees and came back from
+    // the check as sponsors wrapped at 63.
+    const fineBend = bendDeg(sampleRects(model, g.meshes, [{ rect, nu: 14, nv: 14 }], g.island)[0].points) ?? bend;
+    if (fineBend > CURVED_DEG) continue;
     // The margin too, as `minMargin` will hold it: the box grown by it on
     // every side, sampled every few millimeters, against the same bar. The
     // clearance above came from the coarse cells alone, and an edge or a
@@ -320,7 +326,7 @@ export function findSpace({
         }
       }
     }
-    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: bend });
+    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: fineBend });
   }
 
   return {

@@ -1369,6 +1369,34 @@ test('find_space reports a clearance the fine grid holds, even where the coarse 
   }
 });
 
+test('find_space does not hand out a spot the fitment check calls curved', async () => {
+  // A side skirt folds under along its bottom edge in less than a cell. Each
+  // cell's mean normal averaged the fold away, so find_space reported a strip
+  // there at 29 degrees and check_fitment, sampling the same strip finely,
+  // called the sponsors on it wrapped at 63. The grid here is the coarse sweep
+  // with every cell read flat, which is what averaging does to a tight fold.
+  const { findSpace, cleanGrid } = await import('../src/space.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const m = model.meshes[0];
+  for (let i = 0; i < m.vertexCount; i++) {
+    if (Math.floor(i / 8) < 5) continue;            // the bottom rows fold away
+    const o = i * m.stride;
+    model.buf.writeFloatLE(-Math.sin(1.4), o + 16); model.buf.writeFloatLE(Math.cos(1.4), o + 20);
+  }
+  const prepared = occupancyFor(model);
+  const swept = cleanGrid({ profile, model, prepared, role: 'body', panel: 'L', cellMm: 400 });
+  const flat = { ...swept, normals: swept.normals.map((row) => row.map((n) => n && { ...n, nx: 0, ny: 0, nz: 1 })) };
+
+  const found = findSpace({ grid: flat, model, prepared, widthMm: 1200, heightMm: 300, count: 5 });
+  assert.ok(found.candidates.length > 0, JSON.stringify(found));
+  for (const c of found.candidates) {
+    const checked = fitment(design([{ id: 'name', treatment: 'text', panel: 'L', at: c.at, text: 'NAME' }]),
+      profile, null, { model });
+    assert.deepEqual(checked.findings.filter((f) => f.kind === 'curved'), [],
+      `find_space's ${c.bendDeg} degrees for ${JSON.stringify(c.at)} is the check's too`);
+  }
+});
+
 test('find_space can sweep sizes and say how big a shape of a given proportion can be', async () => {
   // An agent told "about 400 mm" put a 240 mm roundel on a door that held 400.
   // Asked for the limit, it gets the limit: the largest that fits, and the
