@@ -30,6 +30,39 @@ export const rect = (r, color) =>
  */
 export const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
 
+/** One band, on the sidewall `w` measures, or as a ring in `r` where nothing does. */
+function bandOn(r, c, w) {
+  const color = c.color(c.opts.color ?? 'cyan');
+  const at = c.opts.along ?? 0.8;
+  const frac = c.opts.width ?? 0.06;
+  const opacity = c.opts.opacity ?? 1;
+  let g;
+  if (w?.unwrap === 'strip') {
+    const [rim, shoulder] = w.across;
+    const pos = rim + (shoulder - rim) * at;
+    const thick = Math.abs(shoulder - rim) * frac;
+    g = w.around === 'u'
+      ? `<rect x="${r2(r.x)}" y="${r2((pos - thick / 2) * c.height)}" width="${r2(r.w)}" height="${r2(thick * c.height)}" fill="${color}" opacity="${opacity}"/>`
+      : `<rect x="${r2((pos - thick / 2) * c.width)}" y="${r2(r.y)}" width="${r2(thick * c.width)}" height="${r2(r.h)}" fill="${color}" opacity="${opacity}"/>`;
+  } else if (w?.unwrap === 'annulus') {
+    const [r0, r1] = w.radiusUv;
+    const radius = r0 + (r1 - r0) * at;
+    const stroke = (r1 - r0) * frac;
+    // In u-fractions; a non-square sheet makes the ring an ellipse.
+    g = `<ellipse cx="${r2(w.hub[0] * c.width)}" cy="${r2(w.hub[1] * c.height)}" ` +
+      `rx="${r2(radius * c.width)}" ry="${r2(radius * c.width)}" fill="none" ` +
+      `stroke="${color}" stroke-width="${r2(stroke * c.width)}" opacity="${opacity}"/>`;
+  } else {
+    g = ring({
+      cx: r.x + r.w / 2, cy: r.y + r.h / 2,
+      radius: (0.25 + 0.25 * at) * Math.min(r.w, r.h),
+      width: frac * 0.25 * Math.min(r.w, r.h),
+      color, opacity,
+    });
+  }
+  return g;
+}
+
 const treatments = {
   fill: (r, c) => ({ base: rect(r, c.color(c.opts.color ?? 'pink')), emissive: '' }),
 
@@ -122,39 +155,31 @@ const treatments = {
    * (`wheel` on the panel; see engine/wheels.mjs), and this reads that and
    * draws a stripe across the strip or a ring about the hub.
    *
-   * On a panel with no measurement it draws as `ring` did, radius from
-   * `at`, so an old profile is no worse off than before — and no better.
+   * With no panel, round every sidewall the sheet measures, once each: a
+   * band round a tyre is the obvious way to write one, and reading only the
+   * panel it landed on drew a single ring across the NSX's whole sheet, an
+   * arc along the top of each tyre and nothing else.
+   *
+   * Where nothing is measured it draws as `ring` did, radius from `at`, so an
+   * old profile is no worse off than before — and no better, which it says.
    */
   band: (r, c) => {
-    const color = c.color(c.opts.color ?? 'cyan');
-    const at = c.opts.along ?? 0.8;
-    const frac = c.opts.width ?? 0.06;
-    const opacity = c.opts.opacity ?? 1;
     const w = c.panel?.wheel;
-    let g;
-    if (w?.unwrap === 'strip') {
-      const [rim, shoulder] = w.across;
-      const pos = rim + (shoulder - rim) * at;
-      const thick = Math.abs(shoulder - rim) * frac;
-      g = w.around === 'u'
-        ? `<rect x="${r2(r.x)}" y="${r2((pos - thick / 2) * c.height)}" width="${r2(r.w)}" height="${r2(thick * c.height)}" fill="${color}" opacity="${opacity}"/>`
-        : `<rect x="${r2((pos - thick / 2) * c.width)}" y="${r2(r.y)}" width="${r2(thick * c.width)}" height="${r2(r.h)}" fill="${color}" opacity="${opacity}"/>`;
-    } else if (w?.unwrap === 'annulus') {
-      const [r0, r1] = w.radiusUv;
-      const radius = r0 + (r1 - r0) * at;
-      const stroke = (r1 - r0) * frac;
-      // In u-fractions; a non-square sheet makes the ring an ellipse.
-      g = `<ellipse cx="${r2(w.hub[0] * c.width)}" cy="${r2(w.hub[1] * c.height)}" ` +
-        `rx="${r2(radius * c.width)}" ry="${r2(radius * c.width)}" fill="none" ` +
-        `stroke="${color}" stroke-width="${r2(stroke * c.width)}" opacity="${opacity}"/>`;
-    } else {
-      g = ring({
-        cx: r.x + r.w / 2, cy: r.y + r.h / 2,
-        radius: (0.25 + 0.25 * at) * Math.min(r.w, r.h),
-        width: frac * 0.25 * Math.min(r.w, r.h),
-        color, opacity,
-      });
+    if (!c.panel) {
+      const seen = new Set();
+      const walls = Object.values(c.sheet ?? {}).map((q) => q.wheel)
+        .filter((x) => x?.part === 'sidewall' && (x.unwrap === 'strip' || x.unwrap === 'annulus'))
+        .filter((x) => {
+          const k = JSON.stringify([x.unwrap, x.around, x.across, x.hub, x.radiusUv]);
+          return !seen.has(k) && seen.add(k);
+        });
+      if (walls.length) {
+        const drawn = walls.map((x) => bandOn(r, c, x));
+        return c.opts.glow ? { base: '', emissive: drawn.join('') } : { base: drawn.join(''), emissive: '' };
+      }
+      c.note('no sidewall is measured on this sheet, so it is drawn as a ring across it; regenerate the profile with --from-kn5, or name a panel');
     }
+    const g = bandOn(r, c, w);
     return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
   },
 

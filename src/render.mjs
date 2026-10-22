@@ -253,7 +253,9 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // is not a rule anybody can follow.
     // `panel` is the resolved panel this region landed on, measurements and
     // all, for a treatment that draws differently depending on what it is
-    // on — `band` reads the wheel measurement. Null for an absolute region.
+    // on — `band` reads the wheel measurement. Null for an absolute region,
+    // which may want `sheet`, every panel of the texture, instead: a band
+    // with no panel goes round every sidewall the sheet measures.
     // Everything to keep off, EXCEPT this region's own boxes: a region cannot
     // be told to avoid itself.
     const lettering = letteringAll
@@ -276,7 +278,7 @@ export function renderTexture({ profile, role, regions, background, treatments, 
 
     const out = entry.fn(drawn,
       { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering,
-        panel: frac.panel ?? null, decals, note });
+        panel: frac.panel ?? null, sheet: profile.panels?.[role] ?? {}, decals, note });
     if (frac.panel?.reflected && !flip && (opts.text !== undefined || region.treatment === 'decal')) {
       note(`its panel is reflected in the texture, so it reads backwards on the car; rotate: 'auto' mirrors it back`);
     }
