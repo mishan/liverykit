@@ -24,12 +24,16 @@
 // would, and does the car still look like a car.
 // ---------------------------------------------------------------------------
 
+import { groundGlow } from './lights.mjs';
 import sharp from 'sharp';
 
 import { decodeDds } from './pipeline.mjs';
 
 /** Unpainted geometry. Gray, and obviously gray — never a plausible color. */
 const BARE = [0x4a, 0x4a, 0x52];
+// How bright a light's pool on the floor reads against the black room. The
+// same number is in the viewer's floor shader.
+const GLOW_EXPOSURE = 0.85;
 
 /**
  * Where the camera sits for a named view.
@@ -560,6 +564,7 @@ export function rasterize(model, groups, sheets, {
   // ---------------------------------------------------------------------
   if (floor) {
     const groundY = lo[1];
+    const lights = model.lights ?? [];
     const cx = (lo[0] + hi[0]) / 2;
     const cz = (lo[2] + hi[2]) / 2;
     // A shade wider than the box, because a car's shadow is: the body
@@ -635,6 +640,14 @@ export function rasterize(model, groups, sheets, {
         // those is the reflection, and this is the quieter half.
         const dark = Math.exp(-d2 * 1.3) * 0.85;
         for (let k = 0; k < 3; k++) px[at + k] = Math.round(px[at + k] * (1 - dark));
+
+        // The design's own lights on the floor: an underglow is mostly the
+        // pool it throws on the road, not the light itself. Added after the
+        // shadow, since it is under the car exactly where the shadow is.
+        if (lights.length) {
+          const glow = groundGlow(lights, hx, groundY, hz);
+          for (let k = 0; k < 3; k++) px[at + k] = Math.min(255, px[at + k] + Math.round(255 * glow[k] * GLOW_EXPOSURE));
+        }
 
         // Reflection, wherever the mirrored car reached this pixel. Weaker
         // with distance — a real floor is not a mirror — and weaker again

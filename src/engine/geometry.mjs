@@ -8,6 +8,7 @@
 // and the CLI has no business importing an HTTP server to get it.
 // ---------------------------------------------------------------------------
 
+import { designLights } from './lights.mjs';
 import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurMesh, baseNormal, cockpitLod } from 'ac-kn5';
 import { cockpitEye } from './visibility.mjs';
 
@@ -359,6 +360,9 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     groups,
     parts,
     bounds: { lo, hi },
+    // The lights the design adds — an underglow, say — which both renderers
+    // light the ground with. See lights.mjs.
+    lights: designLights(model, livery).lights,
     // Where a driver's eyes sit, for the cockpit view. Computed here rather
     // than left to the caller: it needs the raw kn5 meshes, which this is
     // already holding, and every caller of this function wants a camera

@@ -862,6 +862,9 @@ test('the whole-car view puts every painted surface on the model at once', { ski
   const livery = {
     name: 'fixture', car: 'fixture_car',
     palette: { ink: '#101014', accent: '#00f0ff' },
+    // So the floor's own shader is compiled here too: GLSL only a browser can
+    // compile, and a word it reserves took the whole 3D view down once.
+    underglow: 'accent',
     surfaces: {
       body: {
         role: 'body',

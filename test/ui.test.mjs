@@ -924,7 +924,9 @@ test('every shader uniform is located and every location is set', async () => {
   // — so the highlight just stops appearing, with nothing to explain why.
   const src = await readFile(new URL('../src/ui/view3d.js', import.meta.url), 'utf8');
 
-  const declared = [...src.matchAll(/^uniform\s+\w+\s+(\w+)\s*;/gm)].map((m) => m[1]);
+  const shader = (name) => src.match(new RegExp(`const ${name} = \`([\\s\\S]*?)\`;`))?.[1] ?? '';
+  const uniforms = (text) => [...text.matchAll(/^uniform\s+\w+\s+(\w+)\s*(?:\[[^\]]*\])?\s*;/gm)].map((m) => m[1]);
+  const declared = uniforms(shader('VS') + shader('FS'));
   assert.ok(declared.includes('region') && declared.includes('panel'),
     `expected the highlight uniforms, found: ${declared}`);
 
@@ -933,6 +935,15 @@ test('every shader uniform is located and every location is set', async () => {
       `the shader declares "${name}" but nothing looks up its location`);
     assert.match(src, new RegExp(`gl\\.uniform\\w+\\(loc\\.${name}\\b`),
       `nothing ever writes to "${name}" — it will read as zero forever`);
+  }
+
+  // The floor's own program, for a design's lights, by the same rule.
+  const floor = uniforms(shader('FLOOR_VS') + shader('FLOOR_FS'));
+  assert.ok(floor.includes('lColor'), `expected the floor's light uniforms, found: ${floor}`);
+  const looked = src.match(/const floorLoc = Object\.fromEntries\(\[([^\]]*)\]/)?.[1] ?? '';
+  for (const name of floor) {
+    assert.match(looked, new RegExp(`'${name}'`), `the floor shader declares "${name}" but nothing looks up its location`);
+    assert.match(src, new RegExp(`gl\\.uniform\\w+\\(floorLoc\\.${name}\\b`), `nothing ever writes to the floor's "${name}"`);
   }
 
   // Both draw paths must set both highlight uniforms. The grouped path
@@ -951,8 +962,8 @@ test('every shader uniform is located and every location is set', async () => {
 
   // Balanced braces in each shader, which catches the copy-paste that ends a
   // function early and turns the rest of the source into a syntax error.
-  for (const [which, body] of [['VS', /const VS = `([\s\S]*?)`;/], ['FS', /const FS = `([\s\S]*?)`;/]]) {
-    const text = src.match(body)?.[1] ?? '';
+  for (const which of ['VS', 'FS', 'FLOOR_VS', 'FLOOR_FS']) {
+    const text = shader(which);
     assert.ok(text.length, `${which} source not found`);
     const open = (text.match(/\{/g) ?? []).length;
     const close = (text.match(/\}/g) ?? []).length;
