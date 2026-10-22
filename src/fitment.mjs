@@ -25,6 +25,7 @@
 import { resolveTargets, expandRegions, resolveRect, wholeFill, texture, metresNarrowest, metresAcross, spanPlacements, panel as panelOf, panelName, axesOf } from './profile.mjs';
 import { applyFit, mirrorAt, mirrorFlips } from './fit.mjs';
 import { getPack } from './registry.mjs';
+import { bandAcross } from './packs/core.mjs';
 import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects, bendDeg } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
@@ -2796,8 +2797,9 @@ function unseen(placed, profile, t, seen, say) {
     const [nu, nv] = grid ?? [14, 14];
     const onCar = sampleRects(seen.model, meshes, [{ rect: at, nu, nv, poly }])[0];
     const island = islandOf(seen.model, meshes, p.frac.panel);
-    const answer = (island && rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid, island }))
-      || rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid });
+    const answer = sidewallBand(p, profile, t, seen, meshes)
+      ?? (island && rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid, island }))
+      ?? rectVisibility(seen.model, seen.prepared, meshes, at, { poly, grid });
 
     // Nothing there at all: the rectangle is off the model entirely, which is
     // not a visibility verdict and must not be reported as one.
@@ -2889,6 +2891,31 @@ function unseen(placed, profile, t, seen, say) {
         (askedSeen !== null ? `; it asked for at least ${Math.round(askedSeen * 100)}%` : ''),
     });
   }
+}
+
+/**
+ * How much of a band round a tyre is seen, for one placed with no panel: on
+ * the stripes it draws, not its box. It goes round every sidewall its sheet
+ * measures, and its box is the whole sheet, which on the NSX is mostly inner
+ * sidewall and tread: a band plain to see on every tyre measured 29%. Each
+ * stripe is measured on its own wheel's island where the profile can find
+ * it, because every wheel wears the same texels, and the band is seen if it
+ * is seen on any of them. Null
+ * for anything else, which is measured the usual way.
+ */
+function sidewallBand(p, profile, t, seen, meshes) {
+  if (p.region.treatment !== 'band' || p.frac.panel) return null;
+  let best = null;
+  for (const q of Object.values(profile.panels?.[t.role] ?? {})) {
+    const w = q.wheel;
+    if (w?.part !== 'sidewall' || w.unwrap !== 'strip' || !Array.isArray(q.rect)) continue;
+    const { pos, thick } = bandAcross(w, p.region.along, p.region.width);
+    const rect = w.around === 'u' ? [q.rect[0], pos - thick / 2, q.rect[2], thick] : [pos - thick / 2, q.rect[1], thick, q.rect[3]];
+    const island = islandOf(seen.model, meshes, q);
+    const a = rectVisibility(seen.model, seen.prepared, meshes, rect, island ? { island } : {});
+    if (a && (!best || a.fraction > best.fraction)) best = a;
+  }
+  return best;
 }
 
 /**
