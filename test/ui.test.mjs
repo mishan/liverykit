@@ -4780,7 +4780,8 @@ test('a panel map names every panel the world sees, in the frame its `at` is in'
   assert.match(svg, label(first));
   assert.match(svg, new RegExp(`rotate\\(90 [^)]*\\)[^>]*>${second}</text>`), 'turned as rotate: auto turns text there');
   if (hidden) assert.doesNotMatch(svg, label(hidden), 'a panel nobody sees is not worth a label');
-  assert.doesNotMatch(svg, /<script>/, 'escaped');
+  assert.doesNotMatch(svg, /<script/i, 'escaped');
+  assert.match(svg, /&lt;script&gt;/);
   assert.match(svg, />x</);
   assert.match(svg, />y</);
 });
