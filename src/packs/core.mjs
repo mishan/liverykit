@@ -30,6 +30,16 @@ export const rect = (r, color) =>
  */
 export const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
 
+/**
+ * Where a band `along` of the way from rim to shoulder of the strip sidewall
+ * `w`, `width` of that distance thick, lies across it: centre and thickness,
+ * as fractions of the sheet. The check measures what is drawn by this too.
+ */
+export function bandAcross(w, along = 0.8, width = 0.06) {
+  const [rim, shoulder] = w.across;
+  return { pos: rim + (shoulder - rim) * along, thick: Math.abs(shoulder - rim) * width };
+}
+
 /** One band, on the sidewall `w` measures, or as a ring in `r` where nothing does. */
 function bandOn(r, c, w) {
   const color = c.color(c.opts.color ?? 'cyan');
@@ -38,9 +48,7 @@ function bandOn(r, c, w) {
   const opacity = c.opts.opacity ?? 1;
   let g;
   if (w?.unwrap === 'strip') {
-    const [rim, shoulder] = w.across;
-    const pos = rim + (shoulder - rim) * at;
-    const thick = Math.abs(shoulder - rim) * frac;
+    const { pos, thick } = bandAcross(w, at, frac);
     g = w.around === 'u'
       ? `<rect x="${r2(r.x)}" y="${r2((pos - thick / 2) * c.height)}" width="${r2(r.w)}" height="${r2(thick * c.height)}" fill="${color}" opacity="${opacity}"/>`
       : `<rect x="${r2((pos - thick / 2) * c.width)}" y="${r2(r.y)}" width="${r2(thick * c.width)}" height="${r2(r.h)}" fill="${color}" opacity="${opacity}"/>`;

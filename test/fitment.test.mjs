@@ -2693,3 +2693,24 @@ test('--check runs the fitment check from the command line, and fails the run on
   assert.equal(typo.code, 1);
   assert.match(typo.stderr, /--fail-on must be one of: fatal, high, low; got "medium"/);
 });
+
+test('a band round a tyre is seen where it is drawn, on a sidewall, not across its whole sheet', () => {
+  // A band with no panel goes round every sidewall the sheet measures, and
+  // the check measured it as the region's box, the whole sheet: the NSX's
+  // tyre sheet is mostly inner sidewall and tread, so a band plain to see on
+  // every tyre came back 29% visible. Here the sheet's top 30% is a measured
+  // sidewall, and a plate stands in front of everything below half way.
+  const sheet = plane({ rows: 8, cols: 8, uv: [0, 0, 1, 1] });
+  const plate = { ...sheet.meshes[0], materialId: 1, world: [...sheet.meshes[0].world] };
+  plate.world[5] = 0.6875; plate.world[13] = 0.5; plate.world[14] = 0.005;
+  const model = { ...sheet, materials: [...sheet.materials, { slots: { txDiffuse: 'plate.dds' } }], meshes: [sheet.meshes[0], plate] };
+  const tyre = structuredClone(profile);
+  tyre.panels.body = {
+    wall: { rect: [0, 0, 1, 0.3], anisotropy: 1, metresPerUv: [1.6, 1.6], visible: 1,
+      wheel: { part: 'sidewall', unwrap: 'strip', around: 'u', rim: 'v0', across: [0, 0.3], radiusM: [0.25, 0.33] } },
+  };
+  const unseen = (regions) => fitment(design(regions), tyre, null, { model }).findings.filter((f) => f.kind === 'unseen');
+  assert.deepEqual(unseen([{ id: 'band', treatment: 'band', along: 0.5, width: 0.2, color: 'ink' }]), []);
+  // The same sheet still reports a fill across it, which is mostly hidden.
+  assert.equal(unseen([{ id: 'all', treatment: 'fill', color: 'ink' }]).length, 1);
+});
