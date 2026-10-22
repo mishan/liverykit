@@ -73,10 +73,11 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       body: JSON.stringify(args ?? {}),
     }),
     /** A PNG of the car. Binary, so it cannot go through `request`. */
-    shoot: async (view = 'left', width, height, proposal) => {
+    shoot: async (view = 'left', width, height, proposal, map) => {
       const q = new URLSearchParams({ view });
       if (width) q.set('width', String(width));
       if (height) q.set('height', String(height));
+      if (map) q.set('map', map);
       const res = await fetch(new URL(`api/shot?${q}`, url).href, proposal
         ? {
             method: 'POST',
