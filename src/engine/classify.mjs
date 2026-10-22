@@ -47,7 +47,7 @@
 // not the same as trustworthy without looking.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, motionBlurMesh, triangles, vertex } from './kn5.mjs';
+import { meshesUsingTexture, motionBlurMesh, triangles, vertex } from 'ac-kn5';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';

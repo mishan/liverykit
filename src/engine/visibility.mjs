@@ -35,7 +35,7 @@
 // It is still a heuristic, and it is labelled as one in the profile it produces.
 // ---------------------------------------------------------------------------
 
-import { vertex, triangles, damageOnly, motionBlurOnly, motionBlurMesh, cockpitLod, isGlass, blends } from './kn5.mjs';
+import { vertex, triangles, damageOnly, motionBlurOnly, motionBlurMesh, cockpitLod, isGlass, blends } from 'ac-kn5';
 import { inPoly } from './poly.mjs';
 
 /**

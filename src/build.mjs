@@ -16,7 +16,7 @@ import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
-import { parseKn5 } from './engine/kn5.mjs';
+import { parseKn5 } from 'ac-kn5';
 import { wholeModelGeometry } from './engine/geometry.mjs';
 import { carSheets } from './engine/shot.mjs';
 

@@ -13,7 +13,7 @@ import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mj
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
-import { parseKn5 } from '../src/engine/kn5.mjs';
+import { parseKn5 } from 'ac-kn5';
 import { textureFeatures, explain, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import { loadDecals } from '../src/decals.mjs';

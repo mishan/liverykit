@@ -22,7 +22,7 @@
 //     from the texture alone.
 // ---------------------------------------------------------------------------
 
-import { vertex, triangles } from './kn5.mjs';
+import { vertex, triangles } from 'ac-kn5';
 import { polyArea } from './poly.mjs';
 
 /**

@@ -368,35 +368,8 @@ test('mip chain length is an integer the encoder can actually honor', () => {
 // because game assets can't be committed — it exercises the structure, and the
 // exact-length assertion is what catches a layout regression.
 
-test('kn5: parses a well-formed file to the exact final byte', async () => {
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const m = parseKn5Buffer(buildKn5());
-  assert.equal(m.version, 6);
-  assert.equal(m.textures.length, 1, 'the type-0 null slot must not become a texture');
-  assert.equal(m.textures[0].name, 'body.dds');
-  assert.equal(m.materials[0].slots.txDiffuse, 'body.dds');
-  assert.equal(m.meshes.length, 1);
-  assert.equal(m.meshes[0].vertexCount, 3);
-});
-
-test('kn5: V is negated, because AC stores it that way', async () => {
-  const { parseKn5Buffer, vertex } = await import('../src/engine/kn5.mjs');
-  const m = parseKn5Buffer(buildKn5());
-  // Stored v = -0.75 must surface as texture-space y = 0.25. Getting this wrong
-  // flips every panel vertically and still looks plausible.
-  assert.equal(Math.round(vertex(m, m.meshes[0], 0).v * 1000) / 1000, 0.25);
-  assert.equal(vertex(m, m.meshes[0], 0).u, 0.25);
-});
-
-test('kn5: a truncated or trailing-byte file is rejected, not half-parsed', async () => {
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const good = buildKn5();
-  assert.throws(() => parseKn5Buffer(Buffer.concat([good, Buffer.alloc(4)])), /finished at byte/);
-  assert.throws(() => parseKn5Buffer(Buffer.from('nope!!'), {}), /not a kn5/);
-});
-
 test('kn5: islands carry exact rects and a real anisotropy', async () => {
-  const { parseKn5Buffer, meshesUsingTexture } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer, meshesUsingTexture } = await import('ac-kn5');
   const { findIslands } = await import('../src/engine/islands.mjs');
   const m = parseKn5Buffer(buildKn5());
   const islands = findIslands(m, meshesUsingTexture(m, 'body.dds'), { minVertices: 1 });
@@ -488,7 +461,7 @@ test('cockpitEye respects which way the model calls forward', async () => {
   // The eye sits BACK from the steering wheel. On a model where +Z is rearward
   // that offset has to flip, or the eye lands out in front of the car and every
   // cockpit visibility number is meaningless.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { cockpitEye } = await import('../src/engine/visibility.mjs');
   const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('RSS4_Steer_M', 0.4, 1)] }));
 
@@ -506,7 +479,7 @@ test('an offset steering wheel is still a steering wheel', async () => {
   // wheel, which sits 34 cm left because the driver does, so the car got no
   // cockpit visibility at all and every interior panel lost its `cockpit`
   // tag. A road car's wheel is 35-40 cm off centre as a matter of course.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { cockpitEye } = await import('../src/engine/visibility.mjs');
   const offset = panelMesh('GEO_Steer_HR', 0.4, 1);
   for (const v of offset.verts) v[0] += 0.34;
@@ -524,7 +497,7 @@ test('cockpit visibility respects occluders between panel and eye', async () => 
   // change the answer — an occluder has to be within 3 cm of the eyeball to
   // notice. The budget was fixed anyway, because marching the whole way is
   // correct and costs nothing, but this test would not have caught it.
-  const { parseKn5Buffer, meshesUsingTexture } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer, meshesUsingTexture } = await import('ac-kn5');
   const { findIslands } = await import('../src/engine/islands.mjs');
   const { computeCockpitVisibility } = await import('../src/engine/visibility.mjs');
 
@@ -594,7 +567,7 @@ test('an island collapsed to a line in UV space is dropped, not emitted as a pan
   // to a single row of texels. The rect comes out [0, 0.4, 1, 0] — no area, so
   // nothing can be drawn on it. Emitting them buried a quarter of one profile's
   // panels in placeholders that no livery could ever address.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { findIslands } = await import('../src/engine/islands.mjs');
 
   const flat = panelMesh('Trim_Strip', 0.4, 1);
@@ -679,7 +652,7 @@ test('a texture bound to no mesh scores zero, however promising its name', async
   // metal_detail.dds ships in nearly every road-car skin and on several of those
   // cars paints not one pixel. A classifier that ranked it would be repeating
   // the exact mistake this project started with.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { textureFeatures, rank } = await import('../src/engine/classify.mjs');
   const m = parseKn5Buffer(buildKn5({ extraMeshes: [panelMesh('Flank', 0.4, 1)] }));
 
@@ -1282,35 +1255,6 @@ test('the portable livery expands onto two cars it was not written for', async (
 
 // --- encrypted models -------------------------------------------------------
 
-test('an encrypted model is read, not rejected — and never decrypted', async () => {
-  // Some mod authors ship a kn5 whose geometry is intact but whose textures are
-  // 1x1 placeholders, with the real ones in a Custom Shaders Patch blob appended
-  // to the file. Three cars in a 235-car fleet were built this way, and the
-  // exact-length check refused all three as corrupt.
-  //
-  // The geometry is what this tool actually needs, and it is all there. The
-  // encryption is the author protecting their artwork; nothing here tries to
-  // undo that, and nothing should.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-
-  const plain = parseKn5Buffer(buildKn5());
-  assert.equal(plain.encrypted, null, 'an ordinary model is not flagged');
-
-  const enc = parseKn5Buffer(buildKn5({ encrypted: true }));
-  assert.equal(enc.encrypted.scheme, 'csp-kn5enc-v1');
-  assert.ok(enc.encrypted.bytes > 4000, `protected region measured ${enc.encrypted.bytes} bytes`);
-  assert.equal(enc.meshes.length, plain.meshes.length, 'the geometry reads identically');
-  assert.deepEqual(enc.materials, plain.materials);
-});
-
-test('a genuinely truncated file is still refused', async () => {
-  // The encryption check must not become a way for any short parse to pass. It
-  // only excuses trailing bytes that carry the marker.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
-  const buf = Buffer.concat([buildKn5(), Buffer.alloc(4096, 0xab)]);
-  assert.throws(() => parseKn5Buffer(buf), /parser finished at byte/);
-});
-
 test('placeholder texture sizes are refused rather than believed', async () => {
   // A 1x1 embedded texture is not a small texture, it is an absent one. Writing
   // its size into a profile would produce a livery rendered at one pixel.
@@ -1419,44 +1363,6 @@ function wheelCar({ lf = [0.8, 0.3, 1.3], rf = [-0.8, 0.3, 1.3], lr = [0.8, 0.3,
     dummies: [d('WHEEL_LF', lf), d('WHEEL_RF', rf), d('WHEEL_LR', lr), d('WHEEL_RR', rr)],
   };
 }
-
-test('the wheels say which way is left and which is forward', async () => {
-  // Assetto Corsa's physics requires WHEEL_LF/RF/LR/RR on every car — a car
-  // without them does not run — so this is a measurement rather than a guess.
-  // Across 238 fleet cars it resolved every one, agreed with the old name
-  // heuristic on all 145 the heuristic was sure about, and corrected two.
-  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
-
-  const normal = axesFromWheels(wheelCar());
-  assert.equal(normal.left, 1, '+X is the left of a car whose LF sits at positive X');
-  assert.equal(normal.front, 1);
-  assert.ok(normal.confident);
-  assert.ok(Math.abs(normal.wheelbase - 2.3) < 1e-6, `wheelbase ${normal.wheelbase}`);
-  assert.ok(Math.abs(normal.trackWidth - 1.6) < 1e-6, `track ${normal.trackWidth}`);
-
-  // A mirrored or reversed model has to come out mirrored or reversed, not
-  // defaulted to the common case.
-  const mirrored = axesFromWheels(wheelCar({ lf: [-0.8, 0.3, 1.3], rf: [0.8, 0.3, 1.3], lr: [-0.8, 0.3, -1], rr: [0.8, 0.3, -1] }));
-  assert.equal(mirrored.left, -1);
-  const reversed = axesFromWheels(wheelCar({ lf: [0.8, 0.3, -1.3], rf: [-0.8, 0.3, -1.3], lr: [0.8, 0.3, 1], rr: [-0.8, 0.3, 1] }));
-  assert.equal(reversed.front, -1);
-});
-
-test('wheels stacked at the origin give no answer rather than a wrong one', async () => {
-  // A confident wrong answer is worse than none: everything downstream that
-  // asks which way is forward would be silently mirrored.
-  const { axesFromWheels } = await import('../src/engine/kn5.mjs');
-  const flat = wheelCar({ lf: [0, 0, 0], rf: [0, 0, 0], lr: [0, 0, 0], rr: [0, 0, 0] });
-  assert.equal(axesFromWheels(flat), null);
-  assert.equal(axesFromWheels({ meshes: [], dummies: [] }), null, 'no wheels, no answer');
-
-  // A model missing a collection entirely should mean "no wheels found", which
-  // this function already has an answer for, rather than a TypeError from deep
-  // inside it. It is exported and gets called with hand-built models.
-  assert.equal(axesFromWheels({}), null, 'no dummies and no meshes');
-  assert.equal(axesFromWheels({ meshes: [] }), null, 'meshes but no dummies');
-  assert.equal(axesFromWheels({ dummies: [] }), null, 'dummies but no meshes');
-});
 
 test('the shipped profiles record axes measured from the wheels', async () => {
   const { loadProfile } = await import('../src/profile.mjs');
@@ -2510,7 +2416,7 @@ test('the wheel is where the model hangs it, not what the artist called it', asy
   // Matching mesh NAMES asks the artist to have been helpful. The node is
   // where the model states the fact, and the whole cockpit hangs off named
   // nodes for the same reason.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { cockpitEye } = await import('../src/engine/visibility.mjs');
 
   const anonymous = panelMesh('Geometry81_SUB1', 0.4, 1);
@@ -2547,7 +2453,7 @@ test('the editor puts the driver behind the wheel on a car that faces -Z', async
   // disagreed: the tag on a panel said "readable from the driver's seat"
   // measured from one point, and the cockpit view put the camera at the other,
   // out in front of the windscreen looking back.
-  const { parseKn5Buffer } = await import('../src/engine/kn5.mjs');
+  const { parseKn5Buffer } = await import('ac-kn5');
   const { wholeModelGeometry } = await import('../src/engine/geometry.mjs');
 
   const wheel = panelMesh('STEER_HR_wheel', 0.4, 1);

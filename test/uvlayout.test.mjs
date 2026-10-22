@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { carKn5, vert } from './fixtures/kn5.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { parseKn5Buffer, vertex } from '../src/engine/kn5.mjs';
+import { parseKn5Buffer, vertex } from 'ac-kn5';
 import { safeWithin } from '../src/engine/visibility.mjs';
 import { resolveTargets, expandRegions } from '../src/profile.mjs';
 import { portability } from '../src/portability.mjs';
@@ -134,38 +134,6 @@ test('an unwrap straddling a sheet boundary is an unwrap, not a tiled material',
   const { profile, seat } = await profileWith({ repeat: 1, shift: [0, -0.5] });
   assert.equal(profile.textures[seat].uvLayout, 'unwrapped');
   assert.equal(profile.textures[seat].uvInside, 1);
-});
-
-test('an island is moved back onto the sheet only when it fits wholly on another copy', () => {
-  const model = parseKn5Buffer(carKn5({
-    extraMeshes: [
-      cushion({ name: 'SHIFTED', shift: [0, -1] }),
-      // Overhangs [0, 1] by 0.006, which an ordinary unwrap does; stays put.
-      cushion({ name: 'OVERHANG', shift: [-0.056, 0] }),
-      // A sliver hugging the sheet's right edge, u = 0.992 to 0.9965: on the
-      // sheet, and stays there. The first version of the rule sent islands
-      // like this one sheet the wrong way, where they collapsed.
-      cushion({ name: 'RIGHT_EDGE', repeat: 0.005, shift: [0.942, 0] }),
-      // Spans 36 sheets: a tiling material, with no one copy to move to.
-      cushion({ name: 'TILING', repeat: 40 }),
-      // Straddles v = 0, which the game wraps across the image's edge.
-      cushion({ name: 'STRADDLE', shift: [0, -0.5] }),
-    ],
-    materials: [{ name: 'BodyMat' }, { name: 'SeatMat', slots: { txDiffuse: 'seat.dds' } }],
-    extraTextures: [{ name: 'seat.dds' }],
-  }));
-  const first = (name) => vertex(model, model.meshes.find((m) => m.name === name), 0);
-  const near = (a, b) => Math.abs(a - b) < 1e-6;
-
-  assert.ok(near(first('SHIFTED').u, 0.05) && near(first('SHIFTED').v, 0.05),
-    `moved from v = -0.95 to the sheet: ${JSON.stringify(first('SHIFTED'))}`);
-  assert.ok(near(first('OVERHANG').u, -0.006), 'an overhang by a hair is not a shift');
-  assert.ok(near(first('RIGHT_EDGE').u, 0.992) && model.meshes.find((m) => m.name === 'RIGHT_EDGE').uvShift === undefined,
-    `an island at the sheet's far edge is on the sheet: ${JSON.stringify(first('RIGHT_EDGE'))}`);
-  assert.ok(near(first('TILING').v, 0.05) && model.meshes.find((m) => m.name === 'TILING').uvShift === undefined);
-  assert.ok(near(first('STRADDLE').v, -0.45), 'a straddler cannot move whole, so it does not move');
-  assert.equal(model.meshes.find((m) => m.name === 'BODY_SHELL').uvShift, undefined,
-    'a mesh with nothing to move reads exactly as stored');
 });
 
 test('an island that repeats across many sheets does not crowd the real panels out', async () => {

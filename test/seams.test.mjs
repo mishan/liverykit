@@ -8,9 +8,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseKn5Buffer, meshesUsingTexture } from '../src/engine/kn5.mjs';
+import { parseKn5Buffer, meshesUsingTexture } from 'ac-kn5';
 import { findIslands, findAdjacency, findSeams, nameIslands, carBounds } from '../src/engine/islands.mjs';
-import { axesFromWheels } from '../src/engine/kn5.mjs';
+import { axesFromWheels } from 'ac-kn5';
 import { buildKn5, carKn5, vert, CAR } from './fixtures/kn5.mjs';
 
 function fixture() {

@@ -120,7 +120,7 @@ never ships and never uploads. There is no hosted version and should not be.
 Click a region, drag it, see the texture re-render, save a fit. This alone solves
 the problem that prompted it.
 
-*The 3D viewport.* `src/engine/kn5.mjs` already yields positions, normals, UVs,
+*The 3D viewport.* The kn5 reader already yields positions, normals, UVs,
 indices and accumulated node transforms — everything three.js needs — and the
 same SVG becomes the material's map. This is the stage that answers the question
 a UV view cannot: is that spot flat, and can anyone see it? It would be the first
