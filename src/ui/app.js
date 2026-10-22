@@ -3404,9 +3404,9 @@ if (proposalTimer?.unref) proposalTimer.unref();
 // placement is any good. showView falls back to the UV sheet on its own if
 // there is no model or no WebGL, so this is a preference rather than a demand.
 //
-// On the body where the design paints one: `paint` blocks resolve first, so a
-// livery that also paints the glass opened on a windscreen.
-await selectSurface((state.data.surfaces.find((s) => s.from === 'surfaces.body') ?? state.data.surfaces[0])?.from);
+// Not on a surface painted over the car's own texture: `paint` blocks resolve
+// first, so a livery that also paints the glass opened on a windscreen.
+await selectSurface((state.data.surfaces.find((s) => !s.overStock) ?? state.data.surfaces[0])?.from);
 await showView('3d');
 // Last, after the car is on screen, so a slow profile directory cannot delay
 // anything anybody is waiting for. It answers `undefined` rather than throwing

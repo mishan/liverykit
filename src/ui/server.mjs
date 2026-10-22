@@ -386,6 +386,9 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     surfaces.push({
       from: t.from,
       role: t.role,
+      // Painted over the car's own texture: glass, usually, and not where a
+      // design's work is, so the editor does not open on it.
+      overStock: t.spec?.background === 'stock',
       file: tex.file,
       width: tex.width,
       height: tex.height,
@@ -987,8 +990,10 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     for (const t of resolveTargets(profile, design).targets) {
       const file = texture(profile, t.role).file;
       if (t.spec?.background !== 'stock' || stocks.has(file)) continue;
-      const bytes = await stockTexture(file).catch(() => null);
-      stocks.set(file, bytes && await stockHrefs(await stockPng(bytes, file)));
+      // A model or texture that cannot be read is the render's `no-stock`
+      // note, as in the build, rather than a 500 for every view of the design.
+      const png = await stockTexture(file).then((b) => b && stockPng(b, file)).catch((e) => { log(`  ! ${e.message}`); return null; });
+      stocks.set(file, png && await stockHrefs(png));
     }
     return stocks;
   };

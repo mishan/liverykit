@@ -340,6 +340,9 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     const image = (href) => `<image href="${href}" width="${width}" height="${height}" preserveAspectRatio="none"/>`;
     clips.push(`<mask id="lk-stock-alpha" mask-type="luminance">${image(stock.alpha)}</mask>`);
     base.splice(0, base.length, `<g mask="url(#lk-stock-alpha)">${image(stock.color)}${base.join('')}</g>`);
+    // The glow too, which composites above the base: the build puts the
+    // car's alpha back afterwards, and the editor has no such step.
+    if (emissive.length) emissive.splice(0, emissive.length, `<g mask="url(#lk-stock-alpha)">${emissive.join('')}</g>`);
   }
   const defs = clips.length ? `<defs>${clips.join('')}</defs>` : '';
   const doc = (body) =>

@@ -38,7 +38,7 @@ const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 // A tiled material splits the same way. `tiled` says the surface was painted
 // and only its placed artwork was not; `unplaceable` is that artwork, one note
 // per region, and it was not painted.
-const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match', 'unplaceable']);
+const MISSING = new Set(['absent', 'unbound', 'no-match', 'unplaceable']);
 
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {
@@ -46,6 +46,24 @@ export function isMissingNote(note) {
 }
 
 /** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
+/**
+ * Write one texture, as the PNG or DDS its filename says. A DDS at a size that
+ * is not a power of two would lose its mip chain in the game, so it goes out
+ * at the next powers of two up; UVs are fractions of the sheet, so the art
+ * lands where it was drawn. Returns the size written.
+ */
+async function writeTexture({ png, tex, width, height, outPath, pngDir, keep = false }) {
+  const asPng = isPngTexture(tex.file);
+  const [w, h] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
+  const pngPath = join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
+  await writeFile(pngPath, w === width && h === height ? png
+    : await sharp(png).resize(w, h, { fit: 'fill' }).png().toBuffer());
+  if (asPng) await toPNG(pngPath, outPath);
+  else await toDDS(pngPath, outPath, { width: w, height: h, alpha: tex.alpha ?? false });
+  if (!keep && pngPath !== outPath) await rm(pngPath);
+  return [w, h];
+}
+
 async function transparentPng(width, height) {
   return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .png().toBuffer();
@@ -118,8 +136,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       .then((m) => new Map((m.textures ?? []).map((t) => [t.name.toLowerCase(), t.data])))
       .catch((e) => { log(`  ! could not read ${modelPath} for its stock textures: ${e.message}`); return new Map(); });
     const bytes = (await modelTextures).get(file.toLowerCase());
-    // A 1x1 placeholder is an encrypted kn5's, and not the car's artwork.
-    return bytes && bytes.length > 256 ? stockPng(bytes, file) : null;
+    return bytes ? stockPng(bytes, file).catch((e) => { log(`  ! ${e.message}`); return null; }) : null;
   };
 
   for (const { from, role, spec, primary } of targets) {
@@ -187,18 +204,9 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       png = await sharp(png).removeAlpha().joinChannel(alpha).png().toBuffer();
     }
 
-    // A DDS at a size that is not a power of two would lose its mip chain in
-    // the game, so it goes out at the next powers of two up. UVs are
-    // fractions of the sheet, so the art lands where it was drawn.
     const asPng = isPngTexture(tex.file);
-    const [outW, outH] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
     const outPath = join(outDir, tex.file);
-    await writeFile(pngPath, outW === width && outH === height ? png
-      : await sharp(png).resize(outW, outH, { fit: 'fill' }).png().toBuffer());
-    if (asPng) await toPNG(pngPath, outPath);
-    else await toDDS(pngPath, outPath, { width: outW, height: outH, alpha: tex.alpha ?? false });
-    if (!pngDir && pngPath !== outPath) await rm(pngPath);
+    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir, keep: !!pngDir });
 
     firstPng ??= png;
     pngByRole.set(role, png);
@@ -379,15 +387,10 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
 
   let firstPng = null;
 
-  // Only textures worth calibrating. A profile generated from a model lists
-  // every texture the car references — dozens of them, including 28x28 trim
-  // scraps that cannot be DDS-encoded at all and would be unreadable as a grid
-  // even if they could.
+  // Only textures worth calibrating: a profile generated from a model lists
+  // every texture the car references, and one with no panels has nothing a
+  // grid could help place.
   const worth = Object.entries(profile.textures).filter(([role, tex]) => {
-    if (!isPngTexture(tex.file) && (!isPow2(tex.width) || !isPow2(tex.height))) {
-      log(`  - ${tex.file} skipped: ${tex.width}x${tex.height} is not a power of two`);
-      return false;
-    }
     if (!Object.keys(profile.panels?.[role] ?? {}).length) {
       log(`  - ${tex.file} skipped: no panels mapped, nothing to calibrate`);
       return false;
@@ -402,15 +405,11 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
       width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
     const outPath = join(outDir, tex.file);
-    await writeFile(pngPath, png);
-    if (isPngTexture(tex.file)) await toPNG(pngPath, outPath);
-    else await toDDS(pngPath, outPath, { width, height, alpha: tex.alpha ?? false });
-    if (!pngDir && pngPath !== outPath) await rm(pngPath);
+    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir });
 
     firstPng ??= png;
-    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}${outW === width && outH === height ? '' : ` (from ${width}x${height})`}`.padEnd(46) +
+    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
       `${shape.cols}x${shape.rows} cells  (${pct(100 / shape.cols)} x ${pct(100 / shape.rows)})`);
   }
 

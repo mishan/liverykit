@@ -94,12 +94,15 @@ export async function decodeDds(buffer, { maxSize = 512 } = {}) {
 
 /**
  * A texture out of a kn5, as a PNG at its full size, for a design that paints
- * over it (`background: 'stock'`). A kn5 carries DDS and PNG both.
+ * over it (`background: 'stock'`), or null for a placeholder. A kn5 carries
+ * DDS and PNG both.
  */
 export async function stockPng(bytes, file) {
   if (isPngTexture(file)) return Buffer.from(bytes);
   const img = await decodeDds(bytes, { maxSize: Infinity });
   if (!img) throw new Error(`${file} is a DDS this decoder cannot read`);
+  // A 1x1 is an encrypted kn5's placeholder, and not the car's artwork.
+  if (img.w === 1 && img.h === 1) return null;
   return sharp(img.data, { raw: { width: img.w, height: img.h, channels: 4 } }).png().toBuffer();
 }
 
