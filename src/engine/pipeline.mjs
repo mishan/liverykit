@@ -92,6 +92,34 @@ export async function decodeDds(buffer, { maxSize = 512 } = {}) {
   return { data, w: info.width, h: info.height };
 }
 
+/**
+ * A texture out of a kn5, as a PNG at its full size, for a design that paints
+ * over it (`background: 'stock'`), or null for a placeholder. A kn5 carries
+ * DDS and PNG both.
+ */
+export async function stockPng(bytes, file) {
+  if (isPngTexture(file)) return Buffer.from(bytes);
+  const img = await decodeDds(bytes, { maxSize: Infinity });
+  if (!img) throw new Error(`${file} is a DDS this decoder cannot read`);
+  // A 1x1 is an encrypted kn5's placeholder, and not the car's artwork.
+  if (img.w === 1 && img.h === 1) return null;
+  return sharp(img.data, { raw: { width: img.w, height: img.h, channels: 4 } }).png().toBuffer();
+}
+
+/**
+ * A stock texture as the two data URIs `renderTexture` paints over: its color,
+ * opaque, and its alpha as a gray mask. Apart, because drawing the design over
+ * a half-transparent sheet blends the two, and the car's own lettering showed
+ * through a banner painted over it.
+ */
+export async function stockHrefs(png) {
+  const uri = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
+  return {
+    color: uri(await sharp(png).removeAlpha().png().toBuffer()),
+    alpha: uri(await sharp(png).ensureAlpha().extractChannel(3).png().toBuffer()),
+  };
+}
+
 export async function toDDS(pngPath, ddsPath, { width, height, alpha = false }) {
   // Direct3D 9, which AC is, gives a non-power-of-two texture no mip chain on
   // hardware that supports one only conditionally, and a mipless texture

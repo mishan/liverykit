@@ -181,7 +181,9 @@ is over-cautious.
   whatever it was asked for and wrote a chain of one from a define it could not
   parse, both with exit 0.
 - **Non-power-of-two DDS cannot be trusted to keep its mipmaps** in a DX9
-  game. liverykit refuses these outright.
+  game. `toDDS` refuses them; the build draws such a texture at its own size
+  and writes it at the next powers of two up, which UVs being fractions makes
+  safe.
 - **Not every texture is a DDS.** Models bind `.png` textures too — on one
   mod car the wheel faces are a 28×28 PNG covering nearly twenty thousand
   vertices. Those are written as PNG; forcing a DDS would produce a filename

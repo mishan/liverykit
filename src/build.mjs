@@ -8,7 +8,7 @@ import { join, isAbsolute, resolve } from 'node:path';
 import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize } from './engine/pipeline.mjs';
+import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, stockPng, stockHrefs } from './engine/pipeline.mjs';
 import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
@@ -38,7 +38,7 @@ const DEFAULTS = { seed: 'default', glowSigma: 14, font: 'sans-serif' };
 // A tiled material splits the same way. `tiled` says the surface was painted
 // and only its placed artwork was not; `unplaceable` is that artwork, one note
 // per region, and it was not painted.
-const MISSING = new Set(['absent', 'unbound', 'unencodable', 'no-match', 'unplaceable']);
+const MISSING = new Set(['absent', 'unbound', 'no-match', 'unplaceable']);
 
 /** Was this surface actually left unpainted, or merely painted with a caveat? */
 export function isMissingNote(note) {
@@ -46,6 +46,24 @@ export function isMissingNote(note) {
 }
 
 /** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
+/**
+ * Write one texture, as the PNG or DDS its filename says. A DDS at a size that
+ * is not a power of two would lose its mip chain in the game, so it goes out
+ * at the next powers of two up; UVs are fractions of the sheet, so the art
+ * lands where it was drawn. Returns the size written.
+ */
+async function writeTexture({ png, tex, width, height, outPath, pngDir, keep = false }) {
+  const asPng = isPngTexture(tex.file);
+  const [w, h] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
+  const pngPath = join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
+  await writeFile(pngPath, w === width && h === height ? png
+    : await sharp(png).resize(w, h, { fit: 'fill' }).png().toBuffer());
+  if (asPng) await toPNG(pngPath, outPath);
+  else await toDDS(pngPath, outPath, { width: w, height: h, alpha: tex.alpha ?? false });
+  if (!keep && pngPath !== outPath) await rm(pngPath);
+  return [w, h];
+}
+
 async function transparentPng(width, height) {
   return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .png().toBuffer();
@@ -90,23 +108,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // translated through the profile's bind table.
   const { targets: requested, notes } = resolveTargets(profile, livery);
 
-  // Pre-flight, before anything is encoded. Some cars ship textures at sizes DDS
-  // cannot carry a mip chain for — the Abarth's steering wheel is 68x64 — and
-  // hitting one of those halfway through used to abort the build after writing
-  // five perfectly good files. A surface this tool cannot encode is effectively
-  // one the car does not have, so it is reported and skipped like any other.
-  const targets = [];
-  for (const t of requested) {
-    const tex = texture(profile, t.role);
-    if (!isPngTexture(tex.file) && (!isPow2(tex.width) || !isPow2(tex.height))) {
-      notes.push({
-        term: t.from, status: 'unencodable',
-        text: `${t.from} -> ${tex.file} is ${tex.width}x${tex.height}; DDS needs powers of two, so it cannot be painted`,
-      });
-      continue;
-    }
-    targets.push(t);
-  }
+  const targets = requested;
   if (!targets.length) {
     throw new Error(
       `Livery "${livery.name}" has nothing it can paint on car "${profile.id}":\n  ` +
@@ -125,8 +127,21 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // the same pixels that just got written to the DDS, not a re-render.
   const pngByRole = new Map();
 
+  // The car's own textures, read from the model once and only if some
+  // surface paints over one (`background: 'stock'`).
+  let modelTextures = null;
+  const stockFor = async (file) => {
+    if (!modelPath) return null;
+    modelTextures ??= parseKn5(modelPath, { keepTextureData: true })
+      .then((m) => new Map((m.textures ?? []).map((t) => [t.name.toLowerCase(), t.data])))
+      .catch((e) => { log(`  ! could not read ${modelPath} for its stock textures: ${e.message}`); return new Map(); });
+    const bytes = (await modelTextures).get(file.toLowerCase());
+    return bytes ? stockPng(bytes, file).catch((e) => { log(`  ! ${e.message}`); return null; }) : null;
+  };
+
   for (const { from, role, spec, primary } of targets) {
     const tex = texture(profile, role);
+    const stock = spec.background === 'stock' ? await stockFor(tex.file) : null;
     // Regions that matched no panel are collected here and reported with
     // everything else at the end, rather than one line at a time mid-build.
     const regionNotes = [];
@@ -166,10 +181,11 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       // directory to carry them in.
       decals,
       regionNotes,
+      stock: stock && await stockHrefs(stock),
     });
     notes.push(...regionNotes);
 
-    const png = await composeLayers({
+    let png = await composeLayers({
       base: scaleSvg(layers.base, scale),
       emissive: scaleSvg(layers.emissive, scale),
       hasEmissive: layers.hasEmissive,
@@ -181,20 +197,24 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       aoPath: flat ? null : resolveAo(livery.ao?.[role], liveryDir),
     });
 
+    // The glow composites over the masked base, so the alpha is the car's
+    // again afterwards, exactly.
+    if (stock) {
+      const alpha = await sharp(stock).resize(width, height, { fit: 'fill' }).ensureAlpha().extractChannel(3).toBuffer();
+      png = await sharp(png).removeAlpha().joinChannel(alpha).png().toBuffer();
+    }
+
     const asPng = isPngTexture(tex.file);
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
     const outPath = join(outDir, tex.file);
-    await writeFile(pngPath, png);
-    if (asPng) await toPNG(pngPath, outPath);
-    else await toDDS(pngPath, outPath, { width, height, alpha: tex.alpha ?? false });
-    if (!pngDir && pngPath !== outPath) await rm(pngPath);
+    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir, keep: !!pngDir });
 
     firstPng ??= png;
     pngByRole.set(role, png);
     written.push(tex.file);
     const kb = (await stat(outPath)).size / 1024;
-    log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
-      `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB`);
+    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
+      `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB` +
+      (outW === width && outH === height ? '' : `  (drawn at ${width}x${height})`));
   }
 
   // Surfaces the design hides. A transparent sheet where one will work; a note
@@ -202,9 +222,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // game" were two different things for longer than anybody knew.
   // `targets`, not the design's `paint` keys: a surface term resolves to roles
   // through the profile's bind table, and a role painted that way is painted
-  // just as much as one named outright. It is also the list AFTER the
-  // unencodable ones were dropped above — a surface the build could not paint
-  // is one this may still hide.
+  // just as much as one named outright.
   for (const h of hidePlan(profile, livery, { paintedRoles: new Set(targets.map((t) => t.role)) })) {
     if (h.action === 'ship-transparent') {
       const outPath = join(outDir, h.file);
@@ -369,15 +387,10 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
 
   let firstPng = null;
 
-  // Only textures worth calibrating. A profile generated from a model lists
-  // every texture the car references — dozens of them, including 28x28 trim
-  // scraps that cannot be DDS-encoded at all and would be unreadable as a grid
-  // even if they could.
+  // Only textures worth calibrating: a profile generated from a model lists
+  // every texture the car references, and one with no panels has nothing a
+  // grid could help place.
   const worth = Object.entries(profile.textures).filter(([role, tex]) => {
-    if (!isPngTexture(tex.file) && (!isPow2(tex.width) || !isPow2(tex.height))) {
-      log(`  - ${tex.file} skipped: ${tex.width}x${tex.height} is not a power of two`);
-      return false;
-    }
     if (!Object.keys(profile.panels?.[role] ?? {}).length) {
       log(`  - ${tex.file} skipped: no panels mapped, nothing to calibrate`);
       return false;
@@ -392,15 +405,11 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
       width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
-    const pngPath = join(pngDir ?? outDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
     const outPath = join(outDir, tex.file);
-    await writeFile(pngPath, png);
-    if (isPngTexture(tex.file)) await toPNG(pngPath, outPath);
-    else await toDDS(pngPath, outPath, { width, height, alpha: tex.alpha ?? false });
-    if (!pngDir && pngPath !== outPath) await rm(pngPath);
+    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir });
 
     firstPng ??= png;
-    log(`  ${tex.file.padEnd(24)} ${width}x${height}`.padEnd(46) +
+    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
       `${shape.cols}x${shape.rows} cells  (${pct(100 / shape.cols)} x ${pct(100 / shape.rows)})`);
   }
 
@@ -452,6 +461,7 @@ export async function packSkin({ skinDir, zipPath, carId, folder, layout = 'cm' 
 
 const pct = (n) => `${Number(n.toFixed(1))}%`;
 const isPow2 = (n) => Number.isInteger(Math.log2(n));
+const nextPow2 = (n) => 2 ** Math.ceil(Math.log2(n));
 
 function resolveAo(path, liveryDir) {
   if (!path) return null;

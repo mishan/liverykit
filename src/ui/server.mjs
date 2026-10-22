@@ -53,6 +53,7 @@ import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque, pickAt } from '../engine/shot.mjs';
 import { mulberry32, seedFrom } from '../engine/rng.mjs';
+import { stockPng, stockHrefs } from '../engine/pipeline.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff, placedAt } from './ops.js';
 import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
@@ -385,6 +386,9 @@ export function editorState({ livery, profile, fit, liveryId = null }) {
     surfaces.push({
       from: t.from,
       role: t.role,
+      // Painted over the car's own texture: glass, usually, and not where a
+      // design's work is, so the editor does not open on it.
+      overStock: t.spec?.background === 'stock',
       file: tex.file,
       width: tex.width,
       height: tex.height,
@@ -659,7 +663,7 @@ export function designRefusal(design, path) {
  * painted rather than the editor's own idea of it. If the two ever disagree, the
  * overlay is wrong and you can see that it is.
  */
-export function renderSurface({ livery, profile, fit, role, seed, decals = new Map() }) {
+export function renderSurface({ livery, profile, fit, role, seed, decals = new Map(), stock = new Map() }) {
   const targets = resolveTargets(profile, livery).targets;
   const target = targets.find((t) => t.role === role);
   const spec = target?.spec;
@@ -707,6 +711,7 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
     rng: mulberry32(seedFrom((seed ?? livery.render?.seed ?? 'default') + tex.file)),
     font: livery.render?.font ?? 'sans-serif',
     tokens: livery.identity ?? {},
+    stock: stock.get(tex.file) ?? null,
   });
 
   const placed = expanded.regions
@@ -975,6 +980,22 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     stockLoading ??= loadStock();
     const stock = await stockLoading;
     return stock.get(String(file).toLowerCase()) ?? null;
+  };
+
+  // The car's own texture as data URIs, for each surface a design paints
+  // over (`background: 'stock'`), by file. Filled before a render, since
+  // renderSurface is synchronous and the model is read lazily.
+  const stocks = new Map();
+  const stockFor = async (design) => {
+    for (const t of resolveTargets(profile, design).targets) {
+      const file = texture(profile, t.role).file;
+      if (t.spec?.background !== 'stock' || stocks.has(file)) continue;
+      // A model or texture that cannot be read is the render's `no-stock`
+      // note, as in the build, rather than a 500 for every view of the design.
+      const png = await stockTexture(file).then((b) => b && stockPng(b, file)).catch((e) => { log(`  ! ${e.message}`); return null; });
+      stocks.set(file, png && await stockHrefs(png));
+    }
+    return stocks;
   };
 
   /**
@@ -1338,7 +1359,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (!hit) return json(422, { error: `nothing of the car is at ${sent.x},${sent.y} in the ${view} view at ${width}x${height}` });
 
         const target = resolveTargets(profile, design).targets.find((t) => t.role === hit.role);
-        const sel = target && renderSurface({ livery: design, profile, fit: useFit, role: hit.role, decals })
+        const sel = target && renderSurface({ livery: design, profile, fit: useFit, role: hit.role, decals, stock: await stockFor(design) })
           .placed.find((q) => q.id === sent.id);
         if (!sel) {
           return json(422, { error: `${sent.x},${sent.y} is on ${hit.file ?? 'a part'}` +
@@ -1380,9 +1401,10 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
             `Known views: ${Object.keys(VIEWS).join(', ')}, sheet` });
         }
         const { g, roles } = carFor(m, design);
+        const overStock = await stockFor(design);
         const surfaces = roles.map((r) => ({
           role: r.role,
-          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals }).svg,
+          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals, stock: overStock }).svg,
         }));
         // The car's OWN artwork for everything the design does not paint, the
         // same way the build's preview.jpg gets it. Without it this drew glass,
@@ -1504,6 +1526,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (design !== undefined) workingDesign = design;
         return json(200, renderSurface({
           livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed, decals,
+          stock: await stockFor(workingDesign ?? livery),
         }));
       }
 
@@ -1518,9 +1541,10 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (working !== undefined) workingFit = working;
         if (design !== undefined) workingDesign = design;
         const surfaces = [];
+        const stock = await stockFor(workingDesign ?? livery);
         // Every painted texture, a term's secondary ones included: see paintedSheets.
         for (const s of paintedSheets(workingDesign ?? livery)) {
-          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals });
+          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals, stock });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
           // 2048x2048 — so the livery was rasterized at a quarter of its
