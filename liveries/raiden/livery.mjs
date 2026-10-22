@@ -134,5 +134,14 @@ export default {
         { treatment: 'ring', radius: 0.44, width: 0.02, color: 'vermilion' },
       ],
     },
+
+    // Over the tyre's own sidewall lettering, a vermilion band round the
+    // outside of each sidewall, beyond the rim's ring.
+    tyres: {
+      background: 'stock',
+      regions: [
+        { treatment: 'band', along: 0.15, width: 0.06, color: 'vermilion' },
+      ],
+    },
   },
 };
