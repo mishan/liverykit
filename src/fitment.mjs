@@ -1220,7 +1220,11 @@ function hiddenFace(placed, profile, t, say) {
     if (size > 0.5) continue;
     const hidden = best(inward, p);
     const shown = best(outward, p);
-    const onIn = hidden.covered / (size || 1);
+    // Texture both faces share shows on both. Glass is often two meshes over
+    // one piece of texture, inside and out, and artwork there was reported as
+    // hidden, with advice to move it to where it already was.
+    const both = shown.panel && hidden.panel ? meet(rectOf(hidden.panel.rect), rectOf(shown.panel.rect)) : null;
+    const onIn = (hidden.covered - (both ? intersect(p.frac, both) : 0)) / (size || 1);
     const onOut = shown.covered / (size || 1);
     if (onIn < 0.5 || onIn <= onOut) continue;
     // A SPILLED PIECE IS ALLOWED TO BE HERE, which is the same forgiveness
@@ -2897,6 +2901,11 @@ function unseen(placed, profile, t, seen, say) {
 const name = (t, id) => (String(id).startsWith('#') ? `${t.from}${id}` : id);
 
 const rectOf = ([x, y, w, h]) => ({ x, y, w, h });
+const meet = (a, b) => {
+  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.w, b.x + b.w) - x, h = Math.min(a.y + a.h, b.y + b.h) - y;
+  return w > 0 && h > 0 ? { x, y, w, h } : null;
+};
 const round = (n) => Math.round(n * 1000) / 1000;
 
 /**
