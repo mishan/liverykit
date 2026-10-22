@@ -4760,3 +4760,27 @@ test('a link can open the editor on a view, and the camera at an angle', async (
   assert.deepEqual(openingView('#view=garage&yaw=left'), { view: '3d', look: {} },
     'and a view or a number it cannot use is ignored, not passed on');
 });
+
+test('a panel map names every panel the world sees, in the frame its `at` is in', async () => {
+  // Placing artwork by `at` means knowing which way a panel runs on the car,
+  // and nothing showed it: the Raiden livery found out the NSX's right flank
+  // is unwrapped upside down by rendering a draft and looking.
+  const { panelMap } = await import('../src/panelmap.mjs');
+  const profile = structuredClone(await loadProfile(new URL('../cars/abarth500.json', import.meta.url)));
+  const role = binding(profile, 'body').roles[0];
+  const panels = profile.panels[role];
+  const [first, second] = Object.keys(panels).filter((n) => panels[n].visible > 0);
+  panels[second].textRotation = 90;
+  // A name is profile data, which arrives from other people like a livery does.
+  panels['x"><script>'] = { ...panels[first], visible: 0.9 };
+  const hidden = Object.keys(panels).find((n) => !(panels[n].visible > 0));
+
+  const svg = panelMap(profile, role);
+  const label = (n) => new RegExp(`>${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</text>`);
+  assert.match(svg, label(first));
+  assert.match(svg, new RegExp(`rotate\\(90 [^)]*\\)[^>]*>${second}</text>`), 'turned as rotate: auto turns text there');
+  if (hidden) assert.doesNotMatch(svg, label(hidden), 'a panel nobody sees is not worth a label');
+  assert.doesNotMatch(svg, /<script>/, 'escaped');
+  assert.match(svg, />x</);
+  assert.match(svg, />y</);
+});

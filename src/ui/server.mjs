@@ -57,6 +57,7 @@ import { stockPng, stockHrefs } from '../engine/pipeline.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff, placedAt } from './ops.js';
 import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
+import { panelMap } from '../panelmap.mjs';
 import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
@@ -1404,11 +1405,17 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           return json(400, { error: `no view called ${JSON.stringify(view)}. ` +
             `Known views: ${Object.keys(VIEWS).join(', ')}, sheet` });
         }
+        const map = url.searchParams.get('map');
+        if (map !== null && map !== 'panels') {
+          return json(400, { error: `no map called ${JSON.stringify(map)}; the one there is: panels` });
+        }
         const { g, roles } = carFor(m, design);
-        const overStock = await stockFor(design);
+        const overStock = map ? null : await stockFor(design);
+        // The panels in place of the design, on the textures it paints.
         const surfaces = roles.map((r) => ({
           role: r.role,
-          svg: renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals, stock: overStock }).svg,
+          svg: map ? panelMap(profile, r.role)
+            : renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals, stock: overStock }).svg,
         }));
         // The car's OWN artwork for everything the design does not paint, the
         // same way the build's preview.jpg gets it. Without it this drew glass,

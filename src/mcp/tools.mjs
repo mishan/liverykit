@@ -619,6 +619,7 @@ export function createToolHandler(client) {
           width: { type: 'number', description: 'Pixels across, 200-1400 (default 760); a sheet 400-2400 (default 1400)' },
           height: { type: 'number', description: 'Pixels down, 150-900 (default 460); a sheet 300-1440 (default 840)' },
           proposal: DRAFT_SCHEMA,
+          panels: { type: 'boolean', description: 'Instead of the design, draw the panels of the textures it paints: each in its own color with its name, written as text with rotate: "auto" will be, and a dot at its at [0, 0] with arrows for x (white) and y (yellow). Look at this before placing anything by at.' },
         },
       },
     },
@@ -761,7 +762,7 @@ export function createToolHandler(client) {
         // wearing nothing, which is a lie about the design rather than a gap.
         try {
           const { png, skipped, absent } = await client.shoot(
-            args.view ?? 'left', args.width, args.height, draftOf(args));
+            args.view ?? 'left', args.width, args.height, draftOf(args), args.panels ? 'panels' : undefined);
           const content = [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }];
           // Named, not silently absent. Transparent surfaces with no artwork —
           // glass, emissive masks — are left out rather than drawn as gray
