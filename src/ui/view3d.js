@@ -710,6 +710,44 @@ function lightingFor(light) {
 /** Whether WebGL 1 will build a mip chain or wrap a REPEAT over this size. */
 const isPot = (n) => n > 0 && (n & (n - 1)) === 0;
 
+// Stop just short of the poles, where the up vector degenerates and the view
+// flips inside out.
+const clampPitch = (p) => Math.max(-1.5, Math.min(1.5, p));
+// One notch of the wheel, in or out.
+const zoomed = (dist, out) => Math.max(0.5, Math.min(40, dist * (1 + Math.sign(out) * 0.12)));
+
+/**
+ * The camera a key asks for, or null for a key that is not one: arrows turn it
+ * and + and - zoom, so the car can be looked round without a pointer.
+ */
+export function orbitKey(cam, key) {
+  switch (key) {
+    case 'ArrowLeft': return { yaw: cam.yaw + 0.1 };
+    case 'ArrowRight': return { yaw: cam.yaw - 0.1 };
+    case 'ArrowUp': return { pitch: clampPitch(cam.pitch + 0.1) };
+    case 'ArrowDown': return { pitch: clampPitch(cam.pitch - 0.1) };
+    case '+': case '=': return { dist: zoomed(cam.dist, -1) };
+    case '-': return { dist: zoomed(cam.dist, 1) };
+    default: return null;
+  }
+}
+
+/**
+ * The view and camera a link opens the editor on: `#view=all&yaw=-0.2&pitch=0.3&zoom=0.8`.
+ * A picture taken by pointing a mouse at the car is a different picture every
+ * time; one taken from a link is the same one.
+ */
+export function openingView(hash) {
+  const asked = new URLSearchParams(hash.replace(/^#/, ''));
+  const view = ['uv', '3d', 'all', 'cockpit'].includes(asked.get('view')) ? asked.get('view') : '3d';
+  const look = {};
+  for (const k of ['yaw', 'pitch', 'zoom']) {
+    const v = Number(asked.get(k) ?? NaN);
+    if (Number.isFinite(v)) look[k] = v;
+  }
+  return { view, look };
+}
+
 export function createViewer(canvas) {
   // NO ALPHA CHANNEL IN THE DRAWING BUFFER, which is a statement about the
   // canvas rather than about the car: this view is opaque, and what is behind
@@ -1616,6 +1654,11 @@ export function createViewer(canvas) {
      * a position to decide what camera you wanted.
      */
     setOrbit() { cam.mode = 'orbit'; draw(); },
+    /** Turns the camera, and moves it `zoom` times as far as framing put it. */
+    look({ yaw = cam.yaw, pitch = cam.pitch, zoom = 1 }) {
+      Object.assign(cam, { yaw, pitch: clampPitch(pitch), dist: cam.dist * zoom });
+      draw();
+    },
 
     /**
      * Switch to the cockpit camera: eye fixed at `eye` (the point the profile
@@ -1934,7 +1977,7 @@ export function createViewer(canvas) {
     },
 
     /**
-     * Drag to orbit, wheel to zoom — unless `claim` takes the gesture first.
+     * Drag or arrow keys to orbit, wheel or + and - to zoom — unless `claim` takes the gesture first.
      *
      * The camera cannot simply own every pointerdown once regions are draggable
      * on the car, and the decision needs the pick, which only the viewer can do.
@@ -1955,15 +1998,21 @@ export function createViewer(canvas) {
       canvas.onpointermove = (e) => {
         if (!dragging) return;
         cam.yaw = dragging.yaw - (e.clientX - dragging.x) * 0.008;
-        // Stop just short of the poles, where the up vector degenerates and the
-        // view flips inside out.
-        cam.pitch = Math.max(-1.5, Math.min(1.5, dragging.pitch + (e.clientY - dragging.y) * 0.008));
+        cam.pitch = clampPitch(dragging.pitch + (e.clientY - dragging.y) * 0.008);
         draw();
       };
       canvas.onpointerup = () => { dragging = null; };
       canvas.onwheel = (e) => {
         e.preventDefault();
-        cam.dist = Math.max(0.5, Math.min(40, cam.dist * (1 + Math.sign(e.deltaY) * 0.12)));
+        cam.dist = zoomed(cam.dist, e.deltaY);
+        draw();
+      };
+      canvas.tabIndex = 0;
+      canvas.onkeydown = (e) => {
+        const next = orbitKey(cam, e.key);
+        if (!next) return;
+        e.preventDefault();
+        Object.assign(cam, next);
         draw();
       };
       window.addEventListener('resize', draw);

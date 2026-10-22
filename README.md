@@ -4,7 +4,7 @@
 
 Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 
-![The fitting editor: a Neon Doll livery on the Honda NSX GT3 Evo. Regions and the selected surface on the left, the lit 3D model in the middle, palette, identity and fit on the right.](docs/images/editor.png)
+![The fitting editor: the Neon Grid livery on the Honda NSX GT3 Evo. The surface and its regions on the left, the whole car lit in 3D in the middle, and the surface's panels on the right.](docs/images/editor.png)
 
 *The fitting editor: a design described as named regions over a palette, fitted onto the car's own model.*
 

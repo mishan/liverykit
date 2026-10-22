@@ -14,7 +14,7 @@
 
 // Relative, so the same specifier resolves in the browser (served alongside
 // app.js) and in Node, where the tests import this module directly.
-import { createViewer, unpack, unpackModel } from './view3d.js';
+import { createViewer, openingView, unpack, unpackModel } from './view3d.js';
 // The same split the server makes, from the same file, so the two cannot drift.
 import { treatmentOptions } from './fields.js';
 import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColor } from './uses.js';
@@ -2964,7 +2964,7 @@ export function setHidden(el, on) {
   else el.removeAttribute('hidden');
 }
 
-async function showView(which) {
+async function showView(which, look) {
   // The offer belongs to the click that produced it. Left up across a view
   // change it would invite adopting a surface you can no longer see, from a
   // sentence about a car you have navigated away from.
@@ -2972,11 +2972,7 @@ async function showView(which) {
 
   state.view = which;
   const is3d = which === '3d' || which === 'all' || which === 'cockpit';
-  for (const [id, name] of [
-    ['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all'], ['#tab-cockpit', 'cockpit'],
-  ]) {
-    $(id).className = `tab${which === name ? ' on' : ''}`;
-  }
+  markTab(which);
   setHidden($('#texture'), is3d);
   setHidden($('#overlay'), is3d);
   setHidden($('#carview'), !is3d);
@@ -2997,6 +2993,7 @@ async function showView(which) {
     if (which === 'all') await loadWholeCar();
     else if (which === 'cockpit') await loadCockpit();
     else await loadCarGeometry();
+    if (look) state.viewer.look(look);
   } catch (e) {
     // No model is an ordinary situation, not a failure: plenty of people have a
     // profile for a car whose kn5 is not on this machine. Neither is a model
@@ -3009,10 +3006,16 @@ async function showView(which) {
     setHidden($('#texture'), false);
     setHidden($('#overlay'), false);
     state.view = 'uv';
-    $('#tab-uv').className = 'tab on';
-    $('#tab-3d').className = 'tab';
-    $('#tab-all').className = 'tab';
-    $('#tab-cockpit').className = 'tab';
+    markTab('uv');
+  }
+}
+
+function markTab(which) {
+  for (const [id, name] of [
+    ['#tab-uv', 'uv'], ['#tab-3d', '3d'], ['#tab-all', 'all'], ['#tab-cockpit', 'cockpit'],
+  ]) {
+    $(id).className = `tab${which === name ? ' on' : ''}`;
+    $(id).setAttribute('aria-pressed', String(which === name));
   }
 }
 
@@ -3132,7 +3135,7 @@ async function loadWholeCar() {
     (drew?.failed?.length ? ` · ${drew.failed.length} FAILED TO UPLOAD: ${
       drew.failed.join('; ')}` : '') +
     ` · ${drew?.blended ?? 0} blended, ${drew?.additive ?? 0} additive` +
-    ' — drag to orbit, wheel to zoom';
+    ' — drag or arrow keys to orbit, wheel or + and - to zoom';
 }
 
 /**
@@ -3401,15 +3404,16 @@ if (proposalTimer?.unref) proposalTimer.unref();
 //
 // After every declaration, so no helper can be reached before it exists.
 //
-// It opens on the CAR. That is where the work happens now — you can select,
-// move, resize and rotate there, and it is the only view that answers whether a
-// placement is any good. showView falls back to the UV sheet on its own if
+// It opens on the CAR, unless the link names another view. That is where the
+// work happens now — you can select, move, resize and rotate there, and it is
+// the only view that answers whether a placement is any good. showView falls back to the UV sheet on its own if
 // there is no model or no WebGL, so this is a preference rather than a demand.
 //
 // Not on a surface painted over the car's own texture: `paint` blocks resolve
 // first, so a livery that also paints the glass opened on a windscreen.
+const opening = openingView(window.location?.hash ?? '');
 await selectSurface((state.data.surfaces.find((s) => !s.overStock) ?? state.data.surfaces[0])?.from);
-await showView('3d');
+await showView(opening.view, opening.look);
 // Last, after the car is on screen, so a slow profile directory cannot delay
 // anything anybody is waiting for. It answers `undefined` rather than throwing
 // when there is nothing to list, because a second opinion is not a prerequisite

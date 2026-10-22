@@ -829,6 +829,10 @@ test('a whole-car view that cannot open falls back to something usable', async (
 
   assert.equal(dom.querySelector('#tab-uv').className, 'tab on', 'back on the UV tab');
   assert.equal(dom.querySelector('#tab-all').className, 'tab', 'and not still on Whole car');
+  // The class is only paint. A screen reader, or a script driving the editor
+  // through the accessible tree, learns which view is showing from this.
+  assert.equal(dom.querySelector('#tab-uv').getAttribute('aria-pressed'), 'true', 'UV is the pressed tab');
+  assert.equal(dom.querySelector('#tab-all').getAttribute('aria-pressed'), 'false', 'Whole car is not');
   assert.equal(dom.querySelector('#texture').hidden, false, 'the sheet is visible again');
   assert.equal(dom.querySelector('#overlay').hidden, false, 'and the overlay is reachable');
   // And the editor still responds: the pointer logic did not get wedged in a
@@ -4730,4 +4734,29 @@ test('minMargin is millimetres, refused at zero or below', async () => {
   assert.throws(() => opSetConstraint(design, { id: 'roundel', key: 'minMargin', value: 0 }), /above zero/);
   opSetConstraint(design, { id: 'roundel', key: 'minMargin', value: 60 });
   assert.equal(design.surfaces.body.regions[0].constraints.minMargin, 60);
+});
+
+test('the 3D view turns and zooms from the keyboard, as far as a drag and the wheel go', async () => {
+  const { orbitKey } = await import('../src/ui/view3d.js');
+  const cam = { yaw: 0, pitch: 0.35, dist: 6 };
+  for (const [key, field, sign] of [
+    ['ArrowLeft', 'yaw', 1], ['ArrowRight', 'yaw', -1],
+    ['ArrowUp', 'pitch', 1], ['ArrowDown', 'pitch', -1],
+    ['+', 'dist', -1], ['=', 'dist', -1], ['-', 'dist', 1],
+  ]) {
+    const next = orbitKey(cam, key);
+    assert.equal(Math.sign(next[field] - cam[field]), sign, `${key} moves ${field}`);
+  }
+  assert.equal(orbitKey(cam, 'a'), null, 'any other key is left to the page');
+  assert.equal(orbitKey({ ...cam, pitch: 1.5 }, 'ArrowUp').pitch, 1.5, 'stopping short of the pole, as a drag does');
+  assert.equal(orbitKey({ ...cam, dist: 0.5 }, '+').dist, 0.5, 'and no nearer than the wheel goes');
+});
+
+test('a link can open the editor on a view, and the camera at an angle', async () => {
+  const { openingView } = await import('../src/ui/view3d.js');
+  assert.deepEqual(openingView('#view=all&yaw=-0.2&pitch=0.3&zoom=0.8'),
+    { view: 'all', look: { yaw: -0.2, pitch: 0.3, zoom: 0.8 } });
+  assert.deepEqual(openingView(''), { view: '3d', look: {} }, 'the car, as framed, by default');
+  assert.deepEqual(openingView('#view=garage&yaw=left'), { view: '3d', look: {} },
+    'and a view or a number it cannot use is ignored, not passed on');
 });
