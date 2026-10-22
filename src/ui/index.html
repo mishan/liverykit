@@ -62,7 +62,7 @@
         <button id="tab-3d" class="tab">Car</button>
         <button id="tab-all" class="tab">Whole car</button>
         <button id="tab-cockpit" class="tab">Cockpit</button>
-        <span id="viewnote" class="hint"></span>
+        <span id="viewnote" class="hint" role="status"></span>
         <span id="adopt" class="hint" hidden>
           <span id="adoptwhat"></span>
           <button id="adoptsurface">Paint this too</button>
@@ -82,7 +82,7 @@
              gap for the same reason and gets the same fix. -->
         <div id="texture" hidden></div>
         <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" hidden></svg>
-        <canvas id="carview" hidden></canvas>
+        <canvas id="carview" hidden aria-label="The car in 3D. Arrow keys turn it, and + and - zoom."></canvas>
       </div>
       <p class="hint" id="canvashint">
         Drag the highlighted box to move a region. Drag a corner to resize.
