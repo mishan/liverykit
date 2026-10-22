@@ -1397,6 +1397,30 @@ test('find_space does not hand out a spot the fitment check calls curved', async
   }
 });
 
+test('find_space offers a spot seen square-on from trackside before one seen only from above', async () => {
+  // The NSX's rear quarter was 100% visible and roomiest along the top of the
+  // haunch, so a sponsor strip went there first: seen square-on only from
+  // high up, and edge-on to anyone level with the car. Here the top half of
+  // the panel faces up and the bottom half faces out, and the bottom half has
+  // the less room.
+  const { findSpace, cleanGrid } = await import('../src/space.mjs');
+  const model = plane({ rows: 8, cols: 8 });
+  const m = model.meshes[0];
+  for (let i = 0; i < m.vertexCount; i++) {
+    if (Math.floor(i / 8) >= 4) continue;           // the top half faces up
+    const o = i * m.stride;
+    model.buf.writeFloatLE(0.98, o + 16); model.buf.writeFloatLE(0.2, o + 20);
+  }
+  const prepared = occupancyFor(model);
+  const grid = cleanGrid({ profile, model, prepared, role: 'body', panel: 'L', cellMm: 200 });
+
+  const found = findSpace({ grid, model, prepared, widthMm: 1000, heightMm: 300, count: 3 });
+  assert.ok(found.candidates.length > 1, JSON.stringify(found));
+  assert.ok(found.candidates.every((c) => typeof c.faceOnDeg === 'number'), JSON.stringify(found.candidates));
+  assert.ok(found.candidates[0].faceOnDeg <= 45 && found.candidates[0].at[1] >= 0.5,
+    `the outward-facing half first: ${JSON.stringify(found.candidates)}`);
+});
+
 test('find_space can sweep sizes and say how big a shape of a given proportion can be', async () => {
   // An agent told "about 400 mm" put a 240 mm roundel on a door that held 400.
   // Asked for the limit, it gets the limit: the largest that fits, and the

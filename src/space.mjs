@@ -26,7 +26,7 @@
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
-import { rectVisibility, gridVisibility, bendDeg, sampleRects } from './engine/visibility.mjs';
+import { rectVisibility, gridVisibility, bendDeg, sampleRects, faceOnDeg } from './engine/visibility.mjs';
 import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
 
 /**
@@ -37,6 +37,10 @@ import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANC
  * the line rather than for an edge anybody could see.
  */
 const CLEAN = 0.98;
+// How far off face-on, seen from trackside height, a spot may be and still be
+// read rather than glimpsed: on the NSX the door and skirts measure 5 to 8
+// degrees, the top of the rear haunch 47.
+const LEVEL_DEG = 45;
 
 /**
  * Which texture a question about a panel means.
@@ -282,7 +286,8 @@ export function findSpace({
     // them. A cell's mean normal averages away a fold tighter than the cell:
     // a side skirt turning under went out as 29 degrees and came back from
     // the check as sponsors wrapped at 63.
-    const fineBend = bendDeg(sampleRects(model, g.meshes, [{ rect, nu: 14, nv: 14 }], g.island)[0].points) ?? bend;
+    const under = sampleRects(model, g.meshes, [{ rect, nu: 14, nv: 14 }], g.island)[0].points;
+    const fineBend = bendDeg(under) ?? bend;
     if (fineBend > CURVED_DEG) continue;
     // The margin too, as `minMargin` will hold it: the box grown by it on
     // every side, sampled every few millimeters, against the same bar. The
@@ -326,8 +331,16 @@ export function findSpace({
         }
       }
     }
-    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: fineBend });
+    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: fineBend,
+      faceOnDeg: faceOnDeg(prepared, under) });
   }
+  // Seen square-on from trackside height before seen only from above. Every
+  // spot here is visible, and visible counts a surface reached by rays that
+  // skim it: the roomiest strip on the NSX's rear quarter ran along the top
+  // of the haunch, and its sponsors read edge-on to anyone level with the car.
+  // On a bonnet or a roof every spot is the second kind, and the order stands.
+  const level = (c) => (c.faceOnDeg !== null && c.faceOnDeg <= LEVEL_DEG ? 0 : 1);
+  candidates.sort((a, b) => level(a) - level(b));
 
   return {
     role: g.role,

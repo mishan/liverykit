@@ -363,6 +363,33 @@ function seenFrom({ occ, dirs, maxSteps }, p, minDirections) {
 }
 
 /**
+ * How square-on a set of surface points can be seen from trackside height,
+ * in degrees off face-on: for each point, the most nearly face-on of the
+ * directions at or below `maxElevation` that reach it, and of those the
+ * median. `seenFrom` counts a point seen from any angle short of grazing, so
+ * the top of a rear haunch, reached only by rays skimming its surface from the
+ * side and by rays from well above, measured as visible as a door; lettering
+ * there reads edge-on to anyone standing beside the track. Null when no such
+ * direction reaches any of the points.
+ */
+export function faceOnDeg({ occ, dirs, maxSteps }, points, { maxElevation = 0.35 } = {}) {
+  const best = [];
+  for (const p of points) {
+    let top = -1;
+    for (const [dx, dy, dz] of dirs) {
+      if (dy > maxElevation) continue;
+      const c = dx * p.nx + dy * p.ny + dz * p.nz;
+      if (c <= Math.max(0.05, top)) continue;
+      if (escapes(occ, p.x, p.y, p.z, dx, dy, dz, maxSteps, p.mesh)) top = c;
+    }
+    if (top > 0) best.push(top);
+  }
+  if (!best.length) return null;
+  best.sort((a, b) => b - a);
+  return Math.round(Math.acos(best[Math.floor(best.length / 2)]) * 180 / Math.PI);
+}
+
+/**
  * Points spread over an island's own triangles in proportion to their area,
  * the same number for every island.
  *

@@ -529,7 +529,9 @@ export function createToolHandler(client) {
         'Measured by sweeping the panel with the ray casting check_fitment uses. A panel\'s box is ' +
         'not the panel — its middle is often against a window frame, an arch or a shut line — so ' +
         'ask this before placing a roundel, logo or number box. Returns the roomiest spots as ' +
-        'panel-relative `at` rectangles, each with its clearance in mm, and a coarse map of the ' +
+        'panel-relative `at` rectangles, each with its clearance in mm and faceOnDeg, how far off ' +
+        'square-on it is seen from trackside height (a door reads about 5, the top of a haunch 47, ' +
+        'a roof 60 and more), those within 45 first; and a coarse map of the ' +
         `panel, texture top first ('#' clean, '.' not). ${PROMPT_NOTE}`,
       inputSchema: {
         type: 'object',
