@@ -245,6 +245,9 @@ function browserEnv(extra = {}) {
   return { ...process.env, ...extra };
 }
 
+// Whether a browser has run a page to the end in this process yet.
+let warm = false;
+
 /**
  * Run a script inside the real editor page and get its findings back.
  *
@@ -464,7 +467,12 @@ async function inBrowser(driver, {
     // it managed, so anything still silent at 40 is a browser that never ran the
     // script at all — and waiting another fifty seconds to learn that costs a
     // minute per run and tells you nothing extra.
-    const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || 40000;
+    // Except the first launch of a run, which pays for a cold start: a new
+    // profile, the font cache, and the first compile of every shader in
+    // software GL. In CI the first test to open the app took 4 to 50 seconds
+    // while every one after it took about 4.5, and twice its page loaded and
+    // then held the main thread past 40, too long for its own watchdog to fire.
+    const limit = Number(process.env.LIVERYKIT_BROWSER_TIMEOUT_MS) || (warm ? 40000 : 120000);
     const deadline = Date.now() + limit;
     // `child.done` too, so a browser that exits without loading the page fails in
     // a second with its own error message rather than after the full timeout with
@@ -492,6 +500,7 @@ async function inBrowser(driver, {
   if (typeof real.server.closeAllConnections === 'function') real.server.closeAllConnections();
   await new Promise((ok) => real.server.close(ok));
 
+  if (report) warm = true;
   assert.ok(report, 'the browser never reported back. ' + child.why(waited)
     + '\n' + howFar(trail));
   const failures = report.filter((l) => /^(ERROR|REJECT|THREW)/.test(l));
