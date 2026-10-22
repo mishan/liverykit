@@ -31,10 +31,14 @@ const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * module and importing one needs an attribute this project's Node floor
  * predates, while a `.mjs` cannot be parsed as data.
  */
-export async function loadLivery(path) {
+export async function loadLivery(path, { fresh = false } = {}) {
+  // `fresh` for an editor reloading a module that changed: Node keeps every
+  // module it has imported by URL, so the same URL gives back the first
+  // version. Only this module is fresh; a pack it imports is not.
+  const href = pathToFileURL(path).href + (fresh ? `?v=${Date.now()}` : '');
   const design = path.endsWith('.json')
     ? JSON.parse(await readFile(path, 'utf8'))
-    : (await import(pathToFileURL(path).href)).default;
+    : (await import(href)).default;
 
   if (!design) throw new Error(`Livery ${path} has no design in it (a .mjs needs a default export).`);
   return validateDesign(design, path);

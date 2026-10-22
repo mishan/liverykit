@@ -48,6 +48,7 @@ liverykit — generate Assetto Corsa liveries from code
   liverykit <livery> --ui             open the fitting editor for this car
   liverykit <livery> --check          run the fitment check the editor runs, and
                                       exit 1 if it finds anything high or worse
+  liverykit <livery> --shot <views>   render the car to PNGs, no editor needed
   liverykit --mcp                     start MCP server attached to editor
 
 Arguments
@@ -133,6 +134,7 @@ const { values, positionals } = parseArgs({
     fit: { type: 'string' },
     ui: { type: 'boolean', default: false },
     check: { type: 'boolean', default: false },
+    shot: { type: 'string' },
     'fail-on': { type: 'string', default: 'high' },
     json: { type: 'boolean', default: false },
     model: { type: 'string' },
@@ -507,6 +509,7 @@ if (values.ui) {
     fitPath,
     liveryId: liveryName,
     liveryPath,
+    liveryDir: liveryOwnDir,
     decals,
     modelPath,
     port: values.port ? num(values.port, 'port', { min: 1024, max: 65535, integer: true }) : 7391,
@@ -514,6 +517,31 @@ if (values.ui) {
   console.log(`  fitting editor at ${url}`);
   console.log(`  writes ${fitPath} when you press Save`);
   console.log('  ctrl-c to stop');
+} else if (values.shot) {
+  // Pictures of the car without an editor open, by the editor's own renderer:
+  // its server started on a free port, asked for each view, and closed.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { path: modelPath, looked } = await findCarModel(profile, values.model);
+  if (!modelPath) {
+    fail(new Error(`--shot draws the car, and needs its model. Looked in:\n${looked.map((p) => `    ${p}`).join('\n')}\n` +
+      'Point --model at the car\'s .kn5, or set AC_ROOT to your Assetto Corsa install.'));
+  }
+  const { server, url } = await startUi({ livery, profile, fitPath, liveryId: liveryName, liveryPath, liveryDir: liveryOwnDir,
+    decals, modelPath, port: 0, log: () => {} });
+  try {
+    await mkdir(values.out, { recursive: true });
+    for (const view of values.shot.split(',').map((v) => v.trim()).filter(Boolean)) {
+      // As large as the renderer draws: a sheet is six views to a picture.
+      const [w, h] = view === 'sheet' ? [2400, 1440] : [1400, 860];
+      const res = await fetch(new URL(`api/shot?view=${encodeURIComponent(view)}&width=${w}&height=${h}`, url));
+      if (!res.ok) throw new Error(`--shot ${view}: ${(await res.json()).error}`);
+      const file = join(values.out, `${folder}-${view}.png`);
+      await writeFile(file, Buffer.from(await res.arrayBuffer()));
+      console.log(`  ${file}`);
+    }
+  } finally {
+    server.close();
+  }
 } else if (values.check) {
   // The editor's check, for a script or a CI job: the same profile, fit and
   // model lookup as a build, and an exit code. Without the model, the checks
@@ -607,7 +635,7 @@ if (values.ui) {
 // Manager" message that followed was describing a zip that did not reflect
 // what the editor had just opened, or that did not exist. The editor writes
 // fits, not skins; there is nothing here for this section to package.
-if (!values.ui && !values['no-zip']) {
+if (!values.ui && !values.shot && !values['no-zip']) {
   await mkdir(values.out, { recursive: true });
   // A different name per layout. The two archives hold the same files under
   // different paths, and one name for both is how a CM archive gets uploaded to
@@ -624,7 +652,7 @@ if (!values.ui && !values['no-zip']) {
     console.log(`  For a server upload: just the ${folder}/ folder, for ${profile.id}.`);
     console.log(`  Not for Content Manager, which would ask which car it belongs to.`);
   }
-} else if (!values.ui) {
+} else if (!values.ui && !values.shot) {
   console.log(`\n  Copy ${outDir} into content/cars/${profile.id}/skins/`);
 }
 

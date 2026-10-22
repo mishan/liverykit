@@ -34,8 +34,9 @@
 // ---------------------------------------------------------------------------
 
 import { createServer } from 'node:http';
+import { watch } from 'node:fs';
 import { readFile, writeFile, mkdir, readdir, rename, realpath, stat, chmod, rm } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from 'ac-kn5';
@@ -47,7 +48,8 @@ import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, 
 import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
 import { treatmentOptions } from './fields.js';
-import { serialisableDesign, validateDesign } from '../livery.mjs';
+import { serialisableDesign, validateDesign, loadLivery } from '../livery.mjs';
+import { loadDecals } from '../decals.mjs';
 import { portability } from '../portability.mjs';
 import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
@@ -845,7 +847,7 @@ export function confirmBinding(onDisk, { term, roles } = {}, source = '<inline>'
   return next;
 }
 
-export async function startUi({ livery: openedWith, profile, profilePath = null, fitPath, liveryId, liveryPath = null, decals = new Map(), modelPath = null, port = 7391, log = console.log }) {
+export async function startUi({ livery: openedWith, profile, profilePath = null, fitPath, liveryId, liveryPath = null, liveryDir = null, decals = new Map(), modelPath = null, port = 7391, log = console.log }) {
   // What this editor is a fit FOR. Every fit that comes in or goes out has to
   // name this pair, or it is a fit for something else being edited by mistake.
   //
@@ -1063,6 +1065,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   let fit = null;
   let workingFit = null;
   let workingDesign = livery;
+  // Bumped each time the livery module is reloaded from disk. A page posts its
+  // design with the version it had, and one from before a reload is not taken:
+  // every render carries the page's copy, and the first drag after a reload
+  // would otherwise put the old design back.
+  let designVersion = 0;
+  let liveryError = null;
+  const current = (design, sent) => design !== undefined && (sent ?? 0) === designVersion;
   try {
     fit = validateFit(JSON.parse(await readFile(fitPath, 'utf8')), fitPath);
     workingFit = fit;
@@ -1210,7 +1219,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       }
 
       if (req.method === 'GET' && url.pathname === '/api/state') {
-        return json(200, editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId }));
+        return json(200, { ...editorState({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId }), designVersion });
+      }
+
+      // Which version of the livery module this is, for the page to notice a
+      // reload (see watchLivery), and why the last change did not load.
+      if (req.method === 'GET' && url.pathname === '/api/livery') {
+        return json(200, { version: designVersion, error: liveryError, path: liveryPath });
       }
 
       if (req.method === 'GET' && url.pathname === '/api/bindings') {
@@ -1513,15 +1528,15 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // rendered on the car and absent from the editor, so it could not be
       // selected, moved or removed.
       if (req.method === 'POST' && url.pathname === '/api/state') {
-        const { fit: working, design } = await body();
+        const { fit: working, design, designVersion: sent } = await body();
         // Refused before either is taken: see `unloadable`.
         const bad = design !== undefined ? unloadable(design) : null;
         if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
-        if (design !== undefined) workingDesign = design;
-        return json(200, editorState({
+        if (current(design, sent)) workingDesign = design;
+        return json(200, { ...editorState({
           livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, liveryId,
-        }));
+        }), designVersion });
       }
 
       if (req.method === 'POST' && url.pathname === '/api/render') {
@@ -1529,12 +1544,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         // same reason: it lives in the browser until somebody saves it, and the
         // render has to be of what is being edited rather than of what is on
         // disk. Nothing here writes it.
-        const { fit: working, design, role, seed } = await body();
+        const { fit: working, design, role, seed, designVersion: sent } = await body();
         // Refused before either is taken: see `unloadable`.
         const bad = design !== undefined ? unloadable(design) : null;
         if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
-        if (design !== undefined) workingDesign = design;
+        if (current(design, sent)) workingDesign = design;
         return json(200, renderSurface({
           livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed, decals,
           stock: await stockFor(workingDesign ?? livery),
@@ -1545,12 +1560,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       // the fit is the thing being judged; the geometry beside it is fetched
       // once and reused, which is why they are two calls rather than one.
       if (req.method === 'POST' && url.pathname === '/api/preview') {
-        const { fit: working, design, seed } = await body();
+        const { fit: working, design, seed, designVersion: sent } = await body();
         // Refused before either is taken: see `unloadable`.
         const bad = design !== undefined ? unloadable(design) : null;
         if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
-        if (design !== undefined) workingDesign = design;
+        if (current(design, sent)) workingDesign = design;
         const surfaces = [];
         const stock = await stockFor(workingDesign ?? livery);
         // Every painted texture, a term's secondary ones included: see paintedSheets.
@@ -1951,6 +1966,35 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       return json(e.status ?? 500, { error: e.message });
     }
   });
+
+  // A livery written as code is edited in a text editor, not here, so the
+  // file is watched and reloaded when it changes, decals and all. Watched by
+  // its directory: an editor that saves by writing a new file and renaming it
+  // over the old one leaves a watch on the file itself watching nothing.
+  if (liveryPath && !liveryPath.endsWith('.json')) {
+    let timer = null;
+    const reload = async () => {
+      try {
+        const next = await loadLivery(liveryPath, { fresh: true });
+        if (liveryDir) decals = await loadDecals(liveryDir, { log });
+        livery = next;
+        workingDesign = next;
+        designVersion++;
+        liveryError = null;
+        log(`  reloaded ${liveryPath}`);
+      } catch (e) {
+        liveryError = e.message;
+        log(`  ! ${liveryPath} changed and did not load, so the editor kept the last version: ${e.message}`);
+      }
+    };
+    // Saves come in bursts of events; one reload for the burst.
+    const soon = () => { clearTimeout(timer); timer = setTimeout(reload, 100); };
+    const watchers = [watch(dirname(liveryPath), (_, name) => { if (name === basename(liveryPath)) soon(); })];
+    if (liveryDir) {
+      try { watchers.push(watch(join(liveryDir, 'decals'), soon)); } catch { /* a livery with no decals/ */ }
+    }
+    server.on('close', () => { clearTimeout(timer); for (const w of watchers) w.close(); });
+  }
 
   await new Promise((ok) => server.listen(port, '127.0.0.1', ok));
   const boundPort = server.address().port;

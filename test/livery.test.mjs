@@ -270,3 +270,56 @@ test('a profile is found by car id in --profiles, and a missing one names every 
   assert.match(await opens(['--profiles', join(dir, 'library')]), /Neon Grid \(any car\) {2}-> {2}Library Car|-> {2}Library Car/);
   assert.match(await opens([], { LIVERYKIT_PROFILES: join(dir, 'library') }), /-> {2}Library Car/);
 });
+
+test('an editor opened on a module reloads it when the file changes, and a stale page cannot undo that', async () => {
+  // Designing the Raiden livery in its .mjs meant restarting the editor after
+  // every edit: it read the file once, so the picture render_car and the page
+  // drew, and everything check_fitment measured, was the design as it stood
+  // when the editor started.
+  const { startUi } = await import('../src/ui/server.mjs');
+  const { loadProfile } = await import('../src/profile.mjs');
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), 'lk-reload-'));
+  const modulePath = join(dir, 'livery.mjs');
+  const write = (body) => writeFile(modulePath, `export default ${body};\n`);
+  const design = (bg) => JSON.stringify({ name: 'R', folder: 'r', packs: ['core'], surfaces: { body: { background: bg, regions: [] } } });
+  await write(design('#111111'));
+
+  const { server } = await startUi({
+    livery: await loadLivery(modulePath), profile, fitPath: join(dir, 'fit.json'),
+    liveryId: 'livery', liveryPath: modulePath, port: 0, log: () => {},
+  });
+  const at = `http://127.0.0.1:${server.address().port}`;
+  const get = async (path) => (await fetch(`${at}${path}`)).json();
+  const until = async (ok) => {
+    for (let i = 0; i < 100; i++) {
+      const v = await get('/api/livery');
+      if (ok(v)) return v;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('the editor never noticed the file change');
+  };
+  const background = async () => (await get('/api/state')).design.surfaces.body.background;
+  try {
+    const first = await get('/api/livery');
+    assert.equal(await background(), '#111111');
+
+    await write(design('#222222'));
+    const second = await until((v) => v.version > first.version);
+    assert.equal(await background(), '#222222', 'the working design is the file as it is now');
+
+    // A page that has not caught up posts the design it had. That must not
+    // put the old one back.
+    await fetch(`${at}/api/render`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ design: JSON.parse(design('#111111')), designVersion: first.version, role: profile.bind.body.roles[0] }) });
+    assert.equal(await background(), '#222222', 'a design from before the reload is not taken');
+
+    // A file that does not load is reported, and the last good design kept.
+    await writeFile(modulePath, 'export default {\n');
+    const broken = await until((v) => v.error);
+    assert.equal(broken.version, second.version);
+    assert.equal(await background(), '#222222');
+  } finally {
+    server.close();
+  }
+});
