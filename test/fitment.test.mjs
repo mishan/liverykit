@@ -1447,6 +1447,34 @@ test('find_space offers a spot seen square-on from trackside before one seen onl
     `the outward-facing half first: ${JSON.stringify(found.candidates)}`);
 });
 
+test('find_space largest is the largest spot seen square-on from trackside, where the panel has one', async () => {
+  // On the NSX's rear quarter `largest` returned a strip along the top of the
+  // haunch, 46 degrees off, where a fixed size found spots at 12 and 16. Here
+  // the upward-facing part is the roomier, and is the answer only on a panel
+  // that faces nowhere else.
+  const { largestSpace, cleanGrid } = await import('../src/space.mjs');
+  const faceUp = (upRows) => {
+    const model = plane({ rows: 8, cols: 8 });
+    const m = model.meshes[0];
+    for (let i = 0; i < m.vertexCount; i++) {
+      if (Math.floor(i / 8) >= upRows) continue;
+      const o = i * m.stride;
+      model.buf.writeFloatLE(0.98, o + 16); model.buf.writeFloatLE(0.2, o + 20);
+    }
+    const prepared = occupancyFor(model);
+    const grid = cleanGrid({ profile, model, prepared, role: 'body', panel: 'L', cellMm: 200 });
+    return largestSpace({ grid, model, prepared, aspect: 0.5 });
+  };
+
+  const side = faceUp(5);
+  assert.ok(side.largest.faceOnDeg <= 45 && side.largest.at[1] >= 0.5, JSON.stringify(side));
+  assert.equal(side.note, undefined);
+
+  const roof = faceUp(8);
+  assert.ok(roof.largest.faceOnDeg > 45, JSON.stringify(roof));
+  assert.match(roof.note, /No spot on L that fits is seen within 45 degrees of square-on .* faceOnDeg says how far off it is/);
+});
+
 test('find_space can sweep sizes and say how big a shape of a given proportion can be', async () => {
   // An agent told "about 400 mm" put a 240 mm roundel on a door that held 400.
   // Asked for the limit, it gets the limit: the largest that fits, and the
