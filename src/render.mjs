@@ -334,8 +334,15 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       continue;
     }
 
-    if (out.base) base.push(spin(out.base));
-    if (out.emissive) emissive.push(spin(out.emissive));
+    // A shaped region draws inside its shape only (see resolveRect).
+    let shaped = spin;
+    if (frac.poly) {
+      const id = `lk-shape-${clips.length}`;
+      clips.push(`<clipPath id="${id}"><polygon points="${frac.poly.map(([u, v]) => `${r2(u * width)},${r2(v * height)}`).join(' ')}"/></clipPath>`);
+      shaped = (svg) => (svg ? `<g clip-path="url(#${id})">${spin(svg)}</g>` : svg);
+    }
+    if (out.base) base.push(shaped(out.base));
+    if (out.emissive) emissive.push(shaped(out.emissive));
   }
 
   if (onStock && stock) {

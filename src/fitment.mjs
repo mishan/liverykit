@@ -135,7 +135,7 @@ const BLEED_IS_FINE_BELOW = 0.15;
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'role', 'limit', 'optional', 'constraints', 'mirror', '__key',
+  'span', 'once', 'role', 'limit', 'optional', 'constraints', 'mirror', 'shape', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */
@@ -1621,8 +1621,10 @@ function stripes(all, profile, seen, say, skip, draw) {
 function stripeDirection({ t, p }, stripe, say, skip) {
   // A piece that arrived through a seam runs whichever way the seam turned
   // the band, inside a box drawn round a parallelogram. Its home piece says
-  // which way the band runs, and is asked.
-  if (p.spilled) return;
+  // which way the band runs, and is asked. Nor one with a `shape`: traced
+  // off the car between two heights, it is the band wherever the band goes,
+  // and its box is wider across the car than along it where it wraps the nose.
+  if (p.spilled || p.region.shape) return;
   const id = name(t, p.id);
   const pan = p.frac.panel;
   const where = { kind: 'stripe-across', surface: t.from, role: t.role, panel: p.region.panel, ids: [p.id], stripe };
@@ -2169,8 +2171,11 @@ function carFrame(model, profile, draw = drawing(profile)) {
   const ax = profile.calibration?.axes ?? {};
   const F = ax.front === '-Z' ? -1 : 1;
   const env = envelope(model, profile, 1, 1, draw);
-  return { F, L: ax.left === '-X' ? -1 : 1, noseZ: F > 0 ? env.r1 : env.r0 };
+  return { F, L: leftSign(profile), noseZ: F > 0 ? env.r1 : env.r0 };
 }
+
+/** The sign x has on the car's left, by its calibration. */
+export const leftSign = (profile) => (profile.calibration?.axes?.left === '-X' ? -1 : 1);
 
 /** How many samples across `uv` of a panel measured at `per` meters a unit: one every STRIPE_SAMPLE_MM. */
 const sampleCells = (uv, per) => Math.max(8, Math.min(200, Math.ceil((uv * per * 1000) / STRIPE_SAMPLE_MM)));
