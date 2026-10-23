@@ -38,8 +38,10 @@ esac
 run wait announce "$said" --timeout 120 &
 drawn=$!
 # A fresh profile each time: Firefox's first-run pages and restored sessions
-# are the difference between two shots of the same page.
-shotbox spawn --session "$name" -- sh -c 'p=$(mktemp -d); exec firefox --kiosk --new-instance --profile "$p" --width 1600 --height 1000 "$1"' sh "http://127.0.0.1:7400/#$view" >/dev/null
+# are the difference between two shots of the same page. Under the session's
+# own home, which goes when the session does: made with mktemp in /tmp, 66 of
+# them piled up there, 2.4 GB of a tmpfs, and nothing ever removed them.
+shotbox spawn --session "$name" -- sh -c 'p=$HOME/firefox; mkdir -p "$p"; exec firefox --kiosk --new-instance --profile "$p" --width 1600 --height 1000 "$1"' sh "http://127.0.0.1:7400/#$view" >/dev/null
 wait "$drawn"
 # The announcement is not the paint. The first frame holds Firefox's main
 # thread for seconds after the note changes, with the screen frozen on
