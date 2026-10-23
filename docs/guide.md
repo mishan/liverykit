@@ -523,6 +523,27 @@ The editor draws the home rectangle only and a drag stays inside the panel, so
 for now a spanning region is written by hand or proposed over MCP.
 [docs/spanning.md](spanning.md) has the reasoning and the limits.
 
+### A band at a height, and regions with a shape
+
+A band along the side of a car, the classic lower-body sweep, is the car between
+two heights, and on curved bodywork that is no rectangle in any panel's frame.
+`find_space` with `flank: { fromMm, toMm }` traces it off the model: a stripe on
+every panel the band crosses seen from that side, front wings included where no
+seam joins them to the door, each the part of its panel between the two heights,
+exactly. Surfaces nearly level are the top of the car and are left out, and each
+side's pieces are one `stripe`.
+
+Each piece carries a `shape`, a polygon in fractions of its own `at` box, which
+the region is drawn and measured inside:
+
+```js
+{ id: 'sweep-left-left_mid', treatment: 'stripe', panel: 'left_mid',
+  at: [0, 0.54, 0.97, 0.46], shape: [[0, 0.02], [1, 0], [1, 1], [0, 1]], color: 'indigo' }
+```
+
+Any region can have one. Because it is relative to `at`, moving the region moves
+its shape with it.
+
 ### Saying what a region needs
 
 Placement rules say where artwork goes. Constraints say what it needs wherever it

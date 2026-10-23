@@ -2328,7 +2328,7 @@ test('find_space lays a band along a flank at a height, over every panel it cros
     corners: [[-0.9, 0.6, 1.6], [0.9, 0.4, 1.6], [0.9, 0.4, 2.0], [-0.9, 0.6, 2.0]] }]);
   const top = flankLayout({ ...bonneted, role: 'body', fromMm: 250, toMm: 450, side: 'left' });
   assert.ok(!top.regions.some((r) => r.panel === 'bonnet'), JSON.stringify(top.regions));
-  assert.match((top.skipped ?? []).find((k) => k.panel === 'bonnet')?.why ?? '', /faces up/, JSON.stringify(top.skipped));
+  assert.match((top.skipped ?? []).find((k) => k.panel === 'bonnet')?.why ?? '', /nearly level/, JSON.stringify(top.skipped));
   assert.ok(top.findings.some((f) => /stripe-gap.*bonnet/.test(f)), JSON.stringify(top.findings));
 
   // The other side has no panels here, and says so rather than coming back empty.
@@ -2336,6 +2336,37 @@ test('find_space lays a band along a flank at a height, over every panel it cros
   assert.deepEqual(right.regions, []);
   assert.match(right.note ?? '', /right/);
   assert.throws(() => flankLayout({ profile, model, role: 'body', fromMm: 450, toMm: 250 }), /toMm/);
+
+  // Each piece is the panel between the two heights, traced: the door runs
+  // from 300 to 1000 mm, so the band's 350 to 550 is a strip across it, from
+  // a fourteenth of the way up to five fourteenths, the whole length of it.
+  const { bandShapes } = await import('../src/space.mjs');
+  const [door] = bandShapes(model, profile, 'body', 'door', [350, 550]);
+  const ys = door.shape.map(([, y]) => y), xs = door.shape.map(([x]) => x);
+  const span = Math.max(...ys) - Math.min(...ys);
+  assert.ok(Math.abs(span - 2 / 7) < 0.03 && Math.max(...xs) - Math.min(...xs) > 0.97, JSON.stringify(door));
+  assert.ok(got.regions.every((r) => Array.isArray(r.shape) && r.shape.length >= 3), 'every piece is traced, not a box');
+});
+
+test('a region with a shape is drawn and measured inside it, not across its box', async () => {
+  // A band traced off the car between two heights is no rectangle in its
+  // panel's frame, and rectangles fitted to the NSX's curved wing and nose
+  // stepped where they met. A shape, in fractions of the region's own box so
+  // it moves with it, is what the renderer clips to and the checks measure.
+  const { resolveRect } = await import('../src/profile.mjs');
+  const { renderTexture } = await import('../src/render.mjs');
+  const { resolveTreatments } = await import('../src/registry.mjs');
+  const corner = { panel: 'L', at: [0.5, 0.5, 0.5, 0.5], shape: [[0, 0], [1, 0], [0, 1]] };
+  const f = resolveRect(profile, 'body', corner);
+  // L is the sheet's [0, 0, 0.4, 0.4]: its box is [0.2, 0.2, 0.2, 0.2].
+  assert.deepEqual(f.poly.map((p) => p.map((v) => Math.round(v * 1000) / 1000)), [[0.2, 0.2], [0.4, 0.2], [0.2, 0.4]]);
+  assert.throws(() => resolveRect(profile, 'body', { ...corner, shape: [[0, 0], [1, 1]] }), /polygon/);
+  assert.throws(() => resolveRect(profile, 'body', { ...corner, span: true }), /span/);
+
+  const svg = renderTexture({ profile, role: 'body', treatments: resolveTreatments(['core']), palette: { ink: '#101014' },
+    rng: Math.random, font: 'sans-serif', tokens: {}, regions: [{ treatment: 'fill', color: 'ink', ...corner }] }).base;
+  assert.match(svg, /<clipPath id="lk-shape-0"><polygon points="409\.6,409\.6 819\.2,409\.6 409\.6,819\.2"\/><\/clipPath>/);
+  assert.match(svg, /<g clip-path="url\(#lk-shape-0\)"><rect [^>]*fill="#101014"/);
 });
 
 test('a stripe wider than a narrow nose is not offset where it runs on over a wider bonnet', async () => {

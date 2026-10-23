@@ -971,6 +971,18 @@ export function resolveRect(profile, role, spec) {
     panel: pan,
   };
 
+  // `shape` narrows the box to a polygon, in fractions of the box itself, so
+  // it moves with `at`: what a band traced off the model needs, which no
+  // rectangle in the panel's frame follows on curved bodywork. Carried as the
+  // `poly` a spanning piece already carries, so every check measures it.
+  if (spec.shape !== undefined) {
+    const ok = Array.isArray(spec.shape) && spec.shape.length >= 3
+      && spec.shape.every((p) => Array.isArray(p) && p.length === 2 && p.every(Number.isFinite));
+    if (!ok) throw new Error(`region "shape" must be a polygon, three or more [x, y] points in fractions of its "at"; got ${JSON.stringify(spec.shape)}.`);
+    if (spec.span === true) throw new Error('region "shape" and "span" do not go together: a spanning region is shaped by the seams it crosses.');
+    out.poly = spec.shape.map(([px, py]) => [out.x + px * out.w, out.y + py * out.h]);
+  }
+
   if (pan.safe && spec.safe !== false && !wholeFill(spec)) {
     const [sx, sy, sw, sh] = pan.safe;
     const over =

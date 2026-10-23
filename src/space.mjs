@@ -26,8 +26,9 @@
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
-import { rectVisibility, gridVisibility, bendDeg, sampleRects, faceOnDeg, occupancyFor } from './engine/visibility.mjs';
-import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
+import { rectVisibility, gridVisibility, bendDeg, sampleRects, scanGrids, faceOnDeg, occupancyFor } from './engine/visibility.mjs';
+import { capOutline } from './engine/islands.mjs';
+import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf, leftSign } from './fitment.mjs';
 
 /**
  * How much of a cell must be on the car, and seen, to count as clean.
@@ -1338,6 +1339,105 @@ export function stripeLayoutAcross({ profile, model, roles, widthMm, offsetMm = 
 }
 
 /**
+ * Where a panel's island lies between two heights on the car, `up` in mm, as
+ * polygons in the panel's own fractions: one per connected piece, each with
+ * its bounding `at` and the points on the car it covers.
+ *
+ * Read off the model rather than fitted. A rectangle is level only in its
+ * panel's frame, and the NSX's front wing, skirt and nose curve both ways,
+ * so a straight line through each missed the height by up to 160 mm and the
+ * pieces stepped where they met. Here the island is sampled every few
+ * millimetres, the cells whose point on the car is inside the band are kept,
+ * and their boundary is traced and simplified as an island's outline is.
+ */
+export function bandShapes(model, profile, role, panel, up, { side = 0, cellMm = SHAPE_CELL_MM } = {}) {
+  const q = profile.panels[role][panel];
+  const meshes = meshesUsingTexture(model, texture(profile, role).file);
+  const island = islandOf(model, meshes, q);
+  const [mx, my] = q.metresPerUv ?? [1, 1];
+  const cells = (uv, m) => Math.max(8, Math.min(SHAPE_CELLS, Math.ceil((uv * m * 1000) / cellMm)));
+  const nu = cells(q.rect[2], mx), nv = cells(q.rect[3], my);
+  const hits = scanGrids(model, meshes, [{ rect: q.rect, nu, nv }], island)[0];
+  // `side`, 1 for the left and -1 for the right, keeps that side of the
+  // centerline: an island across the car, the nose's, is the corner ahead of
+  // each front wheel joined by the front of the bumper. And a surface nearly
+  // level is the top of the car, not its side, cell by cell: the NSX's
+  // bonnet island is its front wings too, and a band a few centimetres tall
+  // grazing the bonnet would paint it across its width.
+  const L = leftSign(profile);
+  const inside = (i, j) => i >= 0 && j >= 0 && i < nu && j < nv && (() => {
+    const p = hits[j * nu + i];
+    return !!p && p.y * 1000 >= up[0] && p.y * 1000 <= up[1] && (!side || p.x * L * side > 0) && p.ny < LEVEL_NY;
+  })();
+  // Connected pieces of the kept cells, four ways.
+  const piece = new Int32Array(nu * nv).fill(-1);
+  const groups = [];
+  for (let j = 0; j < nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      if (piece[j * nu + i] >= 0 || !inside(i, j)) continue;
+      const g = [];
+      const stack = [[i, j]];
+      piece[j * nu + i] = groups.length;
+      while (stack.length) {
+        const [a, b] = stack.pop();
+        g.push([a, b]);
+        for (const [c, d] of [[a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]]) {
+          if (inside(c, d) && piece[d * nu + c] < 0) { piece[d * nu + c] = groups.length; stack.push([c, d]); }
+        }
+      }
+      groups.push(g);
+    }
+  }
+  const out = [];
+  for (const [n, g] of groups.entries()) {
+    if (g.length < 4) continue;
+    // The piece's boundary: cell edges it does not share with itself, chained
+    // into a loop corner to corner.
+    const next = new Map();
+    const key = (x, y) => `${x},${y}`;
+    const edge = (x0, y0, x1, y1) => next.set(key(x0, y0), [x1, y1]);
+    const own = (c, d) => inside(c, d) && piece[d * nu + c] === n;
+    for (const [a, b] of g) {
+      if (!own(a, b - 1)) edge(a, b, a + 1, b);
+      if (!own(a + 1, b)) edge(a + 1, b, a + 1, b + 1);
+      if (!own(a, b + 1)) edge(a + 1, b + 1, a, b + 1);
+      if (!own(a - 1, b)) edge(a, b + 1, a, b);
+    }
+    // The longest loop is the outside; a hole in the band is left painted.
+    let loop = [];
+    const seen = new Set();
+    for (const start of next.keys()) {
+      if (seen.has(start)) continue;
+      const pts = [];
+      for (let k = start; k && !seen.has(k); ) {
+        seen.add(k);
+        const [x, y] = k.split(',').map(Number);
+        pts.push([x / nu, y / nv]);
+        const to = next.get(k);
+        k = to && key(...to);
+      }
+      if (pts.length > loop.length) loop = pts;
+    }
+    if (loop.length < 3) continue;
+    const shape = capOutline(loop, 1 / Math.max(nu, nv));
+    const xs = shape.map((p) => p[0]), ys = shape.map((p) => p[1]);
+    const r4 = (v) => Math.round(v * 10000) / 10000;
+    const at = [r4(Math.min(...xs)), r4(Math.min(...ys)), r4(Math.max(...xs) - Math.min(...xs)), r4(Math.max(...ys) - Math.min(...ys))];
+    out.push({ at, shape, points: g.map(([a, b]) => hits[b * nu + a]) });
+  }
+  return out;
+}
+
+// A surface whose normal points up more than this, within 30 degrees of
+// level, is the top of the car rather than its side.
+const LEVEL_NY = Math.cos(Math.PI / 6);
+
+// A band's shape is sampled about this finely on the car, and in no more
+// cells than this either way.
+const SHAPE_CELL_MM = 10;
+const SHAPE_CELLS = 240;
+
+/**
  * A band along a flank, laid out: from `fromMm` to `toMm` above the bottom of
  * the bodywork, the car's whole length, a region for every panel of one sheet
  * it crosses seen from that side, each with the `at` that puts the band at
@@ -1350,11 +1450,12 @@ export function stripeLayoutAcross({ profile, model, roles, widthMm, offsetMm = 
  * wheel arch. `side` is 'left', 'right' or 'both'; each side is measured up
  * from its own bottom.
  *
- * A piece on an island that runs across the car, the nose's or the tail's,
- * wraps the band round that end: it runs across the car, not along it, so it
- * is not held to the side's stripe constraint and is listed under `wraps`.
- * One that faces up, as the front edge of a bonnet the band reaches does, is
- * seen from above rather than from the side, and is left out, with why.
+ * Each piece is the part of its panel between the two heights, exactly, as a
+ * `shape` (see bandShapes), not a rectangle fitted to it: on curved bodywork
+ * a fitted rectangle stepped where the pieces met. An island across the car,
+ * the nose's or the tail's, gives each side its own half. A piece that faces
+ * up, as the edge of a bonnet the band reaches does, is seen from above, not
+ * from the side, and is left out, with why.
  */
 export function flankLayout({ profile, model, role, fromMm, toMm, side = 'both', name = 'flank', design = null }) {
   if (!(Number.isFinite(fromMm) && fromMm >= 0 && Number.isFinite(toMm) && toMm > fromMm)) {
@@ -1374,19 +1475,6 @@ export function flankLayout({ profile, model, role, fromMm, toMm, side = 'both',
   const skipped = [];
   const upMm = {};
   const missing = [];
-  const wraps = [];
-  const file = texture(profile, role).file;
-  let meshes = null, prepared = null;
-  // How far off square-on the piece is seen from trackside height, as
-  // find_space's spots say it.
-  const faceOn = (panel, at) => {
-    meshes ??= meshesUsingTexture(model, file);
-    prepared ??= occupancyFor(model);
-    const q = profile.panels[role][panel];
-    const [x, y, w, h] = q.rect;
-    const rect = [x + at[0] * w, y + at[1] * h, at[2] * w, at[3] * h];
-    return faceOnDeg(prepared, sampleRects(model, meshes, [{ rect, nu: 14, nv: 14 }], islandOf(model, meshes, q))[0].points);
-  };
   for (const [label, sign] of [['left', 1], ['right', -1]]) {
     if (side !== 'both' && side !== label) continue;
     const bottom = flankBottom(model, profile, role, sign, { hide, painted: paints });
@@ -1394,41 +1482,54 @@ export function flankLayout({ profile, model, role, fromMm, toMm, side = 'both',
     const band = [bottom + fromMm, bottom + toMm];
     upMm[label] = band;
     const group = `${name}-${label}`;
-    const got = bandPieces({ model, profile, role, band, name: group, hide, paints, side: sign, seenFrom: `the ${label}` });
-    // A flank's band is on that flank. Seen from one side, a car open on it
-    // shows the far flank's panels from behind, and they were laid pieces.
-    // Judged by the piece, not its panel: the NSX's nose is one island across
-    // the car, and its piece is the corner ahead of each front wheel.
-    const mine = got.pieces.filter((p) => {
-      const on = panelOnCar(model, profile, role, p.panel, p.at);
-      if (!on?.across || !(sign > 0 ? on.across[1] > 0 : on.across[0] < 0)) {
-        got.skipped.push({ panel: p.panel, why: `${p.panel} is seen from the ${label} but is not on that flank` });
-        return false;
+    const before = regions.length;
+    for (const c of stripePanels(model, profile, role, band, { hide, painted: paints, side: sign })) {
+      if (c.measured === false) {
+        skipped.push({ panel: c.panel, side: label, carriesMm: c.carriesMm,
+          why: c.why ?? `seen from the ${label} the band covers at most ${c.carriesMm} mm of ${c.panel} up the car and ` +
+            `${c.behindNose[1] - c.behindNose[0]} mm along it, under 40 mm one way: too little to tell a piece by` });
+        continue;
       }
-      p.wraps = on.across[0] < 0 && on.across[1] > 0;
-      if (!p.wraps) return true;
-      // Once for both sides: it is the same piece of the same island.
-      if (wraps.some((w) => w.panel === p.panel)) return false;
-      const deg = faceOn(p.panel, p.at);
-      if (deg === null || deg > LEVEL_DEG) {
-        got.skipped.push({ panel: p.panel, why: `the band's piece of ${p.panel} faces up (${deg ?? 'not seen at'} degrees off ` +
-          'square-on from trackside height): it is seen from above, not from the side' });
-        return false;
+      const shapes = bandShapes(model, profile, role, c.panel, band, { side: sign });
+      if (!shapes.length) {
+        skipped.push({ panel: c.panel, side: label, why: `seen from the ${label} the band reaches ${c.panel}, but none of ` +
+          `its island on that side lies between ${band[0]} and ${band[1]} mm up other than surfaces nearly level, which ` +
+          'are the top of the car rather than its side' });
+        continue;
       }
-      return true;
-    });
-    if (!mine.some((p) => !p.wraps)) missing.push(label);
-    for (const p of mine) {
-      const id = p.wraps ? `${name}-${p.panel}` : p.id;
-      regions.push({ id, treatment: 'stripe', panel: p.panel, at: p.at, ...(p.wraps ? {} : { constraints: { stripe: group } }) });
-      pieces.push({ id, panel: p.panel, side: p.wraps ? 'wrap' : label, behindNoseMm: p.behindNose, carriesMm: p.carriesMm, errorMm: p.errorMm });
-      if (p.wraps) wraps.push({ id, panel: p.panel });
+      for (const [k, sh] of shapes.entries()) {
+        const id = `${group}-${c.panel}${shapes.length > 1 ? `-${k + 1}` : ''}`;
+        // The shape in fractions of the box, which is how a region carries it.
+        const [x, y, w, h] = sh.at;
+        const shape = sh.shape.map(([u, v]) => [Math.round(((u - x) / w) * 1e4) / 1e4, Math.round(((v - y) / h) * 1e4) / 1e4]);
+        regions.push({ id, treatment: 'stripe', panel: c.panel, at: sh.at, shape, constraints: { stripe: group } });
+        pieces.push({ id, panel: c.panel, side: label, behindNoseMm: c.behindNose, carriesMm: c.carriesMm });
+      }
     }
-    skipped.push(...got.skipped.map((k) => ({ ...k, side: label })));
+    if (regions.length === before) missing.push(label);
+  }
+  // Measured as check_fitment measures them, and a piece it would call unseen
+  // left out, as the stripe's layout does: tracing keeps every scrap of the
+  // band, and the NSX's front wing has one inside the wheel arch.
+  if (regions.length) {
+    const paint = Object.fromEntries(paints.map((r) => [r, { regions: [] }]));
+    paint[role] = { regions: regions.map((r) => ({ ...r, color: 'ink' })) };
+    const unseen = new Map();
+    for (const f of fitment({ name: 'flank', packs: ['core'], palette: { ink: '#101014' }, identity: {}, ...(hide.length ? { hide } : {}),
+      paint }, profile, null, { model }).findings) {
+      if (f.kind === 'unseen' && f.severity === 'high') for (const id of f.ids ?? []) unseen.set(id, f.why);
+    }
+    for (const [id, why] of unseen) {
+      const i = regions.findIndex((r) => r.id === id);
+      if (i < 0) continue;
+      const j = pieces.findIndex((p) => p.id === id);
+      skipped.push({ panel: regions[i].panel, side: pieces[j].side, why: `left out of the band: ${why}` });
+      regions.splice(i, 1);
+      pieces.splice(j, 1);
+    }
   }
   return {
     role, fromMm, toMm, side, name, upMm, regions, pieces,
-    ...(wraps.length ? { wraps: wraps.map((w) => w.id) } : {}),
     ...(skipped.length ? { skipped } : {}),
     findings: bandFindings({ profile, model, byRole: new Map([[role, regions]]), hide, paints }),
     ...(missing.length ? {
