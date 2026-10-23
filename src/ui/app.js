@@ -71,7 +71,7 @@ const state = {
   side: 'selected',       // which tab of the right-hand column is showing
   openSections: new Set(), // panel-list sections unfolded
   panelsFor: null,        // the surface those were chosen for
-  panelHost: null,        // the selected region's panel, when last drawn
+  panelHost: null,        // the selection and its panel, when last drawn
   showSmallPanels: false,
 };
 const UNDO_LIMIT = 50;
@@ -115,7 +115,8 @@ state.treatments = new Map((data.treatments ?? []).map((t) => [t.name, t]));
 // this editor were spent unable to distinguish "the fix did not work" from "the
 // browser or the server is running something older".
 api('/api/build').then((b) => {
-  $('#build').title = `build ${b.build} · server up ${b.started}`;
+  $('#build').textContent = `build ${b.build}`;
+  $('#build').title = `fingerprint of the served files, and when this server started: ${b.build} · ${b.started}`;
 }).catch(() => {});
 
 $('#livery').textContent = data.livery.name;
@@ -154,6 +155,9 @@ $('#regions').onclick = (e) => {
 $('#regionfilter').oninput = () => drawRegions();
 $('#panels').onclick = (e) => {
   const head = e.target.closest?.('li[data-section]');
+  // Under a filter every section is open, so a fold would change nothing
+  // visible and surprise you when the filter is cleared.
+  if (head && $('#panelfilter').value) return;
   if (head) {
     const open = state.openSections;
     if (!open.delete(head.dataset.section)) open.add(head.dataset.section);
@@ -753,8 +757,8 @@ function drawPanels() {
   // Unfolded once, when the selection lands on a panel, and then left to the
   // person: reopening it on every redraw would make its heading do nothing.
   const host = state.placed.find((p) => p.id === state.selected)?.panel ?? null;
-  if (host !== state.panelHost) {
-    state.panelHost = host;
+  if (`${state.selected}@${host}` !== state.panelHost) {
+    state.panelHost = `${state.selected}@${host}`;
     const at = sorted.find((x) => x.p.name === host)?.at;
     if (at) state.openSections.add(sectionOf(at));
   }
@@ -778,7 +782,7 @@ function drawPanels() {
       rows.push(`<li class="head${open ? ' open' : ''}" data-section="${esc(label)}"${n ? '' : ' hidden'}>
         ${esc(label)} <span class="meta">${n}</span></li>`);
     }
-    const tooSmall = !filter && !state.showSmallPanels && small(at);
+    const tooSmall = !filter && !state.showSmallPanels && small(at) && p.name !== host;
     if (open && tooSmall) folded++;
     // The percentage is how much of the sheet this panel owns, which is the
     // number that decides whether artwork will fit on it.
@@ -914,9 +918,11 @@ function drawIdentity() {
 function drawDangling() {
   const el = $('#dangling');
   if (!el) return;
+  $('#danglingcount').textContent = '';
   if (state.lossy.length) { el.innerHTML = ''; return; }
 
   const { colors, tokens } = danglingNames(state.design, state.treatments);
+  if (colors.length + tokens.length) $('#danglingcount').textContent = String(colors.length + tokens.length);
   el.innerHTML = [
     ...tokens.map((t) => `<div class="note">Nothing gives <code>${esc(t.token)}</code> a value, so
       ${esc(t.by.join(', '))} ${t.by.length > 1 ? 'render' : 'renders'} with a hole where it should be.</div>`),
@@ -2342,8 +2348,8 @@ function drawInspector() {
     el.innerHTML = `<p><strong>Pick a region to edit it.</strong></p>
       <ul>
         <li>choose one from the list on the left,</li>
-        <li>click its artwork on the sheet or on the car,</li>
-        <li>or add a new one with “add a region…”.</li>
+        <li>click its artwork on the sheet or on the car${state.lossy.length ? '.' : ','}</li>
+        ${state.lossy.length ? '' : '<li>or add a new one with “add a region…”.</li>'}
       </ul>`;
     return;
   }
@@ -3354,7 +3360,7 @@ async function paintCar() {
 function setDirty(v) {
   state.dirty = v;
   updateSaveButtons();
-  $('#status').className = v || state.designDirty ? 'status dirty' : 'status';
+  $('#status').className = `status visually-hidden${v || state.designDirty ? ' dirty' : ''}`;
 }
 
 /**
@@ -3373,7 +3379,7 @@ function updateSaveButtons() {
 function setDesignDirty() {
   state.designDirty = true;
   updateSaveButtons();
-  $('#status').className = 'status dirty';
+  $('#status').className = 'status visually-hidden dirty';
 }
 function status(msg) {
   // WHICH is unsaved, not merely that something is. There are two files and two

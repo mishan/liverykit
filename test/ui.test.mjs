@@ -294,9 +294,9 @@ test('clicking a region selects it and gives it something to drag', async () => 
 });
 
 /** The bundled example on the Abarth, whose body has 65 panels: a list long enough to need folding. */
-async function bootAbarth() {
+async function bootAbarth(change = (l) => l) {
   const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
-  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const livery = change((await import('../liveries/neon-grid-any.mjs')).default);
   const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
   const role = binding(profile, 'body').roles[0];
   return runApp({
@@ -326,12 +326,23 @@ test('the panel list folds by section, and opens on the selected region\'s', asy
   panels.onclick({ target: { closest: (s) => (s.includes('data-section') ? heading : null) } });
   assert.ok(!shownRows(panels, 'data-panel').includes('left_mid'), 'its heading folds it again');
 
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'team-left' } } });
+  assert.match(panels.innerHTML, /class="host"[^>]*data-panel="left_mid"/, 'a second region on the same panel');
+  assert.ok(shownRows(panels, 'data-panel').includes('left_mid'), 'is a new selection, and unfolds it again');
+
   const filter = dom.querySelector('#panelfilter');
   filter.value = 'right_mid';
   filter.oninput();
   const found = shownRows(panels, 'data-panel');
   assert.ok(found.length && found.every((n) => n.includes('right_mid')),
     `a filter shows what matches, folded or not: ${found}`);
+});
+
+test('a name nothing defines is counted on its tab', async () => {
+  const { dom } = await bootAbarth((l) => ({ ...l, palette: { ...l.palette, hot: undefined } }));
+  assert.match(dom.querySelector('#dangling').innerHTML, /hot/);
+  assert.equal(dom.querySelector('#danglingcount').textContent, '1',
+    'the warning sits in a tab that is not open, so the tab has to say it is there');
 });
 
 test('the region list can be filtered', async () => {

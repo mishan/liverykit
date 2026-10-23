@@ -673,6 +673,7 @@ test('a real pointer can select and drag a region on the canvas', { skip: BROWSE
       const after = document.querySelector('#fitjson').textContent;
       say('fit changed: ' + (after !== before));
       say('save enabled: ' + !document.querySelector('#save').disabled);
+      say('header status hidden: ' + (document.querySelector('#status').getBoundingClientRect().width <= 1));
       try {
         const at = JSON.parse(after).regions['number-left'].at;
         say('at in range: ' + at.every((n) => n >= 0 && n <= 1) + ' ' + JSON.stringify(at));
@@ -691,6 +692,8 @@ test('a real pointer can select and drag a region on the canvas', { skip: BROWSE
   assert.match(find('topmost at box: '), /box/, 'the drag box must be reachable by a pointer');
   assert.equal(find('fit changed: '), 'fit changed: true', 'the drag must reach the fit');
   assert.equal(find('save enabled: '), 'save enabled: true');
+  assert.equal(find('header status hidden: '), 'header status hidden: true',
+    'marking the fit unsaved must not bring the header\'s copy of the status back');
   assert.match(find('at in range: '), /^at in range: true/,
     `a drag must never write coordinates the renderer rejects — ${find('at in range: ')}`);
 
