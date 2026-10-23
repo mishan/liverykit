@@ -2015,7 +2015,10 @@ export function createViewer(canvas) {
         Object.assign(cam, next);
         draw();
       };
-      window.addEventListener('resize', draw);
+      // The canvas, not the window: in a tiled editor a divider resizes it
+      // while the window stays put, and the car stretched until the next drag.
+      if (typeof ResizeObserver === 'function') new ResizeObserver(() => draw()).observe(canvas);
+      else window.addEventListener('resize', draw);
     },
 
     draw,

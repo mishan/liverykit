@@ -61,9 +61,10 @@ details.hint > summary::-webkit-details-marker { display: none; }
 details.hint > summary::after { content: ' more'; color: var(--accent); opacity: 0.7; font-size: 11px; }
 details.hint[open] > summary::after { content: ' less'; }
 details.hint[open] > summary { margin-bottom: 4px; }
-aside .row { display: flex; gap: 6px; align-items: center; }
-aside .row > input, aside .row > select { flex: 1; min-width: 0; }
-aside input:not([type]), aside input[type=search] {
+#left .row, .sidepane .row { display: flex; gap: 6px; align-items: center; }
+#left .row > input, #left .row > select,
+.sidepane .row > input, .sidepane .row > select { flex: 1; min-width: 0; }
+input:not([type]), input[type=search] {
   width: 100%; font: inherit; color: var(--ink);
   background: #1e2632; border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
 }
@@ -151,7 +152,7 @@ li.derived .id { color: var(--muted); }
 .tab { padding: 4px 14px; }
 .tab.on { border-color: var(--accent); color: var(--accent); background: #12313a; }
 .toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; }
-#viewnote { margin: 8px 0 0; }
+#viewnote { margin: 8px 0 0; text-align: center; }
 #canvashint { margin: 2px 0 0; }
 #texture svg { width: 100%; height: 100%; display: block; }
 /* The texture is a backdrop; every click belongs to the overlay above it. */
@@ -246,3 +247,25 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
 .proposal-btn.accept { background: #005f73; border-color: var(--accent); color: #ffffff; }
 .proposal-btn.discard { background: #5f1a2a; border-color: var(--hot); color: #ffffff; }
 
+
+/* --- tiled ---------------------------------------------------------------- */
+/* mullion draws the layout; these map its colors onto the editor's and say
+   which of the editor's boxes take the room a pane has. */
+:root {
+  --pane-fg: var(--ink); --pane-bg: var(--bg); --pane-dim: var(--muted);
+  --pane-panel: var(--panel); --pane-line: var(--line); --pane-held: var(--accent);
+}
+/* Emptied of its columns, which are panes now; left in place so they have a
+   parent to go back to when the window narrows. */
+body.tiled > main { display: none; }
+/* The header full width, as untiled; the panes inset a little under it. */
+body.tiled { padding: 0; }
+body.tiled #panes { margin: 6px; }
+body.tiled .sidetabs { display: none; }
+body:not(.tiled) [data-side-off] { display: none; }
+body.tiled .panebody > aside { flex: 1 1 auto; min-height: 0; overflow: visible; border: 0; }
+body.tiled #left, body.tiled .sidepane { padding: 10px 6px 0; }
+/* A container of its own size, so the square stage can be the largest that
+   fits whichever way the pane is shaped. */
+body.tiled #canvas { container-type: size; padding: 10px 6px 0; }
+body.tiled #stage { width: min(100cqw, 100cqh - 110px); }

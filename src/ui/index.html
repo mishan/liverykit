@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>liverykit — fit</title>
+<link rel="stylesheet" href="/vendor/mullion/panes.css">
 <link rel="stylesheet" href="/style.css">
 <!--
   So that `uses.js` can write `import { colord } from 'colord'` and have it mean
@@ -15,7 +16,8 @@
   "imports": {
     "colord": "/vendor/colord/index.mjs",
     "colord/plugins/names": "/vendor/colord/plugins/names.mjs",
-    "ac-dds/decode": "/vendor/ac-dds/decode.js"
+    "ac-dds/decode": "/vendor/ac-dds/decode.js",
+    "mullion": "/vendor/mullion/panes.js"
   }
 }
 </script>
@@ -41,8 +43,14 @@
     <button id="proposal-discard" class="proposal-btn discard">Discard</button>
   </div>
 
+  <!-- Where mullion draws the layout on a wide window with a mouse. Each
+       data-pane below is moved into it, ids and all, and put back under its
+       own parent when the window narrows: the three columns are what you get
+       then, and they are the same elements. -->
+  <div id="panes"></div>
+
   <main>
-    <aside id="left">
+    <aside id="left" data-pane data-pane-title="Regions" data-pane-min="220">
       <h2>Surface</h2>
       <select id="surface"></select>
 
@@ -56,7 +64,7 @@
       <ul id="regions"></ul>
     </aside>
 
-    <section id="canvas">
+    <section id="canvas" data-pane data-pane-title="View" data-pane-min="320">
       <div class="tabs">
         <span class="group" role="group" aria-label="View">
           <button id="tab-uv" class="tab on">UV</button>
@@ -105,11 +113,11 @@
         <button id="side-source" role="tab" data-side="source">Source</button>
       </nav>
 
-      <section id="pane-selected" class="pane" role="tabpanel">
+      <section id="pane-selected" class="sidepane" role="tabpanel" data-pane data-pane-title="Selected" data-pane-min="240">
         <div id="inspector" class="empty"></div>
       </section>
 
-      <section id="pane-panels" class="pane" role="tabpanel" hidden>
+      <section id="pane-panels" class="sidepane" role="tabpanel" data-pane data-pane-title="Panels" data-pane-min="240" data-side-off>
         <h2>Panels <span id="panelcount" class="muted"></span></h2>
         <details class="hint"><summary>Click one to move the selected region onto it.</summary>
           Hover to see where it is. Tags come from the model — side, section,
@@ -118,7 +126,7 @@
         <ul id="panels"></ul>
       </section>
 
-      <section id="pane-colors" class="pane" role="tabpanel" hidden>
+      <section id="pane-colors" class="sidepane" role="tabpanel" data-pane data-pane-title="Colors &amp; text" data-pane-min="240" data-side-off>
         <h2>Palette</h2>
         <details class="hint"><summary>Named colors, used by name.</summary>
           Changing one changes everything using it, and renaming one renames
@@ -143,7 +151,7 @@
         <div id="dangling"></div>
       </section>
 
-      <section id="pane-checks" class="pane" role="tabpanel" hidden>
+      <section id="pane-checks" class="sidepane" role="tabpanel" data-pane data-pane-title="Checks" data-pane-min="240" data-side-off>
         <div id="notes"></div>
 
         <h2>On this car</h2>
@@ -172,7 +180,7 @@
         <ul id="bindings"></ul>
       </section>
 
-      <section id="pane-source" class="pane" role="tabpanel" hidden>
+      <section id="pane-source" class="sidepane" role="tabpanel" data-pane data-pane-title="Source" data-pane-min="240" data-side-off>
         <h2>Fit</h2>
         <p class="hint">Where this car wants the artwork.</p>
         <pre id="fitjson">{}</pre>

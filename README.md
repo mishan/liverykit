@@ -4,7 +4,7 @@
 
 Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 
-![The fitting editor: the Raiden livery on the Honda NSX GT3 Evo, white with an indigo sweep and spine, a number roundel on the door and a vermilion underglow. The design's regions on the left, the whole car lit in 3D in the middle, and on the right a prompt to pick a region to edit.](docs/images/editor.png)
+![The fitting editor: the Raiden livery on the Honda NSX GT3 Evo, white with an indigo sweep and spine, a number roundel on the door and a vermilion underglow. The design's regions on the left, the whole car lit in 3D in the middle, and on the right a prompt to pick a region to edit, over the list of panels to move it to.](docs/images/editor.png)
 
 *The fitting editor: a design described as named regions over a palette, fitted onto the car's own model.*
 

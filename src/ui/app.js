@@ -19,6 +19,7 @@ import { createViewer, openingView, unpack, unpackModel } from './view3d.js';
 import { treatmentOptions } from './fields.js';
 import { paletteUses, tokenUses, danglingNames, eachRegion, interpolates, isAColor } from './uses.js';
 import { applyDesignOp, applyFitOp, opSetConstraint, placedAt } from './ops.js';
+import { createPanes } from 'mullion';
 
 const $ = (s) => document.querySelector(s);
 const VIEW = 1000;
@@ -176,6 +177,32 @@ $('.sidetabs').onclick = (e) => {
   if (tab) showSide(tab.dataset.side);
 };
 showSide(state.side);
+
+// Tiled, on a window with room for it: the same elements, moved into panes a
+// person can split, stack and resize, and put back as the three columns above
+// when the window narrows. Not under the tests' fake DOM, which has no media
+// queries to ask.
+state.panes = globalThis.matchMedia ? createPanes({
+  root: $('#panes'),
+  catalog: ['left', 'canvas', 'pane-selected', 'pane-panels', 'pane-colors', 'pane-checks', 'pane-source'],
+  mode: 'edit',
+  on: true,
+  store: 'liverykit:panes',
+  version: 1,
+  reset: '↺',
+  // The inspector over the other side panes rather than stacked with them,
+  // so the panel a region is moved to can be picked with the region in view.
+  layouts: {
+    edit: {
+      dir: 'row', size: [0.2, 0.5, 0.3], kids: [
+        { tabs: ['left'] },
+        { tabs: ['canvas'] },
+        { dir: 'col', size: [0.55, 0.45], kids: [
+          { tabs: ['pane-selected'] },
+          { tabs: ['pane-panels', 'pane-colors', 'pane-checks', 'pane-source'] }] }],
+    },
+  },
+}) : null;
 
 // Hovering a panel shows where it is — on the sheet and on the car — WITHOUT
 // selecting anything or touching the fit. Finding out where `centre_mid_lower_4`
@@ -681,7 +708,7 @@ async function refresh() {
     // stopped responding to everything.
     status(`render failed: ${e.message}`);
     $('#notes').innerHTML = `<div class="note">! ${esc(e.message)}</div>`;
-    $('#notecount').textContent = '1';
+    tally('pane-checks', 'Checks', $('#notecount'), 1);
     return;
   }
   state.placed = out.placed;
@@ -709,7 +736,7 @@ async function refresh() {
   $('#notes').innerHTML = notes.map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
   // Counted on the tab, since they are in a tab: nothing that went wrong may
   // be out of sight without a sign that it is there.
-  $('#notecount').textContent = notes.length ? String(notes.length) : '';
+  tally('pane-checks', 'Checks', $('#notecount'), notes.length);
   // Derived from the stacks rather than trusted from the markup, so there is
   // one source of truth for whether there is anything to go back to.
   updateUndoButtons();
@@ -918,11 +945,10 @@ function drawIdentity() {
 function drawDangling() {
   const el = $('#dangling');
   if (!el) return;
-  $('#danglingcount').textContent = '';
-  if (state.lossy.length) { el.innerHTML = ''; return; }
+  if (state.lossy.length) { el.innerHTML = ''; tally('pane-colors', 'Colors & text', $('#danglingcount'), 0); return; }
 
   const { colors, tokens } = danglingNames(state.design, state.treatments);
-  if (colors.length + tokens.length) $('#danglingcount').textContent = String(colors.length + tokens.length);
+  tally('pane-colors', 'Colors & text', $('#danglingcount'), colors.length + tokens.length);
   el.innerHTML = [
     ...tokens.map((t) => `<div class="note">Nothing gives <code>${esc(t.token)}</code> a value, so
       ${esc(t.by.join(', '))} ${t.by.length > 1 ? 'render' : 'renders'} with a hole where it should be.</div>`),
@@ -1302,20 +1328,49 @@ function cssEscape(s) {
 export function selectRegion(id) {
   if (!id) return;
   state.selected = id;
-  // Not from the panel list: there the next click is the panel to move it to.
-  if (state.side !== 'panels') showSide('selected');
+  revealInspector();
   drawRegions();
   drawOverlay();
   drawInspector();
   drawPanels();
 }
 
+// An attribute of our own rather than `hidden`: tiled, every one of these is a
+// pane, and one hidden for being the column's tab not in front would be a
+// pane showing nothing.
 function showSide(name) {
   state.side = name;
   for (const n of ['selected', 'panels', 'colors', 'checks', 'source']) {
     $(`#side-${n}`).setAttribute('aria-selected', String(n === name));
-    setHidden($(`#pane-${n}`), n !== name);
+    if (n === name) $(`#pane-${n}`).removeAttribute('data-side-off');
+    else $(`#pane-${n}`).setAttribute('data-side-off', '');
   }
+  state.panes?.present(`pane-${name}`, { focus: false });
+}
+
+/**
+ * Bring the inspector into view after a pick — but not over the panel list.
+ * Picking a region and then the panel to move it to is one gesture, and
+ * covering the list between the two clicks breaks it.
+ */
+function revealInspector() {
+  const p = state.panes;
+  if (!p?.tiled()) {
+    if (state.side !== 'panels') showSide('selected');
+    return;
+  }
+  const leafOf = (node, id) => (node.tabs
+    ? (node.tabs.includes(id) ? node : null)
+    : node.kids.map((k) => leafOf(k, id)).find(Boolean) ?? null);
+  const layout = p.layout();
+  const together = layout && leafOf(layout, 'pane-selected') === leafOf(layout, 'pane-panels');
+  if (!(together && p.visible('pane-panels'))) p.present('pane-selected', { focus: false });
+}
+
+/** A count on a side pane's tab, in the column's tab bar and in the tiler's. */
+function tally(pane, title, el, n) {
+  el.textContent = n ? String(n) : '';
+  state.panes?.setTitle(pane, n ? `${title} (${n})` : title);
 }
 
 function drawOverlay() {

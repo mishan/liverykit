@@ -129,15 +129,18 @@ JSON. Revert your fix, watch the new test fail, then put it back.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, five runtime dependencies
-(`sharp`, `colord`, `ac-cardata`, `ac-kn5` and `ac-dds`). Please keep it small — but small is the
+No build step, no transpiler, ESM throughout, six runtime dependencies
+(`sharp`, `colord`, `ac-cardata`, `ac-kn5`, `ac-dds` and `mullion`). Please keep it small — but small is the
 goal, not zero: `colord` replaced a regex that called `red` an unresolved palette
 name and told `#00F0FF` from `gulf-bleu` by its first character, which is not a
 wheel worth rebuilding, and `ac-cardata`, `ac-kn5` and `ac-dds` read and write
 `data.acd`, the kn5 model and DDS, formats shared with other tools rather than
-reimplemented here.
+reimplemented here. `mullion` tiles the editor on a wide window with a mouse —
+splits, tabs and dividers over the page's own elements, which it puts back as
+the three-column page when the window narrows — and has no dependencies of its
+own.
 
-The browser gets `colord` and `ac-dds/decode` through an **import map** in
+The browser gets `colord`, `ac-dds/decode` and `mullion` through an **import map** in
 `src/ui/index.html`, and the server hands over each package's own ESM from
 `node_modules`. So a bare specifier means the same package on both sides and the
 editor and the tests run the identical file. That is the pattern to copy if the

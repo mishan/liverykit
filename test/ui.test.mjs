@@ -359,7 +359,7 @@ test('the region list can be filtered', async () => {
 
 test('selecting a region brings its inspector forward, unless a panel is being chosen', async () => {
   const { dom } = await bootAbarth();
-  const pane = (n) => !dom.querySelector(`#pane-${n}`).hidden;
+  const pane = (n) => !dom.querySelector(`#pane-${n}`).hasAttribute('data-side-off');
   const side = (n) => dom.querySelector('.sidetabs').onclick({ target: { closest: () => ({ dataset: { side: n } }) } });
   const pick = (id) => dom.querySelector('#regions').onclick({ target: { dataset: { id } } });
 

@@ -257,7 +257,7 @@ let warm = false;
  */
 async function inBrowser(driver, {
   fitPath, livery: liveryName = 'neon-grid-any', car = 'abarth500',
-  profile: profileOverride = null, liveryObject = null, modelPath = null,
+  profile: profileOverride = null, liveryObject = null, modelPath = null, search = '',
 }) {
   const profile = profileOverride
     ?? await loadProfile(new URL(`../cars/${car}.json`, import.meta.url));
@@ -311,7 +311,7 @@ async function inBrowser(driver, {
     }
     const type = upstream.headers.get('content-type') ?? 'text/plain';
     let out = Buffer.from(await upstream.arrayBuffer());
-    if (req.url === '/') {
+    if (req.url.split('?')[0] === '/') {
       out = Buffer.from(out.toString('utf8')
         .replace('</body>', '<script type="module" src="/driver.js"></script></body>'));
     }
@@ -319,7 +319,7 @@ async function inBrowser(driver, {
     res.end(out);
   });
   await new Promise((ok) => proxy.listen(0, '127.0.0.1', ok));
-  const url = `http://127.0.0.1:${proxy.address().port}/`;
+  const url = `http://127.0.0.1:${proxy.address().port}/${search}`;
 
   // --- getting a browser that actually has WebGL ---------------------------
   //
@@ -363,6 +363,11 @@ async function inBrowser(driver, {
       'user_pref("layers.acceleration.disabled", true);',
       'user_pref("gfx.webrender.software", true);',
       'user_pref("gfx.x11-egl.force-enabled", true);',
+      // A mouse, as the editor's users have one. Headless Firefox reports no
+      // pointer at all, and the editor tiles only for a fine one, so without
+      // these every test drove the narrow-window fallback. 6 = fine | hover.
+      'user_pref("ui.primaryPointerCapabilities", 6);',
+      'user_pref("ui.allPointerCapabilities", 6);',
 
       // --- and nothing off this machine -------------------------------------
       //
@@ -629,7 +634,9 @@ test('a real pointer can select a region from the list', { skip: BROWSER ? false
       say('inspector in view: ' + (r.height > 0 && r.top >= 0 && r.top < innerHeight / 2));
       done();
     })();
-  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
+    // Untiled: the three columns a narrow window gets, where the inspector is
+  // one tab of a column and has to be brought forward.
+  `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname, search: '?panes=0' });
 
   const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
   assert.match(find('topmost at list item'), /#regions/,
@@ -638,6 +645,50 @@ test('a real pointer can select a region from the list', { skip: BROWSER ? false
   assert.equal(find('inspector mentions it: '), 'inspector mentions it: true');
   assert.equal(find('inspector in view: '), 'inspector in view: true',
     'what was picked is editable without scrolling to find it');
+});
+
+test('tiled, a region is picked and moved with the inspector and the panels both in view', { skip: BROWSER ? false : 'no browser' }, async () => {
+  // The point of tiling here. Untiled, the inspector and the panel list are
+  // two tabs of one column, so moving a region to a panel meant picking it,
+  // switching tabs, and picking the panel with the region out of sight.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-fit-'));
+  const fitPath = join(dir, 'fit.json');
+  await writeFile(fitPath, JSON.stringify({
+    livery: 'neon-grid-any', car: 'abarth500',
+    regions: { 'number-left': { panel: 'left_mid', at: [0.3, 0.3, 0.3, 0.3] } },
+  }));
+  const report = await inBrowser(PRELUDE + `
+    (async () => {
+      try {
+      if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+      say('tiled: ' + document.body.classList.contains('tiled'));
+      const inView = (sel) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return r.height > 0 && r.top >= 0 && r.top < innerHeight && r.left < innerWidth;
+      };
+      const li = document.querySelector('#regions li[data-id="number-left"]');
+      li.scrollIntoView({ block: 'center' });
+      clickAt(...centre(li));
+      await settle(600);
+      say('after the pick: ' + inView('#inspector') + ' ' + inView('#panels'));
+      const row = [...document.querySelectorAll('#panels li[data-panel]')]
+        .find((r) => r.getBoundingClientRect().height > 0 && !r.classList.contains('host'));
+      say('panel: ' + row.dataset.panel);
+      row.scrollIntoView({ block: 'center' });
+      clickAt(...centre(row));
+      await settle(800);
+      say('after the move: ' + inView('#inspector') + ' ' + inView('#panels'));
+      say('host now: ' + document.querySelector('#panels li.host')?.dataset.panel);
+      } catch (e) { say('THREW ' + e.message + ' ' + out.join(' / ')); }
+      done();
+    })();
+  `, { fitPath });
+
+  const find = (p) => report.find((l) => l.startsWith(p)) ?? '';
+  assert.equal(find('tiled: '), 'tiled: true');
+  assert.equal(find('after the pick: '), 'after the pick: true true', report.join(' | '));
+  assert.equal(find('after the move: '), 'after the move: true true');
+  assert.equal(find('host now: ').slice(10), find('panel: ').slice(7), 'the click moved it there');
 });
 
 test('a real pointer can select and drag a region on the canvas', { skip: BROWSER ? false : 'no browser' }, async () => {

@@ -253,6 +253,9 @@ const VENDOR = new Map([
   // The DDS decoder, for textures the GPU cannot take as blocks; Node's build
   // and preview read through the same file.
   ['/vendor/ac-dds/decode.js', 'ac-dds/decode'],
+  // The tiling layout, and the stylesheet that draws it.
+  ['/vendor/mullion/panes.js', 'mullion'],
+  ['/vendor/mullion/panes.css', 'mullion/panes.css'],
 ]);
 const vendorPath = (pathname) =>
   fileURLToPath(import.meta.resolve(VENDOR.get(pathname)));
@@ -1972,7 +1975,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
           return send(500, 'text/plain',
             `${VENDOR.get(url.pathname)} is missing from node_modules — run \`npm install\``);
         }
-        return send(200, 'text/javascript', data);
+        return send(200, MIME[extname(url.pathname)] ?? 'text/javascript', data);
       }
 
       // Static. The path is taken from a fixed allowlist rather than joined
