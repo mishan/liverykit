@@ -90,8 +90,9 @@ never load it.
 
 ## Code
 
-No build step, no transpiler, ESM throughout, one runtime dependency (`sharp`).
-Please keep it that way.
+No build step, no transpiler, ESM throughout, and few runtime dependencies —
+[AGENTS.md](AGENTS.md#code) lists them and why each earns its place. Please keep
+it that way.
 
 `npm test` before opening a PR. The tests check the things that fail
 *silently* — DDS headers, mip chain lengths, ZIP integrity, case collisions —
