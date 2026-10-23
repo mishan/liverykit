@@ -96,10 +96,10 @@ export default {
           at: [0.08, 0.46, 0.38, 0.22], rotate: 'auto', text: '{team}', color: 'gold', tracking: 0.12 },
 
         { id: 'sponsors-left', treatment: 'sponsorRow', tags: ['left', 'rear', 'visible'], limit: 1, once: true,
-          at: [0.10, 0.36, 0.80, 0.18], rotate: 'auto', text: 'KESTREL | ORBIT FUELS | HALCYON',
+          at: [0.10, 0.36, 0.80, 0.26], rotate: 'auto', text: 'KESTREL | HALCYON',
           color: 'navy', background: 'white' },
         { id: 'sponsors-right', treatment: 'sponsorRow', tags: ['right', 'rear', 'visible'], limit: 1, once: true,
-          at: [0.10, 0.46, 0.80, 0.18], rotate: 'auto', text: 'KESTREL | ORBIT FUELS | HALCYON',
+          at: [0.10, 0.46, 0.80, 0.26], rotate: 'auto', text: 'KESTREL | HALCYON',
           color: 'navy', background: 'white' },
       ],
     },

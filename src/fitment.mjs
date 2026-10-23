@@ -408,7 +408,7 @@ export function letterHeights(design, profile, fit = null) {
   for (const t of targets) {
     const size = texSize(profile, t.role);
     for (const p of placements(profile, t, t.spec ?? {}, fit)) {
-      if (p.region.treatment !== 'text') continue;
+      if (!LETTERED.has(p.region.treatment)) continue;
       const got = letterSize(p, size, design.identity ?? {});
       const here = got.why ? { why: got.why } : { mm: got.mm, shrunk: got.shrunk };
       const was = out[p.id];
@@ -909,6 +909,7 @@ function textFrame(p, size, identity) {
   const w = quarter ? T.h * size.h : T.w * size.w;
   const h = quarter ? T.w * size.w : T.h * size.h;
   const an = T.anisotropy ?? T.panel?.anisotropy;
+  if (o.treatment === 'sponsorRow') return rowFrame(o, s, turn, quarter, w, h, an ? 1 / an : 1);
   const ax = o.aspect ?? (an ? 1 / an : 1);
   let em = h * (o.scale ?? 0.7);
   let shrunk = false;
@@ -917,6 +918,23 @@ function textFrame(p, size, identity) {
     if (est > w) { em *= w / est; shrunk = true; }
   }
   return { s, turn, quarter, w, h, em, ax, shrunk };
+}
+
+/**
+ * The same for a `sponsorRow`, as classic sets one: each name in its own
+ * block, so the row reads as large as its smallest name, which is the one
+ * returned.
+ */
+function rowFrame(o, s, turn, quarter, w, h, ax) {
+  const names = s.split('|').map((n) => n.trim()).filter(Boolean);
+  if (!names.length) return null;
+  const gap = (o.gap ?? 0.04) * w;
+  const inner = ((w - gap * (names.length - 1)) / names.length) * 0.9;
+  const sized = names.map((n) => {
+    const est = n.length * h * 0.6 * (TEXT_ADVANCE + (o.tracking ?? 0.06)) * ax;
+    return { s: n, em: h * 0.6 * Math.min(1, inner / est), shrunk: est > inner };
+  }).sort((a, b) => a.em - b.em)[0];
+  return { ...sized, turn, quarter, w, h, ax };
 }
 
 /**
@@ -1360,6 +1378,12 @@ const lettering = (r) => typeof r?.text === 'string';
 
 export const NUMBER_MM = 140;
 export const NAME_MM = 45;
+// No lower than a name's: Raiden's side-skirt sponsors, at 42 mm, could not
+// be read in a side view of the car.
+export const SPONSOR_MM = 45;
+
+/** The treatments whose letters `too-small` measures. */
+const LETTERED = new Set(['text', 'sponsorRow']);
 
 /** Capital height over font size, for the bold sans the text treatment sets. */
 export const CAP = 0.72;
@@ -1423,7 +1447,8 @@ function letterSize(p, size, identity) {
 }
 
 /**
- * A race number or a name whose letters are too small to read from trackside.
+ * A race number, a name or a sponsor whose letters are too small to read from
+ * trackside.
  *
  * Runs 17, 18 and 20 each lost a round to a team name the critic called too
  * small, a round after it was drafted. Size is arithmetic, and the planner
@@ -1438,9 +1463,9 @@ function letterSize(p, size, identity) {
  */
 function tooSmall(placed, t, say, size, identity, skip) {
   for (const p of placed) {
-    if (p.region.treatment !== 'text') continue;
-    const is = textIs(p.region, identity);
-    if (!is || !String(p.region.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? '')).trim()) continue;
+    if (!LETTERED.has(p.region.treatment)) continue;
+    const is = textIs(p.region, identity) ?? 'sponsor';
+    if (!String(p.region.text ?? '').replace(/\{(\w+)\}/g, (_, k) => String(identity?.[k] ?? '')).trim()) continue;
     const got = letterSize(p, size, identity);
     // Unmeasured is said, never passed. No scale on a panel is the profile's
     // to fix, named in `notChecked` and marked as the profile's as `unreadable`
@@ -1457,17 +1482,18 @@ function tooSmall(placed, t, say, size, identity, skip) {
         why: `${name(t, p.id)}'s letters could not be measured, because ${got.why}; check their size in a picture of the car.` });
       continue;
     }
-    const floor = is === 'number' ? NUMBER_MM : NAME_MM;
+    const floor = { number: NUMBER_MM, name: NAME_MM, sponsor: SPONSOR_MM }[is];
     if (got.mm >= floor) continue;
     const [bw, bh] = got.boxMm.map(Math.round);
     say({
       kind: 'too-small', severity: 'high', surface: t.from, panel: p.region.panel, ids: [p.id],
       mm: Math.round(got.mm), floor,
       why: `${name(t, p.id)}'s letters are ${Math.round(got.mm)} mm tall on the car, and ` +
-        `${is === 'number' ? 'a race number\'s' : 'a team or driver name\'s'} need at least ${floor} mm to read ` +
+        `${{ number: 'a race number\'s', name: 'a team or driver name\'s', sponsor: 'a sponsor\'s' }[is]} need at least ${floor} mm to read ` +
         'from trackside' + (got.shrunk
         ? `. Its box is ${bh} mm tall, but the text is shrunk to fit the box's ${bw} mm width: widen the box` +
-          (is === 'name' ? ', or split the name over two lines.' : '.')
+          (is === 'name' ? ', or split the name over two lines.'
+            : p.region.treatment === 'sponsorRow' ? ', or put fewer names in the row.' : '.')
         : `. Make its box taller (it is ${bh} mm).`),
     });
   }

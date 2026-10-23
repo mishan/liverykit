@@ -62,9 +62,18 @@ test('a number or a name is measured by its letters, not its box', () => {
   assert.match(narrow[0].why, /shrunk to fit the box's 480 mm width: widen the box, or split the name over two lines/);
   assert.deepEqual(small([{ id: 't', treatment: 'text', panel: 'L', at: [0, 0.1, 1, 0.2], text: '{team}' }]), []);
 
-  // A name split into literal lines is still the name; a sponsor is not.
+  // A name split into literal lines is still the name.
   assert.equal(small([{ id: 'a', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.2, 0.05], text: 'NEON DOLL' }]).length, 1);
-  assert.deepEqual(small([{ id: 's', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.2, 0.05], text: 'ACME' }]), []);
+
+  // Sponsors are held too: Raiden's side-skirt row drew 42 mm letters, passed,
+  // and could not be read in a side view. A row is held by its smallest name,
+  // each fitted to its own block.
+  const sponsor = (r) => small([{ id: 's', panel: 'L', at: [0.1, 0.1, 0.2, 0.05], ...r }])
+    .map((f) => [f.mm, f.floor, /a sponsor's/.test(f.why)]);
+  assert.deepEqual(sponsor({ treatment: 'text', text: 'ACME' }), [[40, 45, true]]);
+  assert.deepEqual(sponsor({ treatment: 'text', text: 'ACME', at: [0.1, 0.1, 0.2, 0.06] }), []);
+  assert.deepEqual(sponsor({ treatment: 'sponsorRow', text: 'ACME | NORTHWIND', at: [0.1, 0.1, 0.3, 0.1] }), [[24, 45, true]]);
+  assert.deepEqual(sponsor({ treatment: 'sponsorRow', text: 'ACME | NORTHWIND', at: [0.1, 0.1, 0.6, 0.1] }), []);
 
   // And a declared minMm is a floor on the box, not a way round this one.
   assert.equal(small([{ id: 't', treatment: 'text', panel: 'L', at: [0.1, 0.1, 0.3, 0.2], text: '{team}',
