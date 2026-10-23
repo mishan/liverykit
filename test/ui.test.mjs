@@ -4826,3 +4826,27 @@ test('a design region can ask for its mirror on the twin panel', async () => {
   assert.throws(() => regionIds({ name: 'x', surfaces: { body: { regions: [...regions, { id: 'number-right', treatment: 'fill' }] } } }),
     /twice/);
 });
+
+test('the page takes a livery the server reloaded, and sends its version with the design after', async () => {
+  // Without this the page kept its own copy of the design and posted it with
+  // every render, so the first drag after a reload put the old design back.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const role = binding(profile, 'body').roles[0];
+  const state = { ...editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' }), designVersion: 0 };
+  const render = renderSurface({ livery, profile, fit: null, role });
+  let version = 0;
+  const { calls, mod } = await runApp({ state, render, routes: { '/api/livery': () => ({ version, error: null, path: 'x.mjs' }) } });
+
+  // The file changes on disk: the server has a new design and a new version.
+  version = 1;
+  state.design = { ...state.design, palette: { ...state.design.palette, reloaded: '#123456' } };
+  state.designVersion = 1;
+  calls.length = 0;
+  await mod.checkLivery();
+
+  const sent = calls.filter((c) => c.body?.design);
+  assert.ok(sent.length > 0, 'the page re-rendered with the design');
+  assert.ok(sent.every((c) => c.body.designVersion === 1 && c.body.design.palette.reloaded === '#123456'),
+    JSON.stringify(sent.map((c) => [c.path, c.body.designVersion])));
+});

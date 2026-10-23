@@ -71,6 +71,9 @@ const state = {
 const UNDO_LIMIT = 50;
 
 const api = async (path, body) => {
+  // A design goes with the version of the livery it was edited from, so the
+  // server can refuse one from before the file was reloaded (see watchLivery).
+  if (body && body.design !== undefined) body = { ...body, designVersion: state.designVersion };
   const res = await fetch(path, body
     ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
     : undefined);
@@ -98,6 +101,7 @@ state.fit.regions ??= {};
 // `lossy` is non-empty only for a livery carrying code, which cannot be edited
 // as data — the editor says so rather than showing edits that would not build.
 state.design = structuredClone(data.design);
+state.designVersion = data.designVersion ?? 0;
 state.lossy = data.lossy ?? [];
 state.treatments = new Map((data.treatments ?? []).map((t) => [t.name, t]));
 
@@ -3397,7 +3401,34 @@ if (acceptBtn) acceptBtn.onclick = acceptProposal;
 const discardBtn = $('#proposal-discard');
 if (discardBtn) discardBtn.onclick = discardProposal;
 
-const proposalTimer = setInterval(checkProposals, 1000);
+// A livery written as code is edited in a text editor, and the server
+// reloads it when the file changes. The page takes the new design over its
+// own, which it could not have saved anyway, and says so.
+let liveryError = null;
+export async function checkLivery() {
+  try {
+    const v = await api('/api/livery');
+    if (v?.error !== undefined && v.error !== liveryError) {
+      liveryError = v.error;
+      if (v.error) status(`${v.path} did not load, so this is still the last version: ${v.error}`);
+    }
+    // A number, or this is not a server that reloads: one from before this
+    // existed answers something else, and that is not a new version.
+    if (typeof v?.version !== 'number' || v.version === state.designVersion) return;
+    const fresh = await api('/api/state');
+    state.design = structuredClone(fresh.design);
+    state.designVersion = fresh.designVersion;
+    state.lossy = fresh.lossy ?? [];
+    state.designDirty = false;
+    await reloadState();
+    await refresh();
+    status(`reloaded ${v.path}`);
+  } catch {
+    // server down or network glitch
+  }
+}
+
+const proposalTimer = setInterval(() => { checkProposals(); checkLivery(); }, 1000);
 if (proposalTimer?.unref) proposalTimer.unref();
 
 // --- boot, last -------------------------------------------------------------

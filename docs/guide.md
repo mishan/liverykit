@@ -389,6 +389,11 @@ editor's own idea of where things are, so the two cannot quietly drift apart. Th
 re-render is a couple of milliseconds of JavaScript — no rasterizing, no DDS
 encode — which is the whole reason this is worth having.
 
+A livery written as code is edited in your own text editor, not this one, so the
+editor watches the file and its `decals/` and reloads the design when either
+changes. A change that does not load is reported, and the last version kept.
+Only the livery's own module is reloaded; a pack it imports is not.
+
 Three views, because the sheet is not the question:
 
 - **UV** — the texture, with panel outlines over it.
@@ -490,6 +495,10 @@ The same check runs without the editor, for a script or a CI job:
 `liverykit <livery> --check` prints the findings worst first and exits 1 on
 anything high or fatal (`--fail-on low` to be stricter, `--json` for the whole
 report).
+
+And so does the picture: `liverykit <livery> --shot left,three-quarter,sheet`
+renders those views of the car to `<out>/<folder>-<view>.png` with the editor's
+own renderer, no editor or browser open. It needs the car's model.
 
 ### One region across several panels
 

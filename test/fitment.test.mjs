@@ -14,7 +14,8 @@ import '../src/index.mjs';
 import { fitment, wholePieces, panelOnCar, stripeAt } from '../src/fitment.mjs';
 import { occupancyFor, rectVisibility } from '../src/engine/visibility.mjs';
 import { execFile } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -2692,6 +2693,38 @@ test('--check runs the fitment check from the command line, and fails the run on
   const typo = await check('--model', kn5, '--fail-on', 'medium');
   assert.equal(typo.code, 1);
   assert.match(typo.stderr, /--fail-on must be one of: fatal, high, low; got "medium"/);
+});
+
+test('--shot renders the car to PNGs from the command line, with no editor open', async (t) => {
+  // Designing a livery in its .mjs meant starting an editor, fetching
+  // /api/shot and stopping it again, by hand, for every look at the car.
+  const dir = await mkdtemp(join(tmpdir(), 'lk-shot-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const kn5 = join(dir, 'fixture-car.kn5');
+  await writeFile(kn5, carKn5());
+  const car = await profileFromKn5(kn5, { visibility: false, log: () => {} });
+  await writeFile(join(dir, 'car.json'), profileJson(car));
+  await writeFile(join(dir, 'l.mjs'), `export default { name: 'L', folder: 'l', packs: ['core'],
+    surfaces: { body: { background: '#c03030', regions: [] } } };`);
+  const shot = (...args) => new Promise((ok) => execFile(process.execPath,
+    [fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url)), join(dir, 'l.mjs'),
+      '--profile', join(dir, 'car.json'), '--out', join(dir, 'out'), ...args],
+    { cwd: dir }, (e, out, err) => ok({ code: e?.code ?? 0, stdout: out, stderr: err })));
+
+  const ok = await shot('--model', kn5, '--shot', 'left,sheet');
+  assert.equal(ok.code, 0, ok.stderr);
+  for (const view of ['left', 'sheet']) {
+    const png = await readFile(join(dir, 'out', `l-${view}.png`));
+    assert.equal(png.subarray(1, 4).toString(), 'PNG', `${view} is a picture`);
+  }
+  assert.ok(!existsSync(join(dir, 'out', 'l.zip')), 'and nothing is built or zipped');
+
+  const typo = await shot('--model', kn5, '--shot', 'lefft');
+  assert.equal(typo.code, 1);
+  assert.match(typo.stderr, /no view called "lefft"\. Known views: left/);
+  const blind = await shot('--shot', 'left');
+  assert.equal(blind.code, 1);
+  assert.match(blind.stderr, /--shot draws the car, and needs its model/);
 });
 
 test('a band round a tyre is seen where it is drawn, on a sidewall, not across its whole sheet', () => {
