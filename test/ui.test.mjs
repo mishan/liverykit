@@ -293,6 +293,87 @@ test('clicking a region selects it and gives it something to drag', async () => 
   assert.match(dom.querySelector('#inspector').innerHTML, /number-left/);
 });
 
+/** The bundled example on the Abarth, whose body has 65 panels: a list long enough to need folding. */
+async function bootAbarth(change = (l) => l) {
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = change((await import('../liveries/neon-grid-any.mjs')).default);
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  return runApp({
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+    render: renderSurface({ livery, profile, fit, role }),
+  });
+}
+
+/** The values of `attr` on the rows of a list that are not hidden. */
+function shownRows(list, attr) {
+  return [...list.innerHTML.matchAll(/<li\s([^>]*)>/g)]
+    .map((m) => m[1].replace(/\s+/g, ' '))
+    .filter((a) => a.includes(`${attr}="`) && !/(^| )hidden( |$)/.test(a.replace(/"[^"]*"/g, '""')))
+    .map((a) => a.match(new RegExp(`${attr}="([^"]*)"`))[1]);
+}
+
+test('the panel list folds by section, and opens on the selected region\'s', async () => {
+  const { dom } = await bootAbarth();
+  const panels = dom.querySelector('#panels');
+  assert.deepEqual(shownRows(panels, 'data-panel'), [], 'sixty-five panels start folded');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  assert.ok(shownRows(panels, 'data-panel').includes('left_mid'), 'the panel under the selection is in view');
+  assert.match(panels.innerHTML, /class="host"[^>]*data-panel="left_mid"/, 'and marked as its host');
+
+  const heading = { dataset: { section: 'mid' } };
+  panels.onclick({ target: { closest: (s) => (s.includes('data-section') ? heading : null) } });
+  assert.ok(!shownRows(panels, 'data-panel').includes('left_mid'), 'its heading folds it again');
+
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'team-left' } } });
+  assert.match(panels.innerHTML, /class="host"[^>]*data-panel="left_mid"/, 'a second region on the same panel');
+  assert.ok(shownRows(panels, 'data-panel').includes('left_mid'), 'is a new selection, and unfolds it again');
+
+  const filter = dom.querySelector('#panelfilter');
+  filter.value = 'right_mid';
+  filter.oninput();
+  const found = shownRows(panels, 'data-panel');
+  assert.ok(found.length && found.every((n) => n.includes('right_mid')),
+    `a filter shows what matches, folded or not: ${found}`);
+});
+
+test('a name nothing defines is counted on its tab', async () => {
+  const { dom } = await bootAbarth((l) => ({ ...l, palette: { ...l.palette, hot: undefined } }));
+  assert.match(dom.querySelector('#dangling').innerHTML, /hot/);
+  assert.equal(dom.querySelector('#danglingcount').textContent, '1',
+    'the warning sits in a tab that is not open, so the tab has to say it is there');
+});
+
+test('the region list can be filtered', async () => {
+  const { dom } = await bootAbarth();
+  const regions = dom.querySelector('#regions');
+  const all = shownRows(regions, 'data-id');
+  const filter = dom.querySelector('#regionfilter');
+  filter.value = 'number';
+  filter.oninput();
+  const found = shownRows(regions, 'data-id');
+  assert.ok(found.length && found.length < all.length && found.every((id) => id.includes('number')),
+    `only the regions that match: ${found}`);
+});
+
+test('selecting a region brings its inspector forward, unless a panel is being chosen', async () => {
+  const { dom } = await bootAbarth();
+  const pane = (n) => !dom.querySelector(`#pane-${n}`).hidden;
+  const side = (n) => dom.querySelector('.sidetabs').onclick({ target: { closest: () => ({ dataset: { side: n } }) } });
+  const pick = (id) => dom.querySelector('#regions').onclick({ target: { dataset: { id } } });
+
+  side('colors');
+  assert.ok(pane('colors') && !pane('selected'));
+  pick('number-left');
+  assert.ok(pane('selected') && !pane('colors'), 'the inspector is what you see after a pick');
+  assert.equal(dom.querySelector('#side-selected').getAttribute('aria-selected'), 'true');
+
+  side('panels');
+  pick('number-right');
+  assert.ok(pane('panels') && !pane('selected'), 'the list being picked from stays put');
+});
+
 test('dragging a region writes a panel-relative at into the fit', async () => {
   // The conversion the design settled on, exercised end to end: the mouse works
   // in absolute texture fractions, the fit stores panel-relative.

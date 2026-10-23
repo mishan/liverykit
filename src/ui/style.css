@@ -5,7 +5,7 @@
   --panel: #161b23;
   --line: #263041;
   --ink: #d8dee9;
-  --muted: #7d8899;
+  --muted: #8e99ab;
   --accent: #00f0ff;
   --hot: #ff2d95;
   --warn: #ffb454;
@@ -22,31 +22,78 @@
 [hidden] { display: none !important; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
-  font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   height: 100vh; display: flex; flex-direction: column;
 }
 header {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel);
 }
+/* Joined buttons: Undo and Redo, and the view tabs. */
+.group { display: inline-flex; }
+.group > button { border-radius: 0; }
+.group > button + button { margin-left: -1px; }
+.group > button:first-child { border-radius: 5px 0 0 5px; }
+.group > button:last-child { border-radius: 0 5px 5px 0; }
+.group > button:hover, .group > button.on { position: relative; }
+/* Lit up only while there is something to save, so a glance at the corner
+   says whether closing the tab loses work. */
+#save:not(:disabled), #savedesign:not(:disabled) {
+  background: #12313a; border-color: var(--accent); color: var(--accent);
+}
+#build { cursor: help; font-size: 11px; }
+/* Still announced: the visible copy of each status is under the canvas. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
 h1 { font-size: 14px; font-weight: 600; margin: 0; }
 h1 .on { color: var(--muted); font-weight: 400; }
 h2 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
-  color: var(--muted); margin: 18px 0 6px; font-weight: 600;
+  color: var(--muted); margin: 22px 0 6px; font-weight: 600;
 }
 h2:first-child { margin-top: 0; }
+/* One line of hint, and the rest on request: the long version is worth
+   reading once and in the way every time after. */
+details.hint > summary { cursor: pointer; list-style: none; }
+details.hint > summary::-webkit-details-marker { display: none; }
+details.hint > summary::after { content: ' more'; color: var(--accent); opacity: 0.7; font-size: 11px; }
+details.hint[open] > summary::after { content: ' less'; }
+details.hint[open] > summary { margin-bottom: 4px; }
+aside .row { display: flex; gap: 6px; align-items: center; }
+aside .row > input, aside .row > select { flex: 1; min-width: 0; }
+aside input:not([type]), aside input[type=search] {
+  width: 100%; font: inherit; color: var(--ink);
+  background: #1e2632; border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px;
+}
+input.filter { margin: 4px 0 8px; }
 .spacer { flex: 1; }
 .muted { color: var(--muted); font-weight: 400; }
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
 code { font-family: ui-monospace, monospace; color: var(--accent); }
 
-main { flex: 1; display: grid; grid-template-columns: 280px 1fr 300px; min-height: 0; }
+main { flex: 1; display: grid; grid-template-columns: 300px 1fr 360px; min-height: 0; }
 aside {
-  padding: 14px; overflow-y: auto; background: var(--panel);
+  padding: 16px; overflow-y: auto; background: var(--panel);
   border-right: 1px solid var(--line);
 }
-#right { border-right: 0; border-left: 1px solid var(--line); }
+#right { border-right: 0; border-left: 1px solid var(--line); padding-top: 0; }
+.sidetabs {
+  position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 2px;
+  margin: 0 -16px 14px; padding: 8px 8px 0; background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.sidetabs button {
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  padding: 6px 5px; color: var(--muted); font-size: 12px;
+}
+.sidetabs button:not(:disabled):hover { color: var(--ink); border-color: transparent; }
+.sidetabs button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.count:not(:empty) {
+  display: inline-block; min-width: 1.6em; padding: 0 5px; border-radius: 8px;
+  background: var(--warn); color: #1a1205; font-size: 11px; font-weight: 600; text-align: center;
+}
 
 button, select {
   font: inherit; color: var(--ink); background: #1e2632;
@@ -58,7 +105,7 @@ select { width: 100%; }
 
 ul { list-style: none; margin: 0; padding: 0; }
 li {
-  padding: 5px 8px; border-radius: 4px; cursor: pointer;
+  padding: 6px 10px; border-radius: 5px; cursor: pointer;
   display: flex; align-items: baseline; gap: 6px;
 }
 li:hover { background: #1e2632; }
@@ -66,6 +113,20 @@ li.sel { background: #1e2632; box-shadow: inset 2px 0 0 var(--accent); }
 li.off { opacity: 0.4; }
 li .id { font-family: ui-monospace, monospace; }
 li .meta { color: var(--muted); font-size: 11px; margin-left: auto; }
+/* Two lines, so a long id does not break mid-word and still leaves room for
+   where it sits. The full id is in the row's title. */
+#regions li { display: block; }
+#regions .line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+#regions .id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#regions .meta { display: block; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge {
+  flex: none; font-size: 10px; padding: 0 6px; border-radius: 8px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+.badge.adjusted { border-color: #00f0ff55; color: var(--accent); }
+.badge.dropped { border-color: #ffb45466; color: var(--warn); }
+#panels li.host { box-shadow: inset 2px 0 0 var(--accent); }
+li.more { color: var(--accent); font-size: 12px; justify-content: center; }
 li.locked { cursor: default; opacity: 0.5; }
 li.derived .id { color: var(--muted); }
 
@@ -76,7 +137,7 @@ li.derived .id { color: var(--muted); }
    but shows nothing, which reads as an unfinished mockup rather than a bug. */
 #stage {
   position: relative;
-  width: min(100%, calc(100vh - 150px));
+  width: min(100%, calc(100vh - 200px));
   aspect-ratio: 1;
   border: 1px solid var(--line); background: #05070a;
 }
@@ -86,9 +147,12 @@ li.derived .id { color: var(--muted); }
 #texture, #overlay, #carview { position: absolute; inset: 0; width: 100%; height: 100%; }
 #carview { display: block; touch-action: none; cursor: grab; }
 #carview:active { cursor: grabbing; }
-.tabs { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; align-self: flex-start; }
-.tab { padding: 3px 12px; }
-.tab.on { border-color: var(--accent); color: var(--accent); }
+.tabs { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; align-self: flex-start; }
+.tab { padding: 4px 14px; }
+.tab.on { border-color: var(--accent); color: var(--accent); background: #12313a; }
+.toggle { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); cursor: pointer; }
+#viewnote { margin: 8px 0 0; }
+#canvashint { margin: 2px 0 0; }
 #texture svg { width: 100%; height: 100%; display: block; }
 /* The texture is a backdrop; every click belongs to the overlay above it. */
 #texture { pointer-events: none; }
@@ -103,7 +167,11 @@ li.derived .id { color: var(--muted); }
 .box { fill: #00f0ff14; stroke: var(--accent); stroke-width: 2; cursor: move; }
 .handle { fill: var(--accent); cursor: nwse-resize; }
 
-#inspector.empty { color: var(--muted); }
+#inspector.empty { color: var(--muted); padding: 8px 2px; }
+#inspector.empty strong { color: var(--ink); font-weight: 600; }
+#inspector.empty ul { list-style: disc; padding-left: 20px; margin: 8px 0; }
+#inspector.empty li { display: list-item; padding: 2px 0; cursor: default; }
+#inspector.empty li:hover { background: none; }
 #inspector label { display: block; margin: 8px 0 2px; color: var(--muted); font-size: 11px; }
 #inspector .row { display: flex; gap: 6px; align-items: center; }
 #inspector input[type=number] {
@@ -127,7 +195,13 @@ li.head {
   letter-spacing: 0.09em; margin-top: 10px; padding: 2px 8px; cursor: default;
 }
 li.head:first-child { margin-top: 0; }
-li.head:hover { background: none; }
+li.head:hover, li.hint:hover { background: none; }
+li.hint { cursor: default; }
+/* In the panel list a heading folds its section, so there it is a control. */
+#panels li.head { cursor: pointer; padding: 4px 8px; }
+#panels li.head:hover { color: var(--ink); }
+#panels li.head::before { content: '▸'; display: inline-block; width: 1em; }
+#panels li.head.open::before { content: '▾'; }
 
 /* A panel being HOVERED in the list, shown on the sheet. Distinct from .host,
    which means the selected region actually lives there — looking at a panel and

@@ -67,6 +67,12 @@ const state = {
   // more than anyone reaches for and a few hundred kilobytes at worst.
   past: [],
   future: [],
+  // --- the side columns -----------------------------------------------------
+  side: 'selected',       // which tab of the right-hand column is showing
+  openSections: new Set(), // panel-list sections unfolded
+  panelsFor: null,        // the surface those were chosen for
+  panelHost: null,        // the selection and its panel, when last drawn
+  showSmallPanels: false,
 };
 const UNDO_LIMIT = 50;
 
@@ -109,7 +115,8 @@ state.treatments = new Map((data.treatments ?? []).map((t) => [t.name, t]));
 // this editor were spent unable to distinguish "the fix did not work" from "the
 // browser or the server is running something older".
 api('/api/build').then((b) => {
-  $('#build').textContent = `build ${b.build} · server up ${b.started}`;
+  $('#build').textContent = `build ${b.build}`;
+  $('#build').title = `fingerprint of the served files, and when this server started: ${b.build} · ${b.started}`;
 }).catch(() => {});
 
 $('#livery').textContent = data.livery.name;
@@ -145,10 +152,30 @@ $('#regions').onclick = (e) => {
   const li = e.target.closest?.('li[data-id]') ?? e.target;
   selectRegion(li?.dataset?.id);
 };
+$('#regionfilter').oninput = () => drawRegions();
 $('#panels').onclick = (e) => {
+  const head = e.target.closest?.('li[data-section]');
+  // Under a filter every section is open, so a fold would change nothing
+  // visible and surprise you when the filter is cleared.
+  if (head && $('#panelfilter').value) return;
+  if (head) {
+    const open = state.openSections;
+    if (!open.delete(head.dataset.section)) open.add(head.dataset.section);
+    return drawPanels();
+  }
+  if (e.target.closest?.('li[data-more]')) {
+    state.showSmallPanels = !state.showSmallPanels;
+    return drawPanels();
+  }
   const li = e.target.closest?.('li[data-panel]') ?? e.target;
   if (li?.dataset?.panel) movePanel(li.dataset.panel);
 };
+$('#panelfilter').oninput = () => drawPanels();
+$('.sidetabs').onclick = (e) => {
+  const tab = e.target.closest?.('[data-side]');
+  if (tab) showSide(tab.dataset.side);
+};
+showSide(state.side);
 
 // Hovering a panel shows where it is — on the sheet and on the car — WITHOUT
 // selecting anything or touching the fit. Finding out where `centre_mid_lower_4`
@@ -654,6 +681,7 @@ async function refresh() {
     // stopped responding to everything.
     status(`render failed: ${e.message}`);
     $('#notes').innerHTML = `<div class="note">! ${esc(e.message)}</div>`;
+    $('#notecount').textContent = '1';
     return;
   }
   state.placed = out.placed;
@@ -665,6 +693,7 @@ async function refresh() {
   drawOverlay();
   drawRegions();
   drawInspector();
+  drawPanels();
   $('#fitjson').textContent = JSON.stringify(state.fit, null, 2);
   // Beside it, not instead of it. Seeing which file a change landed in is the
   // whole reason the two are edited separately.
@@ -676,9 +705,11 @@ async function refresh() {
   // Not a miss the design marked `optional`: the build does not print one and
   // the "On another car" panel counts it as expected. Listed here with a "!",
   // the portable design's piping read on the NSX as something to go and fix.
-  $('#notes').innerHTML = out.notes
-    .filter((n) => n.status !== 'optional')
-    .map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
+  const notes = out.notes.filter((n) => n.status !== 'optional');
+  $('#notes').innerHTML = notes.map((n) => `<div class="note">! ${esc(n.text)}</div>`).join('');
+  // Counted on the tab, since they are in a tab: nothing that went wrong may
+  // be out of sight without a sign that it is there.
+  $('#notecount').textContent = notes.length ? String(notes.length) : '';
   // Derived from the stacks rather than trusted from the markup, so there is
   // one source of truth for whether there is anything to go back to.
   updateUndoButtons();
@@ -704,49 +735,95 @@ function place(p) {
   };
 }
 
+// Folded above this many, which every real car body is and a set of wheels or
+// a sheet of glass is not. A short list folded is only more clicks.
+const FOLD_OVER = 24;
+
 function drawPanels() {
   const s = state.surface;
   $('#panelcount').textContent = `${s.panels.length}`;
+  const filter = ($('#panelfilter').value ?? '').trim().toLowerCase();
 
   const sorted = s.panels.map((p) => ({ p, at: place(p) })).sort((a, b) =>
     a.at.section - b.at.section || a.at.side - b.at.side
     || a.at.level - b.at.level || b.at.area - a.at.area
     || a.p.name.localeCompare(b.p.name));
+  const sectionOf = (at) => SECTIONS[at.section] ?? 'unplaced';
+
+  if (state.panelsFor !== s.from) {
+    state.panelsFor = s.from;
+    state.openSections = new Set(s.panels.length > FOLD_OVER ? [] : sorted.map((x) => sectionOf(x.at)));
+  }
+  // Unfolded once, when the selection lands on a panel, and then left to the
+  // person: reopening it on every redraw would make its heading do nothing.
+  const host = state.placed.find((p) => p.id === state.selected)?.panel ?? null;
+  if (`${state.selected}@${host}` !== state.panelHost) {
+    state.panelHost = `${state.selected}@${host}`;
+    const at = sorted.find((x) => x.p.name === host)?.at;
+    if (at) state.openSections.add(sectionOf(at));
+  }
+
+  // Slivers of the sheet: a tenth of a percent will not hold artwork, and on a
+  // real car they are a third of the list.
+  const small = (at) => at.area < 0.001;
+  const matches = (p) => !filter || p.name.toLowerCase().includes(filter)
+    || p.tags.some((t) => t.toLowerCase().includes(filter));
 
   const rows = [];
   let heading = null;
+  let folded = 0;
   for (const { p, at } of sorted) {
     // A heading per section, so the list reads as a car rather than as 66 names.
-    const label = SECTIONS[at.section] ?? 'unplaced';
-    if (label !== heading) { heading = label; rows.push(`<li class="head">${esc(label)}</li>`); }
+    const label = sectionOf(at);
+    const open = filter || state.openSections.has(label);
+    if (label !== heading) {
+      heading = label;
+      const n = sorted.filter((x) => sectionOf(x.at) === label && matches(x.p)).length;
+      rows.push(`<li class="head${open ? ' open' : ''}" data-section="${esc(label)}"${n ? '' : ' hidden'}>
+        ${esc(label)} <span class="meta">${n}</span></li>`);
+    }
+    const tooSmall = !filter && !state.showSmallPanels && small(at) && p.name !== host;
+    if (open && tooSmall) folded++;
     // The percentage is how much of the sheet this panel owns, which is the
     // number that decides whether artwork will fit on it.
-    const share = at.area >= 0.001 ? `${(at.area * 100).toFixed(1)}%` : '<0.1%';
+    const share = !small(at) ? `${(at.area * 100).toFixed(1)}%` : '<0.1%';
     rows.push(`
-      <li data-panel="${esc(p.name)}" title="${esc(`${p.name} — ${p.tags.join(' ') || 'no tags'}`)}">
+      <li class="${p.name === host ? 'host' : ''}" data-panel="${esc(p.name)}" title="${esc(`${p.name} — ${p.tags.join(' ') || 'no tags'}`)}"${open && matches(p) && !tooSmall ? '' : ' hidden'}>
         <span class="id">${esc(p.name)}</span>
         <span class="meta">${p.instances ? `×${esc(p.instances)} ` : ''}${esc(share)}</span>
       </li>`);
   }
+  if (folded) rows.push(`<li class="more" data-more="small">show ${folded} small panel${folded === 1 ? '' : 's'}</li>`);
+  else if (state.showSmallPanels && !filter && sorted.some((x) => small(x.at))) {
+    rows.push('<li class="more" data-more="small">hide small panels</li>');
+  }
+  if (filter && !sorted.some((x) => matches(x.p))) rows.push('<li class="hint">no panel matches</li>');
   $('#panels').innerHTML = rows.join('');
 }
 
 function drawRegions() {
   const s = state.surface;
-  $('#regions').innerHTML = s.regions.map((r) => {
+  const filter = ($('#regionfilter').value ?? '').trim().toLowerCase();
+  $('#regioncount').textContent = `${s.regions.length}`;
+  let shown = 0;
+  const rows = s.regions.map((r) => {
     const o = r.id ? state.fit.regions[r.id] : null;
     const cls = [r.id === state.selected ? 'sel' : '', !r.editable ? 'locked' : '', o?.drop ? 'off' : ''];
-    const meta = o?.drop ? 'dropped'
-      : o ? 'adjusted'
-      : (r.tags ? r.tags.join(' ') : r.panel ?? '');
+    const where = r.tags ? r.tags.join(' ') : r.panel ?? '';
+    const badge = o?.drop ? '<span class="badge dropped">dropped</span>'
+      : o ? '<span class="badge adjusted">adjusted</span>' : '';
     // A derived key is positional, so the label shows the treatment — which is
     // what you recognize — rather than "surfaces.body#7", which is not.
     const label = r.derived ? `${r.treatment} ${r.index}` : r.id;
+    const match = !filter || [label, r.id, r.treatment, where].some((x) => String(x ?? '').toLowerCase().includes(filter));
+    if (match) shown++;
     return `<li class="${cls.join(' ')}${r.derived ? ' derived' : ''}" data-id="${esc(r.id ?? '')}"
-      title="${esc(r.derived ? `addressed by position as ${r.id} — give it an id in the livery to make it stable` : r.id)}">
-      <span class="id">${esc(label)}</span>
-      <span class="meta">${esc(meta)}</span></li>`;
-  }).join('');
+      title="${esc(r.derived ? `addressed by position as ${r.id} — give it an id in the livery to make it stable` : r.id)}"${match ? '' : ' hidden'}>
+      <span class="line"><span class="id">${esc(label)}</span>${badge}</span>
+      <span class="meta">${esc(where)}</span></li>`;
+  });
+  if (!shown && filter) rows.push('<li class="hint">no region matches</li>');
+  $('#regions').innerHTML = rows.join('');
 }
 
 // --- palette and identity ---------------------------------------------------
@@ -841,9 +918,11 @@ function drawIdentity() {
 function drawDangling() {
   const el = $('#dangling');
   if (!el) return;
+  $('#danglingcount').textContent = '';
   if (state.lossy.length) { el.innerHTML = ''; return; }
 
   const { colors, tokens } = danglingNames(state.design, state.treatments);
+  if (colors.length + tokens.length) $('#danglingcount').textContent = String(colors.length + tokens.length);
   el.innerHTML = [
     ...tokens.map((t) => `<div class="note">Nothing gives <code>${esc(t.token)}</code> a value, so
       ${esc(t.by.join(', '))} ${t.by.length > 1 ? 'render' : 'renders'} with a hole where it should be.</div>`),
@@ -1223,9 +1302,20 @@ function cssEscape(s) {
 export function selectRegion(id) {
   if (!id) return;
   state.selected = id;
+  // Not from the panel list: there the next click is the panel to move it to.
+  if (state.side !== 'panels') showSide('selected');
   drawRegions();
   drawOverlay();
   drawInspector();
+  drawPanels();
+}
+
+function showSide(name) {
+  state.side = name;
+  for (const n of ['selected', 'panels', 'colors', 'checks', 'source']) {
+    $(`#side-${n}`).setAttribute('aria-selected', String(n === name));
+    setHidden($(`#pane-${n}`), n !== name);
+  }
 }
 
 function drawOverlay() {
@@ -2253,7 +2343,16 @@ function alreadyMirrored(id, other) {
 
 function drawInspector() {
   const el = $('#inspector');
-  if (!state.selected) { el.className = 'empty'; el.textContent = 'Nothing selected.'; return; }
+  if (!state.selected) {
+    el.className = 'empty';
+    el.innerHTML = `<p><strong>Pick a region to edit it.</strong></p>
+      <ul>
+        <li>choose one from the list on the left,</li>
+        <li>click its artwork on the sheet or on the car${state.lossy.length ? '.' : ','}</li>
+        ${state.lossy.length ? '' : '<li>or add a new one with “add a region…”.</li>'}
+      </ul>`;
+    return;
+  }
 
   // A selected region does not always have a PLACEMENT. It may be dropped on
   // this car, or its tags may match nothing here. Falling back to "nothing
@@ -2290,7 +2389,7 @@ function drawInspector() {
           : `<button id="drop">${o.drop ? 'Restore on this car' : 'Drop on this car'}</button>
              <button id="reset">Reset</button>`}
       </div>
-      <p class="hint">Or click a panel on the right to place it there.</p>
+      <p class="hint">Or pick a panel under Panels, or click one on the sheet, to place it there.</p>
       ${optionControls(id)}
     ${constraintControls(id)}`;
     wireInspectorButtons(id);
@@ -3261,7 +3360,7 @@ async function paintCar() {
 function setDirty(v) {
   state.dirty = v;
   updateSaveButtons();
-  $('#status').className = v || state.designDirty ? 'status dirty' : 'status';
+  $('#status').className = `status visually-hidden${v || state.designDirty ? ' dirty' : ''}`;
 }
 
 /**
@@ -3280,7 +3379,7 @@ function updateSaveButtons() {
 function setDesignDirty() {
   state.designDirty = true;
   updateSaveButtons();
-  $('#status').className = 'status dirty';
+  $('#status').className = 'status visually-hidden dirty';
 }
 function status(msg) {
   // WHICH is unsaved, not merely that something is. There are two files and two
