@@ -42,6 +42,7 @@ const CLEAN = 0.98;
 // read rather than glimpsed: on the NSX the door and skirts measure 5 to 8
 // degrees, the top of the rear haunch 47.
 const LEVEL_DEG = 45;
+const isLevel = (deg) => deg !== null && deg <= LEVEL_DEG;
 
 /**
  * Which texture a question about a panel means.
@@ -210,7 +211,7 @@ function cellBend(g, c0, r0, c1, r1) {
 
 export function findSpace({
   grid = null, profile, model, prepared, role, panel,
-  widthMm, heightMm = widthMm, marginMm = 0, count = 5, tries = count * 3, cellMm, across, fine = true,
+  widthMm, heightMm = widthMm, marginMm = 0, count = 5, tries = count * 3, cellMm, across, fine = true, level = false,
 }) {
   if (!(widthMm > 0) || !(heightMm > 0)) {
     throw new Error('find_space needs a size on the car: widthMm, and heightMm (which defaults to it), above zero.');
@@ -290,6 +291,8 @@ export function findSpace({
     const under = sampleRects(model, g.meshes, [{ rect, nu: 14, nv: 14 }], g.island)[0].points;
     const fineBend = bendDeg(under) ?? bend;
     if (fineBend > CURVED_DEG) continue;
+    const faceOn = faceOnDeg(prepared, under);
+    if (level && !isLevel(faceOn)) continue;
     // The margin too, as `minMargin` will hold it: the box grown by it on
     // every side, sampled every few millimeters, against the same bar. The
     // clearance above came from the coarse cells alone, and an edge or a
@@ -332,16 +335,14 @@ export function findSpace({
         }
       }
     }
-    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: fineBend,
-      faceOnDeg: faceOnDeg(prepared, under) });
+    candidates.push({ at: sent, marginMm: held, onCar: r2(onCar), visible: r2(visible), bendDeg: fineBend, faceOnDeg: faceOn });
   }
   // Seen square-on from trackside height before seen only from above. Every
   // spot here is visible, and visible counts a surface reached by rays that
   // skim it: the roomiest strip on the NSX's rear quarter ran along the top
   // of the haunch, and its sponsors read edge-on to anyone level with the car.
   // On a bonnet or a roof every spot is the second kind, and the order stands.
-  const level = (c) => (c.faceOnDeg !== null && c.faceOnDeg <= LEVEL_DEG ? 0 : 1);
-  candidates.sort((a, b) => level(a) - level(b));
+  candidates.sort((a, b) => isLevel(b.faceOnDeg) - isLevel(a.faceOnDeg));
 
   return {
     role: g.role,
@@ -382,53 +383,65 @@ export function largestSpace({
   checkMargin(marginMm);
   const g = grid ?? cleanGrid({ profile, model, prepared, role, panel,
     ...(cellMm ? { cellMm } : {}), ...(across ? { across } : {}) });
-  let lo = 0, hi = Math.min(g.boxMm[0], g.boxMm[1] / aspect);
-  let largest = null, sizesTried = 0;
   // More spots tried per size than find_space's own three for one. A size
   // judged not to fit is never asked about again, so three roomy spots
   // failing the fine check on a fitting narrower than a cell, with a fourth
   // clear, reported 300 mm on a panel that held 390.
   const tries = 12;
-  const ask = (w) => {
-    sizesTried++;
-    const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries, fine });
-    if (!r.candidates.length) return false;
-    // Reported at a size that was itself measured. Rounded to the nearest
-    // millimeter, the size could be larger than the shape that passed, and
-    // the spot, clearance and fractions beside it were for another shape.
-    const fw = Math.floor(w), fh = Math.floor(w * aspect);
-    const at = fw > 0 && fh > 0
-      ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1, tries, fine }) : null;
-    if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
-    return true;
-  };
-  // Started near a size the cells already gave, when there is one: each
-  // question measures, and halving from nothing asked a dozen of them where a
-  // few either side of the cells' answer find the same limit. The cells can
-  // err either way by about a cell, so the search stays open above it.
-  const bound = hi;
-  let capped = null;
-  if (near > 0) {
-    capped = Math.min(hi, near * 1.15);
-    hi = capped;
-    if (ask(near * 0.85)) lo = near * 0.85;
-  }
-  const halve = (limit) => {
-    while (hi - lo > precisionMm && sizesTried < limit) {
-      const w = (lo + hi) / 2;
-      if (ask(w)) lo = w;
-      else hi = w;
+  let sizesTried = 0;
+  const sweep = (level) => {
+    let lo = 0, hi = Math.min(g.boxMm[0], g.boxMm[1] / aspect);
+    let largest = null, asked = 0;
+    const ask = (w) => {
+      sizesTried++;
+      asked++;
+      const r = findSpace({ grid: g, model, prepared, widthMm: w, heightMm: w * aspect, marginMm, count: 1, tries, fine, level });
+      if (!r.candidates.length) return false;
+      // Reported at a size that was itself measured. Rounded to the nearest
+      // millimeter, the size could be larger than the shape that passed, and
+      // the spot, clearance and fractions beside it were for another shape.
+      const fw = Math.floor(w), fh = Math.floor(w * aspect);
+      const at = fw > 0 && fh > 0
+        ? findSpace({ grid: g, model, prepared, widthMm: fw, heightMm: fh, marginMm, count: 1, tries, fine, level }) : null;
+      if (at?.candidates.length) largest = { widthMm: fw, heightMm: fh, ...at.candidates[0] };
+      return true;
+    };
+    // Started near a size the cells already gave, when there is one: each
+    // question measures, and halving from nothing asked a dozen of them where a
+    // few either side of the cells' answer find the same limit. The cells can
+    // err either way by about a cell, so the search stays open above it.
+    const bound = hi;
+    let capped = null;
+    if (near > 0) {
+      capped = Math.min(hi, near * 1.15);
+      hi = capped;
+      if (ask(near * 0.85)) lo = near * 0.85;
     }
+    const halve = (limit) => {
+      while (hi - lo > precisionMm && asked < limit) {
+        const w = (lo + hi) / 2;
+        if (ask(w)) lo = w;
+        else hi = w;
+      }
+    };
+    halve(16);
+    // A cell the coarse sweep rejects whole can hide room a finer look finds,
+    // so the cells' answer can be further under the panel's than the cap
+    // allows. A search that found nothing too big under the cap was stopped by
+    // the cap, not by the panel, and goes on up to the panel's own bound.
+    if (capped !== null && hi === capped && capped < bound) {
+      hi = bound;
+      halve(asked + 12);
+    }
+    return largest;
   };
-  halve(16);
-  // A cell the coarse sweep rejects whole can hide room a finer look finds,
-  // so the cells' answer can be further under the panel's than the cap
-  // allows. A search that found nothing too big under the cap was stopped by
-  // the cap, not by the panel, and goes on up to the panel's own bound.
-  if (capped !== null && hi === capped && capped < bound) {
-    hi = bound;
-    halve(sizesTried + 12);
-  }
+  // The largest spot seen nearly square-on from trackside, as find_space
+  // ranks a fixed size, before the largest anywhere. The roomiest strip on
+  // the NSX's rear quarter ran along the top of the haunch, 46 degrees off,
+  // where the same panel held level spots for a fixed size at 12 and 16. A
+  // bonnet or a roof has no level spot, and gets the largest it has.
+  const level = fine && sweep(true);
+  const largest = level || sweep(false);
   return {
     role: g.role,
     panel: g.name,
@@ -437,6 +450,10 @@ export function largestSpace({
     marginMm,
     largest,
     sizesTried,
+    ...(largest && fine && !level ? {
+      note: `No spot on ${g.name} that fits is seen within ${LEVEL_DEG} degrees of square-on from trackside height, ` +
+        'so this is the largest anywhere: faceOnDeg says how far off it is.',
+    } : {}),
     ...(largest ? {} : {
       note: `Nothing of that proportion fits whole on ${g.name} with ${marginMm} mm of clean bodywork all round. ` +
         'Try a smaller margin, another proportion, or another panel.',
