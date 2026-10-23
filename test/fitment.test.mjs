@@ -2285,6 +2285,59 @@ test('find_space lays a ground-effect kit out as the car\'s lowest panels all ro
   assert.throws(() => aeroLayout({ profile, model, role: 'body', heightMm: 0 }), /heightMm/);
 });
 
+test('find_space lays a band along a flank at a height, over every panel it crosses seen from that side', async () => {
+  // The Raiden livery's sweep spanned the door onto the rear quarter and
+  // stopped at the front wheel arch: on the NSX the front wing belongs to the
+  // bonnet's island, which no seam joins to the door, so a span cannot reach
+  // it. Seen from the side, the band crosses both all the same.
+  //
+  // A left flank at x 0.9: a sill 100 to 300 mm up, a door above it from
+  // 300 to 1000, and a front wing from 100 to 800 ahead of the door.
+  const { flankLayout } = await import('../src/space.mjs');
+  const flank = (x, y0, y1, z0, z1) => [[x, y0, z0], [x, y0, z1], [x, y1, z1], [x, y1, z0]];
+  const quads = [
+    { name: 'sill', uv: [0.02, 0.02, 0.4, 0.05], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.3, 1.0, -1.0) },
+    { name: 'door', uv: [0.02, 0.1, 0.3, 0.2], normal: [1, 0, 0], corners: flank(0.9, 0.3, 1.0, 1.0, -0.2) },
+    { name: 'wing', uv: [0.45, 0.02, 0.1, 0.15], normal: [1, 0, 0], corners: flank(0.9, 0.1, 0.8, 1.6, 1.0) },
+  ];
+  const car = (list) => ({
+    model: carOf(list.map((q) => ({ ...q, name: q.name.toUpperCase() }))),
+    profile: {
+      id: 'flank', name: 'Flank', calibration: { axes: { left: '+X', front: '+Z' } },
+      textures: { body: { file: 'b.dds', width: 2048, height: 2048 } },
+      bind: { body: { roles: ['body'], source: 'human' } },
+      panels: { body: Object.fromEntries(list.map(({ name, uv: [x, y, w, h] }) => [name, {
+        rect: [x, y, w, h], anisotropy: 1, metresPerUv: [5, 5], visible: 0.9, tags: ['visible'],
+        outline: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] }])) },
+    },
+  });
+  const { model, profile } = car(quads);
+
+  const got = flankLayout({ profile, model, role: 'body', fromMm: 250, toMm: 450, side: 'left' });
+  assert.deepEqual(got.regions.map((r) => r.panel).sort(), ['door', 'wing'], JSON.stringify(got));
+  assert.ok(got.regions.every((r) => r.treatment === 'stripe' && r.constraints?.stripe === 'flank-left'), JSON.stringify(got.regions));
+  assert.deepEqual(got.upMm, { left: [350, 550] }, 'measured up from the bottom of the bodywork');
+  for (const p of got.pieces) assert.ok(Math.abs(p.carriesMm - 200) <= 10, `the whole band crosses ${p.panel}: ${JSON.stringify(p)}`);
+  assert.deepEqual(got.findings.filter((f) => f.startsWith('high')), [], 'and the stripe checks find the pieces in line');
+
+  // Ahead of the door, across the car and falling to its left edge, as a
+  // bonnet curls down to a wing: seen from the left the band reaches it, but
+  // its piece would run across the top of the car. It faces up, so it is
+  // left out, and the bare stretch it leaves is said, not hidden.
+  const bonneted = car([...quads, { name: 'bonnet', uv: [0.6, 0.02, 0.3, 0.1], normal: [0.11, 0.99, 0],
+    corners: [[-0.9, 0.6, 1.6], [0.9, 0.4, 1.6], [0.9, 0.4, 2.0], [-0.9, 0.6, 2.0]] }]);
+  const top = flankLayout({ ...bonneted, role: 'body', fromMm: 250, toMm: 450, side: 'left' });
+  assert.ok(!top.regions.some((r) => r.panel === 'bonnet'), JSON.stringify(top.regions));
+  assert.match((top.skipped ?? []).find((k) => k.panel === 'bonnet')?.why ?? '', /faces up/, JSON.stringify(top.skipped));
+  assert.ok(top.findings.some((f) => /stripe-gap.*bonnet/.test(f)), JSON.stringify(top.findings));
+
+  // The other side has no panels here, and says so rather than coming back empty.
+  const right = flankLayout({ profile, model, role: 'body', fromMm: 250, toMm: 450, side: 'right' });
+  assert.deepEqual(right.regions, []);
+  assert.match(right.note ?? '', /right/);
+  assert.throws(() => flankLayout({ profile, model, role: 'body', fromMm: 450, toMm: 250 }), /toMm/);
+});
+
 test('a stripe wider than a narrow nose is not offset where it runs on over a wider bonnet', async () => {
   // A formula car's nose is narrower than the stripe and its bonnet and
   // wings wider, so the nose's piece covers the nose edge to edge and the

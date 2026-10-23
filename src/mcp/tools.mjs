@@ -578,6 +578,21 @@ export function createToolHandler(client) {
             },
             required: [],
           },
+          flank: {
+            type: 'object',
+            description: 'Instead of a size: lay out a band along the car\'s side, from fromMm to toMm above the bottom of ' +
+              'the bodywork, nose to tail, and return the regions ready to use: one for every panel of this sheet the band ' +
+              'crosses seen from that side, each with the "at" that puts the band at that height, and a stripe constraint ' +
+              'per side holding the pieces in line. Seen from the side, not along seams, so it reaches panels a span cannot, ' +
+              'such as a front wing that is part of the bonnet\'s island. With this, panel is any panel of the sheet.',
+            properties: {
+              fromMm: { type: 'number', description: 'The band\'s bottom, in mm above the bottom of the bodywork' },
+              toMm: { type: 'number', description: 'Its top, in mm above the bottom of the bodywork' },
+              side: { type: 'string', enum: ['left', 'right', 'both'], description: 'Which flank (default both)' },
+              name: { type: 'string', description: 'The band\'s name, for its ids and constraints (default "flank")' },
+            },
+            required: ['fromMm', 'toMm'],
+          },
           aero: {
             type: 'object',
             description: 'Instead of a size: lay out a ground-effect kit, the front splitter, the side skirts and ' +

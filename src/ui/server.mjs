@@ -60,7 +60,7 @@ import { applyDesignOp, applyFitOp, applyProposalDiff, placedAt } from './ops.js
 import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
 import { reachOnly } from '../engine/tags.mjs';
 import { panelMap } from '../panelmap.mjs';
-import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent
@@ -1763,6 +1763,27 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (aero && (stripe || layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
           return json(400, { error: 'aero lays out the car\'s lowest panels all round, as high as aero.heightMm: ' +
             'ask it without stripe, layout, largest, widthMm or heightMm.' });
+        }
+        // A band along a flank: the stripe's question asked from the side.
+        const flank = q.flank ?? null;
+        if (flank !== null && (typeof flank !== 'object' || Array.isArray(flank))) {
+          return json(400, { error: `flank is { fromMm, toMm, side, name }, the band to lay along the car's side; got ${JSON.stringify(flank)}.` });
+        }
+        if (flank && (stripe || aero || layout || largest || widthMm !== undefined || num(q.heightMm, undefined) !== undefined)) {
+          return json(400, { error: 'flank lays a band along the car\'s side, from flank.fromMm to flank.toMm up: ' +
+            'ask it without stripe, aero, layout, largest, widthMm or heightMm.' });
+        }
+        if (flank) {
+          const ask = { fromMm: num(flank.fromMm, NaN), toMm: num(flank.toMm, NaN), side: flank.side ?? 'both', name: flank.name ?? 'flank' };
+          const design = workingDesign ?? livery;
+          const roles = surfaceRoles(design);
+          const key = JSON.stringify(['flank', roles, ask, drawnBy(profile, design)]);
+          try {
+            remember(spaces, key, spaces.get(key) ?? flankLayoutAcross({ profile, model: m, roles, ...ask, design }), 256);
+            return json(200, { ...pinned(spaces.get(key)), ...(where.chosen ? { roleChosen: where.chosen } : {}), ...(sideChosen ? { sideChosen } : {}) });
+          } catch (e) {
+            return json(400, { error: e.message });
+          }
         }
         if (stripe) {
           const ask = { widthMm: num(stripe.widthMm, undefined), offsetMm: num(stripe.offsetMm, 0), name: stripe.name ?? 'centre' };

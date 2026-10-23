@@ -26,7 +26,7 @@
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
 import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
-import { rectVisibility, gridVisibility, bendDeg, sampleRects, faceOnDeg } from './engine/visibility.mjs';
+import { rectVisibility, gridVisibility, bendDeg, sampleRects, faceOnDeg, occupancyFor } from './engine/visibility.mjs';
 import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf } from './fitment.mjs';
 
 /**
@@ -1333,6 +1333,125 @@ export function stripeLayoutAcross({ profile, model, roles, widthMm, offsetMm = 
       .filter((p) => !out.has(p.id)),
     ...(skipped.length ? { skipped } : {}),
     findings: roles.length > 1 || out.size ? bandFindings({ profile, model, byRole, hide, paints }) : each[0].findings,
+    ...(!regions.length ? { note: each.map((e) => e.note).filter(Boolean).join(' ') } : {}),
+  };
+}
+
+/**
+ * A band along a flank, laid out: from `fromMm` to `toMm` above the bottom of
+ * the bodywork, the car's whole length, a region for every panel of one sheet
+ * it crosses seen from that side, each with the `at` that puts the band at
+ * that height on it, and the `stripe` constraint that holds each side's
+ * pieces in line.
+ *
+ * Seen from the side, not followed along seams: a `span` reaches only panels
+ * a seam joins, and on the NSX the front wing belongs to the bonnet's island,
+ * so the Raiden livery's sweep, spanned from the door, stopped at the front
+ * wheel arch. `side` is 'left', 'right' or 'both'; each side is measured up
+ * from its own bottom.
+ *
+ * A piece on an island that runs across the car, the nose's or the tail's,
+ * wraps the band round that end: it runs across the car, not along it, so it
+ * is not held to the side's stripe constraint and is listed under `wraps`.
+ * One that faces up, as the front edge of a bonnet the band reaches does, is
+ * seen from above rather than from the side, and is left out, with why.
+ */
+export function flankLayout({ profile, model, role, fromMm, toMm, side = 'both', name = 'flank', design = null }) {
+  if (!(Number.isFinite(fromMm) && fromMm >= 0 && Number.isFinite(toMm) && toMm > fromMm)) {
+    throw new Error('find_space\'s flank needs fromMm and toMm, the band\'s bottom and top in mm above the bottom of the ' +
+      `bodywork, fromMm zero or more and toMm above it; got ${JSON.stringify({ fromMm, toMm })}.`);
+  }
+  if (!['left', 'right', 'both'].includes(side)) {
+    throw new Error(`find_space's flank takes side: left, right or both; got ${JSON.stringify(side)}.`);
+  }
+  if (typeof name !== 'string' || !name.trim() || name !== name.trim()) {
+    throw new Error(`find_space's flank takes name, the band's name for its ids and its constraints; got ${JSON.stringify(name)}.`);
+  }
+  const { hide, painted } = drawnBy(profile, design);
+  const paints = [...new Set([...painted, role])];
+  const regions = [];
+  const pieces = [];
+  const skipped = [];
+  const upMm = {};
+  const missing = [];
+  const wraps = [];
+  const file = texture(profile, role).file;
+  let meshes = null, prepared = null;
+  // How far off square-on the piece is seen from trackside height, as
+  // find_space's spots say it.
+  const faceOn = (panel, at) => {
+    meshes ??= meshesUsingTexture(model, file);
+    prepared ??= occupancyFor(model);
+    const q = profile.panels[role][panel];
+    const [x, y, w, h] = q.rect;
+    const rect = [x + at[0] * w, y + at[1] * h, at[2] * w, at[3] * h];
+    return faceOnDeg(prepared, sampleRects(model, meshes, [{ rect, nu: 14, nv: 14 }], islandOf(model, meshes, q))[0].points);
+  };
+  for (const [label, sign] of [['left', 1], ['right', -1]]) {
+    if (side !== 'both' && side !== label) continue;
+    const bottom = flankBottom(model, profile, role, sign, { hide, painted: paints });
+    if (bottom === null) { missing.push(label); continue; }
+    const band = [bottom + fromMm, bottom + toMm];
+    upMm[label] = band;
+    const group = `${name}-${label}`;
+    const got = bandPieces({ model, profile, role, band, name: group, hide, paints, side: sign, seenFrom: `the ${label}` });
+    // A flank's band is on that flank. Seen from one side, a car open on it
+    // shows the far flank's panels from behind, and they were laid pieces.
+    // Judged by the piece, not its panel: the NSX's nose is one island across
+    // the car, and its piece is the corner ahead of each front wheel.
+    const mine = got.pieces.filter((p) => {
+      const on = panelOnCar(model, profile, role, p.panel, p.at);
+      if (!on?.across || !(sign > 0 ? on.across[1] > 0 : on.across[0] < 0)) {
+        got.skipped.push({ panel: p.panel, why: `${p.panel} is seen from the ${label} but is not on that flank` });
+        return false;
+      }
+      p.wraps = on.across[0] < 0 && on.across[1] > 0;
+      if (!p.wraps) return true;
+      // Once for both sides: it is the same piece of the same island.
+      if (wraps.some((w) => w.panel === p.panel)) return false;
+      const deg = faceOn(p.panel, p.at);
+      if (deg === null || deg > LEVEL_DEG) {
+        got.skipped.push({ panel: p.panel, why: `the band's piece of ${p.panel} faces up (${deg ?? 'not seen at'} degrees off ` +
+          'square-on from trackside height): it is seen from above, not from the side' });
+        return false;
+      }
+      return true;
+    });
+    if (!mine.some((p) => !p.wraps)) missing.push(label);
+    for (const p of mine) {
+      const id = p.wraps ? `${name}-${p.panel}` : p.id;
+      regions.push({ id, treatment: 'stripe', panel: p.panel, at: p.at, ...(p.wraps ? {} : { constraints: { stripe: group } }) });
+      pieces.push({ id, panel: p.panel, side: p.wraps ? 'wrap' : label, behindNoseMm: p.behindNose, carriesMm: p.carriesMm, errorMm: p.errorMm });
+      if (p.wraps) wraps.push({ id, panel: p.panel });
+    }
+    skipped.push(...got.skipped.map((k) => ({ ...k, side: label })));
+  }
+  return {
+    role, fromMm, toMm, side, name, upMm, regions, pieces,
+    ...(wraps.length ? { wraps: wraps.map((w) => w.id) } : {}),
+    ...(skipped.length ? { skipped } : {}),
+    findings: bandFindings({ profile, model, byRole: new Map([[role, regions]]), hide, paints }),
+    ...(missing.length ? {
+      note: `Seen from the ${missing.join(' and the ')}, a band ${fromMm} to ${toMm} mm up crosses no panel of ${role} ` +
+        'the world sees: check the heights, or the sheet the panel named is on.',
+    } : {}),
+  };
+}
+
+/** A flank band on every texture of one surface, each piece keeping its texture. */
+export function flankLayoutAcross({ profile, model, roles, ...ask }) {
+  const each = roles.map((role) => flankLayout({ profile, model, role, ...ask }));
+  if (roles.length === 1) return each[0];
+  const ids = uniqueIds(each);
+  const idOf = (role, id) => ids.get(`${role}\u0000${id}`);
+  const skipped = each.flatMap((e) => (e.skipped ?? []).map((k) => ({ ...k, role: e.role })));
+  const regions = each.flatMap((e) => e.regions.map((r) => ({ ...r, id: idOf(e.role, r.id), role: e.role })));
+  return {
+    roles, fromMm: ask.fromMm, toMm: ask.toMm, side: each[0].side, name: each[0].name, regions,
+    upMm: Object.fromEntries(each.map((e) => [e.role, e.upMm])),
+    pieces: each.flatMap((e) => e.pieces.map((p) => ({ ...p, id: idOf(e.role, p.id), role: e.role }))),
+    ...(skipped.length ? { skipped } : {}),
+    findings: each.flatMap((e) => e.findings),
     ...(!regions.length ? { note: each.map((e) => e.note).filter(Boolean).join(' ') } : {}),
   };
 }
