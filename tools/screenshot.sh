@@ -48,7 +48,7 @@ wait "$drawn"
 # "rendering…" long enough to pass any stillness wait. So wait for the note
 # to repaint; on a machine fast enough to have painted already this times out
 # harmlessly.
-run wait change --crop 900x60+560+60 --timeout 30 >/dev/null || true
+run wait change --crop 900x60+340+905 --timeout 30 >/dev/null || true
 run park
 run wait stable 1 --timeout 60
 run capture "$out"

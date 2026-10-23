@@ -625,6 +625,8 @@ test('a real pointer can select a region from the list', { skip: BROWSER ? false
       await settle(600);
       say('selected: ' + document.querySelectorAll('#regions li.sel').length);
       say('inspector mentions it: ' + document.querySelector('#inspector').textContent.includes(li.dataset.id));
+      const r = document.querySelector('#inspector').getBoundingClientRect();
+      say('inspector in view: ' + (r.height > 0 && r.top >= 0 && r.top < innerHeight / 2));
       done();
     })();
   `, { fitPath: new URL('../fits/neon-grid-any@abarth500.json', import.meta.url).pathname });
@@ -634,6 +636,8 @@ test('a real pointer can select a region from the list', { skip: BROWSER ? false
     `something is covering the region list: ${find('topmost at list item')}`);
   assert.equal(find('selected: '), 'selected: 1', report.join(' | '));
   assert.equal(find('inspector mentions it: '), 'inspector mentions it: true');
+  assert.equal(find('inspector in view: '), 'inspector in view: true',
+    'what was picked is editable without scrolling to find it');
 });
 
 test('a real pointer can select and drag a region on the canvas', { skip: BROWSER ? false : 'no browser' }, async () => {
@@ -1707,8 +1711,8 @@ test('the fitment panel measures the real car, in a real browser', { skip: BROWS
   // The first version of this test hung for ninety seconds in CI and reported
   // nothing, which is a worse outcome than a plain failure. `topAt` is
   // `elementFromPoint`, which returns NULL for a point outside the viewport —
-  // and #recheck lives at the bottom of the right sidebar, below Palette,
-  // Identity, Fit and Design, so it is off-screen at 1400x900. Calling
+  // and #recheck then lived at the bottom of the right sidebar, below Palette,
+  // Identity, Fit and Design, so it was off-screen at 1400x900. Calling
   // `.closest()` on that null threw, `done()` never ran, and the harness sat
   // waiting for a report nobody was going to send.
   //
@@ -1719,6 +1723,7 @@ test('the fitment panel measures the real car, in a real browser', { skip: BROWS
     (async () => {
       try {
         if (!await ready()) { say('THREW app never rendered any regions'); return done(); }
+        document.querySelector('#side-checks').click();
         const btn = document.querySelector('#recheck');
         if (!btn) { say('THREW no #recheck button'); return done(); }
 

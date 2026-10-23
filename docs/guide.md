@@ -458,7 +458,7 @@ planned in [docs/authoring.md](dev/authoring.md).
 The editor shows you the car and you can judge whether it looks right. What you
 cannot see, from any angle, is that a name is painted into the gap between two UV
 islands and exists on no triangle at all — it renders perfectly on the sheet and
-is simply not on the car. **Check the fit** in the right-hand panel measures that
+is simply not on the car. **Check the fit**, under the editor's Checks tab, measures that
 and several other things:
 
 | finding | what it means |

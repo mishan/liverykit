@@ -24,10 +24,12 @@
   <header>
     <h1><span id="livery">…</span> <span class="on">on</span> <span id="car">…</span></h1>
     <div class="spacer"></div>
-    <span id="build" class="status" title="fingerprint of the served files, and when this server started"></span>
-    <span id="status" class="status"></span>
-    <button id="undo" disabled>Undo</button>
-    <button id="redo" disabled>Redo</button>
+    <span id="build" class="status" title="fingerprint of the served files, and when this server started">build</span>
+    <span id="status" class="status visually-hidden" role="status"></span>
+    <span class="group">
+      <button id="undo" disabled title="Undo (Ctrl+Z)">Undo</button>
+      <button id="redo" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+    </span>
     <button id="savedesign" disabled>Save design</button>
     <button id="save" disabled>Save fit</button>
   </header>
@@ -44,32 +46,31 @@
       <h2>Surface</h2>
       <select id="surface"></select>
 
-      <h2>Regions</h2>
-      <p class="hint">Later regions paint over earlier ones. Drag a row to reorder.</p>
+      <h2>Regions <span id="regioncount" class="muted"></span></h2>
+      <p class="hint">Later regions paint over earlier ones.</p>
       <div class="row">
         <select id="newtreatment"><option value="">add a region…</option></select>
         <button id="addregion" disabled>Add</button>
       </div>
+      <input id="regionfilter" class="filter" type="search" placeholder="Filter regions" aria-label="Filter regions">
       <ul id="regions"></ul>
-
-      <h2>Selected</h2>
-      <div id="inspector" class="empty">Nothing selected.</div>
     </aside>
 
     <section id="canvas">
       <div class="tabs">
-        <button id="tab-uv" class="tab on">UV</button>
-        <button id="tab-3d" class="tab">Car</button>
-        <button id="tab-all" class="tab">Whole car</button>
-        <button id="tab-cockpit" class="tab">Cockpit</button>
-        <span id="viewnote" class="hint" role="status"></span>
+        <span class="group" role="group" aria-label="View">
+          <button id="tab-uv" class="tab on">UV</button>
+          <button id="tab-3d" class="tab">Car</button>
+          <button id="tab-all" class="tab">Whole car</button>
+          <button id="tab-cockpit" class="tab">Cockpit</button>
+        </span>
+        <label id="litbox" class="toggle" hidden>
+          <input type="checkbox" id="lit" checked> Lit
+        </label>
         <span id="adopt" class="hint" hidden>
           <span id="adoptwhat"></span>
           <button id="adoptsurface">Paint this too</button>
         </span>
-        <label id="litbox" class="hint" hidden>
-          <input type="checkbox" id="lit" checked> lit
-        </label>
       </div>
       <div id="stage">
         <!-- Hidden by markup, the same way #carview already is below: JS
@@ -84,6 +85,7 @@
         <svg id="overlay" viewBox="0 0 1000 1000" preserveAspectRatio="none" hidden></svg>
         <canvas id="carview" hidden aria-label="The car in 3D. Arrow keys turn it, and + and - zoom."></canvas>
       </div>
+      <p class="hint" id="viewnote" role="status"></p>
       <p class="hint" id="canvashint">
         Drag the highlighted box to move a region. Drag a corner to resize.
         Click a panel outline to move the region onto that panel. On the car,
@@ -92,66 +94,93 @@
     </section>
 
     <aside id="right">
-      <h2>Panels <span id="panelcount" class="muted"></span></h2>
-      <p class="hint">Tags come from the model — side, section, level, and whether
-        the panel is readable from trackside.</p>
-      <ul id="panels"></ul>
+      <!-- Tabs, because one scroll of ten sections put the panel list's 78 rows
+           between you and everything below it, and the inspector under the
+           region list was off-screen as soon as a design had thirty regions. -->
+      <nav class="sidetabs" role="tablist">
+        <button id="side-selected" role="tab" data-side="selected">Selected</button>
+        <button id="side-panels" role="tab" data-side="panels">Panels</button>
+        <button id="side-colors" role="tab" data-side="colors">Colors &amp; text</button>
+        <button id="side-checks" role="tab" data-side="checks">Checks <span id="notecount" class="count"></span></button>
+        <button id="side-source" role="tab" data-side="source">Source</button>
+      </nav>
 
-      <h2>Palette</h2>
-      <p class="hint">Named colors. Regions refer to these by name, so changing
-        one changes everything using it.</p>
-      <div id="palette"></div>
-      <div class="row">
-        <input id="newcolorname" placeholder="name">
-        <input id="newcolorvalue" placeholder="#00F0FF">
-        <button id="addcolor">Add</button>
-      </div>
+      <section id="pane-selected" class="pane" role="tabpanel">
+        <div id="inspector" class="empty"></div>
+      </section>
 
-      <h2>Identity</h2>
-      <p class="hint">What <code>{driver}</code> and <code>{number}</code> become
-        in a design's text.</p>
-      <div id="identity"></div>
-      <div class="row">
-        <input id="newtokenname" placeholder="token">
-        <input id="newtokenvalue" placeholder="value">
-        <button id="addtoken">Add</button>
-      </div>
+      <section id="pane-panels" class="pane" role="tabpanel" hidden>
+        <h2>Panels <span id="panelcount" class="muted"></span></h2>
+        <details class="hint"><summary>Click one to move the selected region onto it.</summary>
+          Hover to see where it is. Tags come from the model — side, section,
+          level, and whether the panel is readable from trackside.</details>
+        <input id="panelfilter" class="filter" type="search" placeholder="Filter panels" aria-label="Filter panels">
+        <ul id="panels"></ul>
+      </section>
 
-      <div id="dangling"></div>
+      <section id="pane-colors" class="pane" role="tabpanel" hidden>
+        <h2>Palette</h2>
+        <details class="hint"><summary>Named colors, used by name.</summary>
+          Changing one changes everything using it, and renaming one renames
+          its uses.</details>
+        <div id="palette"></div>
+        <div class="row">
+          <input id="newcolorname" placeholder="name">
+          <input id="newcolorvalue" placeholder="#00F0FF">
+          <button id="addcolor">Add</button>
+        </div>
 
-      <h2>Fit</h2>
-      <p class="hint">Where this car wants the artwork.</p>
-      <pre id="fitjson">{}</pre>
+        <h2>Identity</h2>
+        <p class="hint">What <code>{driver}</code> and <code>{number}</code> become
+          in a design's text.</p>
+        <div id="identity"></div>
+        <div class="row">
+          <input id="newtokenname" placeholder="token">
+          <input id="newtokenvalue" placeholder="value">
+          <button id="addtoken">Add</button>
+        </div>
 
-      <h2>Design</h2>
-      <p class="hint">What the artwork is, on every car.</p>
-      <pre id="designjson">{}</pre>
+        <div id="dangling"></div>
+      </section>
 
-      <h2>Bindings</h2>
-      <p class="hint">Which of this car's textures each surface name means.
-        Measurement proposed these. Hover a row in the whole-car view to see the
-        parts it means, and Confirm the ones that are right. Confirm writes the
-        car's profile at once, and Undo does not take it back.</p>
-      <ul id="bindings"></ul>
+      <section id="pane-checks" class="pane" role="tabpanel" hidden>
+        <div id="notes"></div>
 
-      <h2>On this car</h2>
-      <p class="hint">What is wrong with the design where it actually sits —
-        overlaps, unreadable text, artwork painted into texture space no triangle
-        uses, and what the car hides. Run on demand: the geometry checks cast
-        rays and take a moment.</p>
-      <div class="row"><button id="recheck">Check the fit</button></div>
-      <div id="fitment"></div>
+        <h2>On this car</h2>
+        <details class="hint"><summary>What is wrong with the design where it sits.</summary>
+          Overlaps, unreadable text, artwork painted into texture space no
+          triangle uses, and what the car hides. Run on demand: the geometry
+          checks cast rays and take a moment.</details>
+        <div class="row"><button id="recheck">Check the fit</button></div>
+        <div id="fitment"></div>
 
-      <h2>On another car</h2>
-      <p class="hint">What this design would find somewhere else. Nothing is
-        rendered and nothing is written — it asks the same placement rules the
-        build would.</p>
-      <div class="row">
-        <select id="othercar"><option value="">pick a car…</option></select>
-      </div>
-      <div id="portability"></div>
+        <h2>On another car</h2>
+        <details class="hint"><summary>What this design would find somewhere else.</summary>
+          Nothing is rendered and nothing is written — it asks the same
+          placement rules the build would.</details>
+        <div class="row">
+          <select id="othercar"><option value="">pick a car…</option></select>
+        </div>
+        <div id="portability"></div>
 
-      <div id="notes"></div>
+        <h2>Bindings</h2>
+        <details class="hint"><summary>Which of this car's textures each surface name means.</summary>
+          Measurement proposed these. Hover a row in the whole-car view to see
+          the parts it means, and Confirm the ones that are right. Confirm
+          writes the car's profile at once, and Undo does not take it
+          back.</details>
+        <ul id="bindings"></ul>
+      </section>
+
+      <section id="pane-source" class="pane" role="tabpanel" hidden>
+        <h2>Fit</h2>
+        <p class="hint">Where this car wants the artwork.</p>
+        <pre id="fitjson">{}</pre>
+
+        <h2>Design</h2>
+        <p class="hint">What the artwork is, on every car.</p>
+        <pre id="designjson">{}</pre>
+      </section>
     </aside>
   </main>
 
