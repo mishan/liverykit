@@ -2516,7 +2516,7 @@ test('every MCP tool is documented, in both places', async () => {
 });
 
 test('every constraint is documented where somebody would look for it', async () => {
-  const { CONSTRAINTS } = await import('../src/ui/ops.js');
+  const { CONSTRAINTS } = await import('../src/constraints.mjs');
   const guide = await readFile(new URL('../docs/guide.md', import.meta.url), 'utf8');
   const missing = Object.keys(CONSTRAINTS).filter((k) => !guide.includes(k));
   assert.deepEqual(missing, [], `docs/guide.md does not mention: ${missing.join(', ')}`);

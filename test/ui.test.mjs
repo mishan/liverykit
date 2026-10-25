@@ -268,12 +268,13 @@ test('nothing outside the editor imports from it', async () => {
   // Shared code lives outside src/ui and the editor imports it, not the
   // other way round.
   const src = new URL('../src/', import.meta.url);
-  const files = (await readdir(src, { recursive: true }))
+  // Forward slashes: on Windows readdir answers `ui\\app.js`.
+  const files = (await readdir(src, { recursive: true })).map((f) => f.replaceAll('\\', '/'))
     .filter((f) => /\.m?js$/.test(f) && !f.startsWith('ui/'));
   const reaching = [];
   for (const f of files) {
     const text = await readFile(new URL(f, src), 'utf8');
-    for (const [, from] of text.matchAll(/(?:import|export)\b[^;]*?from\s+'([^']+)'/g)) {
+    for (const [, from] of text.matchAll(/(?:\bfrom|\bimport\s*\(?)\s*['"]([^'"]+)['"]/g)) {
       if (/(^|\/)ui\//.test(from)) reaching.push(`${f} -> ${from}`);
     }
   }

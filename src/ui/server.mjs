@@ -18,6 +18,7 @@
 //
 //   GET  /                 the app
 //   GET  /vendor/colord/*  colord's own ESM, so the browser and Node agree
+//   GET  /constraints.mjs  the constraint list, shared with the checker
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
 //   POST /api/state        the same, for a working fit or design not yet saved
 //   GET  /api/treatments   what each treatment takes, for the inspector
@@ -1198,7 +1199,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       if (req.method === 'GET' && url.pathname === '/api/build') {
         const { createHash } = await import('node:crypto');
         const h = createHash('sha256');
-        for (const f of [...SERVABLE].sort()) h.update(await readFile(join(HERE, f)));
+        for (const f of [...SERVABLE, ...SHARED.values()].sort()) h.update(await readFile(join(HERE, f)));
         return json(200, { build: h.digest('hex').slice(0, 8), started });
       }
 
