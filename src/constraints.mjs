@@ -10,7 +10,7 @@ export const CONSTRAINTS = {
   keepClear: 'boolean — nothing may be painted across this region, whatever the ' +
     'treatment. Without it the overlap check only speaks up for text on text, so a ' +
     'stripe drawn over a team name goes unmentioned.',
-  minMm: 'number — the shortest side this must not go below ON THE CAR, in millimetres, ' +
+  minMm: 'number — the shortest side this must not go below ON THE CAR, in millimeters, ' +
     'replacing the global 25 mm floor. Applies to any treatment, not just text.',
   minOnCar: 'number 0-1 — the fraction of the box that must land on actual geometry. ' +
     'A background fill is meant to bleed off an island; a name is not.',

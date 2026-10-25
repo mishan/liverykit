@@ -5,8 +5,6 @@
 
 import { CONSTRAINTS } from '../constraints.mjs';
 
-export { CONSTRAINTS };
-
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 

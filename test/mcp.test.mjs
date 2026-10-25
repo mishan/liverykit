@@ -785,7 +785,7 @@ test('find_panels says which panels minVisibility left out for having no measure
 test('propose_design names every constraint there is', async () => {
   // It named four of the five, and an agent reads a list as the list: the
   // minMargin this change adds went unproposed.
-  const { CONSTRAINTS } = await import('../src/ui/ops.js');
+  const { CONSTRAINTS } = await import('../src/constraints.mjs');
   const tools = createToolHandler(createEditorClient('http://127.0.0.1:1/'));
   const propose = (await tools.listTools()).find((t) => t.name === 'propose_design');
   for (const key of Object.keys(CONSTRAINTS)) assert.match(propose.description, new RegExp(`\\b${key}\\b`), `${key} is named`);
