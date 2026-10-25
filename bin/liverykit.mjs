@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { stat, mkdir, writeFile, readFile } from 'node:fs/promises';
-import { join, resolve, dirname } from 'node:path';
+import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { register } from 'node:module';
@@ -78,6 +78,9 @@ Options
   --assume-size <px>  for ENCRYPTED models only: paint textures whose real size
                       cannot be measured at this size. A choice, not a fact.
   --from-kn5 <path>   generate a car profile from the 3D model (best source)
+  --facing=<l>,<f>    which signs of X and Z are left and front, such as
+                      --facing=-X,+Z, for a model with no wheel nodes. Kept by
+                      regeneration. The = lets the value start with a minus.
   --skins <dir>       cross-reference real texture sizes (kn5 embeds low-res)
   --profile <path>    override the car profile: a file, or a car id looked up
                       like the livery's own car (default: <livery.car>)
@@ -128,6 +131,7 @@ const { values, positionals } = parseArgs({
     'from-kn5': { type: 'string' },
     'car-id': { type: 'string' },
     'car-name': { type: 'string' },
+    facing: { type: 'string' },
     skins: { type: 'string' },
     profile: { type: 'string' },
     profiles: { type: 'string' },
@@ -154,6 +158,25 @@ process.on('unhandledRejection', fail);
 function fail(err) {
   console.error(`\n${err?.message ?? err}\n`);
   process.exit(1);
+}
+
+// The facing a person states for a model with no wheels, from --facing, else
+// as the profile being regenerated recorded it: hand-work, like a confirmed
+// binding, so a regeneration that does not restate it must not lose it.
+async function facingFor(src) {
+  if (values.facing) {
+    const [left, front] = values.facing.split(',');
+    if (!(['+X', '-X'].includes(left) && ['+Z', '-Z'].includes(front))) {
+      fail(new Error(`--facing wants the left and front signs, such as +X,+Z; got "${values.facing}".`));
+    }
+    return { left, front };
+  }
+  // The id profileFromKn5 gives the car, so the prior is the one it will merge.
+  const path = priorProfilePath(values['car-id'] ?? basename(src).replace(/\.kn5$/i, ''));
+  const axes = await readFile(path, 'utf8').then((t) => JSON.parse(t).calibration?.axes).catch(() => null);
+  if (axes?.from !== 'stated') return null;
+  console.log(`  facing as stated in ${path}: ${axes.left} left, ${axes.front} front`);
+  return { left: axes.left, front: axes.front };
 }
 
 // Checked now rather than when packaging, which comes after the whole render:
@@ -194,6 +217,7 @@ if (values['from-kn5']) {
   const profile = await profileFromKn5(src, {
     id: values['car-id'],
     name: values['car-name'] ?? '',
+    facing: await facingFor(src),
     skinsDir: values.skins ? resolve(values.skins) : null,
     // Only meaningful for encrypted models, where the embedded textures are 1x1
     // placeholders and no measurement is available.
@@ -250,6 +274,7 @@ if (values.explain) {
 
   const profile = await profileFromKn5(src, {
     id: values['car-id'],
+    facing: await facingFor(src),
     skinsDir: values.skins ? resolve(values.skins) : null,
     visibility: useVisibility,
     // As the generator passes it. Left out, an encrypted car's candidates and

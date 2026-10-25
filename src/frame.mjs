@@ -9,7 +9,8 @@
  */
 import { axesFromWheels, axisHints } from './model.mjs';
 
-const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
+/** A recorded facing, `+X` or `-Z`, as the sign it stands for. */
+export const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
 
 /**
  * The facing, from the wheels, else as stated, else from mesh names.
@@ -29,22 +30,28 @@ export function facing(model, { stated = null, log = () => {} } = {}) {
     }
     return { ...wheels, from: 'wheels' };
   }
-  if (stated) return { left: SIGN[stated.left], front: SIGN[stated.front], confident: true, from: 'stated' };
-  return { ...axisHints(model), from: 'mesh names' };
+  const hint = axisHints(model);
+  if (!stated) return { ...hint, from: 'mesh names' };
+  if (hint.confident && (SIGN[stated.left] !== hint.left || SIGN[stated.front] !== hint.front)) {
+    log(`  ! the stated facing (${stated.left} left, ${stated.front} front) disagrees with the mesh names. The stated facing is used.`);
+  }
+  return { left: SIGN[stated.left], front: SIGN[stated.front], confident: true, from: 'stated' };
 }
 
 /**
  * The sections from front to back, each a band of the length measured from
  * the back (0) to the front (1): a name, where it starts and ends, and the
  * width that "half the band" is judged against. The bands at either end are
- * open, so an extent that reaches past the model still counts.
- *
- * One table for panel names and tags alike, which used to keep a copy each.
+ * open, so an extent that reaches past the model still counts. Panel names
+ * and tags both read it, so the two cannot place a cut differently.
  */
 export const SECTIONS = [
   ['nose', 0.82, Infinity, 0.18], ['front', 0.62, 0.82, 0.2], ['mid', 0.38, 0.62, 0.24],
   ['rear', 0.18, 0.38, 0.2], ['tail', -Infinity, 0.18, 0.18],
 ];
 
-/** The section a point this far along the length (0 back, 1 front) is in. */
-export const sectionAt = (along) => SECTIONS.find(([, from]) => along > from)[0];
+/**
+ * The section a point this far along the length (0 back, 1 front) is in. A
+ * model with no extent to measure along gives NaN, which is the back.
+ */
+export const sectionAt = (along) => (SECTIONS.find(([, from]) => along > from) ?? SECTIONS.at(-1))[0];

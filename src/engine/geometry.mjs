@@ -10,7 +10,7 @@
 
 import { designLights } from './lights.mjs';
 import { meshesWearing, meshTraits, materialTraits, vertex, triangles, additive } from '../model.mjs';
-import { facing } from '../frame.mjs';
+import { facing, SIGN } from '../frame.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -386,8 +386,6 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // read and where the profile's driver's-seat visibility was measured from.
     cockpit: profile?.calibration?.eye?.at
       ? { x: profile.calibration.eye.at[0], y: profile.calibration.eye.at[1], z: profile.calibration.eye.at[2], from: profile.calibration.eye.from }
-      : cockpitEye(model, { front: profile?.calibration?.axes?.front
-        ? (profile.calibration.axes.front === '-Z' ? -1 : 1)
-        : facing(model).front }),
+      : cockpitEye(model, { front: SIGN[profile?.calibration?.axes?.front] ?? facing(model).front }),
   };
 }
