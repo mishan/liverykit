@@ -18,6 +18,7 @@
 //
 //   GET  /                 the app
 //   GET  /vendor/colord/*  colord's own ESM, so the browser and Node agree
+//   GET  /constraints.mjs  the constraint list, shared with the checker
 //   GET  /api/state        livery, panels, tags, current fit, resolved regions
 //   POST /api/state        the same, for a working fit or design not yet saved
 //   GET  /api/treatments   what each treatment takes, for the inspector
@@ -231,8 +232,11 @@ export function packGeometry(g) {
   put(head); put(g.positions); put(g.uvs); put(g.normals); put(g.indices);
   return out;
 }
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };
 const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
+// Modules the editor shares with code that is not the editor's, at the URL a
+// relative import from this directory resolves to in the browser.
+const SHARED = new Map([['constraints.mjs', '../constraints.mjs']]);
 
 /**
  * The one dependency the browser shares with Node, and where it comes from.
@@ -1195,7 +1199,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
       if (req.method === 'GET' && url.pathname === '/api/build') {
         const { createHash } = await import('node:crypto');
         const h = createHash('sha256');
-        for (const f of [...SERVABLE].sort()) h.update(await readFile(join(HERE, f)));
+        for (const f of [...SERVABLE, ...SHARED.values()].sort()) h.update(await readFile(join(HERE, f)));
         return json(200, { build: h.digest('hex').slice(0, 8), started });
       }
 
@@ -1980,10 +1984,10 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
 
       // Static. The path is taken from a fixed allowlist rather than joined
       // with user input, because a fitting tool has no business serving
-      // anything outside its own directory.
+      // anything it has not named.
       const file = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
-      if (!SERVABLE.has(file)) return send(404, 'text/plain', 'not found');
-      const data = await readFile(join(HERE, file)).catch(() => null);
+      if (!SERVABLE.has(file) && !SHARED.has(file)) return send(404, 'text/plain', 'not found');
+      const data = await readFile(join(HERE, SHARED.get(file) ?? file)).catch(() => null);
       if (!data) return send(404, 'text/plain', 'not found');
       return send(200, MIME[extname(file)], data);
     } catch (e) {
