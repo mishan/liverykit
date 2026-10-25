@@ -274,7 +274,8 @@ function buildNear(model, meshes) {
   for (const mesh of meshes) {
     // Not drawn until the car is damaged, or only when a wheel is spinning:
     // nothing that covers paint in any view a livery is judged in.
-    if (meshTraits(model, mesh).damage || meshTraits(model, mesh).blur) continue;
+    const traits = meshTraits(model, mesh);
+    if (traits.damage || traits.blur) continue;
     const own = model.meshes.indexOf(mesh);
     for (const [a, b, c] of triangles(model, mesh)) {
       const A = vertex(model, mesh, a), B = vertex(model, mesh, b), C = vertex(model, mesh, c);
@@ -625,8 +626,10 @@ const round = (n) => Math.round(n * 10000) / 10000;
  */
 export function carOccluders(model, profile) {
   const hidden = new Set(Object.keys(profile?.hiddenByCar?.meshes ?? {}));
-  return model.meshes.filter((m) => !hidden.has(m.name)
-    && !meshTraits(model, m).damage && !meshTraits(model, m).blur);
+  return model.meshes.filter((m) => {
+    const traits = meshTraits(model, m);
+    return !hidden.has(m.name) && !traits.damage && !traits.blur;
+  });
 }
 
 /**
@@ -639,8 +642,10 @@ export function carOccluders(model, profile) {
  */
 export function tracksideOccluders(model, profile) {
   const lr = model.meshes.some((m) => meshTraits(model, m).lod === 'LR');
-  return carOccluders(model, profile).filter((m) => (!lr || meshTraits(model, m).lod !== 'HR')
-    && !(meshTraits(model, m).blends && meshTraits(model, m).glass));
+  return carOccluders(model, profile).filter((m) => {
+    const traits = meshTraits(model, m);
+    return (!lr || traits.lod !== 'HR') && !(traits.blends && traits.glass);
+  });
 }
 
 /** The bare grid, for a caller keeping one across many casts at a cell size of its own: the cockpit's. */

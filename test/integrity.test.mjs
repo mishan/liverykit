@@ -2683,18 +2683,22 @@ test('optional is refused anywhere but a tag selection, and pinning a region dro
   assert.deepEqual(expandRegions(p, 'body', pinned).regions.map((r) => r.panel), ['a']);
 });
 
-test('only the model module and the profile generator read a kn5 directly', async () => {
+test('only the model module reads a kn5, and the profile generator a car\'s CSP config', async () => {
   // What a mesh is — glass, a damage overlay, a cockpit LOD — is decided in
   // one place, src/model.mjs, so a second model format answers it once rather
-  // than at every call site that once asked a shader name.
-  const src = new URL('../src/', import.meta.url);
-  const allowed = new Set(['model.mjs', 'engine/profilegen.mjs']);
-  const files = (await readdir(src, { recursive: true }))
-    .filter((f) => /\.m?js$/.test(f) && !allowed.has(f));
+  // than at every call site that once asked a shader name. The profile
+  // generator still reads ext_config.ini's hidden meshes through ac-kn5.
+  const root = new URL('../', import.meta.url);
+  const allowed = new Set(['src/model.mjs', 'src/engine/profilegen.mjs']);
   const reading = [];
-  for (const f of files) {
-    const text = await readFile(new URL(f, src), 'utf8');
-    if (/from\s+'ac-kn5'/.test(text)) reading.push(f);
+  for (const dir of ['src', 'bin']) {
+    // Forward slashes: on Windows readdir answers `engine\\profilegen.mjs`.
+    for (const f of (await readdir(new URL(`${dir}/`, root), { recursive: true }))) {
+      const path = `${dir}/${f.replaceAll('\\', '/')}`;
+      if (!/\.m?js$/.test(path) || allowed.has(path)) continue;
+      const text = await readFile(new URL(path, root), 'utf8');
+      if (/(?:\bfrom|\bimport\s*\(?)\s*['"]ac-kn5['"]/.test(text)) reading.push(path);
+    }
   }
   assert.deepEqual(reading, []);
 });

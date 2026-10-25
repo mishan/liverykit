@@ -11,7 +11,7 @@
 import {
   parseKn5, parseKn5Buffer, vertex, triangles, meshesUsingTexture, SHEET_SPAN,
   axesFromWheels, axisHints, additive, motionBlurOnly,
-  blends, alphaTest, isGlass, damageOnly, trustworthyDiffuse,
+  blends, alphaTest, discardsClear, isGlass, damageOnly, trustworthyDiffuse,
   detailLayer, baseNormal, motionBlurMesh, cockpitLod,
 } from 'ac-kn5';
 
@@ -43,6 +43,7 @@ export function materialTraits(model, materialId) {
       glass: isGlass(mat?.shader),
       blends: blends(mat),
       alphaTest: alphaTest(mat),
+      discardsClear: discardsClear(mat),
       damage: damageOnly(mat?.shader),
       // The texture in the paint slot, and whether the shader draws it as the
       // surface's color rather than mixing it in.

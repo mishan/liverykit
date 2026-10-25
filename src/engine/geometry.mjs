@@ -251,9 +251,11 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   //
   // `null` for every mesh on a car that ships one cockpit or none, which the
   // renderers read as "draw this whatever the camera". See `cockpitLod`.
-  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
-    && !meshTraits(model, m).damage
-    && !meshTraits(model, m).blur;
+  const drawn = (m) => {
+    if (claimed.has(m) || carHides.has(m.name)) return false;
+    const traits = meshTraits(model, m);
+    return !traits.damage && !traits.blur;
+  };
 
   for (const { role, file } of files) {
     const meshes = meshesWearing(model, file).filter(drawn);

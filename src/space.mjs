@@ -1075,7 +1075,8 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   // tells it (`sheetOf`): a material that blends and is glass by its shader.
   const glass = (q) => {
     const mesh = q.source?.mesh ? model.meshes.find((m) => m.name === q.source.mesh) : null;
-    return Boolean(mesh && meshTraits(model, mesh).blends && meshTraits(model, mesh).glass);
+    const traits = mesh ? meshTraits(model, mesh) : null;
+    return Boolean(traits?.blends && traits.glass);
   };
   for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
     const unknown = typeof q.visible !== 'number';
