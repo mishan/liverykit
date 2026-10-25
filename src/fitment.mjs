@@ -30,7 +30,7 @@ import { hidePlan, hideTakesEffect } from './hide.mjs';
 import { occupancyFor, rectVisibility, carOccluders, tracksideOccluders, sampleRects, bendDeg } from './engine/visibility.mjs';
 import { polyArea, sharedArea, rectPoly, inPoly } from './engine/poly.mjs';
 import { findIslands } from './engine/islands.mjs';
-import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from 'ac-kn5';
+import { meshesWearing, meshTraits, vertex, triangles } from './model.mjs';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
 export { CONSTRAINTS } from './constraints.mjs';
@@ -468,9 +468,9 @@ export function islandOf(model, meshes, pan) {
 /** Whether every mesh wearing this role's sheet is in the HR cockpit of a car that has an LR one. */
 function seatOnly(model, profile, role) {
   const file = profile.textures[role]?.file;
-  const meshes = file ? meshesUsingTexture(model, file) : [];
-  return meshes.length > 0 && meshes.every((m) => cockpitLod(m) === 'HR')
-    && model.meshes.some((m) => cockpitLod(m) === 'LR');
+  const meshes = file ? meshesWearing(model, file) : [];
+  return meshes.length > 0 && meshes.every((m) => meshTraits(model, m).lod === 'HR')
+    && model.meshes.some((m) => meshTraits(model, m).lod === 'LR');
 }
 
 const preparedCache = new WeakMap();
@@ -795,7 +795,7 @@ function margins(placed, profile, t, seen, say) {
       continue;
     }
     try {
-      meshes ??= meshesUsingTexture(seen.model, texture(profile, t.role).file);
+      meshes ??= meshesWearing(seen.model, texture(profile, t.role).file);
     } catch {
       return;                                  // reported as unresolvable by `unseen`
     }
@@ -2228,7 +2228,7 @@ function ownMeshes(model, profile, role, pan) {
   let meshes, file;
   try {
     file = texture(profile, role).file;
-    meshes = meshesUsingTexture(model, file);
+    meshes = meshesWearing(model, file);
   } catch {
     return { meshes: [] };                      // reported as unresolvable by `unseen`
   }
@@ -2362,8 +2362,8 @@ const seenPanels = (profile, role, floor = BARELY_SEEN) => Object.entries(profil
  * the one thing glass is not.
  */
 function sheetOf(model, m) {
-  const mat = model.materials?.[model.meshes[m].materialId];
-  return blends(mat) && isGlass(mat?.shader) ? '' : (mat?.slots?.txDiffuse ?? '').toLowerCase();
+  const traits = meshTraits(model, model.meshes[m]);
+  return traits.blends && traits.glass ? '' : (traits.diffuse ?? '').toLowerCase();
 }
 
 /**
@@ -2655,15 +2655,15 @@ function drawing(profile, hide = [], painted = []) {
  */
 function drawnMeshes(model, profile, { paints, hides }) {
   return carOccluders(model, profile).filter((m) => {
-    if (cockpitLod(m) === 'LR') return false;
-    const mat = model.materials?.[m.materialId];
-    const file = (mat?.slots?.txDiffuse ?? '').toLowerCase();
+    const traits = meshTraits(model, m);
+    if (traits.lod === 'LR') return false;
+    const file = (traits.diffuse ?? '').toLowerCase();
     if (file && paints.has(file)) return true;
     // What the renderer's `hide` is matched against: the diffuse where it is
     // the surface, else the sheet under a two-layer material's detail.
-    const wears = (trustworthyDiffuse(mat?.shader) ? file : detailLayer(mat)?.diffuse?.toLowerCase()) ?? '';
+    const wears = (traits.trustworthy ? file : traits.detail?.diffuse?.toLowerCase()) ?? '';
     if (wears && hides.has(wears)) return false;
-    return !blends(mat) || isGlass(mat?.shader);
+    return !traits.blends || traits.glass;
   });
 }
 
@@ -2800,7 +2800,7 @@ function unseen(placed, profile, t, seen, say) {
         `it lands on the model could be checked: ${e.message}` });
     return;
   }
-  const meshes = meshesUsingTexture(seen.model, file);
+  const meshes = meshesWearing(seen.model, file);
   if (!meshes.length) {
     say({ kind: 'unresolvable', severity: 'fatal', surface: t.from, ids: [],
       why: `no mesh in this car's model uses ${file}, which the profile says ${t.role} ` +
@@ -3124,8 +3124,9 @@ function stacked(model, profile, targets, say, { design = {} } = {}) {
     // at speed, a crack after a crash. The renderers leave them out for that
     // reason (see wholeModelGeometry), and counted here the Abarth's blurred
     // rims failed every design that painted its wheels.
-    if (motionBlurMesh(mesh) || damageOnly(model.materials?.[mesh.materialId]?.shader)) continue;
-    const file = (model.materials?.[mesh.materialId]?.slots?.txDiffuse ?? '').toLowerCase();
+    const traits = meshTraits(model, mesh);
+    if (traits.blur || traits.damage) continue;
+    const file = (traits.diffuse ?? '').toLowerCase();
     if (!file || designHides.has(file)) continue;
     if (!byFile.has(file)) byFile.set(file, []);
     byFile.get(file).push({ mesh, box: bounds(model, mesh), face: facing(model, mesh) });
@@ -3152,7 +3153,7 @@ function stacked(model, profile, targets, say, { design = {} } = {}) {
           const dot = mine.face[0] * q.face[0] + mine.face[1] * q.face[1] + mine.face[2] * q.face[2];
           if (dot < SAME_FACING) continue;      // an inner shell, not a twin
           // The two cockpits are the same cabin twice, and never drawn together.
-          const lods = [cockpitLod(mine.mesh), cockpitLod(q.mesh)];
+          const lods = [meshTraits(model, mine.mesh).lod, meshTraits(model, q.mesh).lod];
           if (lods[0] && lods[1] && lods[0] !== lods[1]) continue;
           said.add(pair);
 

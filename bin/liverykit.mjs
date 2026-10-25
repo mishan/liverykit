@@ -13,7 +13,7 @@ import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mj
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
-import { parseKn5 } from 'ac-kn5';
+import { loadModel } from '../src/model.mjs';
 import { textureFeatures, explain, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
 import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
 import { loadDecals } from '../src/decals.mjs';
@@ -259,7 +259,7 @@ if (values.explain) {
       : null,
     log: () => {},
   });
-  const model = await parseKn5(src, { keepTextureData: false });
+  const model = await loadModel(src, { keepTextureData: false });
 
   // Stock skins are evidence of intent: a file every skin replaces is meant to
   // vary per livery. Absent a skins directory the classifier simply loses that
@@ -552,7 +552,7 @@ if (values.ui) {
     for (const p of looked) console.log(`    ${p}`);
   }
   const { fitment, fitmentVerdict, worstOf, worstFirst } = await import('../src/fitment.mjs');
-  const model = modelPath ? await parseKn5(modelPath, { keepTextureData: false }) : null;
+  const model = modelPath ? await loadModel(modelPath, { keepTextureData: false }) : null;
   const report = fitment(livery, profile, fit, { model });
   const verdict = fitmentVerdict(report);
   const worst = worstOf(report.findings);

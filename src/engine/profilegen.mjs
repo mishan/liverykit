@@ -21,7 +21,7 @@ import { readCarFile, driverEyes } from 'ac-cardata';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-import { parseKn5, meshesUsingTexture, detailLayer, axisHints, axesFromWheels, discardsClear, motionBlurMesh, cockpitLod, SHEET_SPAN } from 'ac-kn5';
+import { loadModel, meshesWearing, meshTraits, axisHints, axesFromWheels, SHEET_SPAN } from '../model.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
 import { PROFILE_SCHEMA } from '../profile.mjs';
@@ -107,7 +107,7 @@ export async function profileFromKn5(path, {
   if (assumeSize !== null && !Number.isInteger(Math.log2(assumeSize))) {
     throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
   }
-  const model = await parseKn5(path, { keepTextureData: true });
+  const model = await loadModel(path, { keepTextureData: true });
 
   // Orientation comes from the wheels, which AC's physics requires every car to
   // name WHEEL_LF/RF/LR/RR — so it is a measurement, not a guess. Across 238
@@ -220,7 +220,7 @@ export async function profileFromKn5(path, {
   // so that is said wherever such a mesh carries a panel.
   const twinned = visibility ? blurTwins(model) : new Map();
   const unpaired = new Set(model.meshes
-    .filter((m, i) => motionBlurMesh(m) && !twinned.has(i)).map((m) => m.name));
+    .filter((m, i) => meshTraits(model, m).blur && !twinned.has(i)).map((m) => m.name));
 
   // How much geometry each texture actually covers. Two textures can both look
   // like "body" by name — a chassis diffuse and some chassis foil detail — and
@@ -362,8 +362,8 @@ export async function profileFromKn5(path, {
     // the slot in a different case from the texture entry answered no to the
     // stricter test and the bake went unrecorded.
     const namedLikeABake = /occlusion|_bake|bakes|_ao(_|\.)/i.test(tex.name);
-    const wearers = meshesUsingTexture(model, tex.name);
-    const isABaseLayer = wearers.some((m) => detailLayer(model.materials?.[m.materialId]) !== null);
+    const wearers = meshesWearing(model, tex.name);
+    const isABaseLayer = wearers.some((m) => meshTraits(model, m).detail !== null);
     if (namedLikeABake && isABaseLayer) entry.bake = true;
 
     // WHETHER SHIPPING THIS SHEET TRANSPARENT ACTUALLY HIDES IT, which the
@@ -378,7 +378,7 @@ export async function profileFromKn5(path, {
     // alpha-tested grille, which discards a clear sheet entirely, was reported
     // as a part no transparent texture could hide.
     entry.alphaHides = wearers.length > 0
-      && wearers.every((m) => discardsClear(model.materials?.[m.materialId]));
+      && wearers.every((m) => meshTraits(model, m).discardsClear);
     // `true` only when EVERY mesh wearing it is hidden. A texture half on a
     // hidden plate and half on a visible sill is still a texture somebody can
     // see, and the per-mesh list at the top of the profile carries the detail.
@@ -490,7 +490,7 @@ export async function profileFromKn5(path, {
     const share = (coverage.get(texName.toLowerCase()) ?? 0) / totalCoverage;
     if (share < minCoverage) { panels[role] = {}; continue; }
 
-    const meshes = meshesUsingTexture(model, texName);
+    const meshes = meshesWearing(model, texName);
     if (!meshes.length) { panels[role] = {}; continue; }
 
     // Before the islands, because on a tiled material they mostly do not
@@ -563,9 +563,9 @@ export async function profileFromKn5(path, {
       // Nor, from trackside, is an island in the cockpit the game draws only
       // from the driver's seat: outside, the other one is drawn instead. It
       // keeps what the seat sees of it, which is the whole of its audience.
-      if (model.meshes.some((m) => cockpitLod(m) === 'LR')) {
+      if (model.meshes.some((m) => meshTraits(model, m).lod === 'LR')) {
         for (const i of keep) {
-          if (cockpitLod(i.meshRef) !== 'HR') continue;
+          if (meshTraits(model, i.meshRef).lod !== 'HR') continue;
           i.visibleFraction = 0;
           delete i.safe;
         }

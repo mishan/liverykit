@@ -13,7 +13,7 @@
 
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
-import { vertex } from 'ac-kn5';
+import { vertex } from '../model.mjs';
 
 extend([namesPlugin]);
 

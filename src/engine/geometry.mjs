@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { designLights } from './lights.mjs';
-import { meshesUsingTexture, vertex, triangles, axesFromWheels, axisHints, blends, alphaTest, additive, trustworthyDiffuse, detailLayer, isGlass, damageOnly, motionBlurMesh, baseNormal, cockpitLod } from 'ac-kn5';
+import { meshesWearing, meshTraits, materialTraits, vertex, triangles, axesFromWheels, axisHints, additive } from '../model.mjs';
 import { cockpitEye } from './visibility.mjs';
 
 /**
@@ -98,7 +98,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
       // but `some` rather than `every`: a blended mesh drawn in the opaque pass
       // is a black slab and an opaque one drawn in the blended pass merely
       // sorts oddly. Wrong in the cheaper direction.
-      const blend = meshes.some((m) => blends(model.materials?.[m.materialId]));
+      const blend = meshes.some((m) => meshTraits(model, m).blends);
       groups.push({
         ...group, start, count: indices.length - start, blend,
         // `null` for anything the material does not state, so the viewer keeps
@@ -117,7 +117,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         //
         // A PAINTED group carries it too. A livery replaces the color of a
         // panel, never the shape of the seam running across it.
-        normalMap: baseNormal(model.materials?.[dominant]),
+        normalMap: materialTraits(model, dominant).normalMap,
         add: blend && additive(group.file),
         // A narrower question than `blend`: a number plate composites too but
         // is not glass, and should not go mirror-bright at a grazing angle.
@@ -158,11 +158,11 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
         // reading of the shader's name: a reflective material the model calls
         // opaque is a shiny solid, and this car has five of those on the sheet
         // its bumpers share with its paint.
-        glass: blend && isGlass(model.materials?.[dominant]?.shader),
+        glass: blend && materialTraits(model, dominant).glass,
         // A HARD CUTOUT — see `alphaTest`. From the dominant material for the
         // same reason glass is: one sheet, several materials, and this says how
         // the surface is drawn rather than what is on it.
-        alphaTest: alphaTest(model.materials?.[dominant]),
+        alphaTest: materialTraits(model, dominant).alphaTest,
       });
     }
   };
@@ -251,12 +251,14 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   //
   // `null` for every mesh on a car that ships one cockpit or none, which the
   // renderers read as "draw this whatever the camera". See `cockpitLod`.
-  const drawn = (m) => !claimed.has(m) && !carHides.has(m.name)
-    && !damageOnly(model.materials?.[m.materialId]?.shader)
-    && !motionBlurMesh(m);
+  const drawn = (m) => {
+    if (claimed.has(m) || carHides.has(m.name)) return false;
+    const traits = meshTraits(model, m);
+    return !traits.damage && !traits.blur;
+  };
 
   for (const { role, file } of files) {
-    const meshes = meshesUsingTexture(model, file).filter(drawn);
+    const meshes = meshesWearing(model, file).filter(drawn);
     for (const m of meshes) claimed.add(m);
     // Split by cockpit, because a group is one draw call and a renderer has to
     // be able to leave one of the two out. A painted role spanning both — this
@@ -264,7 +266,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // which costs a draw call and keeps the choice available.
     const byLod = new Map();
     for (const m of meshes) {
-      const lod = cockpitLod(m);
+      const lod = meshTraits(model, m).lod;
       if (!byLod.has(lod)) byLod.set(lod, []);
       byLod.get(lod).push(m);
     }
@@ -285,12 +287,12 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
   // test can say what it expects.
   const leftover = new Map();
   for (const m of (model.meshes ?? []).filter(drawn)) {
-    const mat = model.materials?.[m.materialId];
+    const traits = meshTraits(model, m);
     // `null` when the shader's diffuse is not a plausible standalone image —
     // see trustworthyDiffuse. The mesh still gets a group and still gets
     // drawn, just without a texture to claim for it, same as any other part
     // this project cannot supply artwork for.
-    const file = trustworthyDiffuse(mat?.shader) ? (mat?.slots?.txDiffuse ?? null) : null;
+    const file = traits.trustworthy ? traits.diffuse : null;
 
     // But "the diffuse is not the surface" and "the surface is unknowable" are
     // different claims, and the second one cost this car its whole cockpit:
@@ -305,14 +307,16 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // the software rasterizer draw a door card as a greyscale photograph of
     // its own shadows. A renderer that cannot composite two layers should get
     // the gray, and does.
-    const detail = file === null ? detailLayer(mat) : null;
+    // A copy: `bake` is this group's, and the traits are shared by every mesh
+    // on the material.
+    const detail = file === null && traits.detail ? { ...traits.detail } : null;
     if (detail) detail.bake = bakes.has(detail.diffuse.toLowerCase());
 
     // Keyed by what gets DRAWN rather than by the diffuse alone: two materials
     // tiling different details over the same bake — this car's carbon door
     // cards and its brushed-metal instrument surround do exactly that — are
     // two surfaces and cannot share one draw call.
-    const lod = cockpitLod(m);
+    const lod = traits.lod;
     // The part's own relief is part of the key for the same reason the detail
     // pair is: it is a texture the draw call binds, and two materials that
     // share a diffuse while stating different normal maps are two surfaces.
@@ -320,7 +324,7 @@ export function wholeModelGeometry(model, files, { livery = {}, profile = {} } =
     // MultiMap material with no normal to sample and by the fuel cap's
     // ksPerPixelNM, which has one. Merged, whichever contributed more
     // triangles would lend the other its shape.
-    const relief = baseNormal(model.materials?.[m.materialId]) ?? '';
+    const relief = traits.normalMap ?? '';
     const key = detail
       ? ['detail', detail.diffuse, detail.detail, detail.mult,
         detail.normal ?? '', detail.normalBlend, relief, lod ?? ''].join('\u0000')

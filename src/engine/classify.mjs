@@ -47,7 +47,7 @@
 // not the same as trustworthy without looking.
 // ---------------------------------------------------------------------------
 
-import { meshesUsingTexture, motionBlurMesh, triangles, vertex } from 'ac-kn5';
+import { meshesWearing, meshTraits, triangles, vertex } from '../model.mjs';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';
@@ -116,7 +116,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
     const mat = model.materials[mesh.materialId];
     if (!mat) continue;
     for (const tex of Object.values(mat.slots)) {
-      // Lowercased, as meshesUsingTexture compares: a slot may spell the file
+      // Lowercased, as meshesWearing compares: a slot may spell the file
       // differently from the role that names it, and they are one file.
       const k = tex.toLowerCase();
       if (!shadersFor.has(k)) shadersFor.set(k, new Set());
@@ -135,7 +135,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
   const out = [];
   for (const [role, tex] of Object.entries(roles)) {
     const file = typeof tex === 'string' ? tex : tex.file;
-    const ms = meshesUsingTexture(model, file);
+    const ms = meshesWearing(model, file);
     let area = 0;
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (const m of ms) {
@@ -147,7 +147,7 @@ export function textureFeatures(model, { roles = {}, skinCounts = new Map(), ski
       if (b[4] < z0) z0 = b[4]; if (b[5] > z1) z1 = b[5];
     }
     const bound = ms.length > 0 && x0 <= x1;
-    const blur = ms.length > 0 && ms.every((m) => motionBlurMesh(m));
+    const blur = ms.length > 0 && ms.every((m) => meshTraits(model, m).blur);
     const twins = blur
       ? [...new Set(ms.flatMap((m) => [...(twinned.get(model.meshes.indexOf(m)) ?? [])])
         .map((j) => model.materials[model.meshes[j].materialId]?.slots?.txDiffuse)
