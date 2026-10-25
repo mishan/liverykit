@@ -33,12 +33,8 @@ import { findIslands } from './engine/islands.mjs';
 import { meshesUsingTexture, vertex, triangles, blends, isGlass, trustworthyDiffuse, detailLayer, motionBlurMesh, damageOnly, cockpitLod } from 'ac-kn5';
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
-// From the editor's op module, because the BROWSER needs this list too — to
-// build the controls and to refuse a constraint nothing enforces — and
-// `fitment.mjs` is not one of the files served to it. One list, so the thing
-// the editor lets you write and the thing this checks cannot drift apart.
-export { CONSTRAINTS } from './ui/ops.js';
-import { CONSTRAINTS } from './ui/ops.js';
+export { CONSTRAINTS } from './constraints.mjs';
+import { CONSTRAINTS } from './constraints.mjs';
 
 // CSS color names, as the palette accepts them (see ui/uses.js).
 extend([namesPlugin]);

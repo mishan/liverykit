@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 
 import { editorState, renderSurface, bindingsReport } from '../src/ui/server.mjs';
 import { loadProfile, binding } from '../src/profile.mjs';
@@ -260,6 +260,24 @@ test('app.js declares its helpers before the boot await reaches them', async () 
     `nothing may be declared after the boot await: ${declarations.join(' | ')}`);
   assert.ok(after.every((l) => /^await |^\}?\)?;?$/.test(l) || l.startsWith('await')),
     `only boot statements may follow: ${after.join(' | ')}`);
+});
+
+test('nothing outside the editor imports from it', async () => {
+  // The editor belongs to the Assetto Corsa product and the checker does not,
+  // so a checker that reaches into the editor cannot be moved without it.
+  // Shared code lives outside src/ui and the editor imports it, not the
+  // other way round.
+  const src = new URL('../src/', import.meta.url);
+  const files = (await readdir(src, { recursive: true }))
+    .filter((f) => /\.m?js$/.test(f) && !f.startsWith('ui/'));
+  const reaching = [];
+  for (const f of files) {
+    const text = await readFile(new URL(f, src), 'utf8');
+    for (const [, from] of text.matchAll(/(?:import|export)\b[^;]*?from\s+'([^']+)'/g)) {
+      if (/(^|\/)ui\//.test(from)) reaching.push(`${f} -> ${from}`);
+    }
+  }
+  assert.deepEqual(reaching, []);
 });
 
 test('clicking a region selects it and gives it something to drag', async () => {
