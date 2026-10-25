@@ -21,7 +21,8 @@ import { readCarFile, driverEyes } from 'ac-cardata';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
-import { loadModel, meshesWearing, meshTraits, axisHints, axesFromWheels, SHEET_SPAN } from '../model.mjs';
+import { loadModel, meshesWearing, meshTraits, axisHints, SHEET_SPAN } from '../model.mjs';
+import { facing } from '../frame.mjs';
 import { findIslands, nameIslands, findMirrorPairs, findAdjacency, findSeams, islandOutline, carBounds } from './islands.mjs';
 import { uvLayout } from './uvlayout.mjs';
 import { PROFILE_SCHEMA } from '../profile.mjs';
@@ -103,6 +104,8 @@ export async function profileFromKn5(path, {
   id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008,
   visibility = true, assumeSize = null,
   skinsDir = null, log = () => {},
+  // Which way a model with no wheels faces: { left: '+X' | '-X', front: '+Z' | '-Z' }.
+  facing: facingAs = null,
 } = {}) {
   if (assumeSize !== null && !Number.isInteger(Math.log2(assumeSize))) {
     throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
@@ -113,23 +116,23 @@ export async function profileFromKn5(path, {
   // name WHEEL_LF/RF/LR/RR — so it is a measurement, not a guess. Across 238
   // fleet cars it resolved all of them, agreed with the old name heuristic on
   // all 145 the heuristic was confident about, and corrected 2 it had wrong.
-  // The heuristic stays as a fallback for a model somehow missing its wheels.
-  const wheels = axesFromWheels(model);
-  const hint = axisHints(model);
-  const axes = wheels ?? hint;
+  // A model without them takes the facing it is told, else the heuristic.
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
-  if (wheels) {
-    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
-        `  (from the wheels: track ${wheels.trackWidth.toFixed(2)}m, wheelbase ${wheels.wheelbase.toFixed(2)}m)`);
+  const axes = facing(model, { stated: facingAs, log });
+  const said = `  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front`;
+  if (axes.from === 'wheels') {
+    log(`${said}  (from the wheels: track ${axes.trackWidth.toFixed(2)}m, wheelbase ${axes.wheelbase.toFixed(2)}m)`);
     // A disagreement is worth surfacing even though the wheels win: it usually
     // means a mesh is named for the side it is NOT on.
-    if (hint.confident && (hint.left !== wheels.left || hint.front !== wheels.front)) {
+    const hint = axisHints(model);
+    if (hint.confident && (hint.left !== axes.left || hint.front !== axes.front)) {
       log('  ! mesh names disagree with the wheels about which way the car faces.');
       log('    The wheels are used. Check for parts named for the wrong side.');
     }
+  } else if (axes.from === 'stated') {
+    log(`${said}  (as stated: the model has no wheel nodes)`);
   } else {
-    log(`  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front` +
-        `  ! NO WHEEL NODES — falling back to mesh names` +
+    log(`${said}  ! NO WHEEL NODES — falling back to mesh names` +
         `${axes.confident ? '' : ', which are inconclusive here'}`);
   }
 
@@ -748,11 +751,11 @@ export async function profileFromKn5(path, {
         left: axes.left === 1 ? '+X' : '-X',
         front: axes.front === 1 ? '+Z' : '-Z',
         confident: axes.confident,
-        from: wheels ? 'wheels' : 'mesh names',
+        from: axes.from,
         // Checkable against a spec sheet, which is the point of recording it.
-        ...(wheels ? {
-          trackWidth: Math.round(wheels.trackWidth * 100) / 100,
-          wheelbase: Math.round(wheels.wheelbase * 100) / 100,
+        ...(axes.from === 'wheels' ? {
+          trackWidth: Math.round(axes.trackWidth * 100) / 100,
+          wheelbase: Math.round(axes.wheelbase * 100) / 100,
         } : {}),
       },
       notes:

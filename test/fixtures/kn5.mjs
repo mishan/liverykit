@@ -223,6 +223,8 @@ export function carKn5({
   // Moves the whole unwrap by whole sheets, as some exporters do. The game
   // draws it exactly as it would unshifted, so a profile of it should be too.
   uvShift = [0, 0],
+  // Without them it is a box with no front, for the facing it is told.
+  wheels = true,
   ...rest
 } = {}) {
   const x0 = -CAR.width / 2, x1 = CAR.width / 2;
@@ -275,13 +277,13 @@ export function carKn5({
   return buildKn5({
     ...rest,
     bodyMesh: { name: 'BODY_SHELL', verts, indices },
-    dummies: [
+    dummies: wheels ? [
       // +X is the car's left and +Z its front, which is the common convention
       // and the one these coordinates describe.
       { name: 'WHEEL_LF', at: [hx, 0.3, hz] },
       { name: 'WHEEL_RF', at: [-hx, 0.3, hz] },
       { name: 'WHEEL_LR', at: [hx, 0.3, -hz] },
       { name: 'WHEEL_RR', at: [-hx, 0.3, -hz] },
-    ],
+    ] : [],
   });
 }

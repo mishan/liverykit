@@ -174,7 +174,8 @@ is over-cautious.
   are exact. Mesh names were inconclusive on 91 of 235 cars and wrong on two. The
   profile records the resulting track width and wheelbase, which are worth a
   glance against a spec sheet — they are the only numbers in there you can check
-  independently.
+  independently. A model with no wheel nodes takes `--facing=+X,+Z`, recorded
+  as `from: 'stated'` and kept by regeneration; the wheels win where they exist.
 - **librsvg ignores SVG `<filter>` entirely.** `feGaussianBlur` renders as
   nothing, so glow is done at the raster stage instead. Don't put filters in
   generated SVG.
