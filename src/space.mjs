@@ -25,7 +25,7 @@
 // ---------------------------------------------------------------------------
 
 import { texture, panelName, resolveTargets } from './profile.mjs';
-import { meshesUsingTexture, blends, isGlass } from 'ac-kn5';
+import { meshesWearing, meshTraits } from './model.mjs';
 import { rectVisibility, gridVisibility, bendDeg, sampleRects, scanGrids, faceOnDeg, occupancyFor } from './engine/visibility.mjs';
 import { capOutline } from './engine/islands.mjs';
 import { MARGIN_CLEAN, FINE_MM, CURVED_DEG, CAP, NUMBER_MM, NAME_MM, TEXT_ADVANCE, TEXT_TRACKING, fitment, letterHeights, stripePanels, stripeAt, panelOnCar, drawnBy, flankBottom, carLength, bodyWidthMm, islandOf, leftSign } from './fitment.mjs';
@@ -178,7 +178,7 @@ export function cleanGrid({ profile, model, prepared, role, panel: asked, cellMm
   const boxMm = [pw * mpu[0] * 1000, ph * mpu[1] * 1000];
   const cols = Math.max(4, Math.min(48, Math.round(boxMm[0] / cellMm)));
   const rows = Math.max(4, Math.min(48, Math.round(boxMm[1] / cellMm)));
-  const meshes = meshesUsingTexture(model, texture(profile, role).file);
+  const meshes = meshesWearing(model, texture(profile, role).file);
 
   // One walk over the car's triangles for the whole panel, not one per cell:
   // the walk costs the same however small the rectangle, and 609 of them
@@ -1075,8 +1075,7 @@ export function aeroLayout({ profile, model, role, heightMm, name = 'aero', desi
   // tells it (`sheetOf`): a material that blends and is glass by its shader.
   const glass = (q) => {
     const mesh = q.source?.mesh ? model.meshes.find((m) => m.name === q.source.mesh) : null;
-    const mat = mesh ? model.materials?.[mesh.materialId] : null;
-    return Boolean(mat && blends(mat) && isGlass(mat.shader));
+    return Boolean(mesh && meshTraits(model, mesh).blends && meshTraits(model, mesh).glass);
   };
   for (const [panel, q] of Object.entries(profile.panels?.[role] ?? {})) {
     const unknown = typeof q.visible !== 'number';
@@ -1369,7 +1368,7 @@ export function stripeLayoutAcross({ profile, model, roles, widthMm, offsetMm = 
  */
 export function bandShapes(model, profile, role, panel, up, { side = 0, cellMm = SHAPE_CELL_MM } = {}) {
   const q = profile.panels[role][panel];
-  const meshes = meshesUsingTexture(model, texture(profile, role).file);
+  const meshes = meshesWearing(model, texture(profile, role).file);
   const island = islandOf(model, meshes, q);
   const [mx, my] = q.metresPerUv ?? [1, 1];
   const cells = (uv, m) => Math.max(8, Math.min(SHAPE_CELLS, Math.ceil((uv * m * 1000) / cellMm)));

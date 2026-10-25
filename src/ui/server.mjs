@@ -39,7 +39,7 @@ import { readFile, writeFile, mkdir, readdir, rename, realpath, stat, chmod, rm 
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { parseKn5, meshesUsingTexture, vertex, triangles, blends, additive } from 'ac-kn5';
+import { loadModel, meshesWearing, vertex, triangles } from '../model.mjs';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
 import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../profile.mjs';
@@ -119,7 +119,7 @@ async function otherCars(current) {
  * indices — so the browser can take typed-array views straight over the buffer.
  */
 export function modelGeometry(model, file) {
-  const meshes = meshesUsingTexture(model, file);
+  const meshes = meshesWearing(model, file);
   const positions = [];
   const uvs = [];
   const normals = [];
@@ -884,7 +884,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     if (!modelPath) { modelError = 'no model path given'; return null; }
     modelLoading ??= (async () => {
       try {
-        model = await parseKn5(modelPath, { keepTextureData: false });
+        model = await loadModel(modelPath, { keepTextureData: false });
         log(`  model loaded: ${modelPath}`);
       } catch (e) {
         modelError = e.message;
@@ -928,7 +928,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   const loadStock = async () => {
     const stock = new Map();
     try {
-      const full = await parseKn5(modelPath, { keepTextureData: true });
+      const full = await loadModel(modelPath, { keepTextureData: true });
       // EVERY slot a material binds, not a list of the ones we happen to
       // want today.
       //

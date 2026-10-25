@@ -28,7 +28,7 @@
 // panel filter.
 // ---------------------------------------------------------------------------
 
-import { triangles, vertex, SHEET_SPAN } from 'ac-kn5';
+import { triangles, vertex, SHEET_SPAN } from '../model.mjs';
 
 /**
  * Where the labels change, as the share of surface on islands that fit.

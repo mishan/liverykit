@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdtemp, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -2681,4 +2681,20 @@ test('optional is refused anywhere but a tag selection, and pinning a region dro
     { profile: p, role: 'body', surfaceKey: 'surfaces.body' }).regions;
   assert.equal(pinned[0].optional, undefined);
   assert.deepEqual(expandRegions(p, 'body', pinned).regions.map((r) => r.panel), ['a']);
+});
+
+test('only the model module and the profile generator read a kn5 directly', async () => {
+  // What a mesh is — glass, a damage overlay, a cockpit LOD — is decided in
+  // one place, src/model.mjs, so a second model format answers it once rather
+  // than at every call site that once asked a shader name.
+  const src = new URL('../src/', import.meta.url);
+  const allowed = new Set(['model.mjs', 'engine/profilegen.mjs']);
+  const files = (await readdir(src, { recursive: true }))
+    .filter((f) => /\.m?js$/.test(f) && !allowed.has(f));
+  const reading = [];
+  for (const f of files) {
+    const text = await readFile(new URL(f, src), 'utf8');
+    if (/from\s+'ac-kn5'/.test(text)) reading.push(f);
+  }
+  assert.deepEqual(reading, []);
 });

@@ -16,7 +16,7 @@ import { renderTexture } from './render.mjs';
 import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
-import { parseKn5 } from 'ac-kn5';
+import { loadModel } from './model.mjs';
 import { designLights, extConfigIni } from './engine/lights.mjs';
 import { wholeModelGeometry } from './engine/geometry.mjs';
 import { carSheets } from './engine/shot.mjs';
@@ -136,7 +136,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   let modelTextures = null;
   const stockFor = async (file) => {
     if (!modelPath) return null;
-    modelTextures ??= parseKn5(modelPath, { keepTextureData: true })
+    modelTextures ??= loadModel(modelPath, { keepTextureData: true })
       .then((m) => new Map((m.textures ?? []).map((t) => [t.name.toLowerCase(), t.data])))
       .catch((e) => { log(`  ! could not read ${modelPath} for its stock textures: ${e.message}`); return new Map(); });
     const bytes = (await modelTextures).get(file.toLowerCase());
@@ -226,7 +226,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // one; lights stated in metres do not.
   if (livery.underglow || livery.lights?.length) {
     const model = livery.underglow && modelPath
-      ? await parseKn5(modelPath).catch((e) => { log(`  ! could not read ${modelPath} for the lights: ${e.message}`); return null; })
+      ? await loadModel(modelPath).catch((e) => { log(`  ! could not read ${modelPath} for the lights: ${e.message}`); return null; })
       : null;
     if (livery.underglow && !model) {
       notes.push({ term: 'underglow', status: 'light', text: 'underglow: placed from the car\'s model, and there is none to read; pass --model' });
@@ -334,7 +334,7 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
     // TRUE here, unlike every other model read in this project: the whole
     // point of this pass is the texture bytes, not just the geometry they are
     // wrapped around.
-    model = await parseKn5(modelPath, { keepTextureData: true });
+    model = await loadModel(modelPath, { keepTextureData: true });
   } catch (e) {
     log(`  ! could not read ${modelPath} for preview.jpg: ${e.message}`);
     return null;
