@@ -46,24 +46,12 @@
 // `reachOnly` here and `limit` in panelsWithTags.
 // ---------------------------------------------------------------------------
 
-/** Cut points as fractions of the car's length, tail (0) to nose (1). */
+import { SECTIONS, sectionAt } from '../frame.mjs';
+
 /** A panel whose surface turns this far or less across most of it is `flat`. */
 export const FLAT_DEG = 25;
 
-const SECTIONS = [
-  [0.82, 'nose'], [0.62, 'front'], [0.38, 'mid'], [0.18, 'rear'], [-Infinity, 'tail'],
-];
-
-/**
- * The same sections as bands, for a panel's extent, and the two levels, in the
- * order tags are written. The bands at either end are open, so an extent that
- * reaches past the frame still counts; `width` is the nominal width that "half
- * the band" is measured against.
- */
-const SECTION_BANDS = [
-  ['nose', 0.82, Infinity, 0.18], ['front', 0.62, 0.82, 0.2], ['mid', 0.38, 0.62, 0.24],
-  ['rear', 0.18, 0.38, 0.2], ['tail', -Infinity, 0.18, 0.18],
-];
+/** The two levels as bands, in the order tags are written, as SECTIONS are. */
 const LEVEL_BANDS = [['upper', 0.5, Infinity, 0.5], ['lower', -Infinity, 0.5, 0.5]];
 
 /**
@@ -174,7 +162,7 @@ function placeOf(frame, p) {
 
   let zr = (c[2] - zMin) / zSpan;
   if (front < 0) zr = 1 - zr;
-  const section = SECTIONS.find(([cut]) => zr > cut)[1];
+  const section = sectionAt(zr);
   const level = (c[1] - yMin) / ySpan > 0.5 ? 'upper' : 'lower';
 
   // In the centroid's frame, so the centroid's own section and level are the
@@ -185,7 +173,7 @@ function placeOf(frame, p) {
     let z0 = (box[0][2] - zMin) / zSpan, z1 = (box[1][2] - zMin) / zSpan;
     if (front < 0) [z0, z1] = [1 - z1, 1 - z0];
     const y0 = (box[0][1] - yMin) / ySpan, y1 = (box[1][1] - yMin) / ySpan;
-    for (const [name, lo, hi, width] of SECTION_BANDS) {
+    for (const [name, lo, hi, width] of SECTIONS) {
       if (name !== section && reaches(z0, z1, lo, hi, width)) reach.push(name);
     }
     for (const [name, lo, hi, width] of LEVEL_BANDS) {
@@ -234,7 +222,7 @@ export function computeTags(profile) {
         // panel before stops matching it. Written in band order.
         const within = (n) => n === at.section || n === at.level || at.reach.includes(n);
         tags.push(at.side,
-          ...SECTION_BANDS.map(([n]) => n).filter(within),
+          ...SECTIONS.map(([n]) => n).filter(within),
           ...LEVEL_BANDS.map(([n]) => n).filter(within));
       }
 

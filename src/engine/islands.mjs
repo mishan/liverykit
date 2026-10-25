@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 
 import { vertex, triangles } from '../model.mjs';
+import { sectionAt } from '../frame.mjs';
 import { polyArea } from './poly.mjs';
 
 /**
@@ -326,7 +327,7 @@ export function nameIslands(islands, axes, bounds = null) {
     // Longitudinal position as a 0..1 fraction from tail to nose.
     let zr = (isl.centroid.z - zMin) / (zMax - zMin || 1);
     if (axes.front < 0) zr = 1 - zr;
-    const section = zr > 0.82 ? 'nose' : zr > 0.62 ? 'front' : zr > 0.38 ? 'mid' : zr > 0.18 ? 'rear' : 'tail';
+    const section = sectionAt(zr);
 
     const level = isl.centroid.y > (isl.box3d.y0 + isl.box3d.y1) / 2 ? 'upper' : 'lower';
 
