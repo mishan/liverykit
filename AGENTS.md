@@ -30,15 +30,17 @@ Firefox; see [Tests](#tests).
 | `…/src/output.mjs` | what an output does, and the default: one PNG per surface |
 | `…/src/model.mjs` | a model, whichever format read it, and what each mesh is (`meshTraits`) |
 | `…/src/formats/` | kn5, through ac-kn5, and binary glTF |
+| `…/src/generate.mjs` | a profile from any model, with nothing but the model to go on |
+| `…/src/images.mjs` | an image's size, from its own DDS, PNG, JPEG or WebP header |
 | `…/src/frame.mjs` | which way a model faces, and its sections nose to tail |
 | `…/src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
 | `…/src/profile.mjs` | profiles: roles, bindings, panels, tags |
 | `…/src/fit.mjs` | fits: per-car placement overrides and copies |
 | `…/src/render.mjs` | regions -> SVG. Pure, and deliberately fast |
-| `…/src/engine/` | UV islands, visibility casting, tags, encoding |
+| `…/src/engine/` | UV islands, panels (`measure.mjs`), visibility, tags, wheels, encoding |
 | `src/engine/skin.mjs` | Assetto Corsa's output: DDS, clear sheets, lights, preview, ZIP |
 | `src/engine/classify.mjs` | Assetto Corsa's vocabulary, and the classifier that proposes it |
-| `src/engine/` | the rest of Assetto Corsa: profile generation, wheels, lights, shots |
+| `src/engine/` | the rest of Assetto Corsa: the kn5 profile generator, lights, shots |
 | `src/ui/` | the fitting editor: a server and a no-build-step browser app |
 | `src/packs/` | treatments; `core`, the primitives with no house style, is toile's |
 | `cars/`, `liveries/`, `fits/` | data, not code |
@@ -46,8 +48,9 @@ Firefox; see [Tests](#tests).
 Every file that moved to toile left a re-export at its old `src/` path, and
 liverykit's own code imports through those. The ones whose module reads
 profiles also load Assetto Corsa's vocabulary, so `liverykit/src/profile.mjs`
-loads a shipped car as it always did; only `classify.mjs` and `wheels.mjs`,
-which the vocabulary is built from, import toile directly. Liverykit reaches
+loads a shipped car as it always did; only `classify.mjs`, which the
+vocabulary is built from, imports toile directly, along with the files toile
+gained since the move, which have no old path to import through. Liverykit reaches
 toile by relative path rather than by package name, because liverykit is
 published and toile is not: `packages/toile/src` ships inside liverykit until
 it is.

@@ -49,6 +49,7 @@ const OWN = { 'ui_skin.json': 'description', 'livery.png': 'badge', 'preview.jpg
 function inside(outDir, file) {
   const problem = fileNameProblem(file);
   if (problem) throw new Error(`${file} cannot be written: ${problem}`);
+  if (!/\.(dds|png)$/i.test(file)) throw new Error(`${file} cannot be written: an Assetto Corsa skin carries DDS or PNG`);
   const own = OWN[String(file).toLowerCase()];
   if (own) throw new Error(`${file} cannot be written: it is the name of the skin's own ${own}`);
   return join(outDir, file);

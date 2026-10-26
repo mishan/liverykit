@@ -15,7 +15,7 @@
  * the wrong surface.
  */
 import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { axesFromWheels as kn5Wheels } from './kn5.mjs';
 import { placeOnSheet } from './sheet.mjs';
 
@@ -32,10 +32,15 @@ const WIDTH = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 
 export async function loadModel(path, opts = {}) {
   const model = parseGlb(await readFile(path), { ...opts, path: String(path) });
-  // An image beside the file is part of the model as much as one inside it.
+  // An image beside the file is part of the model as much as one inside it,
+  // and one anywhere else is not read: a model is somebody else's file, and
+  // its URIs can point anywhere this process can read.
+  const folder = resolve(dirname(String(path)));
   for (const t of model.textures) {
     if (!t.uri) continue;
-    const data = await readFile(join(dirname(String(path)), t.uri)).catch(() => null);
+    const at = resolve(folder, t.uri);
+    if (!at.startsWith(folder + sep)) { t.size = 0; t.outside = true; continue; }
+    const data = await readFile(at).catch(() => null);
     t.size = data?.length ?? 0;
     t.missing = !data;
     if (opts.keepTextureData) t.data = data;
@@ -85,9 +90,12 @@ export function parseGlb(buf, { keepTextureData = false, path = 'model' } = {}) 
     return t.source === undefined ? null : named('images', t.source, `texture ${texture.index}`);
   };
   const nameOfImage = (img, i) => {
-    if (img.uri && !img.uri.startsWith('data:')) return decodeURIComponent(img.uri.split(/[\\/]/).pop());
+    // Decoded before it is cut, so an encoded slash is still a slash.
+    if (img.uri && !img.uri.startsWith('data:')) return decodeURIComponent(img.uri).split(/[\\/]/).pop();
     const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[img.mimeType] ?? '';
-    return img.name && /\.\w+$/.test(img.name) ? img.name : `${img.name ?? `image${i}`}${ext}`;
+    // A name and no more: one carrying a path would be written where it points.
+    const own = img.name?.split(/[\\/]/).pop() || null;
+    return own && /\.\w+$/.test(own) ? own : `${own ?? `image${i}`}${ext}`;
   };
   const images = (json.images ?? []).map((img, i) => nameOfImage(img, i));
   const imageName = (texture, what) => {
@@ -106,6 +114,11 @@ export function parseGlb(buf, { keepTextureData = false, path = 'model' } = {}) 
       // The image is the surface's color only where nothing multiplies it.
       tinted: Boolean(pbr.baseColorFactor?.slice(0, 3).some((c) => c !== 1)),
       normal: imageName(m.normalTexture, `${what}'s normal map`),
+      // Every image the material uses, by what it uses it for.
+      slots: Object.fromEntries([
+        ['baseColor', pbr.baseColorTexture], ['metallicRoughness', pbr.metallicRoughnessTexture],
+        ['normal', m.normalTexture], ['occlusion', m.occlusionTexture], ['emissive', m.emissiveTexture],
+      ].filter(([, t]) => t).map(([slot, t]) => [slot, imageName(t, `${what}'s ${slot}`)]).filter(([, n]) => n)),
     };
   });
 

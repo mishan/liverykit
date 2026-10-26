@@ -61,6 +61,8 @@ export function buildKn5({
   // encrypted kn5 substitutes 1x1 placeholders, so a test that wants the stock
   // texture route to hand back real bytes asks for a bigger one.
   textureBytes = 128,
+  // The embedded image itself, where a DDS header of the stated size will not do.
+  textureData = null,
   // More textures after the first, for tests about a car that wears more than
   // one sheet: `[{ name, width, height }]`. A material binds one by naming it
   // in `slots.txDiffuse`, and a mesh picks that material with `materialId`.
@@ -72,11 +74,14 @@ export function buildKn5({
   if (version > 5) parts.push(u32(0));
 
   // textures: one null slot (type 0, no further fields) then one real DDS
-  const dds = Buffer.alloc(Math.max(128, textureBytes)); dds.write('DDS ', 0, 'ascii');
-  // An encrypted model substitutes a 1x1 image for every texture; the real one
-  // lives in the protected blob appended after the node tree.
-  dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);          // height
-  dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);          // width
+  const dds = textureData ?? Buffer.alloc(Math.max(128, textureBytes));
+  if (!textureData) {
+    dds.write('DDS ', 0, 'ascii');
+    // An encrypted model substitutes a 1x1 image for every texture; the real
+    // one lives in the protected blob appended after the node tree.
+    dds.writeUInt32LE(placeholderTexture ? 1 : 64, 12);        // height
+    dds.writeUInt32LE(placeholderTexture ? 1 : 32, 16);        // width
+  }
   parts.push(u32(2 + extraTextures.length), u32(0), u32(1), str(textureName), u32(dds.length), dds);
   for (const t of extraTextures) {
     const extra = Buffer.alloc(128); extra.write('DDS ', 0, 'ascii');

@@ -98,6 +98,8 @@ export async function decodeDds(buffer, { maxSize = 512 } = {}) {
  */
 export async function stockPng(bytes, file) {
   if (isPngTexture(file)) return Buffer.from(bytes);
+  // A model in another format carries JPEG and WebP, which sharp reads.
+  if (Buffer.from(bytes).toString('ascii', 0, 4) !== 'DDS ') return sharp(bytes).png().toBuffer();
   const img = await decodeDds(bytes, { maxSize: Infinity });
   if (!img) throw new Error(`${file} is a DDS this decoder cannot read`);
   // A 1x1 is an encrypted kn5's placeholder, and not the car's artwork.

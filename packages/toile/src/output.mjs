@@ -53,6 +53,7 @@ export function needOutput(output) {
 export const pngOutput = {
   async writeSurface({ png, tex, width, height, outDir, pngDir = outDir, keep = false }) {
     const file = tex.file.replace(/\.[^.]+$/, '') + '.png';
+    // Written into outDir and nowhere else, whatever a model named its image.
     const problem = fileNameProblem(file);
     if (problem) throw new Error(`${tex.file} cannot be written: ${problem}`);
     await writeFile(join(outDir, file), png, { flag: 'wx' }).catch((e) => {

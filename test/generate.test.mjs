@@ -1,0 +1,205 @@
+// A profile from a model with nothing else to go on. The car must measure the
+// same through either format, and an object that is not a car must measure
+// at all.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { parseKn5Buffer, vertex, triangles } from 'ac-kn5';
+import sharp from 'sharp';
+import { profileFromModel } from '../packages/toile/src/generate.mjs';
+import { imageHeader } from '../packages/toile/src/images.mjs';
+import { validateProfile } from '../src/profile.mjs';
+import { profileFromKn5 } from '../src/engine/profilegen.mjs';
+import { carKn5, CAR } from './fixtures/kn5.mjs';
+import { glbFrom, teapotGlb, TEAPOT, packer, writeGlb } from './fixtures/gltf.mjs';
+
+async function inDir(fn) {
+  const dir = await mkdtemp(join(tmpdir(), 'lk-generate-'));
+  try { return await fn(dir); } finally { await rm(dir, { recursive: true, force: true }); }
+}
+
+test('the car profiles the same from its glTF as from its kn5', () => inDir(async (dir) => {
+  const bytes = carKn5();
+  const kn5 = parseKn5Buffer(bytes, { keepTextureData: true });
+  await writeFile(join(dir, 'car.kn5'), bytes);
+  await writeFile(join(dir, 'car.glb'), glbFrom(kn5, { vertex, triangles }));
+  // Its paint beside it, as the kn5 embeds it.
+  await writeFile(join(dir, CAR.texture), kn5.textures[0].data);
+  const fromKn5 = await profileFromKn5(join(dir, 'car.kn5'), { log: () => {} });
+  const fromGlb = await profileFromModel(join(dir, 'car.glb'));
+  assert.deepEqual(Object.keys(fromGlb.textures), Object.keys(fromKn5.textures));
+  for (const [role, t] of Object.entries(fromKn5.textures)) {
+    assert.deepEqual([fromGlb.textures[role].width, fromGlb.textures[role].height], [t.width, t.height], role);
+  }
+  // A seam's `here` is a segment, and which end is listed first falls out of
+  // a tie between coordinates the two formats store a float's last bit apart.
+  const canonical = (panels) => JSON.parse(JSON.stringify(panels), (k, v) => (k === 'here' ? [...v].sort() : v));
+  assert.deepEqual(canonical(fromGlb.panels), canonical(fromKn5.panels));
+  assert.deepEqual(fromGlb.calibration.axes, fromKn5.calibration.axes);
+  assert.equal(fromGlb.calibration.method, 'glTF');
+}));
+
+test('a teapot gets panels, seams and visibility', () => inDir(async (dir) => {
+  await writeFile(join(dir, 'teapot.glb'), await teapotGlb());
+  const p = await profileFromModel(join(dir, 'teapot.glb'));
+  assert.doesNotThrow(() => validateProfile(p));
+  assert.deepEqual(Object.values(p.textures).map((t) => [t.file, t.width, t.height]),
+    [[TEAPOT.image, TEAPOT.size, TEAPOT.size]]);
+  const panels = Object.values(p.panels.teapot);
+  assert.equal(panels.length, 2, 'the body and the lid');
+  const [pot, lid] = [panels.find((q) => q.source.mesh === 'pot'), panels.find((q) => q.source.mesh === 'lid')];
+  assert.ok(pot && lid);
+  const name = (q) => Object.keys(p.panels.teapot).find((n) => p.panels.teapot[n] === q);
+  assert.deepEqual(pot.adjacent, [name(lid)], 'the lid sits on the body');
+  assert.ok(pot.seams?.[name(lid)] && lid.seams?.[name(pot)], 'and artwork can cross from one to the other');
+  for (const q of panels) {
+    assert.ok(q.visible > 0 && q.visible <= 1, `${q.source.mesh} is seen from outside: ${q.visible}`);
+    assert.ok(q.tags?.length, `${q.source.mesh} is tagged`);
+  }
+  assert.deepEqual(p.calibration.axes, { left: '+X', front: '+Z', confident: false, from: 'mesh names' },
+    'nothing to say which way it faces, and it says so');
+}));
+
+test('a kn5 paints only what an Assetto Corsa skin can carry', () => inDir(async (dir) => {
+  // A skin is DDS or PNG. A JPEG a kn5 embeds would be written as DDS bytes
+  // under a .jpg name, which loads and is wrong; it is not offered as paint.
+  const jpeg = await sharp({ create: { width: 64, height: 32, channels: 3, background: '#888' } }).jpeg().toBuffer();
+  await writeFile(join(dir, 'car.kn5'), carKn5({ textureName: 'body.jpg', textureData: jpeg }));
+  const p = await profileFromKn5(join(dir, 'car.kn5'), { log: () => {} });
+  assert.deepEqual(Object.values(p.textures).map((t) => t.file), []);
+  assert.match(p.doNotPaint.find((d) => d.file === 'body.jpg')?.reason ?? '', /DDS or PNG/, 'and it says why');
+  // Nor will the skin writer carry one, whatever profile asks it to.
+  const { acSkin } = await import('../src/engine/skin.mjs');
+  await assert.rejects(acSkin.writeSurface({ png: jpeg, tex: { file: 'paint.jpg' }, width: 64, height: 32, outDir: dir }),
+    /DDS or PNG/);
+  // A model's own JPEG or WebP is still read as its stock artwork.
+  const { stockPng } = await import('../packages/toile/src/engine/pipeline.mjs');
+  for (const [file, bytes] of [['paint.jpg', jpeg], ['paint.webp', await sharp(jpeg).webp().toBuffer()]]) {
+    const { width, height, format } = await sharp(await stockPng(bytes, file)).metadata();
+    assert.deepEqual([format, width, height], ['png', 64, 32], file);
+  }
+}));
+
+test('a model that cannot be measured honestly says so', () => inDir(async (dir) => {
+  // Encrypted: every image is a 1x1 stand-in, and only liverykit's generator
+  // knows where the real sizes are.
+  await writeFile(join(dir, 'locked.kn5'), carKn5({ encrypted: true, placeholderTexture: true }));
+  await assert.rejects(profileFromModel(join(dir, 'locked.kn5')), /encrypted.*--from-kn5/s);
+  // Two images a folder apart are one file in a skin.
+  const pack = packer();
+  const POSITION = pack.add(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 'VEC3');
+  const TEXCOORD_0 = pack.add(new Float32Array([0, 0, 1, 0, 0, 1]), 'VEC2');
+  const { fields, bin } = pack.finish();
+  const prim = (material) => ({ attributes: { POSITION, TEXCOORD_0 }, material });
+  await writeFile(join(dir, 'twins.glb'), writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
+    nodes: [{ mesh: 0 }, { mesh: 1 }], meshes: [{ primitives: [prim(0)] }, { primitives: [prim(1)] }],
+    materials: [0, 1].map((i) => ({ pbrMetallicRoughness: { baseColorTexture: { index: i } } })),
+    textures: [{ source: 0 }, { source: 1 }], images: [{ uri: 'body/paint.png' }, { uri: 'wheels/paint.png' }],
+    ...fields,
+  }, bin));
+  const twins = await profileFromModel(join(dir, 'twins.glb'));
+  assert.deepEqual(Object.keys(twins.textures), []);
+  assert.match(twins.doNotPaint.map((d) => d.reason).join(), /body\/paint\.png and wheels\/paint\.png .*one file/);
+  // So are two whose names differ only after the stem, as every output names
+  // a texture by its stem; one image listed twice is still one image.
+  const glb = (images) => writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
+    nodes: [{ mesh: 0 }, { mesh: 1 }], meshes: [{ primitives: [prim(0)] }, { primitives: [prim(1)] }],
+    materials: [0, 1].map((i) => ({ pbrMetallicRoughness: { baseColorTexture: { index: i } } })),
+    textures: [{ source: 0 }, { source: 1 }], images, ...fields,
+  }, bin);
+  const png8 = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#888' } }).png().toBuffer();
+  await writeFile(join(dir, 'paint.png'), png8);
+  await writeFile(join(dir, 'paint.jpg'), await sharp(png8).jpeg().toBuffer());
+  await writeFile(join(dir, 'stems.glb'), glb([{ uri: 'paint.png' }, { uri: 'paint.jpg' }]));
+  assert.deepEqual(Object.keys((await profileFromModel(join(dir, 'stems.glb'))).textures), []);
+  await writeFile(join(dir, 'twice.glb'), glb([{ uri: 'paint.png' }, { uri: 'paint.png' }]));
+  assert.deepEqual(Object.keys((await profileFromModel(join(dir, 'twice.glb'))).textures), ['paint']);
+  // An image outside the model's folder is not read, whatever the model says.
+  await mkdir(join(dir, 'model'));
+  await writeFile(join(dir, 'model', 'peek.glb'), glb([{ uri: '../paint.png' }, { uri: '../paint.png' }]));
+  const peek = await profileFromModel(join(dir, 'model', 'peek.glb'));
+  assert.deepEqual(Object.keys(peek.textures), []);
+  assert.match(peek.doNotPaint.map((d) => d.reason).join(), /outside the model's folder/);
+  // An image a material uses for anything but its color is said not to be paint.
+  const slots = writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [prim(0)] }],
+    materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicRoughnessTexture: { index: 1 } },
+      emissiveTexture: { index: 2 }, occlusionTexture: { index: 3 } }],
+    textures: [0, 1, 2, 3].map((source) => ({ source })),
+    images: ['paint.png', 'mr.png', 'glow.png', 'ao.png'].map((uri) => ({ uri })), ...fields,
+  }, bin);
+  await writeFile(join(dir, 'slots.glb'), slots);
+  const why = Object.fromEntries((await profileFromModel(join(dir, 'slots.glb'))).doNotPaint.map((d) => [d.file, d.reason]));
+  assert.deepEqual(Object.keys(why).sort(), ['ao.png', 'glow.png', 'mr.png']);
+  assert.match(why['glow.png'], /emissive/);
+  // A color multiplied over the image: paintable, and said to be tinted.
+  await writeFile(join(dir, 'red.glb'), await teapotGlb({ baseColorFactor: [1, 0, 0, 1] }));
+  const red = await profileFromModel(join(dir, 'red.glb'));
+  assert.match(red.textures.teapot.notes, /multiplies this image by a color/);
+}));
+
+test('an image is written under its own name, inside the output and nowhere else', () => inDir(async (dir) => {
+  // A model is somebody else's file, and an image inside one can be named
+  // anything, a path out of the output among them.
+  const pack = packer();
+  const POSITION = pack.add(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 'VEC3');
+  const TEXCOORD_0 = pack.add(new Float32Array([0, 0, 1, 0, 0, 1]), 'VEC2');
+  const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#888' } }).png().toBuffer();
+  const image = pack.addBytes(png);
+  const { fields, bin } = pack.finish();
+  await writeFile(join(dir, 'sly.glb'), writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION, TEXCOORD_0 }, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+    textures: [{ source: 0 }], images: [{ name: '../escaped.png', mimeType: 'image/png', bufferView: image }],
+    ...fields,
+  }, bin));
+  const p = await profileFromModel(join(dir, 'sly.glb'));
+  assert.deepEqual(Object.values(p.textures).map((t) => t.file), ['escaped.png']);
+  const { parseGlb } = await import('../packages/toile/src/model.mjs');
+  const encoded = parseGlb(writeGlb({ asset: { version: '2.0' }, images: [{ uri: '..%2Fsneaky.png' }] }));
+  assert.deepEqual(encoded.textures.map((t) => t.name), ['sneaky.png'], 'an encoded slash is still a slash');
+  const { pngOutput } = await import('../packages/toile/src/output.mjs');
+  await assert.rejects(pngOutput.writeSurface({ png, tex: { file: '../x.png' }, width: 8, height: 8, outDir: dir }),
+    /cannot be written/);
+}));
+
+test('an eye the profile was measured from is recorded with it', () => inDir(async (dir) => {
+  // So whatever stands at the driver's seat later stands where the
+  // measurement did.
+  await writeFile(join(dir, 'teapot.glb'), await teapotGlb());
+  const p = await profileFromModel(join(dir, 'teapot.glb'), { eye: { x: 0, y: 1.2, z: 0.1234567 } });
+  assert.deepEqual(p.calibration.eye, { at: [0, 1.2, 0.123], from: 'given' });
+}));
+
+test('an image\'s size is read from its own header', async () => {
+  const raw = { create: { width: 37, height: 21, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 0.5 } } };
+  const cases = {
+    png: [(s) => s.png(), 'PNG', true],
+    jpeg: [(s) => s.jpeg(), 'JPEG', false],
+    webp: [(s) => s.webp(), 'WEBP', true],
+    'lossless webp': [(s) => s.webp({ lossless: true }), 'WEBP', true],
+  };
+  for (const [what, [encode, fourCC, alpha]] of Object.entries(cases)) {
+    const h = imageHeader(what, await encode(sharp(raw)).toBuffer());
+    assert.deepEqual([h?.width, h?.height, h?.fourCC, h?.alpha], [37, 21, fourCC, alpha], what);
+  }
+  assert.equal(imageHeader('x', Buffer.from('not an image, but long enough to be read as one')), null);
+  // A lossless WebP states its size in its first 25 bytes, and a small one
+  // may be little longer than that.
+  const tiny = (await sharp({ create: { width: 1, height: 1, channels: 3, background: '#000' } }).webp({ lossless: true }).toBuffer()).subarray(0, 30);
+  assert.deepEqual([imageHeader('tiny', tiny)?.width, imageHeader('tiny', tiny)?.height], [1, 1]);
+  // A DDS cut short has no size to read, rather than a read past its end.
+  const dds = Buffer.alloc(40); dds.write('DDS ', 0, 'ascii');
+  assert.equal(imageHeader('short.dds', dds), null);
+  // A JPEG may pad a marker with fill bytes.
+  const plain = await sharp(raw).jpeg().toBuffer();
+  const padded = Buffer.concat([plain.subarray(0, 2), Buffer.from([0xff]), plain.subarray(2)]);
+  assert.deepEqual([imageHeader('padded', padded)?.width, imageHeader('padded', padded)?.height], [37, 21]);
+});
