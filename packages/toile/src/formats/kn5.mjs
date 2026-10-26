@@ -7,11 +7,11 @@ import {
   parseKn5, parseKn5Buffer, SHEET_SPAN, additive, motionBlurOnly,
   vertex, triangles, meshesUsingTexture, axesFromWheels, axisHints,
   blends, alphaTest, discardsClear, isGlass, damageOnly, trustworthyDiffuse,
-  detailLayer, baseNormal, motionBlurMesh, cockpitLod,
+  detailLayer, baseNormal, motionBlurMesh, cockpitLod, placeOnSheet,
 } from 'ac-kn5';
 
 export const name = 'kn5';
-export { parseKn5 as loadModel, parseKn5Buffer, SHEET_SPAN, additive, motionBlurOnly, vertex, triangles, axesFromWheels, axisHints };
+export { parseKn5 as loadModel, parseKn5Buffer, SHEET_SPAN, additive, motionBlurOnly, vertex, triangles, axesFromWheels, axisHints, placeOnSheet };
 export const meshesWearing = meshesUsingTexture;
 
 export function materialTraits(model, materialId) {

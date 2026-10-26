@@ -16,8 +16,7 @@
  */
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
-import { axesFromWheels as kn5Wheels } from './kn5.mjs';
-import { placeOnSheet } from './sheet.mjs';
+import { axesFromWheels as kn5Wheels, placeOnSheet } from './kn5.mjs';
 
 export const name = 'glTF';
 
