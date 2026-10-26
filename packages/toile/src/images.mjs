@@ -4,7 +4,7 @@
  * does. Null for anything else, or for too few bytes to say.
  */
 export function imageHeader(name, data) {
-  if (!data || data.length < 32) return null;
+  if (!data || data.length < 16) return null;
   if (data.toString('ascii', 0, 4) === 'DDS ') {
     if (data.length < 128) return null;           // a header cut short says nothing
     const pfFlags = data.readUInt32LE(80);
@@ -37,6 +37,7 @@ export function imageHeader(name, data) {
   if (data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
     const chunk = data.toString('ascii', 12, 16);
     const webp = (width, height, alpha) => ({ width, height, fourCC: 'WEBP', alpha, mips: 1 });
+    if (data.length < (chunk === 'VP8L' ? 25 : 30)) return null;
     if (chunk === 'VP8 ') return webp(data.readUInt16LE(26) & 0x3fff, data.readUInt16LE(28) & 0x3fff, false);
     if (chunk === 'VP8L') {
       const b = data.readUInt32LE(21);
