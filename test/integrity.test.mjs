@@ -1209,6 +1209,19 @@ test('tags describe where a panel is in terms true of any car', async () => {
   assert.equal(t.mc[1], 'mid');
 });
 
+test('a model of two mirrored halves is measured by what they cover', async () => {
+  // Their centroids share a height and a length, which is no spread to measure
+  // a 20 cm model against, and both halves were called the tail.
+  const { computeTags } = await import('../src/engine/tags.mjs');
+  const half = (x, x0, x1) => ({ centroid3d: [x, 0.05, 0.1], extent3d: [[x0, 0, 0], [x1, 0.1, 0.2]] });
+  const t = computeTags(tagCar({ left: '+X', front: '+Z' }, {
+    l: { rect: [0, 0, 0.4, 0.4], ...half(0.05, 0, 0.1) },
+    r: { rect: [0.5, 0, 0.4, 0.4], ...half(-0.05, -0.1, 0) },
+  })).body;
+  assert.deepEqual(t.l, ['left', 'nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']);
+  assert.deepEqual(t.r, ['right', 'nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']);
+});
+
 test('tags follow the model\'s idea of forward, not ours', async () => {
   // Ninety of the 235 fleet cars have no mesh named in a way that reveals which
   // end is the front. On a model where +Z is rearward, ignoring that would tag

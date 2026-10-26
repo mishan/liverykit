@@ -134,6 +134,7 @@ function frameOf(profile) {
   const kind = profile.calibration?.kind ?? 'car';
   sectionsOf(kind);
   let xMax = 0, yMin = Infinity, yMax = -Infinity, zMin = Infinity, zMax = -Infinity;
+  const ext = [[Infinity, Infinity], [-Infinity, -Infinity]];
   for (const panels of Object.values(profile.panels ?? {})) {
     for (const p of Object.values(panels)) {
       const c = p.centroid3d;
@@ -141,8 +142,20 @@ function frameOf(profile) {
       xMax = Math.max(xMax, Math.abs(c[0]));
       yMin = Math.min(yMin, c[1]); yMax = Math.max(yMax, c[1]);
       zMin = Math.min(zMin, c[2]); zMax = Math.max(zMax, c[2]);
+      const box = extentOf(p);
+      if (box) for (const k of [0, 1]) {
+        ext[0][k] = Math.min(ext[0][k], box[0][k + 1]);
+        ext[1][k] = Math.max(ext[1][k], box[1][k + 1]);
+      }
     }
   }
+  // Where every centroid sits at one height or one length, as on a model of two
+  // mirrored halves, their spread is no frame at all: each panel landed at the
+  // tail and the bottom, whatever it covered. The panels' extents are the
+  // model's size there. Only there: a car's centroids always spread, and
+  // measuring cars against extents instead would move every car's tags.
+  if (yMax === yMin && ext[1][0] > ext[0][0]) [yMin, yMax] = [ext[0][0], ext[1][0]];
+  if (zMax === zMin && ext[1][1] > ext[0][1]) [zMin, zMax] = [ext[0][1], ext[1][1]];
   return {
     kind,
     left: axes.left === '-X' ? -1 : 1,
