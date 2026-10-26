@@ -38,7 +38,8 @@ export async function packageZip({ skinDir, zipPath, carId, skinFolder, layout =
  * Used only when there is no car model to render from: the calibration skin,
  * which has no business claiming to show the car, and an ordinary build run
  * without a kn5 on hand. Whenever a model IS available, `makeShowroomPreview`
- * below replaces this with an actual picture of the car — see `buildSkin`.
+ * below replaces this with an actual picture of the car — see `acSkin.finish`
+ * in skin.mjs.
  */
 export async function makePreview(pngBuffer, outPath, {
   label = '', width = PREVIEW_FRAME.width, height = PREVIEW_FRAME.height,

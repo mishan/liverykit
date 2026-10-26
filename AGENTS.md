@@ -25,7 +25,11 @@ Firefox; see [Tests](#tests).
 | | |
 |---|---|
 | `bin/liverykit.mjs` | the CLI, and the only place that reads argv |
-| `src/build.mjs` | orchestration: profile + livery -> textures -> ZIP |
+| `src/build.mjs` | orchestration: profile + livery -> rendered surfaces -> an output |
+| `src/output.mjs` | what an output does, and the default: one PNG per surface |
+| `src/engine/skin.mjs` | Assetto Corsa's output: DDS, clear sheets, lights, preview, ZIP |
+| `src/model.mjs` | the only reader of a kn5, and what each mesh is (`meshTraits`) |
+| `src/frame.mjs` | which way a model faces, and its sections nose to tail |
 | `src/profile.mjs` | car profiles: roles, bindings, panels, tags |
 | `src/fit.mjs` | fits: per-car placement overrides and copies |
 | `src/render.mjs` | regions -> SVG. Pure, and deliberately fast |

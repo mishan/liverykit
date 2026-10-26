@@ -938,7 +938,7 @@ test('a DDS at an odd size is built at the next powers of two, with its whole mi
   // same art drawn at the size it has and stretched to 128x64 lands in place.
   // The calibration skin likewise, or the surface could be painted and not
   // calibrated.
-  const { buildSkin, buildCalibration } = await import('../src/build.mjs');
+  const { buildSkin, buildCalibration } = await import('../src/engine/skin.mjs');
   const p = {
     id: 'car',
     textures: { odd: { file: 'o.dds', width: 68, height: 64 } },
@@ -958,6 +958,41 @@ test('a DDS at an odd size is built at the next powers of two, with its whole mi
   }
 });
 
+test('a build with no game in mind writes a PNG per surface, and says what it could not do', async () => {
+  // The kernel's own output. A design that hides a surface or adds a light is
+  // asking for something only a game's output knows how to do, so both are
+  // notes here, never a hidden surface quietly drawn or a light quietly lost.
+  const { buildSkin } = await import('../src/build.mjs');
+  const { pngOutput } = await import('../src/output.mjs');
+  const sharp = (await import('sharp')).default;
+  const p = {
+    id: 'object',
+    textures: {
+      body: { file: 'b.dds', width: 64, height: 32 },
+      glass: { file: 'g.dds', width: 16, height: 16, alphaHides: true },
+    },
+    bind: { body: { roles: ['body'], source: 'human' } },
+    panels: { body: { all: { rect: [0, 0, 1, 1] } } },
+  };
+  const outDir = join(await mkdtemp(join(tmpdir(), 'liverykit-png-')), 'out');
+  const livery = { name: 'L', palette: { pink: '#ff2d95' }, surfaces: { body: spec }, hide: ['glass'], underglow: 'pink' };
+  // No default: which game a build is for is never assumed.
+  await assert.rejects(buildSkin({ profile: p, outDir, livery, log: () => {} }), /needs an output/);
+  const { files, notes } = await buildSkin({ profile: p, outDir, livery, output: pngOutput, log: () => {} });
+
+  assert.deepEqual(files, ['b.png']);
+  assert.deepEqual((await readdir(outDir)).sort(), ['b.png'], 'no DDS, no ui_skin.json, no preview');
+  const { width, height, format } = await sharp(await readFile(join(outDir, 'b.png'))).metadata();
+  assert.deepEqual([format, width, height], ['png', 64, 32], 'at its own size, not rounded up');
+  assert.deepEqual(notes.map((n) => n.status).sort(), ['hide-cannot', 'light']);
+
+  // Two textures one extension apart would be one PNG, and the second is refused.
+  const twins = { ...p, textures: { ...p.textures, glass: { file: 'b.png', width: 16, height: 16 } },
+    bind: { ...p.bind, glass: { roles: ['glass'], source: 'human' } }, panels: { ...p.panels, glass: { all: { rect: [0, 0, 1, 1] } } } };
+  await assert.rejects(buildSkin({ profile: twins, outDir, output: pngOutput, log: () => {},
+    livery: { name: 'L', surfaces: { body: spec, glass: spec } } }), /b\.png, which another texture already is/);
+});
+
 test('an underglow is placed from the wheels, written for CSP, and lights the floor in the pictures', async () => {
   // Paint cannot make a light, so an underglow is a Custom Shaders Patch light
   // in the skin's ext_config.ini, and the renderers draw the same numbers.
@@ -966,7 +1001,7 @@ test('an underglow is placed from the wheels, written for CSP, and lights the fl
   const { designLights, extConfigIni, groundGlow } = await import('../src/engine/lights.mjs');
   const { wholeModelGeometry } = await import('../src/engine/geometry.mjs');
   const { rasterize } = await import('../src/engine/shot.mjs');
-  const { buildSkin } = await import('../src/build.mjs');
+  const { buildSkin } = await import('../src/engine/skin.mjs');
   const bytes = carKn5();
   const model = parseKn5Buffer(bytes);
   const livery = { name: 'L', palette: { pink: '#ff2d95' }, underglow: 'pink' };
@@ -1026,7 +1061,7 @@ test('a light the design cannot place is reported, not written', async () => {
 test('a stock texture that cannot be decoded is reported, and the build goes on', async () => {
   // One unreadable texture under `background: 'stock'` used to throw out of
   // the build after the files before it were written.
-  const { buildSkin } = await import('../src/build.mjs');
+  const { buildSkin } = await import('../src/engine/skin.mjs');
   const dir = await mkdtemp(join(tmpdir(), 'liverykit-stock-'));
   const modelPath = join(dir, 'car.kn5');
   // The fixture's texture is a DDS header with no pixel format behind it.
@@ -1828,7 +1863,7 @@ test('the editor and the build agree on what a region without an id is called', 
   // in the bundled neon-grid — did nothing, and said so only as a stale-id note
   // buried at the end of the build.
   const { applyFit } = await import('../src/fit.mjs');
-  const { buildSkin } = await import('../src/build.mjs');
+  const { buildSkin } = await import('../src/engine/skin.mjs');
 
   const profile = {
     id: 'c', name: 'C',

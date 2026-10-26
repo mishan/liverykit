@@ -1,15 +1,15 @@
 // ---------------------------------------------------------------------------
-// Orchestration: car profile + livery -> a folder of DDS files -> a ZIP that
-// Content Manager installs without asking questions.
+// Orchestration: profile + livery -> rendered surfaces -> an output, which for
+// Assetto Corsa is a folder of DDS files and a ZIP Content Manager installs
+// without asking questions (src/engine/skin.mjs).
 // ---------------------------------------------------------------------------
 
-import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
-import { join, isAbsolute, resolve } from 'node:path';
+import { mkdir, rm } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import sharp from 'sharp';
 
 import { mulberry32, seedFrom } from './engine/rng.mjs';
-import { composeLayers, toDDS, toPNG, isPngTexture, makeBadge, rasterize, stockPng, stockHrefs } from './engine/pipeline.mjs';
-import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './engine/package.mjs';
+import { composeLayers, rasterize, stockPng, stockHrefs } from './engine/pipeline.mjs';
 import { uvGridSvg, gridShape, probeSvg, makeProbes } from './engine/uvgrid.mjs';
 import { resolveTreatments } from './registry.mjs';
 import { renderTexture } from './render.mjs';
@@ -17,9 +17,7 @@ import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
 import { loadModel } from './model.mjs';
-import { designLights, extConfigIni } from './engine/lights.mjs';
-import { wholeModelGeometry } from './engine/geometry.mjs';
-import { carSheets } from './engine/shot.mjs';
+import { needOutput } from './output.mjs';
 
 // Re-exported: `hidePlan` lived here first, and the build is where anybody
 // looking for what `hide` does would go.
@@ -46,42 +44,6 @@ export function isMissingNote(note) {
   return MISSING.has(note.status);
 }
 
-/** A fully transparent PNG at the texture's size, for the encoder to turn into DXT5. */
-/**
- * Write one texture, as the PNG or DDS its filename says. A DDS at a size that
- * is not a power of two would lose its mip chain in the game, so it goes out
- * at the next powers of two up; UVs are fractions of the sheet, so the art
- * lands where it was drawn. Returns the size written.
- */
-async function writeTexture({ png, tex, width, height, outPath, pngDir, keep = false }) {
-  const asPng = isPngTexture(tex.file);
-  const [w, h] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
-  const pngPath = join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
-  await writeFile(pngPath, w === width && h === height ? png
-    : await sharp(png).resize(w, h, { fit: 'fill' }).png().toBuffer());
-  if (asPng) await toPNG(pngPath, outPath);
-  else await toDDS(pngPath, outPath, { width: w, height: h, alpha: tex.alpha ?? false });
-  if (!keep && pngPath !== outPath) await rm(pngPath);
-  return [w, h];
-}
-
-async function transparentPng(width, height) {
-  return sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
-    .png().toBuffer();
-}
-
-/**
- * The size a hidden surface's clear sheet is shipped at. A texture with no
- * texels worth seeing needs no texels: the game stretches whatever it is given
- * over the mesh, and nothing-times-1024 is the same nothing as nothing-times-4.
- * At the original size the NSX's two IGT plates came to 2.8 MB of transparent
- * DXT5; at 4x4, the smallest a DXT block allows, they are a few hundred bytes.
- */
-const CLEAR_SHEET = 4;
-
-// The file CSP reads beside a skin's textures for that skin's own config.
-const CAR_CONFIG_NAME = 'ext_config.ini';
-
 /**
  * Render every painted texture in a livery.
  *
@@ -89,7 +51,8 @@ const CAR_CONFIG_NAME = 'ext_config.ini';
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, output, log = console.log }) {
+  needOutput(output);
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   // Intermediate PNGs go in a SIBLING directory, never in the skin folder —
@@ -128,7 +91,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   let firstPng = null;
   const written = [];
   // Every painted role's finished art, kept for the showroom preview below —
-  // the same pixels that just got written to the DDS, not a re-render.
+  // the same pixels the output just wrote, not a re-render.
   const pngByRole = new Map();
 
   // The car's own textures, read from the model once and only if some
@@ -156,7 +119,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       profile,
       role,
       // --flat proves the plumbing before any art exists: if the car doesn't
-      // turn a solid color, the DDS format or a filename is wrong and no
+      // turn a solid color, the file format or a filename is wrong and no
       // amount of artwork will fix it.
       // Fit first, so an override that names a panel replaces the tag selection
       // before anything is expanded. `applyFit` also leaves off this texture a
@@ -208,35 +171,23 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       png = await sharp(png).removeAlpha().joinChannel(alpha).png().toBuffer();
     }
 
-    const asPng = isPngTexture(tex.file);
-    const outPath = join(outDir, tex.file);
-    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir, keep: !!pngDir });
+    const out = await output.writeSurface({ png, tex, width, height, outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });
 
     firstPng ??= png;
     pngByRole.set(role, png);
-    written.push(tex.file);
-    const kb = (await stat(outPath)).size / 1024;
-    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
-      `${asPng ? 'PNG ' : tex.alpha ? 'DXT5' : 'DXT1'}  ${kb.toFixed(0)} KB` +
-      (outW === width && outH === height ? '' : `  (drawn at ${width}x${height})`));
+    written.push(out.file);
+    log(`  ${out.file.padEnd(24)} ${out.width}x${out.height}`.padEnd(46) +
+      `${out.format.padEnd(4)}  ${(out.bytes / 1024).toFixed(0)} KB` +
+      (out.width === width && out.height === height ? '' : `  (drawn at ${width}x${height})`));
   }
 
-  // Lights the design adds, as the Custom Shaders Patch config CSP reads from
-  // a skin's own folder. The underglow is placed from the model, so it needs
-  // one; lights stated in metres do not.
+  // Lights the design adds, which only an output that can carry them writes.
   if (livery.underglow || livery.lights?.length) {
-    const model = livery.underglow && modelPath
-      ? await loadModel(modelPath).catch((e) => { log(`  ! could not read ${modelPath} for the lights: ${e.message}`); return null; })
-      : null;
-    if (livery.underglow && !model) {
-      notes.push({ term: 'underglow', status: 'light', text: 'underglow: placed from the car\'s model, and there is none to read; pass --model' });
-    }
-    const { lights, notes: lightNotes } = designLights(model ?? {}, model ? livery : { ...livery, underglow: undefined });
-    notes.push(...lightNotes);
-    if (lights.length) {
-      await writeFile(join(outDir, CAR_CONFIG_NAME), extConfigIni(lights));
-      written.push(CAR_CONFIG_NAME);
-      log(`  ${CAR_CONFIG_NAME.padEnd(24)} ${lights.length} light(s)`.padEnd(46) + 'CSP');
+    if (!output.writeLights) {
+      notes.push({ term: 'lights', status: 'light', text: 'lights: this output cannot carry the design\'s lights, so none were written' });
+    } else {
+      const file = await output.writeLights({ livery, modelPath, outDir, notes, log });
+      if (file) written.push(file);
     }
   }
 
@@ -247,19 +198,12 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   // through the profile's bind table, and a role painted that way is painted
   // just as much as one named outright.
   for (const h of hidePlan(profile, livery, { paintedRoles: new Set(targets.map((t) => t.role)) })) {
-    if (h.action === 'ship-transparent') {
-      const outPath = join(outDir, h.file);
-      const png = await transparentPng(CLEAR_SHEET, CLEAR_SHEET);
-      if (isPngTexture(h.file)) {
-        await writeFile(outPath, png);
-      } else {
-        const pngPath = join(pngDir ?? outDir, h.file.replace(/\.dds$/i, '.png'));
-        await writeFile(pngPath, png);
-        await toDDS(pngPath, outPath, { width: CLEAR_SHEET, height: CLEAR_SHEET, alpha: true });
-        if (!pngDir) await rm(pngPath);
-      }
-      written.push(h.file);
-      log(`  ${h.file.padEnd(24)} ${CLEAR_SHEET}x${CLEAR_SHEET}`.padEnd(46) + `${isPngTexture(h.file) ? 'PNG ' : 'DXT5'}  transparent (hidden)`);
+    if (h.action === 'ship-transparent' && !output.hideSurface) {
+      notes.push({ term: h.role, status: 'hide-cannot', text: `${h.role}: this output has no way to hide a surface, so ${h.file} is drawn as it is` });
+    } else if (h.action === 'ship-transparent') {
+      const out = await output.hideSurface({ file: h.file, outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });
+      written.push(out.file);
+      log(`  ${out.file.padEnd(24)} ${out.width}x${out.height}`.padEnd(46) + `${out.format.padEnd(4)}  transparent (hidden)`);
     } else if (h.action === 'cannot' || h.action === 'painted') {
       notes.push({ term: h.role, status: 'hide-' + h.action, text: h.why });
     } else {
@@ -302,92 +246,8 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     }
   }
 
-  // Asked once and used by both the real render and the placeholder, so a
-  // build that falls back still lands the conventional size for this car.
-  const frame = (await previewFrame(modelPath, { log })) ?? PREVIEW_FRAME;
-  await writeMetadata({ outDir, livery, firstPng, frame, preview: await renderShowroomPreview({
-    profile, livery, targets, pngByRole, modelPath, frame, log,
-  }) });
+  await output.finish?.({ outDir, livery, firstPng, profile, targets, pngByRole, modelPath, log });
   return { outDir, files: written, firstPng, notes };
-}
-
-/**
- * A real render of the car wearing the finished skin, for preview.jpg — the
- * same picture `render_car` would take, rather than the blurred-texture
- * placeholder. `null` when there is no model to render it from, which is not
- * an error: plenty of people hold a profile for a car they have not unpacked,
- * and `writeMetadata` falls back to the placeholder when this comes back
- * empty.
- *
- * Parity with the editor's Whole Car view is the goal, not a coincidence:
- * both wear the design's own artwork on what it paints and the CAR'S OWN
- * texture on what it does not — glass, wheels, interior trim — rather than
- * leaving those parts flat gray. The editor gets that from the browser
- * uploading the kn5's compressed textures straight to the GPU; this has no
- * GPU, so `carSheets` does in a temp file what the browser does in VRAM.
- */
-async function renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log }) {
-  if (!modelPath || !targets.length) return null;
-
-  let model;
-  try {
-    // TRUE here, unlike every other model read in this project: the whole
-    // point of this pass is the texture bytes, not just the geometry they are
-    // wrapped around.
-    model = await loadModel(modelPath, { keepTextureData: true });
-  } catch (e) {
-    log(`  ! could not read ${modelPath} for preview.jpg: ${e.message}`);
-    return null;
-  }
-
-  const files = targets.map((t) => ({ role: t.role, file: texture(profile, t.role).file }));
-  const g = wholeModelGeometry(model, files, { livery, profile });
-
-  // FULL RESOLUTION, and it used to be 512.
-  //
-  // That downsize was reasoned from a 900x560 shot: a few hundred pixels
-  // across, so a 2048 sheet is more detail than can survive. The reasoning was
-  // right and the numbers stopped being true. This frame is 1555x835, rendered
-  // two samples over at 3110x1670, and a door that spans six hundred of those
-  // pixels was reading a couple of hundred texels — every texel four pixels
-  // wide, sampled nearest, which is what put the staircase on the number and
-  // the sponsor text. That is not edge aliasing and no amount of supersampling
-  // touches it.
-  //
-  // It is also nearly free: decoding one of these PNGs straight to raw is
-  // ~13 ms, where resizing it to 512 on the way was ~35. The resize was the
-  // expensive half.
-  const sheets = new Map();
-  for (const [role, png] of pngByRole) {
-    const { data, info } = await sharp(png)
-      .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    sheets.set(role, { data, w: info.width, h: info.height });
-  }
-
-  // The car's own artwork for whatever the design leaves unpainted — filed
-  // under FILE rather than role, which is how `rasterize`'s `sheetKey` tells
-  // "this is the car's" from "this is the design's". Only the files a group
-  // actually claims, which `wholeModelGeometry` has already narrowed to what
-  // is drawn AND trusted (see `trustworthyDiffuse` — a MultiMap atlas is
-  // excluded there, before this ever sees it).
-  //
-  // Shared with the MCP renderer rather than done here, which is where it used
-  // to live: `shoot` had none of this and drew every unpainted part gray, so
-  // the picture an agent takes without a browser and the picture that ships in
-  // the skin disagreed about the same car.
-  const byName = new Map((model.textures ?? []).map((t) => [t.name.toLowerCase(), t]));
-  const stock = await carSheets(g.groups, (file) => byName.get(String(file).toLowerCase())?.data ?? null);
-  for (const [file, art] of stock.sheets) sheets.set(file, art);
-  if (stock.absent.length) {
-    log(`  preview: ${stock.absent.length} texture(s) the model does not carry: ${stock.absent.join(', ')}`);
-  }
-
-  try {
-    return await makeShowroomPreview(g, g.groups, sheets, frame);
-  } catch (e) {
-    log(`  ! could not render preview.jpg from the model: ${e.message}`);
-    return null;
-  }
 }
 
 /**
@@ -396,7 +256,8 @@ async function renderShowroomPreview({ profile, livery, targets, pngByRole, mode
  * Installed alongside the real livery rather than over it, so both show up in
  * Content Manager and you can flip between them without reinstalling anything.
  */
-export async function buildCalibration({ profile, outDir, folder, cells = 20, probes = [], font = 'sans-serif', pngDir = null, log = console.log }) {
+export async function buildCalibration({ profile, outDir, folder, cells = 20, probes = [], font = 'sans-serif', pngDir = null, output, log = console.log }) {
+  needOutput(output);
   if (!Number.isInteger(cells) || cells < 2 || cells > 260) {
     throw new Error(`--cells must be a whole number between 2 and 260, got ${cells}`);
   }
@@ -428,63 +289,32 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
       width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
-    const outPath = join(outDir, tex.file);
-    const [outW, outH] = await writeTexture({ png, tex, width, height, outPath, pngDir: pngDir ?? outDir });
+    const out = await output.writeSurface({ png, tex, width, height, outDir, pngDir: pngDir ?? outDir });
 
     firstPng ??= png;
-    log(`  ${tex.file.padEnd(24)} ${outW}x${outH}`.padEnd(46) +
+    log(`  ${out.file.padEnd(24)} ${out.width}x${out.height}`.padEnd(46) +
       `${shape.cols}x${shape.rows} cells  (${pct(100 / shape.cols)} x ${pct(100 / shape.rows)})`);
   }
 
   for (const p of probeList) {
     const size = 1024;
     const png = await rasterize(probeSvg({ width: size, height: size, ...p, font }));
-    const pngPath = join(pngDir ?? outDir, p.file.replace(/\.dds$/i, '.png'));
-    await writeFile(pngPath, png);
-    await toDDS(pngPath, join(outDir, p.file), { width: size, height: size, alpha: false });
-    if (!pngDir) await rm(pngPath);
-    log(`  ${p.file.padEnd(24)} probe ${p.color}`);
+    const out = await output.writeSurface({ png, tex: { file: p.file, alpha: false }, width: size, height: size,
+      outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });
+    log(`  ${out.file.padEnd(24)} probe ${p.color}`);
   }
 
-  await writeMetadata({
+  await output.finish?.({
     outDir,
     livery: { name: `${profile.name ?? profile.id} — UV GRID`, identity: { team: 'UV GRID', driver: 'calibration', number: '00' } },
     firstPng,
     previewLabel: 'UV GRID',
+    log,
   });
   return { outDir, folder };
 }
 
-async function writeMetadata({ outDir, livery, firstPng, previewLabel, frame = PREVIEW_FRAME, preview = null }) {
-  const id = livery.identity ?? {};
-  await writeFile(
-    join(outDir, 'ui_skin.json'),
-    JSON.stringify({
-      skinname: livery.name,
-      drivername: id.driver ?? '',
-      team: id.team ?? '',
-      number: id.number ?? '',
-      country: id.country ?? '',
-    }, null, 2)
-  );
-  if (firstPng) {
-    await makeBadge(firstPng, join(outDir, 'livery.png'));
-    // A real render, when one was made — see renderShowroomPreview — and the
-    // placeholder otherwise. `buildCalibration` never passes `preview`: the
-    // UV-grid skin has no business claiming to show the car.
-    if (preview) await writeFile(join(outDir, 'preview.jpg'), preview);
-    else await makePreview(firstPng, join(outDir, 'preview.jpg'), { ...frame, label: previewLabel ?? id.number ?? '' });
-  }
-}
-
-/** ZIP of the skin, laid out for Content Manager or as the bare folder — see packageZip. */
-export async function packSkin({ skinDir, zipPath, carId, folder, layout = 'cm' }) {
-  return packageZip({ skinDir, zipPath, carId, skinFolder: folder, layout });
-}
-
 const pct = (n) => `${Number(n.toFixed(1))}%`;
-const isPow2 = (n) => Number.isInteger(Math.log2(n));
-const nextPow2 = (n) => 2 ** Math.ceil(Math.log2(n));
 
 function resolveAo(path, liveryDir) {
   if (!path) return null;
