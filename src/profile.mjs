@@ -23,7 +23,11 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VOCABULARY, DRIVER_KIT, SCORABLE } from './engine/classify.mjs';
+import { vocabulary } from './vocabulary.mjs';
+// Liverykit's own vocabulary, for anything that imports this file directly.
+// Nothing here reads it except through vocabulary(); when this module moves
+// to its own package, this import stays behind at the old path with liverykit.
+import './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -218,23 +222,22 @@ function checkBox(e, what, err) {
 
 const BIND_SOURCES = new Set(['auto', 'human']);
 
-// Terms that live in a DIFFERENT kn5 by design. The driver and the pit crew are
-// separate models which a car skin overrides, so "this car's model never
-// references it" is the expected state for them and warning about it every build
-// would be pure noise. For anything else it is the signal that matters.
-const ELSEWHERE = new Set(['helmet', 'suit', 'gloves', 'crew']);
-
 function validateBind(p, err) {
+  const v = vocabulary();
+  if (!v && Object.keys(p.bind ?? {}).length) {
+    err(`bind names terms (${Object.keys(p.bind).join(', ')}), and no vocabulary is in use to say what they mean`);
+    return;
+  }
   for (const [term, entry] of Object.entries(p.bind ?? {})) {
     // The vocabulary is fixed on purpose. If any profile can invent a term then
     // a livery cannot rely on one, and the whole layer buys nothing.
     //
-    // Object.hasOwn, not a truthiness test: VOCABULARY['toString'] inherits a
+    // Object.hasOwn, not a truthiness test: terms['toString'] inherits a
     // function from Object.prototype, so bind."toString" would otherwise pass
     // validation and reopen the vocabulary through the back door.
-    if (!Object.hasOwn(VOCABULARY, term)) {
+    if (!Object.hasOwn(v.terms, term)) {
       err(`bind has an unknown term "${term}". The vocabulary is fixed so that liveries can ` +
-          `rely on it: ${Object.keys(VOCABULARY).join(', ')}`);
+          `rely on it: ${Object.keys(v.terms).join(', ')}`);
     }
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
       err(`bind."${term}" must be an object like { "roles": [...], "source": "auto" }. ` +
@@ -253,7 +256,7 @@ function validateBind(p, err) {
     // "name", for the driver kit, proposed from AC's own filenames. A closed
     // set, so a typo cannot quietly make a binding look measured.
     if (entry.evidence !== undefined && entry.evidence !== 'name') {
-      err(`bind."${term}".evidence may only be "name" (proposed from AC's own filename), ` +
+      err(`bind."${term}".evidence may only be "name" (proposed from a file's name), ` +
           `got ${JSON.stringify(entry.evidence)}`);
     }
     for (const role of entry.roles) {
@@ -376,11 +379,18 @@ export function resolveTargets(profile, livery) {
     claim(role, spec, `paint.${role}`);
   }
 
+  const v = vocabulary();
   for (const [term, spec] of Object.entries(livery.surfaces ?? {})) {
-    if (!VOCABULARY[term]) {
+    if (!v) {
+      throw new Error(
+        `Livery "${livery.name}" paints surface "${term}", and no vocabulary is in use to say what that ` +
+        'is on this object: paint its texture role by name under "paint" instead'
+      );
+    }
+    if (!Object.hasOwn(v.terms, term)) {
       throw new Error(
         `Livery "${livery.name}" paints surface "${term}", which is not in the vocabulary. ` +
-        `Known surfaces: ${Object.keys(VOCABULARY).join(', ')}`
+        `Known surfaces: ${Object.keys(v.terms).join(', ')}`
       );
     }
     const b = binding(profile, term);
@@ -389,22 +399,7 @@ export function resolveTargets(profile, livery) {
       continue;
     }
     if (b.status === 'unbound') {
-      // Advice that can be taken. --explain ranks only the terms the classifier
-      // scores, and throws for the rest: the driver kit is named from the files
-      // a car's skins carry, which a profile generated without --skins never
-      // saw, and every other term is bound by hand. One line sent all three to
-      // --explain, so two of them met a refusal.
-      notes.push({
-        term, status: 'unbound',
-        text: Object.hasOwn(DRIVER_KIT, term)
-          ? `${term}: not bound on this car — it is named from the skins folder's filenames, ` +
-            'so regenerate the profile with --skins, or record it under "bind" by hand'
-          : SCORABLE.includes(term)
-            ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
-              `editor's Bindings panel, and record it under "bind" in ${profile.loadedFrom ?? `${profile.id}.json`}`
-            : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
-              `${profile.loadedFrom ?? `${profile.id}.json`} under "bind"`,
-      });
+      notes.push({ term, status: 'unbound', text: v.unbound(term, profile) });
       continue;
     }
     pinned(spec, `surfaces.${term}`, b.roles);
@@ -420,12 +415,8 @@ export function resolveTargets(profile, livery) {
       // ships in nearly every road-car skin and on several of those cars is
       // bound to no mesh anywhere. This cannot be settled without the other
       // model, so it is flagged rather than guessed at.
-      if (profile.textures[role]?.sizeFrom === 'skin' && !ELSEWHERE.has(term)) {
-        notes.push({
-          term, status: 'unverified',
-          text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
-                `Expected for driver and crew kit; for anything else it may paint nothing`,
-        });
+      if (profile.textures[role]?.sizeFrom === 'skin' && !v.elsewhere.has(term)) {
+        notes.push({ term, status: 'unverified', text: v.unverified(term, profile.textures[role].file) });
       }
     });
     if (b.source === 'auto') {
@@ -434,8 +425,7 @@ export function resolveTargets(profile, livery) {
         // A named proposal says so instead of printing a confidence: nothing
         // was ranked, and a number beside the measured ones would pass for one.
         text: b.evidence === 'name'
-          ? `${term} -> ${b.roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
-            'nothing was measured, and nobody has confirmed it'
+          ? v.named(term, b.roles)
           : `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
             (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
       });

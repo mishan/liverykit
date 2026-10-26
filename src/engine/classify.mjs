@@ -51,6 +51,7 @@ import { meshesWearing, meshTraits, triangles, vertex } from '../model.mjs';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';
+import { useVocabulary, vocabulary } from '../vocabulary.mjs';
 
 /** Terms whose proposals --explain does not call a hint. See MEASURED. */
 export const VALIDATED = new Set(['body']);
@@ -784,3 +785,33 @@ function explainKit(features, term) {
   }
   return lines.join('\n');
 }
+
+// Assetto Corsa's vocabulary, put in use by loading this module unless one
+// already is: a program that chose another game's vocabulary keeps it, even
+// if it imports liverykit after choosing.
+if (!vocabulary()) useVocabulary({
+  terms: VOCABULARY,
+  // Terms that live in a DIFFERENT kn5 by design. The driver and the pit crew
+  // are separate models which a car skin overrides, so "this car's model never
+  // references it" is the expected state for them and warning about it every
+  // build would be pure noise. For anything else it is the signal that matters.
+  elsewhere: new Set(['helmet', 'suit', 'gloves', 'crew']),
+  // Advice that can be taken. --explain ranks only the terms the classifier
+  // scores, and throws for the rest: the driver kit is named from the files
+  // a car's skins carry, which a profile generated without --skins never
+  // saw, and every other term is bound by hand. One line sent all three to
+  // --explain, so two of them met a refusal.
+  unbound: (term, profile) => (Object.hasOwn(DRIVER_KIT, term)
+    ? `${term}: not bound on this car — it is named from the skins folder's filenames, ` +
+      'so regenerate the profile with --skins, or record it under "bind" by hand'
+    : SCORABLE.includes(term)
+      ? `${term}: not bound on this car — run "liverykit --explain <kn5> --all", or use the ` +
+        `editor's Bindings panel, and record it under "bind" in ${profile.loadedFrom ?? `${profile.id}.json`}`
+      : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
+        `${profile.loadedFrom ?? `${profile.id}.json`} under "bind"`),
+  unverified: (term, file) => `${term} -> ${file} is not referenced by this car's model. ` +
+    'Expected for driver and crew kit; for anything else it may paint nothing',
+  named: (term, roles) => `${term} -> ${roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
+    'nothing was measured, and nobody has confirmed it',
+  nameFromFiles: proposeDriverKit,
+});
