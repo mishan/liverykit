@@ -25,9 +25,13 @@ import { tagProfile } from './engine/tags.mjs';
  * named after its file and measured into panels, its size read from the image
  * itself. One whose size cannot be read, and every normal map, is listed as
  * not to be painted, with the reason.
+ *
+ * `kind` names its sections: a `car`'s run nose to tail, an `object`'s front
+ * to back. A model whose wheels say which way it faces is a car unless told
+ * otherwise, and anything else an object.
  */
 export async function profileFromModel(path, {
-  id = null, name = '', facing: facingAs = null, eye = null, visibility = true,
+  id = null, name = '', facing: facingAs = null, kind = null, eye = null, visibility = true,
   minPanelArea, minVertices, minCoverage, log = () => {},
 } = {}) {
   const model = await loadModel(path, { keepTextureData: true });
@@ -38,6 +42,8 @@ export async function profileFromModel(path, {
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
   const axes = facing(model, { stated: facingAs, log });
   sayFacing(model, axes, log);
+  const is = kind ?? (axes.from === 'wheels' ? 'car' : 'object');
+  if (is !== 'car') log(`  an ${is}: its sections run front, mid and back`);
 
   const images = new Map(model.textures.map((t) => [t.name.toLowerCase(), t]));
   // A skin is one folder, so two images one name apart only by where they
@@ -89,7 +95,7 @@ export async function profileFromModel(path, {
   // since a panel without the figure looks like one nobody inside can see.
   if (visibility && !eye) log('  no eye was given, so visibleFromCockpit is not measured');
   const { panels, straddling } = measurePanels(model, roleOf, textures, {
-    axes, eye, visibility, minPanelArea, minVertices, minCoverage, log,
+    axes, kind: is, eye, visibility, minPanelArea, minVertices, minCoverage, log,
   });
   if (straddling.size) {
     log(`  ! ${[...straddling.values()].reduce((a, b) => a + b, 0)} island(s) straddle a sheet boundary; ` +
@@ -107,6 +113,8 @@ export async function profileFromModel(path, {
       date: new Date().toISOString().slice(0, 10),
       uvSet: 0,
       axes: recordFacing(axes),
+      // Only where it is not a car, which every profile was before.
+      ...(is !== 'car' ? { kind: is } : {}),
     },
     textures,
     doNotPaint,

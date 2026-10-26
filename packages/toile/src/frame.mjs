@@ -74,19 +74,30 @@ export function recordFacing(axes) {
 }
 
 /**
- * The sections from front to back, each a band of the length measured from
- * the back (0) to the front (1): a name, where it starts and ends, and the
- * width that "half the band" is judged against. The bands at either end are
- * open, so an extent that reaches past the model still counts. Panel names
- * and tags both read it, so the two cannot place a cut differently.
+ * The sections from front to back, by what the model is, each a band of the
+ * length measured from the back (0) to the front (1): a name, where it starts
+ * and ends, and the width that "half the band" is judged against. The bands at
+ * either end are open, so an extent that reaches past the model still counts.
+ * Panel names and tags both read it, so the two cannot place a cut
+ * differently.
+ *
+ * A car has a nose and a tail; anything else has a front and a back, and a
+ * design that asks it for a nose matches nothing and is told so, as it would
+ * be on a car with no such panel.
  */
-export const SECTIONS = [
-  ['nose', 0.82, Infinity, 0.18], ['front', 0.62, 0.82, 0.2], ['mid', 0.38, 0.62, 0.24],
-  ['rear', 0.18, 0.38, 0.2], ['tail', -Infinity, 0.18, 0.18],
-];
+export const SECTIONS = {
+  car: [
+    ['nose', 0.82, Infinity, 0.18], ['front', 0.62, 0.82, 0.2], ['mid', 0.38, 0.62, 0.24],
+    ['rear', 0.18, 0.38, 0.2], ['tail', -Infinity, 0.18, 0.18],
+  ],
+  object: [['front', 0.62, Infinity, 0.38], ['mid', 0.38, 0.62, 0.24], ['back', -Infinity, 0.38, 0.38]],
+};
 
 /**
  * The section a point this far along the length (0 back, 1 front) is in. A
  * model with no extent to measure along gives NaN, which is the back.
  */
-export const sectionAt = (along) => (SECTIONS.find(([, from]) => along > from) ?? SECTIONS.at(-1))[0];
+export const sectionAt = (along, kind = 'car') => {
+  const bands = SECTIONS[kind];
+  return (bands.find(([, from]) => along > from) ?? bands.at(-1))[0];
+};

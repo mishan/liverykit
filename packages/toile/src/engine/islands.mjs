@@ -312,7 +312,7 @@ export function carBounds(model) {
  * when the islands are the whole car. Callers that have a model should pass
  * `carBounds(model)`.
  */
-export function nameIslands(islands, axes, bounds = null) {
+export function nameIslands(islands, axes, bounds = null, kind = 'car') {
   const xs = islands.map((i) => i.centroid.x);
   const zs = islands.map((i) => i.centroid.z);
   const zMin = bounds ? bounds.zMin : Math.min(...zs);
@@ -327,7 +327,7 @@ export function nameIslands(islands, axes, bounds = null) {
     // Longitudinal position as a 0..1 fraction from tail to nose.
     let zr = (isl.centroid.z - zMin) / (zMax - zMin || 1);
     if (axes.front < 0) zr = 1 - zr;
-    const section = sectionAt(zr);
+    const section = sectionAt(zr, kind);
 
     const level = isl.centroid.y > (isl.box3d.y0 + isl.box3d.y1) / 2 ? 'upper' : 'lower';
 

@@ -11,7 +11,7 @@ import { parseKn5Buffer, vertex, triangles } from 'ac-kn5';
 import sharp from 'sharp';
 import { profileFromModel } from '../packages/toile/src/generate.mjs';
 import { imageHeader } from '../packages/toile/src/images.mjs';
-import { validateProfile } from '../src/profile.mjs';
+import { validateProfile, expandRegions } from '../src/profile.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { carKn5, CAR } from './fixtures/kn5.mjs';
 import { glbFrom, teapotGlb, TEAPOT, packer, writeGlb } from './fixtures/gltf.mjs';
@@ -61,6 +61,25 @@ test('a teapot gets panels, seams and visibility', () => inDir(async (dir) => {
   }
   assert.deepEqual(p.calibration.axes, { left: '+X', front: '+Z', confident: false, from: 'mesh names' },
     'nothing to say which way it faces, and it says so');
+}));
+
+test('a teapot has a front and a back, and no nose', () => inDir(async (dir) => {
+  // Its sections are named for what it is. A design that asks it for a car's
+  // nose matches nothing and is told so, as on a car with no such panel.
+  await writeFile(join(dir, 'teapot.glb'), await teapotGlb());
+  const p = await profileFromModel(join(dir, 'teapot.glb'));
+  assert.equal(p.calibration.kind, 'object', 'no wheels, so not a car');
+  const car = ['nose', 'rear', 'tail'];
+  const names = Object.keys(p.panels.teapot);
+  const tags = Object.values(p.panels.teapot).flatMap((q) => q.tags);
+  assert.ok(!names.some((n) => car.some((w) => n.includes(w))), names.join(' '));
+  const sections = tags.filter((t) => ['nose', 'front', 'mid', 'rear', 'tail', 'back'].includes(t));
+  assert.ok(sections.length && sections.every((t) => ['front', 'mid', 'back'].includes(t)), tags.join(' '));
+  const ask = (tag) => expandRegions(p, 'teapot', [{ id: 'mark', tags: [tag], treatment: 'fill' }]);
+  assert.deepEqual(ask('nose').regions, []);
+  assert.match(ask('nose').notes.map((n) => n.text).join(), /No panel on this texture is tagged `nose`/);
+  assert.ok(ask(sections[0]).regions.length > 0, `and ${sections[0]}, which it has, is found`);
+  assert.throws(() => validateProfile({ ...p, calibration: { ...p.calibration, kind: 'boat' } }), /kind "boat".*car, object/);
 }));
 
 test('a kn5 paints only what an Assetto Corsa skin can carry', () => inDir(async (dir) => {
