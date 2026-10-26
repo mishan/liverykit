@@ -17,7 +17,7 @@
 // design renders on any car whose profile uses matching panel names.
 // ---------------------------------------------------------------------------
 
-export { buildSkin, buildCalibration, packSkin } from './build.mjs';
+export { buildSkin, buildCalibration, packSkin } from './engine/skin.mjs';
 export { loadProfile, validateProfile, texture, panel, resolveRect, doNotPaint } from './profile.mjs';
 export { definePack, registerPack, unregisterPack, getPack, listPacks, resolveTreatments } from './registry.mjs';
 export { renderTexture, makeColorResolver } from './render.mjs';

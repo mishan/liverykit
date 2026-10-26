@@ -6,7 +6,7 @@ import { parseArgs } from 'node:util';
 import { register } from 'node:module';
 import { existsSync } from 'node:fs';
 
-import { buildSkin, buildCalibration, packSkin } from '../src/build.mjs';
+import { buildSkin, buildCalibration, packSkin } from '../src/engine/skin.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
 import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
