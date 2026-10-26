@@ -12,6 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 import { hidePlan } from '../src/build.mjs';
 import { loadProfile } from '../src/profile.mjs';
+// Assetto Corsa's vocabulary: these are its cars, and their profiles bind its terms.
+import '../src/engine/classify.mjs';
 
 const profile = {
   id: 'car',

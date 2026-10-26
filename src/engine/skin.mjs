@@ -21,6 +21,8 @@ import { carSheets } from './shot.mjs';
 import { texture } from '../profile.mjs';
 import { loadModel } from '../model.mjs';
 import * as build from '../build.mjs';
+// Assetto Corsa's vocabulary, so a design can paint `body` rather than a file.
+import './classify.mjs';
 
 /**
  * The size a hidden surface's clear sheet is shipped at. A texture with no

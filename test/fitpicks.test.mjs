@@ -22,6 +22,8 @@ import { loadProfile, resolveTargets, expandRegions, resolveRect, panelName } fr
 import { applyFit, allRegionKeys, regionKey } from '../src/fit.mjs';
 import { tagProfile } from '../src/engine/tags.mjs';
 import { loadLivery } from '../src/livery.mjs';
+// Assetto Corsa's vocabulary: these are its cars, and their profiles bind its terms.
+import '../src/engine/classify.mjs';
 
 const at = (p) => fileURLToPath(new URL(`../${p}`, import.meta.url));
 

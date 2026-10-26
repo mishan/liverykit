@@ -27,7 +27,7 @@
 // alias names texels, not a generated string.
 // ---------------------------------------------------------------------------
 
-import { proposeDriverKit } from './classify.mjs';
+import { vocabulary } from '../vocabulary.mjs';
 
 /** Blocks that are pure human judgement, with nothing for a model to say. */
 const HANDWRITTEN_BLOCKS = ['leaveStock', 'notes'];
@@ -127,7 +127,7 @@ function preserveSkinOnlyRoles(profile, prior, report, skinsGiven) {
 function nameKitOnRestored(profile, report) {
   if (!report.skinOnly.length) return;
   const restored = Object.fromEntries(report.skinOnly.map(({ role }) => [role, profile.textures[role]]));
-  for (const [term, entry] of Object.entries(proposeDriverKit(restored))) {
+  for (const [term, entry] of Object.entries(vocabulary()?.nameFromFiles?.(restored) ?? {})) {
     if (profile.bind?.[term]) continue;
     (profile.bind ??= {})[term] = entry;
     report.kitNamed.push(term);
