@@ -85,9 +85,12 @@ export function parseGlb(buf, { keepTextureData = false, path = 'model' } = {}) 
     return t.source === undefined ? null : named('images', t.source, `texture ${texture.index}`);
   };
   const nameOfImage = (img, i) => {
-    if (img.uri && !img.uri.startsWith('data:')) return decodeURIComponent(img.uri.split(/[\\/]/).pop());
+    // Decoded before it is cut, so an encoded slash is still a slash.
+    if (img.uri && !img.uri.startsWith('data:')) return decodeURIComponent(img.uri).split(/[\\/]/).pop();
     const ext = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[img.mimeType] ?? '';
-    return img.name && /\.\w+$/.test(img.name) ? img.name : `${img.name ?? `image${i}`}${ext}`;
+    // A name and no more: one carrying a path would be written where it points.
+    const own = img.name?.split(/[\\/]/).pop() || null;
+    return own && /\.\w+$/.test(own) ? own : `${own ?? `image${i}`}${ext}`;
   };
   const images = (json.images ?? []).map((img, i) => nameOfImage(img, i));
   const imageName = (texture, what) => {

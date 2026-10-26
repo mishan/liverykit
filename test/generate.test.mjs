@@ -118,6 +118,40 @@ test('a model that cannot be measured honestly says so', () => inDir(async (dir)
   assert.match(red.textures.teapot.notes, /multiplies this image by a color/);
 }));
 
+test('an image is written under its own name, inside the output and nowhere else', () => inDir(async (dir) => {
+  // A model is somebody else's file, and an image inside one can be named
+  // anything, a path out of the output among them.
+  const pack = packer();
+  const POSITION = pack.add(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 'VEC3');
+  const TEXCOORD_0 = pack.add(new Float32Array([0, 0, 1, 0, 0, 1]), 'VEC2');
+  const png = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#888' } }).png().toBuffer();
+  const image = pack.addBytes(png);
+  const { fields, bin } = pack.finish();
+  await writeFile(join(dir, 'sly.glb'), writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION, TEXCOORD_0 }, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+    textures: [{ source: 0 }], images: [{ name: '../escaped.png', mimeType: 'image/png', bufferView: image }],
+    ...fields,
+  }, bin));
+  const p = await profileFromModel(join(dir, 'sly.glb'));
+  assert.deepEqual(Object.values(p.textures).map((t) => t.file), ['escaped.png']);
+  const { parseGlb } = await import('../packages/toile/src/model.mjs');
+  const encoded = parseGlb(writeGlb({ asset: { version: '2.0' }, images: [{ uri: '..%2Fsneaky.png' }] }));
+  assert.deepEqual(encoded.textures.map((t) => t.name), ['sneaky.png'], 'an encoded slash is still a slash');
+  const { pngOutput } = await import('../packages/toile/src/output.mjs');
+  await assert.rejects(pngOutput.writeSurface({ png, tex: { file: '../x.png' }, width: 8, height: 8, outDir: dir }),
+    /not a file name/);
+}));
+
+test('an eye the profile was measured from is recorded with it', () => inDir(async (dir) => {
+  // So whatever stands at the driver's seat later stands where the
+  // measurement did.
+  await writeFile(join(dir, 'teapot.glb'), await teapotGlb());
+  const p = await profileFromModel(join(dir, 'teapot.glb'), { eye: { x: 0, y: 1.2, z: 0.1234567 } });
+  assert.deepEqual(p.calibration.eye, { at: [0, 1.2, 0.123], from: 'given' });
+}));
+
 test('an image\'s size is read from its own header', async () => {
   const raw = { create: { width: 37, height: 21, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 0.5 } } };
   const cases = {
@@ -131,6 +165,10 @@ test('an image\'s size is read from its own header', async () => {
     assert.deepEqual([h?.width, h?.height, h?.fourCC, h?.alpha], [37, 21, fourCC, alpha], what);
   }
   assert.equal(imageHeader('x', Buffer.from('not an image, but long enough to be read as one')), null);
+  // A lossless WebP states its size in its first 25 bytes, and a small one
+  // may be little longer than that.
+  const tiny = (await sharp({ create: { width: 1, height: 1, channels: 3, background: '#000' } }).webp({ lossless: true }).toBuffer()).subarray(0, 30);
+  assert.deepEqual([imageHeader('tiny', tiny)?.width, imageHeader('tiny', tiny)?.height], [1, 1]);
   // A DDS cut short has no size to read, rather than a read past its end.
   const dds = Buffer.alloc(40); dds.write('DDS ', 0, 'ascii');
   assert.equal(imageHeader('short.dds', dds), null);

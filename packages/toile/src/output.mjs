@@ -40,6 +40,8 @@ export function needOutput(output) {
 export const pngOutput = {
   async writeSurface({ png, tex, width, height, outDir, pngDir = outDir, keep = false }) {
     const file = tex.file.replace(/\.[^.]+$/, '') + '.png';
+    // Written into outDir and nowhere else, whatever a model named its image.
+    if (/[\\/]/.test(file) || file.startsWith('..')) throw new Error(`${tex.file} is not a file name, so it is not written`);
     await writeFile(join(outDir, file), png, { flag: 'wx' }).catch((e) => {
       throw e.code === 'EEXIST' ? new Error(`${tex.file} would be written as ${file}, which another texture already is`) : e;
     });

@@ -112,6 +112,9 @@ export async function profileFromModel(path, {
       model: await fingerprint(path),
       date: new Date().toISOString().slice(0, 10),
       uvSet: 0,
+      // Where the driver's-seat visibility was measured from, so a cockpit
+      // camera can stand there.
+      ...(eye ? { eye: { at: [eye.x, eye.y, eye.z].map((v) => Math.round(v * 1000) / 1000), from: 'given' } } : {}),
       axes: recordFacing(axes),
       // Only where it is not a car, which every profile was before.
       ...(is !== 'car' ? { kind: is } : {}),
