@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
 import { loadModel, meshesWearing, meshTraits, materialTraits } from './model.mjs';
-import { facing, sayFacing, recordFacing } from './frame.mjs';
+import { facing, sayFacing, recordFacing, sectionsOf } from './frame.mjs';
 import { imageHeader } from './images.mjs';
 import { measurePanels, coverageOf } from './engine/measure.mjs';
 import { PROFILE_SCHEMA } from './profile.mjs';
@@ -34,6 +34,7 @@ export async function profileFromModel(path, {
   id = null, name = '', facing: facingAs = null, kind = null, eye = null, visibility = true,
   minPanelArea, minVertices, minCoverage, log = () => {},
 } = {}) {
+  if (kind !== null) sectionsOf(kind);
   const model = await loadModel(path, { keepTextureData: true });
   if (model.encrypted) {
     throw new Error(`${path} is encrypted: every image in it is a stand-in, and its real sizes are in the car's ` +
@@ -43,7 +44,12 @@ export async function profileFromModel(path, {
   const axes = facing(model, { stated: facingAs, log });
   sayFacing(model, axes, log);
   const is = kind ?? (axes.from === 'wheels' ? 'car' : 'object');
-  if (is !== 'car') log(`  an ${is}: its sections run front, mid and back`);
+  // Said, since a car read without wheel nodes is named and tagged as an
+  // object, and only the person profiling it knows which it is.
+  if (is !== 'car') {
+    log(`  ${kind ? 'an object, as told' : 'no wheel nodes, so it is profiled as an object'}: its sections run front, mid and back` +
+        `${kind ? '' : '. Pass kind: \'car\' if it is a car'}`);
+  }
 
   const images = new Map(model.textures.map((t) => [t.name.toLowerCase(), t]));
   // An output names a texture by its stem, in one folder, so two images whose

@@ -93,6 +93,12 @@ export const SECTIONS = {
   object: [['front', 0.62, Infinity, 0.38], ['mid', 0.38, 0.62, 0.24], ['back', -Infinity, 0.38, 0.38]],
 };
 
+/** A kind's sections, or a refusal naming the kinds that have them. */
+export function sectionsOf(kind) {
+  if (!Object.hasOwn(SECTIONS, kind)) throw new Error(`kind "${kind}" names no sections: ${Object.keys(SECTIONS).join(', ')}`);
+  return SECTIONS[kind];
+}
+
 /**
  * The section a point this far along the length (0 back, 1 front) is in. A
  * model with no extent to measure along gives NaN, which is the back.

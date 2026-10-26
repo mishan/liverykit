@@ -80,6 +80,11 @@ test('a teapot has a front and a back, and no nose', () => inDir(async (dir) => 
   assert.match(ask('nose').notes.map((n) => n.text).join(), /No panel on this texture is tagged `nose`/);
   assert.ok(ask(sections[0]).regions.length > 0, `and ${sections[0]}, which it has, is found`);
   assert.throws(() => validateProfile({ ...p, calibration: { ...p.calibration, kind: 'boat' } }), /kind "boat".*car, object/);
+  // Refused by name wherever an unknown kind arrives, rather than failing
+  // deep inside the measuring or the tagging.
+  await assert.rejects(profileFromModel(join(dir, 'teapot.glb'), { kind: 'boat' }), /kind "boat".*car, object/);
+  const { tagProfile } = await import('../packages/toile/src/engine/tags.mjs');
+  assert.throws(() => tagProfile({ ...p, calibration: { ...p.calibration, kind: 'Object' } }), /kind "Object".*car, object/);
 }));
 
 test('a kn5 paints only what an Assetto Corsa skin can carry', () => inDir(async (dir) => {
