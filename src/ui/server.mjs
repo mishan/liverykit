@@ -43,7 +43,7 @@ import { fileURLToPath } from 'node:url';
 import { loadModel, meshesWearing, vertex, triangles } from '../model.mjs';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
 import { renderTexture, previewSvg } from '../render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../profile.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson, staleModel } from '../profile.mjs';
 import { VOCABULARY, SCORABLE, VALIDATED, MEASURED } from '../engine/classify.mjs';
 import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
 import { resolveTreatments } from '../registry.mjs';
@@ -896,6 +896,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
     return model;
   };
 
+  // Read once, at start, and said with every surface's checks: a profile
+  // measured from another version of the model puts artwork where the old
+  // layout had the panels, and the page is where a person is looking. An
+  // unreadable model is already modelError's to report.
+  const stale = modelPath ? readFile(modelPath).then((b) => staleModel(profile, b), () => null) : null;
+
   /**
    * The car's OWN artwork for a texture the design does not paint.
    *
@@ -1557,10 +1563,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (bad) return json(400, { error: `The editor kept its working design, and did not take this one: ${bad}` });
         if (working !== undefined) workingFit = working;
         if (current(design, sent)) workingDesign = design;
-        return json(200, renderSurface({
+        const out = renderSurface({
           livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed, decals,
           stock: await stockFor(workingDesign ?? livery),
-        }));
+        });
+        const why = await stale;
+        if (why) out.notes.push({ term: basename(modelPath), status: 'model-stale', text: why });
+        return json(200, out);
       }
 
       // Every painted surface at once, on the whole car. Rendered fresh because
