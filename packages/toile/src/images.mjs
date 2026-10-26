@@ -6,6 +6,7 @@
 export function imageHeader(name, data) {
   if (!data || data.length < 32) return null;
   if (data.toString('ascii', 0, 4) === 'DDS ') {
+    if (data.length < 128) return null;           // a header cut short says nothing
     const pfFlags = data.readUInt32LE(80);
     const fourCC = pfFlags & 0x4 ? data.toString('ascii', 84, 88).replace(/\0/g, '') : null;
     return {
@@ -24,6 +25,7 @@ export function imageHeader(name, data) {
   if (data[0] === 0xff && data[1] === 0xd8) {
     for (let o = 2; o + 9 < data.length;) {
       if (data[o] !== 0xff) return null;
+      if (data[o + 1] === 0xff) { o++; continue; }  // fill before a marker
       const marker = data[o + 1];
       if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
         return { width: data.readUInt16BE(o + 7), height: data.readUInt16BE(o + 5), fourCC: 'JPEG', alpha: false, mips: 1 };

@@ -107,7 +107,7 @@ export function glbFrom(model, { vertex, triangles }) {
  */
 export const TEAPOT = { radius: 0.5, height: 0.6, segments: 24, image: 'teapot.png', size: 64 };
 
-export async function teapotGlb() {
+export async function teapotGlb({ baseColorFactor } = {}) {
   const { radius: R, height: H, segments: N } = TEAPOT;
   const sharp = (await import('sharp')).default;
   const png = await sharp({ create: { width: TEAPOT.size, height: TEAPOT.size, channels: 4, background: '#888' } }).png().toBuffer();
@@ -162,7 +162,7 @@ export async function teapotGlb() {
     asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
     nodes: [{ name: 'pot', mesh: 0 }, { name: 'lid', mesh: 1 }],
     meshes,
-    materials: [{ name: 'glaze', pbrMetallicRoughness: { baseColorTexture: { index: 0 } } }],
+    materials: [{ name: 'glaze', pbrMetallicRoughness: { baseColorTexture: { index: 0 }, ...(baseColorFactor ? { baseColorFactor } : {}) } }],
     textures: [{ source: 0 }],
     images: [{ name: TEAPOT.image, mimeType: 'image/png', bufferView: image }],
     ...fields,

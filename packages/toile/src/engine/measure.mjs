@@ -19,10 +19,11 @@ import { measureWheels } from './wheels.mjs';
  * faces, where an eye sits, which meshes its game hides — is handed in, since
  * only the generator that knows the game can read it.
  *
- * `roles` maps each texture file to the role it is filed under, in the order
+ * `roleOf` maps each texture file to the role it is filed under, in the order
  * they are measured, and `textures` is the profile's own table, which gains
- * each measured texture's UV layout. Returns the panels by role, and how many
- * islands straddle a sheet's edge, by texture.
+ * each measured texture's UV layout. `hidden` is a Map from the name of each
+ * mesh the game hides to why. Returns the panels by role, and how many islands
+ * straddle a sheet's edge, by texture.
  */
 export function measurePanels(model, roleOf, textures, {
   axes, eye = null, hidden = null, visibility = true,

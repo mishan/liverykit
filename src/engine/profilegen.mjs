@@ -18,7 +18,6 @@
 
 import { readFile } from 'node:fs/promises';
 import { readCarFile, driverEyes } from 'ac-cardata';
-import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
 import { loadModel, meshesWearing, meshTraits } from '../model.mjs';
@@ -27,6 +26,7 @@ import { PROFILE_SCHEMA } from '../profile.mjs';
 import { cockpitEye } from './visibility.mjs';
 import { imageHeader } from '../../packages/toile/src/images.mjs';
 import { measurePanels, coverageOf } from '../../packages/toile/src/engine/measure.mjs';
+import { fingerprint } from '../../packages/toile/src/generate.mjs';
 import { guessRole, scanSkins, countSkinOverrides } from './scan.mjs';
 import { textureFeatures, proposeBindings } from './classify.mjs';
 import { tagProfile } from './tags.mjs';
@@ -80,7 +80,7 @@ const SLOT_MEANING = {
  * listing three hundred of them is unreadable.
  */
 export async function profileFromKn5(path, {
-  id = null, name = '', minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008,
+  id = null, name = '', minPanelArea, minVertices, minCoverage,
   visibility = true, assumeSize = null,
   skinsDir = null, log = () => {},
   // Which way a model with no wheels faces: { left: '+X' | '-X', front: '+Z' | '-Z' }.
@@ -118,7 +118,12 @@ export async function profileFromKn5(path, {
   else if (visibility) log('  ! no steering wheel mesh found — visibleFromCockpit will be omitted.\n' +
     '    Pass an eye position, or rename the mesh, if this car has a cockpit worth painting.');
 
-  const headers = new Map(model.textures.map((t) => [t.name, imageHeader(t.name, t.data)]));
+  // DDS and PNG only: a skin carries nothing else, and an embedded JPEG
+  // offered as paint would be written as DDS bytes under its own name.
+  const headers = new Map(model.textures.map((t) => {
+    const h = imageHeader(t.name, t.data);
+    return [t.name, h && h.fourCC !== 'JPEG' && h.fourCC !== 'WEBP' ? h : null];
+  }));
 
   // Which slot each texture is bound to, across every material. A texture the
   // model ships but never binds is not paintable in any useful sense.
@@ -611,12 +616,6 @@ async function carNameBeside(kn5Path, log) {
   const found = typeof ui?.name === 'string' ? ui.name.trim() : '';
   if (found) log(`  Name from ui_car.json: ${found}`);
   return found;
-}
-
-/** What identifies the model a profile was measured from; see `staleModel`. */
-async function fingerprint(path) {
-  const bytes = await readFile(path);
-  return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 }
 
 const basename = (p) => p.split(/[\\/]/).pop();
