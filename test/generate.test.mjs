@@ -3,7 +3,7 @@
 // at all.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -89,6 +89,17 @@ test('a kn5 paints only what an Assetto Corsa skin can carry', () => inDir(async
   await writeFile(join(dir, 'car.kn5'), carKn5({ textureName: 'body.jpg', textureData: jpeg }));
   const p = await profileFromKn5(join(dir, 'car.kn5'), { log: () => {} });
   assert.deepEqual(Object.values(p.textures).map((t) => t.file), []);
+  assert.match(p.doNotPaint.find((d) => d.file === 'body.jpg')?.reason ?? '', /DDS or PNG/, 'and it says why');
+  // Nor will the skin writer carry one, whatever profile asks it to.
+  const { acSkin } = await import('../src/engine/skin.mjs');
+  await assert.rejects(acSkin.writeSurface({ png: jpeg, tex: { file: 'paint.jpg' }, width: 64, height: 32, outDir: dir }),
+    /DDS or PNG/);
+  // A model's own JPEG or WebP is still read as its stock artwork.
+  const { stockPng } = await import('../packages/toile/src/engine/pipeline.mjs');
+  for (const [file, bytes] of [['paint.jpg', jpeg], ['paint.webp', await sharp(jpeg).webp().toBuffer()]]) {
+    const { width, height, format } = await sharp(await stockPng(bytes, file)).metadata();
+    assert.deepEqual([format, width, height], ['png', 64, 32], file);
+  }
 }));
 
 test('a model that cannot be measured honestly says so', () => inDir(async (dir) => {
@@ -111,7 +122,41 @@ test('a model that cannot be measured honestly says so', () => inDir(async (dir)
   }, bin));
   const twins = await profileFromModel(join(dir, 'twins.glb'));
   assert.deepEqual(Object.keys(twins.textures), []);
-  assert.match(twins.doNotPaint.map((d) => d.reason).join(), /2 images are named paint\.png/);
+  assert.match(twins.doNotPaint.map((d) => d.reason).join(), /body\/paint\.png and wheels\/paint\.png .*one file/);
+  // So are two whose names differ only after the stem, as every output names
+  // a texture by its stem; one image listed twice is still one image.
+  const glb = (images) => writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
+    nodes: [{ mesh: 0 }, { mesh: 1 }], meshes: [{ primitives: [prim(0)] }, { primitives: [prim(1)] }],
+    materials: [0, 1].map((i) => ({ pbrMetallicRoughness: { baseColorTexture: { index: i } } })),
+    textures: [{ source: 0 }, { source: 1 }], images, ...fields,
+  }, bin);
+  const png8 = await sharp({ create: { width: 8, height: 8, channels: 4, background: '#888' } }).png().toBuffer();
+  await writeFile(join(dir, 'paint.png'), png8);
+  await writeFile(join(dir, 'paint.jpg'), await sharp(png8).jpeg().toBuffer());
+  await writeFile(join(dir, 'stems.glb'), glb([{ uri: 'paint.png' }, { uri: 'paint.jpg' }]));
+  assert.deepEqual(Object.keys((await profileFromModel(join(dir, 'stems.glb'))).textures), []);
+  await writeFile(join(dir, 'twice.glb'), glb([{ uri: 'paint.png' }, { uri: 'paint.png' }]));
+  assert.deepEqual(Object.keys((await profileFromModel(join(dir, 'twice.glb'))).textures), ['paint']);
+  // An image outside the model's folder is not read, whatever the model says.
+  await mkdir(join(dir, 'model'));
+  await writeFile(join(dir, 'model', 'peek.glb'), glb([{ uri: '../paint.png' }, { uri: '../paint.png' }]));
+  const peek = await profileFromModel(join(dir, 'model', 'peek.glb'));
+  assert.deepEqual(Object.keys(peek.textures), []);
+  assert.match(peek.doNotPaint.map((d) => d.reason).join(), /outside the model's folder/);
+  // An image a material uses for anything but its color is said not to be paint.
+  const slots = writeGlb({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [prim(0)] }],
+    materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 0 }, metallicRoughnessTexture: { index: 1 } },
+      emissiveTexture: { index: 2 }, occlusionTexture: { index: 3 } }],
+    textures: [0, 1, 2, 3].map((source) => ({ source })),
+    images: ['paint.png', 'mr.png', 'glow.png', 'ao.png'].map((uri) => ({ uri })), ...fields,
+  }, bin);
+  await writeFile(join(dir, 'slots.glb'), slots);
+  const why = Object.fromEntries((await profileFromModel(join(dir, 'slots.glb'))).doNotPaint.map((d) => [d.file, d.reason]));
+  assert.deepEqual(Object.keys(why).sort(), ['ao.png', 'glow.png', 'mr.png']);
+  assert.match(why['glow.png'], /emissive/);
   // A color multiplied over the image: paintable, and said to be tinted.
   await writeFile(join(dir, 'red.glb'), await teapotGlb({ baseColorFactor: [1, 0, 0, 1] }));
   const red = await profileFromModel(join(dir, 'red.glb'));
@@ -141,7 +186,7 @@ test('an image is written under its own name, inside the output and nowhere else
   assert.deepEqual(encoded.textures.map((t) => t.name), ['sneaky.png'], 'an encoded slash is still a slash');
   const { pngOutput } = await import('../packages/toile/src/output.mjs');
   await assert.rejects(pngOutput.writeSurface({ png, tex: { file: '../x.png' }, width: 8, height: 8, outDir: dir }),
-    /not a file name/);
+    /cannot be written/);
 }));
 
 test('an eye the profile was measured from is recorded with it', () => inDir(async (dir) => {

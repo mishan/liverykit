@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { vocabulary } from './vocabulary.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { SECTIONS } from './frame.mjs';
+import { fileNameProblem } from './output.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
 /**
@@ -101,6 +102,8 @@ export function validateProfile(p, source = '<inline>') {
 
   for (const [role, t] of Object.entries(p.textures)) {
     if (!t.file) err(`texture role "${role}" has no file`);
+    const problem = t.file ? fileNameProblem(t.file) : null;
+    if (problem) err(`texture "${role}" is named ${t.file}, which cannot be written: ${problem}`);
     if (!t.width || !t.height) err(`texture "${t.file}" needs width and height`);
   }
 

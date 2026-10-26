@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir, writeFile, mkdtemp, mkdir } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -2771,4 +2771,41 @@ test('toile imports nothing from liverykit', async () => {
     }
   }
   assert.deepEqual(reaching, []);
+});
+
+test('a texture is named so that it can be written as itself', async () => {
+  // A kn5 is somebody else's file and a profile is shared, and either can name
+  // a texture anything. A path is written where it points, and on Windows, where
+  // skins are built, a colon makes a stream and a device name opens the device.
+  // Refused when the profile is loaded, before a build has deleted anything.
+  const base = (file) => ({ id: 'car', textures: { body: { file, width: 64, height: 64 } } });
+  for (const file of ['../outside.dds', 'sub/body.dds', 'C:body.dds', 'body.dds:stream', 'NUL.dds', 'com1.png']) {
+    assert.throws(() => validateProfile(base(file)), /texture "body" is named .* which cannot be written/, file);
+  }
+  for (const file of ['body.dds', '..body.dds', 'nullable.dds']) assert.doesNotThrow(() => validateProfile(base(file)), file);
+});
+
+test('a skin is written into its own folder as the files it names, and nothing else', async () => {
+  const { buildSkin, acSkin } = await import('../src/engine/skin.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-names-'));
+  try {
+    // The writer refuses a path even from a profile nobody validated.
+    await assert.rejects(acSkin.writeSurface({ png: Buffer.alloc(0), tex: { file: '../outside.dds' }, width: 4, height: 4, outDir: dir }),
+      /cannot be written/);
+    // A texture under one of the skin's own names would be overwritten by it.
+    await assert.rejects(acSkin.writeSurface({ png: Buffer.alloc(0), tex: { file: 'livery.png' }, width: 4, height: 4, outDir: dir }),
+      /the skin's own badge/);
+    // A DDS's intermediate PNG is not written over a PNG texture of the same stem.
+    const p = {
+      id: 'car',
+      textures: { rim: { file: 'wheel.png', width: 64, height: 64 }, body: { file: 'wheel.dds', width: 64, height: 64 } },
+      bind: { body: { roles: ['body'], source: 'human' }, rims: { roles: ['rim'], source: 'human' } },
+      panels: { body: { all: { rect: [0, 0, 1, 1] } }, rim: { all: { rect: [0, 0, 1, 1] } } },
+    };
+    const { files } = await buildSkin({ profile: p, livery: { name: 'L', surfaces: { rims: spec, body: spec } }, outDir: join(dir, 'skin'), log: () => {} });
+    assert.deepEqual(files.sort(), ['wheel.dds', 'wheel.png']);
+    assert.deepEqual((await readdir(join(dir, 'skin'))).filter((f) => f.startsWith('wheel')).sort(), ['wheel.dds', 'wheel.png']);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
