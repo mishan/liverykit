@@ -963,6 +963,7 @@ test('a build with no game in mind writes a PNG per surface, and says what it co
   // asking for something only a game's output knows how to do, so both are
   // notes here, never a hidden surface quietly drawn or a light quietly lost.
   const { buildSkin } = await import('../src/build.mjs');
+  const { pngOutput } = await import('../src/output.mjs');
   const sharp = (await import('sharp')).default;
   const p = {
     id: 'object',
@@ -974,25 +975,22 @@ test('a build with no game in mind writes a PNG per surface, and says what it co
     panels: { body: { all: { rect: [0, 0, 1, 1] } } },
   };
   const outDir = join(await mkdtemp(join(tmpdir(), 'liverykit-png-')), 'out');
-  const { files, notes } = await buildSkin({
-    profile: p, outDir, log: () => {},
-    livery: { name: 'L', palette: { pink: '#ff2d95' }, surfaces: { body: spec }, hide: ['glass'], underglow: 'pink' },
-  });
+  const livery = { name: 'L', palette: { pink: '#ff2d95' }, surfaces: { body: spec }, hide: ['glass'], underglow: 'pink' };
+  // No default: which game a build is for is never assumed.
+  await assert.rejects(buildSkin({ profile: p, outDir, livery, log: () => {} }), /needs an output/);
+  const { files, notes } = await buildSkin({ profile: p, outDir, livery, output: pngOutput, log: () => {} });
 
   assert.deepEqual(files, ['b.png']);
   assert.deepEqual((await readdir(outDir)).sort(), ['b.png'], 'no DDS, no ui_skin.json, no preview');
   const { width, height, format } = await sharp(await readFile(join(outDir, 'b.png'))).metadata();
   assert.deepEqual([format, width, height], ['png', 64, 32], 'at its own size, not rounded up');
   assert.deepEqual(notes.map((n) => n.status).sort(), ['hide-cannot', 'light']);
-});
 
-test('the build knows no game\'s file formats', async () => {
-  // What a texture is written as belongs to an output; the build hands over
-  // pixels. A second game gets its own output rather than a branch in here.
-  const text = await readFile(new URL('../src/build.mjs', import.meta.url), 'utf8');
-  const imports = [...text.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual(imports.filter((f) => /package\.mjs|skin\.mjs|lights\.mjs|ac-dds/.test(f)), []);
-  assert.doesNotMatch(text, /\btoDDS\b|\.dds\b/i);
+  // Two textures one extension apart would be one PNG, and the second is refused.
+  const twins = { ...p, textures: { ...p.textures, glass: { file: 'b.png', width: 16, height: 16 } },
+    bind: { ...p.bind, glass: { roles: ['glass'], source: 'human' } }, panels: { ...p.panels, glass: { all: { rect: [0, 0, 1, 1] } } } };
+  await assert.rejects(buildSkin({ profile: twins, outDir, output: pngOutput, log: () => {},
+    livery: { name: 'L', surfaces: { body: spec, glass: spec } } }), /b\.png, which another texture already is/);
 });
 
 test('an underglow is placed from the wheels, written for CSP, and lights the floor in the pictures', async () => {

@@ -18,11 +18,32 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-/** One PNG per surface, named after its texture, and nothing else. */
+/**
+ * Refuse a build with no output. There used to be a default, and changing
+ * it changed what a build wrote with no error anywhere, which for a texture
+ * whose filename the game no longer matches is a livery that silently does
+ * not install.
+ */
+export function needOutput(output) {
+  if (typeof output?.writeSurface !== 'function') {
+    throw new Error('a build needs an output: acSkin from src/engine/skin.mjs for an Assetto Corsa ' +
+      'skin, or pngOutput from src/output.mjs for one PNG per surface');
+  }
+}
+
+/**
+ * One PNG per surface, named after its texture, and nothing else. Two textures
+ * that differ only by extension would be one file, so the second is refused
+ * rather than written over the first.
+ */
 export const pngOutput = {
-  async writeSurface({ png, tex, width, height, outDir }) {
+  async writeSurface({ png, tex, width, height, outDir, pngDir = outDir, keep = false }) {
     const file = tex.file.replace(/\.[^.]+$/, '') + '.png';
-    await writeFile(join(outDir, file), png);
+    await writeFile(join(outDir, file), png, { flag: 'wx' }).catch((e) => {
+      throw e.code === 'EEXIST' ? new Error(`${tex.file} would be written as ${file}, which another texture already is`) : e;
+    });
+    // The output is the intermediate, so asking to keep it is asking for a copy.
+    if (keep && pngDir !== outDir) await writeFile(join(pngDir, file), png);
     return { file, width, height, format: 'PNG', bytes: png.length };
   },
 };

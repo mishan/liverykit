@@ -62,17 +62,17 @@ export const acSkin = {
   },
 
   /** A surface the design hides, as a fully transparent sheet the game draws as nothing. */
-  async hideSurface({ file, outDir, pngDir = null }) {
+  async hideSurface({ file, outDir, pngDir = outDir, keep = false }) {
     const outPath = join(outDir, file);
     const png = await sharp({ create: { width: CLEAR_SHEET, height: CLEAR_SHEET, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .png().toBuffer();
     if (isPngTexture(file)) {
       await writeFile(outPath, png);
     } else {
-      const pngPath = join(pngDir ?? outDir, file.replace(/\.dds$/i, '.png'));
+      const pngPath = join(pngDir, file.replace(/\.dds$/i, '.png'));
       await writeFile(pngPath, png);
       await toDDS(pngPath, outPath, { width: CLEAR_SHEET, height: CLEAR_SHEET, alpha: true });
-      if (!pngDir) await rm(pngPath);
+      if (!keep) await rm(pngPath);
     }
     return written(outPath, file, [CLEAR_SHEET, CLEAR_SHEET], true);
   },
@@ -100,16 +100,14 @@ export const acSkin = {
   /**
    * ui_skin.json, the livery.png badge and preview.jpg. The preview is a real
    * render of the car where there is a model and painted surfaces to render
-   * it with, and the placeholder otherwise; the calibration skin passes
-   * `previewLabel` and never claims to show the car.
+   * it with, and the placeholder otherwise, labelled with `previewLabel` or
+   * the design's number.
    */
   async finish({ outDir, livery, firstPng, previewLabel = null, profile = null, targets = [], pngByRole = new Map(), modelPath = null, log = console.log }) {
     // Asked once and used by both the real render and the placeholder, so a
     // build that falls back still lands the conventional size for this car.
-    const frame = previewLabel === null ? (await previewFrame(modelPath, { log })) ?? PREVIEW_FRAME : PREVIEW_FRAME;
-    const preview = previewLabel === null
-      ? await renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log })
-      : null;
+    const frame = (await previewFrame(modelPath, { log })) ?? PREVIEW_FRAME;
+    const preview = await renderShowroomPreview({ profile, livery, targets, pngByRole, modelPath, frame, log });
     const id = livery.identity ?? {};
     await writeFile(
       join(outDir, 'ui_skin.json'),
@@ -130,10 +128,10 @@ export const acSkin = {
 };
 
 /** buildSkin, writing an Assetto Corsa skin unless told otherwise. */
-export const buildSkin = (opts) => build.buildSkin({ output: acSkin, ...opts });
+export const buildSkin = (opts) => build.buildSkin({ ...opts, output: opts.output ?? acSkin });
 
 /** buildCalibration, writing an Assetto Corsa skin unless told otherwise. */
-export const buildCalibration = (opts) => build.buildCalibration({ output: acSkin, ...opts });
+export const buildCalibration = (opts) => build.buildCalibration({ ...opts, output: opts.output ?? acSkin });
 
 /** ZIP of the skin, laid out for Content Manager or as the bare folder — see packageZip. */
 export async function packSkin({ skinDir, zipPath, carId, folder, layout = 'cm' }) {

@@ -17,7 +17,7 @@ import { texture, resolveTargets } from './profile.mjs';
 import { allRegionKeys, applyFit, regionIds, unusedFitIds } from './fit.mjs';
 import { hidePlan } from './hide.mjs';
 import { loadModel } from './model.mjs';
-import { pngOutput } from './output.mjs';
+import { needOutput } from './output.mjs';
 
 // Re-exported: `hidePlan` lived here first, and the build is where anybody
 // looking for what `hide` does would go.
@@ -51,7 +51,8 @@ export function isMissingNote(note) {
  * 4K without edits — every coordinate in the system is a fraction, never a
  * pixel.
  */
-export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, output = pngOutput, log = console.log }) {
+export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat = false, fit = null, pngDir = null, liveryDir = null, decals = new Map(), modelPath = null, output, log = console.log }) {
+  needOutput(output);
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   // Intermediate PNGs go in a SIBLING directory, never in the skin folder —
@@ -90,7 +91,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
   let firstPng = null;
   const written = [];
   // Every painted role's finished art, kept for the showroom preview below —
-  // the same pixels that just got written to the DDS, not a re-render.
+  // the same pixels the output just wrote, not a re-render.
   const pngByRole = new Map();
 
   // The car's own textures, read from the model once and only if some
@@ -118,7 +119,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       profile,
       role,
       // --flat proves the plumbing before any art exists: if the car doesn't
-      // turn a solid color, the DDS format or a filename is wrong and no
+      // turn a solid color, the file format or a filename is wrong and no
       // amount of artwork will fix it.
       // Fit first, so an override that names a panel replaces the tag selection
       // before anything is expanded. `applyFit` also leaves off this texture a
@@ -200,7 +201,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     if (h.action === 'ship-transparent' && !output.hideSurface) {
       notes.push({ term: h.role, status: 'hide-cannot', text: `${h.role}: this output has no way to hide a surface, so ${h.file} is drawn as it is` });
     } else if (h.action === 'ship-transparent') {
-      const out = await output.hideSurface({ file: h.file, outDir, pngDir });
+      const out = await output.hideSurface({ file: h.file, outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });
       written.push(out.file);
       log(`  ${out.file.padEnd(24)} ${out.width}x${out.height}`.padEnd(46) + `${out.format.padEnd(4)}  transparent (hidden)`);
     } else if (h.action === 'cannot' || h.action === 'painted') {
@@ -255,7 +256,8 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
  * Installed alongside the real livery rather than over it, so both show up in
  * Content Manager and you can flip between them without reinstalling anything.
  */
-export async function buildCalibration({ profile, outDir, folder, cells = 20, probes = [], font = 'sans-serif', pngDir = null, output = pngOutput, log = console.log }) {
+export async function buildCalibration({ profile, outDir, folder, cells = 20, probes = [], font = 'sans-serif', pngDir = null, output, log = console.log }) {
+  needOutput(output);
   if (!Number.isInteger(cells) || cells < 2 || cells > 260) {
     throw new Error(`--cells must be a whole number between 2 and 260, got ${cells}`);
   }
