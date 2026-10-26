@@ -25,6 +25,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { vocabulary } from './vocabulary.mjs';
 import { reachOnly } from './engine/tags.mjs';
+import { SECTIONS } from './frame.mjs';
 import { fileNameProblem } from './output.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -93,6 +94,10 @@ export function validateProfile(p, source = '<inline>') {
     }
   }
   if (!p.id) err('missing "id" (the folder name under content/cars/)');
+  const kind = p.calibration?.kind;
+  if (kind !== undefined && !Object.hasOwn(SECTIONS, kind)) {
+    err(`calibration names its kind "${kind}", which names no sections: ${Object.keys(SECTIONS).join(', ')}`);
+  }
   if (!p.textures || !Object.keys(p.textures).length) err('has no textures');
 
   for (const [role, t] of Object.entries(p.textures)) {

@@ -746,8 +746,9 @@ async function refresh() {
 // A panel list in profile order is a list in whatever order the unwrapper
 // emitted islands, which is no order at all — you scroll it looking for the
 // door. These put it in the order you would walk around the car: nose to tail,
-// then left, centre, right, then upper before lower, then biggest first.
-const SECTIONS = ['nose', 'front', 'mid', 'rear', 'tail'];
+// then left, centre, right, then upper before lower, then biggest first. An
+// object's front, mid and back fall in the same order.
+const SECTIONS = ['nose', 'front', 'mid', 'rear', 'tail', 'back'];
 const SIDES = ['left', 'centre', 'right'];
 
 /** Where a panel sits, from its tags, falling back to its generated name. */
@@ -1229,7 +1230,7 @@ async function addRegion(treatment) {
  * those are left for the inspector like the rest.
  */
 const SIDE = new Set(['left', 'right', 'centre', 'shared']);
-const SECTION = new Set(['nose', 'front', 'mid', 'rear', 'tail', 'upper', 'lower']);
+const SECTION = new Set(['nose', 'front', 'mid', 'rear', 'tail', 'back', 'upper', 'lower']);
 
 function portableTags(panelName) {
   const panel = state.surface?.panels?.find((p) => p.name === panelName);

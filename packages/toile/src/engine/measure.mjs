@@ -26,7 +26,7 @@ import { measureWheels } from './wheels.mjs';
  * straddle a sheet's edge, by texture.
  */
 export function measurePanels(model, roleOf, textures, {
-  axes, eye = null, hidden = null, visibility = true,
+  axes, kind = 'car', eye = null, hidden = null, visibility = true,
   minPanelArea = 0.0015, minVertices = 40, minCoverage = 0.008, log = () => {},
 } = {}) {
   // What can stand in front of paint: the same meshes `fitment` casts against,
@@ -109,7 +109,7 @@ export function measurePanels(model, roleOf, textures, {
     // size, one brushed-metal sheet on the S14 Zenki buried them under 1,728.
     const across = meshes.flatMap((m) => m.straddlers ?? []).filter((n) => n >= minVertices).length;
     if (across) straddling.set(texName, across);
-    nameIslands(keep, axes, bounds);
+    nameIslands(keep, axes, bounds, kind);
     findMirrorPairs(keep, axes);
     const adj = findAdjacency(model, keep);
     // And HOW they touch: the map from each island's sheet to its neighbor's,

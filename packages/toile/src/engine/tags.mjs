@@ -9,7 +9,8 @@
 // Tags fix that by describing each panel in terms that are true of any car:
 //
 //   side      left | right | centre        which side of the centerline
-//   section   nose | front | mid | rear | tail
+//   section   nose | front | mid | rear | tail, on a car;
+//             front | mid | back on anything else (calibration.kind)
 //   level     upper | lower
 //   visible   readable from trackside
 //   cockpit   readable from the driver's seat
@@ -46,7 +47,7 @@
 // `reachOnly` here and `limit` in panelsWithTags.
 // ---------------------------------------------------------------------------
 
-import { SECTIONS, sectionAt } from '../frame.mjs';
+import { SECTIONS, sectionAt, sectionsOf } from '../frame.mjs';
 
 /** A panel whose surface turns this far or less across most of it is `flat`. */
 export const FLAT_DEG = 25;
@@ -129,6 +130,9 @@ export function rectGroups(panels) {
  */
 function frameOf(profile) {
   const axes = profile.calibration?.axes ?? {};
+  // Absent on every profile from before there was anything but a car.
+  const kind = profile.calibration?.kind ?? 'car';
+  sectionsOf(kind);
   let xMax = 0, yMin = Infinity, yMax = -Infinity, zMin = Infinity, zMax = -Infinity;
   for (const panels of Object.values(profile.panels ?? {})) {
     for (const p of Object.values(panels)) {
@@ -140,6 +144,7 @@ function frameOf(profile) {
     }
   }
   return {
+    kind,
     left: axes.left === '-X' ? -1 : 1,
     front: axes.front === '-Z' ? -1 : 1,
     halfWidth: xMax || 1,
@@ -162,7 +167,7 @@ function placeOf(frame, p) {
 
   let zr = (c[2] - zMin) / zSpan;
   if (front < 0) zr = 1 - zr;
-  const section = sectionAt(zr);
+  const section = sectionAt(zr, frame.kind);
   const level = (c[1] - yMin) / ySpan > 0.5 ? 'upper' : 'lower';
 
   // In the centroid's frame, so the centroid's own section and level are the
@@ -173,7 +178,7 @@ function placeOf(frame, p) {
     let z0 = (box[0][2] - zMin) / zSpan, z1 = (box[1][2] - zMin) / zSpan;
     if (front < 0) [z0, z1] = [1 - z1, 1 - z0];
     const y0 = (box[0][1] - yMin) / ySpan, y1 = (box[1][1] - yMin) / ySpan;
-    for (const [name, lo, hi, width] of SECTIONS) {
+    for (const [name, lo, hi, width] of SECTIONS[frame.kind]) {
       if (name !== section && reaches(z0, z1, lo, hi, width)) reach.push(name);
     }
     for (const [name, lo, hi, width] of LEVEL_BANDS) {
@@ -222,7 +227,7 @@ export function computeTags(profile) {
         // panel before stops matching it. Written in band order.
         const within = (n) => n === at.section || n === at.level || at.reach.includes(n);
         tags.push(at.side,
-          ...SECTIONS.map(([n]) => n).filter(within),
+          ...SECTIONS[frame.kind].map(([n]) => n).filter(within),
           ...LEVEL_BANDS.map(([n]) => n).filter(within));
       }
 

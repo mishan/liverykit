@@ -247,7 +247,10 @@ Tags available on every panel of a generated profile: `left` `right` `centre`,
 `nose` `front` `mid` `rear` `tail`, `upper` `lower`, `visible` (readable from
 trackside), `cockpit` (readable from the driver's seat), `flat` (the surface
 turns 25 degrees or less across most of the panel), `mirrored`, `shared`, and
-on the tire texture `sidewall` and `tread`.
+on the tire texture `sidewall` and `tread`. A profile of something that is not a
+car — `calibration.kind: "object"`, made from a glTF with no wheels — has
+`front` `mid` `back` for its sections instead, and a design asking it for a
+`nose` is told that nothing matched.
 
 Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut

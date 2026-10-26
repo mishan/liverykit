@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
 import { loadModel, meshesWearing, meshTraits, materialTraits } from './model.mjs';
-import { facing, sayFacing, recordFacing } from './frame.mjs';
+import { facing, sayFacing, recordFacing, sectionsOf } from './frame.mjs';
 import { imageHeader } from './images.mjs';
 import { measurePanels, coverageOf } from './engine/measure.mjs';
 import { PROFILE_SCHEMA } from './profile.mjs';
@@ -25,11 +25,16 @@ import { tagProfile } from './engine/tags.mjs';
  * named after its file and measured into panels, its size read from the image
  * itself. One whose size cannot be read, and every normal map, is listed as
  * not to be painted, with the reason.
+ *
+ * `kind` names its sections: a `car`'s run nose to tail, an `object`'s front
+ * to back. A model whose wheels say which way it faces is a car unless told
+ * otherwise, and anything else an object.
  */
 export async function profileFromModel(path, {
-  id = null, name = '', facing: facingAs = null, eye = null, visibility = true,
+  id = null, name = '', facing: facingAs = null, kind = null, eye = null, visibility = true,
   minPanelArea, minVertices, minCoverage, log = () => {},
 } = {}) {
+  if (kind !== null) sectionsOf(kind);
   const model = await loadModel(path, { keepTextureData: true });
   if (model.encrypted) {
     throw new Error(`${path} is encrypted: every image in it is a stand-in, and its real sizes are in the car's ` +
@@ -38,6 +43,13 @@ export async function profileFromModel(path, {
   log(`  ${model.meshes.length} meshes, ${model.textures.length} textures, ${model.materials.length} materials`);
   const axes = facing(model, { stated: facingAs, log });
   sayFacing(model, axes, log);
+  const is = kind ?? (axes.from === 'wheels' ? 'car' : 'object');
+  // Said, since a car read without wheel nodes is named and tagged as an
+  // object, and only the person profiling it knows which it is.
+  if (is !== 'car') {
+    log(`  ${kind ? 'an object, as told' : 'no wheel nodes, so it is profiled as an object'}: its sections run front, mid and back` +
+        `${kind ? '' : '. Pass kind: \'car\' if it is a car'}`);
+  }
 
   const images = new Map(model.textures.map((t) => [t.name.toLowerCase(), t]));
   // An output names a texture by its stem, in one folder, so two images whose
@@ -103,7 +115,7 @@ export async function profileFromModel(path, {
   // since a panel without the figure looks like one nobody inside can see.
   if (visibility && !eye) log('  no eye was given, so visibleFromCockpit is not measured');
   const { panels, straddling } = measurePanels(model, roleOf, textures, {
-    axes, eye, visibility, minPanelArea, minVertices, minCoverage, log,
+    axes, kind: is, eye, visibility, minPanelArea, minVertices, minCoverage, log,
   });
   if (straddling.size) {
     log(`  ! ${[...straddling.values()].reduce((a, b) => a + b, 0)} island(s) straddle a sheet boundary; ` +
@@ -124,6 +136,8 @@ export async function profileFromModel(path, {
       // camera can stand there.
       ...(eye ? { eye: { at: [eye.x, eye.y, eye.z].map((v) => Math.round(v * 1000) / 1000), from: 'given' } } : {}),
       axes: recordFacing(axes),
+      // Only where it is not a car, which every profile was before.
+      ...(is !== 'car' ? { kind: is } : {}),
     },
     textures,
     doNotPaint,
