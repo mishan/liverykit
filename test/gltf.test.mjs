@@ -12,8 +12,8 @@ import { parseGlb, loadModel, vertex, triangles, meshTraits, meshesWearing, axes
 import { carKn5, CAR } from './fixtures/kn5.mjs';
 import { glbFrom, packer, writeGlb } from './fixtures/gltf.mjs';
 
-test('the car read from glTF is the car its kn5 describes', () => {
-  const kn5 = parseKn5Buffer(carKn5());
+for (const [what, shift] of [['as stored', [0, 0]], ['stored a sheet over and two up', [1, -2]]]) test(`the car read from glTF is the car its kn5 describes, ${what}`, () => {
+  const kn5 = parseKn5Buffer(carKn5({ uvShift: shift }));
   const glb = parseGlb(glbFrom(kn5, { vertex: kn5Vertex, triangles: kn5Triangles }));
   assert.equal(glb.format.name, 'glTF');
   assert.deepEqual(glb.meshes.map((m) => [m.name, m.vertexCount]), kn5.meshes.map((m) => [m.name, m.vertexCount]));
@@ -60,8 +60,70 @@ test('a node\'s translation, rotation and scale place the mesh under it', () => 
   assert.ok(near(vertex(model, mesh, 1), [0, 3, 5]), JSON.stringify(vertex(model, mesh, 1)));
   assert.ok(near(vertex(model, mesh, 2), [2, 1, 5]), JSON.stringify(vertex(model, mesh, 2)));
   const n = vertex(model, mesh, 0);
-  assert.ok(Math.abs(n.nz + 2) < 1e-6 && Math.abs(n.nx) < 1e-6, 'a normal turns with it, and is not moved');
+  assert.ok(Math.abs(n.nz + 1) < 1e-6 && Math.abs(n.nx) < 1e-6, 'a normal turns with it, at unit length, and is not moved');
   assert.deepEqual(triangles(model, mesh), [[0, 1, 2]], 'no indices: the vertices in order');
+});
+
+/** A model of one primitive, from its attribute arrays and whatever else the JSON should say. */
+function single({ positions, normals, uvs, nodes = [{ name: 'part', mesh: 0 }], scenes = true, material, json = {} }) {
+  const pack = packer();
+  const attributes = { POSITION: pack.add(new Float32Array(positions), 'VEC3') };
+  if (normals) attributes.NORMAL = pack.add(new Float32Array(normals), 'VEC3');
+  if (uvs) attributes.TEXCOORD_0 = pack.add(new Float32Array(uvs), 'VEC2');
+  const { fields, bin } = pack.finish();
+  return parseGlb(writeGlb({
+    asset: { version: '2.0' },
+    ...(scenes ? { scene: 0, scenes: [{ nodes: [0] }] } : {}),
+    nodes, meshes: [{ name: 'tri', primitives: [{ attributes, ...(material !== undefined ? { material } : {}) }] }],
+    ...fields, ...json,
+  }, bin));
+}
+
+test('a surface faces the way it does in the world, whatever the node did to it', () => {
+  // A slope stretched to twice its height. Turning its normal like a point
+  // would tip it off the surface; the inverse transpose keeps it square.
+  const slope = single({ positions: [0, 0, 0, 1, 1, 0, 0, 0, 1], normals: [-1, 1, 0, -1, 1, 0, -1, 1, 0].map((c) => c * Math.SQRT1_2),
+    nodes: [{ name: 'part', mesh: 0, scale: [1, 2, 1] }] });
+  const [m] = slope.meshes;
+  const [a, b, c] = [0, 1, 2].map((i) => vertex(slope, m, i));
+  const n = [a.nx, a.ny, a.nz];
+  const dot = (u, w) => u.reduce((t, x, k) => t + x * w[k], 0);
+  for (const e of [[b.x - a.x, b.y - a.y, b.z - a.z], [c.x - a.x, c.y - a.y, c.z - a.z]]) {
+    assert.ok(Math.abs(dot(n, e)) < 1e-6, `normal ${n} square to edge ${e}`);
+  }
+  assert.ok(Math.abs(Math.hypot(...n) - 1) < 1e-6);
+  // One that states no normals gets its face's.
+  const bare = single({ positions: [0, 0, 0, 1, 0, 0, 0, 0, 1] });
+  const v = vertex(bare, bare.meshes[0], 0);
+  assert.ok(Math.abs(Math.abs(v.ny) - 1) < 1e-6, `a flat triangle on the ground faces up or down, not nowhere: ${JSON.stringify(v)}`);
+});
+
+test('an island stored on another copy of the sheet is read on this one', () => {
+  // Wrap addressing draws it the same either way, and exporters shift whole
+  // unwraps; measured where it is stored, no rectangle on the image reaches it.
+  const shifted = single({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], uvs: [1.2, -0.8, 1.4, -0.8, 1.2, -0.6] });
+  const us = [0, 1, 2].map((i) => vertex(shifted, shifted.meshes[0], i));
+  assert.deepEqual(us.map((v) => [v.u, v.v].map((x) => Math.round(x * 100) / 100)), [[0.2, 0.2], [0.4, 0.2], [0.2, 0.4]]);
+});
+
+test('a file with no scene has each node once, under its parent', () => {
+  const model = single({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], scenes: false,
+    nodes: [{ name: 'chassis', translation: [0, 1, 0], children: [1] }, { name: 'body', mesh: 0 }] });
+  assert.deepEqual(model.meshes.map((m) => m.path), ['chassis/body']);
+  assert.equal(vertex(model, model.meshes[0], 0).y, 1);
+});
+
+test('what a glTF material states is read as stated', () => {
+  const traits = (material) => meshTraits(...(() => {
+    const m = single({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], material: 0, json: { materials: [material] } });
+    return [m, m.meshes[0]];
+  })());
+  assert.deepEqual([traits({ alphaMode: 'BLEND' })].map((t) => [t.blends, t.alphaTest, t.discardsClear]), [[true, null, true]]);
+  assert.deepEqual([traits({ alphaMode: 'MASK', alphaCutoff: 0.3 })].map((t) => [t.blends, t.alphaTest, t.discardsClear]), [[false, 0.3, true]]);
+  assert.equal(traits({}).discardsClear, false);
+  assert.equal(traits({ pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] } }).trustworthy, false,
+    'a tinted color is not its image');
+  assert.equal(traits({ pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 0.5] } }).trustworthy, true);
 });
 
 test('what this cannot read is refused by name, not read past', () => {
@@ -79,6 +141,10 @@ test('what this cannot read is refused by name, not read past', () => {
     asset: { version: '2.0' }, nodes: [{ mesh: 0 }],
     meshes: [{ name: 'wire', primitives: [{ attributes: { POSITION }, mode: 1 }] }], ...fields,
   }, bin)), /not a list of triangles/);
+  assert.throws(() => single({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], nodes: [{ name: 'part', mesh: 7 }] }),
+    /node "part" names meshes 7, which is not there/);
+  assert.throws(() => single({ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], material: 0,
+    json: { materials: [{ pbrMetallicRoughness: { baseColorTexture: { index: 3 } } }] } }), /names textures 3/);
 });
 
 test('a model is read as its extension says', async () => {
@@ -89,6 +155,14 @@ test('a model is read as its extension says', async () => {
     await writeFile(join(dir, 'car.kn5'), carKn5());
     assert.equal((await loadModel(join(dir, 'car.glb'))).format.name, 'glTF');
     assert.equal((await loadModel(join(dir, 'car.kn5'))).format, undefined, 'a kn5 as ac-kn5 reads it');
+    // Its paint beside it, as glbFrom names it, is part of it; a second image
+    // named and absent is said to be.
+    await writeFile(join(dir, CAR.texture), Buffer.alloc(100));
+    const glb = await loadModel(join(dir, 'car.glb'));
+    assert.deepEqual(glb.textures.map((t) => [t.name, t.size, t.missing]), [[CAR.texture, 100, false]]);
+    // liverykit's profile generator reads a kn5's own fields, and says so of anything else.
+    const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+    await assert.rejects(profileFromKn5(join(dir, 'car.glb'), { log: () => {} }), /reads a kn5.*glTF/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

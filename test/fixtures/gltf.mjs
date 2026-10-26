@@ -44,7 +44,9 @@ export function packer() {
 /**
  * A model already read, written out as a .glb: every mesh in world space
  * under a node of its own, every node at its world transform, and each
- * material's paint as an image named as the model names it.
+ * material's paint as an image named as the model names it. UVs are written
+ * as the model stored them, before any island was brought onto the sheet,
+ * so the glTF's reader has to bring them there itself.
  */
 export function glbFrom(model, { vertex, triangles }) {
   const pack = packer();
@@ -53,7 +55,8 @@ export function glbFrom(model, { vertex, triangles }) {
     const pos = [], nrm = [], uv = [];
     for (let i = 0; i < mesh.vertexCount; i++) {
       const v = vertex(model, mesh, i);
-      pos.push(v.x, v.y, v.z); nrm.push(v.nx, v.ny, v.nz); uv.push(v.u, v.v);
+      const s = mesh.uvShift;
+      pos.push(v.x, v.y, v.z); nrm.push(v.nx, v.ny, v.nz); uv.push(v.u - (s?.[2 * i] ?? 0), v.v - (s?.[2 * i + 1] ?? 0));
     }
     return {
       name: mesh.name,

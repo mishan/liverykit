@@ -111,6 +111,9 @@ export async function profileFromKn5(path, {
     throw new Error(`assumeSize must be a power of two, got ${assumeSize}`);
   }
   const model = await loadModel(path, { keepTextureData: true });
+  // Everything below reads a kn5's own fields — its shaders, slots, skins and
+  // car.ini — and another format has none of them to read.
+  if (model.format) throw new Error(`${path}: liverykit's profile generator reads a kn5, and this is ${model.format.name}`);
 
   // Orientation comes from the wheels, which AC's physics requires every car to
   // name WHEEL_LF/RF/LR/RR — so it is a measurement, not a guess. Across 238
