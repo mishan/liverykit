@@ -51,7 +51,7 @@ import { meshesWearing, meshTraits, triangles, vertex } from '../model.mjs';
 import { rectGroups } from './tags.mjs';
 import { wheelCentres } from './wheels.mjs';
 import { blurTwins } from './visibility.mjs';
-import { useVocabulary } from '../vocabulary.mjs';
+import { useVocabulary, vocabulary } from '../vocabulary.mjs';
 
 /** Terms whose proposals --explain does not call a hint. See MEASURED. */
 export const VALIDATED = new Set(['body']);
@@ -786,10 +786,10 @@ function explainKit(features, term) {
   return lines.join('\n');
 }
 
-// Assetto Corsa's vocabulary, put in use by loading this module. Every entry
-// point that paints a car by term — the CLI, the editor, the MCP server,
-// liverykit's own exports and its build — loads it.
-useVocabulary({
+// Assetto Corsa's vocabulary, put in use by loading this module unless one
+// already is: a program that chose another game's vocabulary keeps it, even
+// if it imports liverykit after choosing.
+if (!vocabulary()) useVocabulary({
   terms: VOCABULARY,
   // Terms that live in a DIFFERENT kn5 by design. The driver and the pit crew
   // are separate models which a car skin overrides, so "this car's model never
@@ -809,5 +809,9 @@ useVocabulary({
         `editor's Bindings panel, and record it under "bind" in ${profile.loadedFrom ?? `${profile.id}.json`}`
       : `${term}: not bound on this car — nothing measures it, so bind it by hand in ` +
         `${profile.loadedFrom ?? `${profile.id}.json`} under "bind"`),
+  unverified: (term, file) => `${term} -> ${file} is not referenced by this car's model. ` +
+    'Expected for driver and crew kit; for anything else it may paint nothing',
+  named: (term, roles) => `${term} -> ${roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
+    'nothing was measured, and nobody has confirmed it',
   nameFromFiles: proposeDriverKit,
 });

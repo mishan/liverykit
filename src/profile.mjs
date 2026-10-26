@@ -24,6 +24,10 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { vocabulary } from './vocabulary.mjs';
+// Liverykit's own vocabulary, for anything that imports this file directly.
+// Nothing here reads it except through vocabulary(); when this module moves
+// to its own package, this import stays behind at the old path with liverykit.
+import './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 
@@ -220,6 +224,10 @@ const BIND_SOURCES = new Set(['auto', 'human']);
 
 function validateBind(p, err) {
   const v = vocabulary();
+  if (!v && Object.keys(p.bind ?? {}).length) {
+    err(`bind names terms (${Object.keys(p.bind).join(', ')}), and no vocabulary is in use to say what they mean`);
+    return;
+  }
   for (const [term, entry] of Object.entries(p.bind ?? {})) {
     // The vocabulary is fixed on purpose. If any profile can invent a term then
     // a livery cannot rely on one, and the whole layer buys nothing.
@@ -227,9 +235,7 @@ function validateBind(p, err) {
     // Object.hasOwn, not a truthiness test: terms['toString'] inherits a
     // function from Object.prototype, so bind."toString" would otherwise pass
     // validation and reopen the vocabulary through the back door.
-    if (!v) {
-      err(`bind names the term "${term}", and no vocabulary is in use to say what it means`);
-    } else if (!Object.hasOwn(v.terms, term)) {
+    if (!Object.hasOwn(v.terms, term)) {
       err(`bind has an unknown term "${term}". The vocabulary is fixed so that liveries can ` +
           `rely on it: ${Object.keys(v.terms).join(', ')}`);
     }
@@ -250,7 +256,7 @@ function validateBind(p, err) {
     // "name", for the driver kit, proposed from AC's own filenames. A closed
     // set, so a typo cannot quietly make a binding look measured.
     if (entry.evidence !== undefined && entry.evidence !== 'name') {
-      err(`bind."${term}".evidence may only be "name" (proposed from AC's own filename), ` +
+      err(`bind."${term}".evidence may only be "name" (proposed from a file's name), ` +
           `got ${JSON.stringify(entry.evidence)}`);
     }
     for (const role of entry.roles) {
@@ -410,11 +416,7 @@ export function resolveTargets(profile, livery) {
       // bound to no mesh anywhere. This cannot be settled without the other
       // model, so it is flagged rather than guessed at.
       if (profile.textures[role]?.sizeFrom === 'skin' && !v.elsewhere.has(term)) {
-        notes.push({
-          term, status: 'unverified',
-          text: `${term} -> ${profile.textures[role].file} is not referenced by this car's model. ` +
-                `Expected for driver and crew kit; for anything else it may paint nothing`,
-        });
+        notes.push({ term, status: 'unverified', text: v.unverified(term, profile.textures[role].file) });
       }
     });
     if (b.source === 'auto') {
@@ -423,8 +425,7 @@ export function resolveTargets(profile, livery) {
         // A named proposal says so instead of printing a confidence: nothing
         // was ranked, and a number beside the measured ones would pass for one.
         text: b.evidence === 'name'
-          ? `${term} -> ${b.roles.join(', ')} was proposed because AC ships that file for it, by name; ` +
-            'nothing was measured, and nobody has confirmed it'
+          ? v.named(term, b.roles)
           : `${term} -> ${b.roles.join(', ')} was proposed by measurement and never confirmed` +
             (b.confidence !== undefined ? ` (confidence ${b.confidence})` : ''),
       });

@@ -33,8 +33,30 @@ test('with no vocabulary, a term is refused, and so is a profile that binds one'
     /no vocabulary/);
 }));
 
-test('liverykit puts Assetto Corsa\'s vocabulary in use', async () => {
-  await import('../src/index.mjs');
+test('importing liverykit\'s profile module puts Assetto Corsa\'s vocabulary in use', () => {
+  // Scripts import src/profile.mjs on its own and load shipped cars with it,
+  // whose profiles bind Assetto Corsa's terms.
   assert.ok(vocabulary()?.terms.body, 'body is a term');
   assert.ok(vocabulary().elsewhere.has('crew'), 'the pit crew is drawn by its own model');
+});
+
+test('a vocabulary chosen first is kept when liverykit loads after it', async () => {
+  // In a process of its own, since this one has loaded liverykit already.
+  const { execFile } = await import('node:child_process');
+  const src = new URL('../src/', import.meta.url).href;
+  const script = `
+    const { useVocabulary, vocabulary } = await import('${src}vocabulary.mjs');
+    const ours = { terms: { hull: {} }, elsewhere: new Set(), unbound: String, unverified: String,
+      named: String, nameFromFiles: () => ({}) };
+    useVocabulary(ours);
+    await import('${src}profile.mjs');
+    console.log(vocabulary() === ours);`;
+  const out = await new Promise((ok, no) => execFile(process.execPath, ['--input-type=module', '-e', script],
+    (e, stdout, stderr) => (e ? no(new Error(stderr)) : ok(stdout.trim()))));
+  assert.equal(out, 'true');
+});
+
+test('a vocabulary missing a piece is refused when it is put in use', () => {
+  assert.throws(() => useVocabulary({ terms: {} }), /elsewhere.*unbound.*unverified.*named.*nameFromFiles/);
+  assert.ok(vocabulary()?.terms.body, 'and the one in use stays');
 });
