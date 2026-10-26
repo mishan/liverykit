@@ -4,7 +4,7 @@
 
 Generate [Assetto Corsa](https://www.assettocorsa.net/) car liveries from code.
 
-![The fitting editor: the Raiden livery on the Honda NSX GT3 Evo, white with an indigo sweep and spine, a number roundel on the door and a vermilion underglow. The design's regions on the left, the whole car lit in 3D in the middle, and on the right a prompt to pick a region to edit, over the list of panels to move it to.](docs/images/editor.png)
+![The fitting editor: the Raiden livery on the Mazda MX5 Cup, white with an indigo sweep and spine, a number roundel on the door and a vermilion underglow. The design's regions on the left, the whole car lit in 3D in the middle, and on the right a prompt to pick a region to edit.](docs/images/editor.png)
 
 *The fitting editor: a design described as named regions over a palette, fitted onto the car's own model.*
 
@@ -37,7 +37,7 @@ liverykit reads the car's model to find out. A `.kn5` (Assetto Corsa's model
 format) stores a 3D position *and* a UV coordinate for every vertex, which is
 precisely the mapping a livery needs.
 
-![A livery that has been fitted onto a Honda NSX GT3](docs/images/car.png)
+![The portable Neon Grid design fitted onto the Mazda MX5 Cup, as liverykit renders it](docs/images/car.png)
 
 ---
 

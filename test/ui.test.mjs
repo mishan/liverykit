@@ -3013,11 +3013,11 @@ test('the notes panel does not list a miss the design marked optional as a probl
   // The build hides these and the "On another car" panel counts them as
   // expected, but the notes panel printed each with a "!", so on the NSX the
   // portable design's piping read as something to go and fix.
-  const profile = await loadProfile(new URL('../cars/ac_friends_honda_nsx_gt3_evo.json', import.meta.url));
+  const profile = await loadProfile(new URL('../cars/ks_mazda_mx5_cup.json', import.meta.url));
   const livery = (await import('../liveries/neon-grid-any.mjs')).default;
   const role = binding(profile, 'body').roles.find((r) =>
     renderSurface({ livery, profile, fit: null, role: r }).notes.some((n) => n.status === 'optional'));
-  assert.ok(role, 'the NSX has a body texture where the optional piping finds nothing');
+  assert.ok(role, 'the MX5 Cup has a body texture where the optional piping finds nothing');
   const state = editorState({ livery, profile, fit: null, liveryId: 'neon-grid-any' });
   const render = renderSurface({ livery, profile, fit: null, role });
   render.notes.push({ status: 'no-match', text: 'no panel tagged [left, body]' });

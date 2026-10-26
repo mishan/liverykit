@@ -1,0 +1,17 @@
+{
+  "livery": "neon-grid-any",
+  "car": "ks_mazda_mx5_cup",
+  "notes": [
+    "The design lays its right side out for a flank unwrapped like the Tatuus's,",
+    "flipped both ways. This car flips its right flank top to bottom only, so",
+    "these are the left side's rects mirrored through the measured axes.",
+    "On the left the fender and door are one island, which the number lands on;",
+    "the right has no such island, so its number goes on the door, at the same",
+    "place on the car as the left one."
+  ],
+  "regions": {
+    "number-right": { "panel": "right_mid", "at": [0.416, 0.775, 0.228, 0.22] },
+    "team-right": { "panel": "right_mid", "at": [0.08, 0.28, 0.4, 0.2] },
+    "driver-right": { "panel": "right_mid", "at": [0.08, 0.52, 0.4, 0.18] }
+  }
+}

@@ -714,20 +714,21 @@ test('check_fitment answers about the working fit, not the file on disk', async 
 test('find_panels knows a surface by the name a design uses, and refuses one it does not', async () => {
   // An agent asked for `role: "body"` four times — the name the design itself
   // writes, `surfaces.body` — and was told four times there were no panels,
-  // because on the NSX the texture behind it is `ext_skin_sponsors`. It
-  // concluded the car had no usable panels and gave up the round.
-  const profile = await loadProfile(join(ROOT, 'cars/ac_friends_honda_nsx_gt3_evo.json'));
+  // because on the NSX the texture behind it is `ext_skin_sponsors`, as on
+  // the MX5 Cup it is `skin_00`. It concluded the car had no usable panels and
+  // gave up the round.
+  const profile = await loadProfile(join(ROOT, 'cars/ks_mazda_mx5_cup.json'));
   const livery = { name: 'Primer', folder: 'primer', car: profile.id, packs: ['core'],
     palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } };
   const { server, url } = await startUi({
-    livery, profile, fitPath: join(ROOT, 'fits/primer@nsx-test.json'),
+    livery, profile, fitPath: join(ROOT, 'fits/primer@mx5-test.json'),
     liveryId: 'primer', liveryPath: join(ROOT, 'liveries/primer.json'), port: 0, log: () => {},
   });
   try {
     const tools = createToolHandler(createEditorClient(url));
     const ask = async (args) => tools.callTool('find_panels', args);
 
-    for (const role of ['body', 'surfaces.body', 'ext_skin_sponsors']) {
+    for (const role of ['body', 'surfaces.body', 'skin_00']) {
       const r = JSON.parse((await ask({ role, tag: 'left' })).content[0].text);
       assert.ok(r.count > 0, `"${role}" finds the bodywork: ${JSON.stringify(r).slice(0, 200)}`);
       assert.equal(r.panels[0].surface, 'surfaces.body', 'and says which surface to write it under');
@@ -735,7 +736,7 @@ test('find_panels knows a surface by the name a design uses, and refuses one it 
 
     const wrong = await ask({ role: 'bodywork' });
     assert.ok(wrong.isError, 'a name nothing answers to is refused, not answered with nothing');
-    assert.match(wrong.content[0].text, /ext_skin_sponsors \(surfaces\.body\)/);
+    assert.match(wrong.content[0].text, /skin_00 \(surfaces\.body\)/);
 
     const none = JSON.parse((await ask({ role: 'body', tag: 'body' })).content[0].text);
     assert.equal(none.count, 0);

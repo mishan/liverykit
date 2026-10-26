@@ -215,10 +215,10 @@ test('the car line counts the misses a design allows apart from the ones it does
   // told a person looking at the NSX that everything landed.
   const out = join(dir, 'sweep.json');
   const { stdout } = await sweep('neon-grid-any', '--out', out);
-  const nsx = JSON.parse(await readFile(out, 'utf8')).find((r) => r.id === 'ac_friends_honda_nsx_gt3_evo');
-  const optional = nsx.regions.filter((g) => g.status === 'optional').length;
+  const mx5 = JSON.parse(await readFile(out, 'utf8')).find((r) => r.id === 'ks_mazda_mx5_cup');
+  const optional = mx5.regions.filter((g) => g.status === 'optional').length;
   assert.ok(optional > 0);
-  assert.match(stdout, new RegExp(`ac_friends_honda_nsx_gt3_evo +\\d+ panels, \\d+ region\\(s\\) not placed ` +
+  assert.match(stdout, new RegExp(`ks_mazda_mx5_cup +\\d+ panels, \\d+ region\\(s\\) not placed ` +
     `\\(and ${optional} optional, as the design allows\\)`));
 }));
 
@@ -415,20 +415,20 @@ test('the sweep runs on the shipped profiles with no model on the machine', () =
   const out = join(dir, 'sweep.json');
   const { stdout } = await run(process.execPath, [tool('sweep.mjs'), 'neon-grid-any', '--out', out]);
   const records = JSON.parse(await readFile(out, 'utf8'));
-  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ac_friends_honda_nsx_gt3_evo', 'tatuusfa1']);
+  assert.deepEqual(records.map((r) => r.id).sort(), ['abarth500', 'ks_mazda_mx5_cup', 'tatuusfa1']);
   for (const r of records) {
     assert.equal(r.error, undefined, `${r.id}: ${r.error}`);
     assert.equal(r.from, 'profile');
   }
 
-  // A road car mirrors its flanks onto shared texels; the NSX does not, so
+  // A road car mirrors its flanks onto shared texels; the MX5 Cup does not, so
   // the design's `[shared, visible]` rule finds nothing there — which the
   // design marks optional, so it is expected, and counted apart from a miss.
   const rule = (id, tags) => records.find((r) => r.id === id).regions
     .filter((g) => g.kind === 'tags' && String(g.tags) === String(tags));
   assert.ok(rule('abarth500', ['shared', 'visible']).some((g) => g.status === 'matched'));
-  const nsx = rule('ac_friends_honda_nsx_gt3_evo', ['shared', 'visible']);
-  assert.ok(nsx.length && nsx.every((g) => g.status === 'optional'));
+  const mx5 = rule('ks_mazda_mx5_cup', ['shared', 'visible']);
+  assert.ok(mx5.length && mx5.every((g) => g.status === 'optional'));
 
   assert.match(stdout, /shipped profiles, as they stand/);
   // Two of three, not two of two: the Abarth's match is counted under the

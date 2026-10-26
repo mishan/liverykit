@@ -1,0 +1,21 @@
+{
+  "livery": "grand-touring-any",
+  "car": "ks_mazda_mx5_cup",
+  "notes": [
+    "The design lays its right side out for a flank unwrapped like the Tatuus's,",
+    "flipped both ways. This car flips its right flank top to bottom only, so",
+    "these are the left side's rects mirrored through the measured axes.",
+    "On the left the fender and door are one island, and the board ran the",
+    "length of both; it is cut to the number. The right has no such island, so",
+    "its board and number go on the door, at the same place on the car."
+  ],
+  "regions": {
+    "board-left": { "panel": "left_front", "at": [0.28, 0.4, 0.24, 0.14] },
+    "board-right": { "panel": "right_mid", "at": [0.393, 0.77, 0.275, 0.23] },
+    "number-right": { "panel": "right_mid", "at": [0.416, 0.775, 0.228, 0.22] },
+    "stick-right": { "panel": "right_mid", "at": [0, 0.56, 1, 0.36] },
+    "stripes-right": { "panel": "right_mid", "at": [0, 0.1, 1, 0.07] },
+    "team-right": { "panel": "right_mid", "at": [0.08, 0.32, 0.38, 0.22] },
+    "sponsors-right": { "panel": "right_rear", "at": [0.1, 0.36, 0.8, 0.26] }
+  }
+}
