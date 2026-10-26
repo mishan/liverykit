@@ -2772,3 +2772,26 @@ test('toile imports nothing from liverykit', async () => {
   }
   assert.deepEqual(reaching, []);
 });
+
+test('a skin is written into its own folder, whatever a texture is named', async () => {
+  // A kn5 is somebody else's file and a profile is shared, and either can name
+  // a texture with a path in it. Joined onto the skin folder as it stood, a
+  // name like ../x.dds was written beside the folder instead of into it.
+  const { buildSkin } = await import('../src/engine/skin.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-names-'));
+  const cases = [['painted', { surfaces: { body: spec } }], ['hidden', { surfaces: { body: spec }, hide: ['glass'] }]];
+  for (const [what, design] of cases) {
+    const p = {
+      id: 'car',
+      textures: {
+        body: { file: what === 'painted' ? '../outside.dds' : 'b.dds', width: 64, height: 64 },
+        glass: { file: '../outside.dds', width: 16, height: 16, alphaHides: true },
+      },
+      bind: { body: { roles: ['body'], source: 'human' } },
+      panels: { body: { all: { rect: [0, 0, 1, 1] } } },
+    };
+    await assert.rejects(buildSkin({ profile: p, livery: { name: 'L', ...design }, outDir: join(dir, what, 'skin'), log: () => {} }),
+      /not a file name/, what);
+    await assert.rejects(readFile(join(dir, what, 'outside.dds')), { code: 'ENOENT' }, `${what}: nothing written outside`);
+  }
+});

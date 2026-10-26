@@ -36,6 +36,16 @@ const CAR_CONFIG_NAME = 'ext_config.ini';
 
 const nextPow2 = (n) => 2 ** Math.ceil(Math.log2(n));
 
+/**
+ * `file` in `outDir`, or a refusal. A texture's name comes from a kn5 or a
+ * shared profile, both somebody else's, and a path in it would be written
+ * wherever it points.
+ */
+function inside(outDir, file) {
+  if (/[\\/]/.test(file) || file === '.' || file === '..') throw new Error(`${file} is not a file name, so it is not written`);
+  return join(outDir, file);
+}
+
 /** What a written texture is, for the build's log. */
 async function written(outPath, file, [width, height], alpha) {
   return { file, width, height, format: isPngTexture(file) ? 'PNG' : alpha ? 'DXT5' : 'DXT1', bytes: (await stat(outPath)).size };
@@ -51,7 +61,7 @@ export const acSkin = {
   async writeSurface({ png, tex, width, height, outDir, pngDir = outDir, keep = false }) {
     const asPng = isPngTexture(tex.file);
     const [w, h] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
-    const outPath = join(outDir, tex.file);
+    const outPath = inside(outDir, tex.file);
     const pngPath = join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
     await writeFile(pngPath, w === width && h === height ? png
       : await sharp(png).resize(w, h, { fit: 'fill' }).png().toBuffer());
@@ -63,7 +73,7 @@ export const acSkin = {
 
   /** A surface the design hides, as a fully transparent sheet the game draws as nothing. */
   async hideSurface({ file, outDir, pngDir = outDir, keep = false }) {
-    const outPath = join(outDir, file);
+    const outPath = inside(outDir, file);
     const png = await sharp({ create: { width: CLEAR_SHEET, height: CLEAR_SHEET, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
       .png().toBuffer();
     if (isPngTexture(file)) {
