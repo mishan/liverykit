@@ -128,24 +128,6 @@ plate's emissive twin drawn the wrong way is a black slab over the plate.
 Same lesson as `alphaBlendMode`: the model states this, and we were inferring
 it from a string.
 
-### Nothing checks the model against the profile's recorded facts
-
-`bake`, `alphaHides` and the shader list are all measured once at profile
-generation and read forever after. A car updated in place — mod cars are
-updated often — leaves them describing a model that no longer exists, and every
-one of them fails silently: a hide that no longer works, a sheet drawn as
-artwork that is now a bake.
-
-This entry used to say the profile records the model's size and mtime already,
-and it does not. `calibration` records `method`, the model's FILENAME as
-`source`, and the date — nothing about the file itself — and the `modelSize`
-on each texture is that texture's dimensions inside the model, not the kn5's.
-So this is two jobs, not one: record the kn5's byte size and mtime in
-`calibration` when the profile is generated, and then compare them at load with
-one `stat` and say "this profile was made against a different model". Only the
-second half is the one-liner. The first half also decides what a profile made
-before the field existed should do, which is say nothing rather than warn.
-
 ### The glass fresnel is invented where the material states one
 
 Both renderers build a windscreen's transparency as `0.15 + 0.75 * rim` with
@@ -198,6 +180,18 @@ Worth keeping the list in one place, since three of them have now bitten:
   fixed with the rest.
 
 ## Done
+
+### Nothing checked the model against the profile's recorded facts
+
+`bake`, `alphaHides`, the shader list and every panel are measured once at
+profile generation and read forever after, and a mod car updated in place
+leaves them describing a model that no longer exists. `calibration.model`
+records the model's byte size and SHA-256 when a profile is generated, and
+`staleModel` compares them with the file found; a profile from before the field
+has nothing to compare and says nothing. The CLI reports a mismatch wherever it
+looks for the model. The editor lists it among every surface's checks, since
+the CLI's console line sat above the editor's address and anything starting the
+editor by itself, autolivery among them, was told nothing.
 
 ### Portability, measured: what a portable design does on an untouched car
 

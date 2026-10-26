@@ -4950,3 +4950,51 @@ test('the page takes a livery the server reloaded, and sends its version with th
   assert.ok(sent.every((c) => c.body.designVersion === 1 && c.body.design.palette.reloaded === '#123456'),
     JSON.stringify(sent.map((c) => [c.path, c.body.designVersion])));
 });
+
+test('a model that is not the one the profile was measured from is a check in the editor', async () => {
+  // The CLI said so in one console line above the editor's address, and
+  // anything starting the editor itself said nothing, while artwork placed by
+  // the old layout landed wherever the new one put it.
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const http = await import('node:http');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { startUi } = await import('../src/ui/server.mjs');
+
+  const dir = await mkdtemp(join(tmpdir(), 'lk-stale-'));
+  const modelPath = join(dir, 'fixture.kn5');
+  await writeFile(modelPath, carKn5());
+  const profile = await profileFromKn5(modelPath, { id: 'fixture_car', log: () => {} });
+  const livery = { name: 'Blank', folder: 'blank', car: 'fixture_car', packs: ['core'], identity: {},
+    palette: { primer: '#8a8d91' }, surfaces: { body: { background: 'primer', regions: [] } } };
+  const role = profile.bind.body.roles[0];
+  const notes = async () => {
+    const { server, url } = await startUi({ livery, profile, modelPath, fitPath: join(dir, 'blank@fixture_car.json'),
+      liveryId: 'blank', liveryPath: join(dir, 'blank.json'), port: 0, log: () => {} });
+    try {
+      const body = await new Promise((ok, no) => {
+        const req = http.request(new URL('/api/render', url), { method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => ok(JSON.parse(Buffer.concat(chunks))));
+        });
+        req.on('error', no);
+        req.end(JSON.stringify({ role }));
+      });
+      return body.notes.map((n) => n.text);
+    } finally {
+      server.close();
+    }
+  };
+  try {
+    assert.deepEqual(await notes(), [], 'the model it was measured from');
+    await writeFile(modelPath, carKn5({ uvShift: [1, 0] }));
+    const said = await notes();
+    assert.equal(said.length, 1, JSON.stringify(said));
+    assert.match(said[0], /different version of fixture\.kn5/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
