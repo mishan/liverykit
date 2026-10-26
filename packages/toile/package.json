@@ -7,6 +7,9 @@
   "exports": {
     "./src/*": "./src/*"
   },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "license": "MIT",
   "dependencies": {
     "sharp": "^0.35.5",

@@ -127,6 +127,10 @@ an alias is followed by *rectangle* first and by name only as a fallback.
 - `preserve.test.mjs` — naming, and what survives a regeneration.
 - `browser.test.mjs` — the editor in a real Firefox, driven by hit-testing.
 
+Toile's own tests are in `packages/toile/test/` and import nothing from
+liverykit, so they can leave with it; a test that needs a pack, the editor or
+the kn5 profile generator stays in `test/`.
+
 **No test may read game content.** A test that opens `content/cars/...` passes
 only on a machine that owns that car; CI has none. `test/fixtures/kn5.mjs` builds
 a small synthetic car — six UV islands, four wheels where AC requires them — and

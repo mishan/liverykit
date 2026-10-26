@@ -2759,15 +2759,18 @@ test('toile imports nothing from liverykit', async () => {
   // two one package that happens to live in two directories.
   const root = new URL('../packages/toile/', import.meta.url);
   const reaching = [];
-  for (const f of await readdir(new URL('src/', root), { recursive: true })) {
-    const path = `src/${f.replaceAll('\\', '/')}`;
-    if (!/\.m?js$/.test(path)) continue;
-    const code = (await readFile(new URL(path, root), 'utf8')).replace(/^\s*(\/\/|\*).*$/gm, '');
-    // Imports, dynamic ones written as templates up to their first `${`, and
-    // files read by URL relative to the module.
-    for (const [, spec] of code.matchAll(/(?:\bfrom|\bimport\s*\(?|\bnew URL\()\s*['"`]([^'"`$]+)/g)) {
-      const out = spec.startsWith('.') && !new URL(spec, new URL(path, root)).href.startsWith(root.href);
-      if (out || spec === 'liverykit' || spec.startsWith('liverykit/')) reaching.push(`${path} -> ${spec}`);
+  // Its tests too, or it would leave without being able to run them.
+  for (const dir of ['src', 'test']) {
+    for (const f of await readdir(new URL(`${dir}/`, root), { recursive: true })) {
+      const path = `${dir}/${f.replaceAll('\\', '/')}`;
+      if (!/\.m?js$/.test(path)) continue;
+      const code = (await readFile(new URL(path, root), 'utf8')).replace(/^\s*(\/\/|\*).*$/gm, '');
+      // Imports, dynamic ones written as templates up to their first `${`, and
+      // files read by URL relative to the module.
+      for (const [, spec] of code.matchAll(/(?:\bfrom|\bimport\s*\(?|\bnew URL\()\s*['"`]([^'"`$]+)/g)) {
+        const out = spec.startsWith('.') && !new URL(spec, new URL(path, root)).href.startsWith(root.href);
+        if (out || spec === 'liverykit' || spec.startsWith('liverykit/')) reaching.push(`${path} -> ${spec}`);
+      }
     }
   }
   assert.deepEqual(reaching, []);
