@@ -122,7 +122,7 @@ test('an image is written under its own name, inside the output and nowhere else
   assert.deepEqual(encoded.textures.map((t) => t.name), ['sneaky.png'], 'an encoded slash is still a slash');
   const { pngOutput } = await import('../packages/toile/src/output.mjs');
   await assert.rejects(pngOutput.writeSurface({ png, tex: { file: '../x.png' }, width: 8, height: 8, outDir: dir }),
-    /not a file name/);
+    /cannot be written/);
 }));
 
 test('an eye the profile was measured from is recorded with it', () => inDir(async (dir) => {
