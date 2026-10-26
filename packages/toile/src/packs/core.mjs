@@ -160,7 +160,7 @@ const treatments = {
    * the circumference. `ring` is right on the first and on the second draws
    * one big circle across the sheet, which on the car is a few arcs where
    * the circle crosses the strip. The profile measures which it is
-   * (`wheel` on the panel; see engine/wheels.mjs), and this reads that and
+   * (`wheel` on the panel; see liverykit's src/engine/wheels.mjs), and this reads that and
    * draws a stripe across the strip or a ring about the hub.
    *
    * With no panel, round every sidewall the sheet measures, once each: a

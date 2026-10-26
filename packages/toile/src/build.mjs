@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Orchestration: profile + livery -> rendered surfaces -> an output, which for
 // Assetto Corsa is a folder of DDS files and a ZIP Content Manager installs
-// without asking questions (src/engine/skin.mjs).
+// without asking questions (liverykit's src/engine/skin.mjs).
 // ---------------------------------------------------------------------------
 
 import { mkdir, rm } from 'node:fs/promises';

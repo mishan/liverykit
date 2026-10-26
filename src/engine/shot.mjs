@@ -27,7 +27,7 @@
 import { groundGlow } from './lights.mjs';
 import sharp from 'sharp';
 
-import { decodeDds } from '../../packages/toile/src/engine/pipeline.mjs';
+import { decodeDds } from './pipeline.mjs';
 
 /** Unpainted geometry. Gray, and obviously gray — never a plausible color. */
 const BARE = [0x4a, 0x4a, 0x52];

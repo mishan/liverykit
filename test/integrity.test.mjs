@@ -2762,7 +2762,9 @@ test('toile imports nothing from liverykit', async () => {
     const path = `src/${f.replaceAll('\\', '/')}`;
     if (!/\.m?js$/.test(path)) continue;
     const code = (await readFile(new URL(path, root), 'utf8')).replace(/^\s*(\/\/|\*).*$/gm, '');
-    for (const [, spec] of code.matchAll(/(?:\bfrom|\bimport\s*\(?)\s*['"]([^'"]+)['"]/g)) {
+    // Imports, dynamic ones written as templates up to their first `${`, and
+    // files read by URL relative to the module.
+    for (const [, spec] of code.matchAll(/(?:\bfrom|\bimport\s*\(?|\bnew URL\()\s*['"`]([^'"`$]+)/g)) {
       const out = spec.startsWith('.') && !new URL(spec, new URL(path, root)).href.startsWith(root.href);
       if (out || spec === 'liverykit' || spec.startsWith('liverykit/')) reaching.push(`${path} -> ${spec}`);
     }

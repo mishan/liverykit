@@ -36,7 +36,7 @@ import namesPlugin from 'colord/plugins/names';
 export { CONSTRAINTS } from './constraints.mjs';
 import { CONSTRAINTS } from './constraints.mjs';
 
-// CSS color names, as the palette accepts them (see ui/uses.js).
+// CSS color names, as the palette accepts them (see liverykit's src/ui/uses.js).
 extend([namesPlugin]);
 
 /**
@@ -2357,7 +2357,7 @@ const seenPanels = (profile, role, floor = BARELY_SEEN) => Object.entries(profil
 /**
  * The sheet a mesh wears as paint, lower-cased, or '' for glass. By its
  * diffuse file, and never for glass, told as the renderer tells it (`glass`
- * in engine/geometry.mjs): a windscreen may reuse the body's diffuse file,
+ * in liverykit's src/engine/geometry.mjs): a windscreen may reuse the body's diffuse file,
  * and taken by filename alone it is bodywork a stripe must cover, which is
  * the one thing glass is not.
  */
@@ -2639,7 +2639,7 @@ function drawing(profile, hide = [], painted = []) {
 /**
  * The meshes the whole-car picture draws in front of the paint: those it
  * leaves out, left out here too, by the same rules (`wholeModelGeometry` and
- * the renderers in engine/shot.mjs). The meshes the car hides, the damage
+ * the renderers in liverykit's src/engine/shot.mjs). The meshes the car hides, the damage
  * glass and the blur rims, as `carOccluders` already has it; COCKPIT_LR, which
  * neither renderer draws; a sheet the design hides and does not paint; and a
  * part that composites and is neither glass nor painted by the design, which

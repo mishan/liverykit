@@ -13,14 +13,14 @@ import { writeFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
 
-import { toDDS, toPNG, isPngTexture, makeBadge } from '../../packages/toile/src/engine/pipeline.mjs';
+import { toDDS, toPNG, isPngTexture, makeBadge } from './pipeline.mjs';
 import { packageZip, makePreview, makeShowroomPreview, previewFrame, PREVIEW_FRAME } from './package.mjs';
 import { designLights, extConfigIni } from './lights.mjs';
 import { wholeModelGeometry } from './geometry.mjs';
 import { carSheets } from './shot.mjs';
-import { texture } from '../../packages/toile/src/profile.mjs';
-import { loadModel } from '../../packages/toile/src/model.mjs';
-import * as build from '../../packages/toile/src/build.mjs';
+import { texture } from '../profile.mjs';
+import { loadModel } from '../model.mjs';
+import * as build from '../build.mjs';
 
 /**
  * The size a hidden surface's clear sheet is shipped at. A texture with no

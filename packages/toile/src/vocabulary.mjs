@@ -5,7 +5,7 @@
  * A game supplies them, because what a car is made of is a fact about the
  * game: which terms exist, which live in a model other than the car's own,
  * what to say when a profile has not bound one, and which can be named from
- * file names alone. Assetto Corsa's are in src/engine/classify.mjs, with the
+ * file names alone. Assetto Corsa's are in liverykit's src/engine/classify.mjs, with the
  * classifier that proposes them.
  *
  * With none in use, a design paints texture roles by name under `paint`, and

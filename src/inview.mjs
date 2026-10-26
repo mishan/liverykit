@@ -14,7 +14,7 @@
 // of a door from the front three-quarter and none of it from the side.
 // ---------------------------------------------------------------------------
 
-import { wholePieces } from '../packages/toile/src/fitment.mjs';
+import { wholePieces } from './fitment.mjs';
 import { piecesInView, pieceTriangles, onMeshShare, SHEET_VIEWS } from './engine/shot.mjs';
 
 /**

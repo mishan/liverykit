@@ -42,12 +42,14 @@ Firefox; see [Tests](#tests).
 | `src/packs/` | treatments; `core`, the primitives with no house style, is toile's |
 | `cars/`, `liveries/`, `fits/` | data, not code |
 
-Every file that moved to toile left a re-export at its old `src/` path, which
-also loads Assetto Corsa's vocabulary, so a script importing
-`liverykit/src/profile.mjs` loads a shipped car as it always did. Liverykit's
-own code imports toile's files directly. Liverykit reaches toile by relative
-path rather than by package name, because liverykit is published and toile is
-not: `packages/toile/src` ships inside liverykit until it is.
+Every file that moved to toile left a re-export at its old `src/` path, and
+liverykit's own code imports through those. The ones whose module reads
+profiles also load Assetto Corsa's vocabulary, so `liverykit/src/profile.mjs`
+loads a shipped car as it always did; only `classify.mjs` and `wheels.mjs`,
+which the vocabulary is built from, import toile directly. Liverykit reaches
+toile by relative path rather than by package name, because liverykit is
+published and toile is not: `packages/toile/src` ships inside liverykit until
+it is.
 
 `content/`, `cars/*/`, `assets/` and `*.kn5` are gitignored on purpose: they are
 car makers' assets. Never commit one, and never write a test that reads one —
@@ -104,8 +106,8 @@ surface's ids as stale, or lets a copy claim a name that is already in use.
 **Measurement wins where measurement has something to say; hand-work wins where
 it does not.** Regenerating a car profile must not cost anything a person chose:
 role names, aliases, size overrides, notes, the car's display name, and human
-bindings all survive. `packages/toile/src/engine/preserve.mjs` is that rule, and it is worth
-reading before changing anything that writes a profile.
+bindings all survive. `packages/toile/src/engine/preserve.mjs` is that rule, and
+it is worth reading before changing anything that writes a profile.
 
 **Generated names get reused.** Correcting the panel naming turned one car's
 `centre_mid` into `centre_rear` and gave `centre_mid` to a different island. So

@@ -40,28 +40,28 @@ import { readFile, writeFile, mkdir, readdir, rename, realpath, stat, chmod, rm 
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadModel, meshesWearing, vertex, triangles } from '../../packages/toile/src/model.mjs';
+import { loadModel, meshesWearing, vertex, triangles } from '../model.mjs';
 import { wholeModelGeometry } from '../engine/geometry.mjs';
-import { renderTexture, previewSvg } from '../../packages/toile/src/render.mjs';
-import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../../packages/toile/src/profile.mjs';
+import { renderTexture, previewSvg } from '../render.mjs';
+import { texture, resolveTargets, expandRegions, panel as findPanel, panelName, metresAcross, loadProfile, binding, validateProfile, profileJson } from '../profile.mjs';
 import { VOCABULARY, SCORABLE, VALIDATED, MEASURED } from '../engine/classify.mjs';
-import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../../packages/toile/src/fit.mjs';
-import { resolveTreatments } from '../../packages/toile/src/registry.mjs';
+import { allRegionKeys, applyFit, copiesOf, regionIds, regionKey, unusedFitIds, validateFit, checkFitIdentity, fitLiveryId, toAbsolute, toPanelRelative } from '../fit.mjs';
+import { resolveTreatments } from '../registry.mjs';
 // Shared with the browser, so the two halves cannot disagree about the split.
 import { treatmentOptions } from './fields.js';
 import { serialisableDesign, validateDesign, loadLivery } from '../livery.mjs';
-import { loadDecals } from '../../packages/toile/src/decals.mjs';
-import { portability } from '../../packages/toile/src/portability.mjs';
-import { fitment, drawnBy } from '../../packages/toile/src/fitment.mjs';
+import { loadDecals } from '../decals.mjs';
+import { portability } from '../portability.mjs';
+import { fitment, drawnBy } from '../fitment.mjs';
 import { inView } from '../inview.mjs';
 import { shoot, carSheets, VIEWS, shootSheet, sheetCell, clearBasesOpaque, pickAt } from '../engine/shot.mjs';
-import { mulberry32, seedFrom } from '../../packages/toile/src/engine/rng.mjs';
-import { stockPng, stockHrefs } from '../../packages/toile/src/engine/pipeline.mjs';
+import { mulberry32, seedFrom } from '../engine/rng.mjs';
+import { stockPng, stockHrefs } from '../engine/pipeline.mjs';
 import { applyDesignOp, applyFitOp, applyProposalDiff, placedAt } from './ops.js';
-import { occupancyFor, tracksideOccluders } from '../../packages/toile/src/engine/visibility.mjs';
-import { reachOnly } from '../../packages/toile/src/engine/tags.mjs';
-import { panelMap } from '../../packages/toile/src/panelmap.mjs';
-import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../../packages/toile/src/space.mjs';
+import { occupancyFor, tracksideOccluders } from '../engine/visibility.mjs';
+import { reachOnly } from '../engine/tags.mjs';
+import { panelMap } from '../panelmap.mjs';
+import { findSpace, largestSpace, groupLayout, stripeLayoutAcross, aeroLayoutAcross, flankLayoutAcross, flankPanel, cleanGrid, spaceRole } from '../space.mjs';
 
 /**
  * A cache with a ceiling. The editor runs for hours, and every panel an agent

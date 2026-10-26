@@ -1,7 +1,7 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import sharp from 'sharp';
-import { makeZip } from '../../packages/toile/src/engine/zip.mjs';
+import { makeZip } from './zip.mjs';
 import { rasterize } from './shot.mjs';
 
 /**

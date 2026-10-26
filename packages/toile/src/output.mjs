@@ -13,7 +13,8 @@
  *
  * An output without one of the optional three cannot do that thing, and the
  * build says so in its notes rather than leaving a hidden surface drawn or a
- * light missing without a word. Assetto Corsa's is in src/engine/skin.mjs.
+ * light missing without a word. Assetto Corsa's is in liverykit's
+ * src/engine/skin.mjs.
  */
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -26,8 +27,8 @@ import { join } from 'node:path';
  */
 export function needOutput(output) {
   if (typeof output?.writeSurface !== 'function') {
-    throw new Error('a build needs an output: acSkin from src/engine/skin.mjs for an Assetto Corsa ' +
-      'skin, or pngOutput from src/output.mjs for one PNG per surface');
+    throw new Error('a build needs an output: acSkin from liverykit\'s src/engine/skin.mjs for an ' +
+      'Assetto Corsa skin, or pngOutput from src/output.mjs for one PNG per surface');
   }
 }
 

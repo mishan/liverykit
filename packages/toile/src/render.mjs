@@ -19,11 +19,12 @@ const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&a
  *
  * Named rather than written inline where it is used, because the editor has to
  * know the same rule — a token called `driver-name` can never be substituted, so
- * `{driver-name}` would be painted on the door as itself — and `src/ui/uses.js`
- * cannot import from here, since the browser loads that file directly. The test
- * lifts this constant out of the source and checks the two agree, so this has to
- * stay findable: a regex spelled out at the call site was, until moving the call
- * one line hid it and the check quietly stopped comparing anything.
+ * `{driver-name}` would be painted on the door as itself — and liverykit's
+ * `src/ui/uses.js` cannot import from here, since the browser loads that file
+ * directly. The test lifts this constant out of the source and checks the two
+ * agree, so this has to stay findable: a regex spelled out at the call site
+ * was, until moving the call one line hid it and the check quietly stopped
+ * comparing anything.
  */
 export const TOKEN = /\{(\w+)\}/g;
 

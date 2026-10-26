@@ -9,9 +9,9 @@
 // car is made square with the panel's `anisotropy`, as `text` makes letters.
 // ---------------------------------------------------------------------------
 
-import { definePack } from '../../packages/toile/src/registry.mjs';
-import { rect, esc } from '../../packages/toile/src/packs/core.mjs';
-import { r2 } from '../../packages/toile/src/engine/rng.mjs';
+import { definePack } from '../registry.mjs';
+import { rect, esc } from './core.mjs';
+import { r2 } from '../engine/rng.mjs';
 
 const poly = (pts, color) => `<polygon points="${pts.map(([x, y]) => `${r2(x)},${r2(y)}`).join(' ')}" fill="${color}"/>`;
 
