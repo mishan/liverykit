@@ -14,7 +14,7 @@ import { imageHeader } from '../packages/toile/src/images.mjs';
 import { validateProfile, expandRegions } from '../src/profile.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { carKn5, CAR } from './fixtures/kn5.mjs';
-import { glbFrom, teapotGlb, TEAPOT, packer, writeGlb } from './fixtures/gltf.mjs';
+import { glbFrom, teapotGlb, TEAPOT, packer, writeGlb } from '../packages/toile/test/fixtures/gltf.mjs';
 
 async function inDir(fn) {
   const dir = await mkdtemp(join(tmpdir(), 'lk-generate-'));
@@ -40,6 +40,11 @@ test('the car profiles the same from its glTF as from its kn5', () => inDir(asyn
   assert.deepEqual(canonical(fromGlb.panels), canonical(fromKn5.panels));
   assert.deepEqual(fromGlb.calibration.axes, fromKn5.calibration.axes);
   assert.equal(fromGlb.calibration.method, 'glTF');
+}));
+
+test('the kn5 generator reads a kn5\'s own fields, and says so of anything else', () => inDir(async (dir) => {
+  await writeFile(join(dir, 'car.glb'), glbFrom(parseKn5Buffer(carKn5()), { vertex, triangles }));
+  await assert.rejects(profileFromKn5(join(dir, 'car.glb'), { log: () => {} }), /reads a kn5.*glTF/);
 }));
 
 test('a teapot gets panels, seams and visibility', () => inDir(async (dir) => {

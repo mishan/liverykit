@@ -25,6 +25,7 @@
     "packages/toile/src",
     "packages/toile/package.json",
     "test/fixtures/kn5.mjs",
+    "packages/toile/test/fixtures/kn5.mjs",
     "cars/abarth500.json",
     "cars/ac_friends_honda_nsx_gt3_evo.json",
     "cars/tatuusfa1.json",
@@ -42,8 +43,8 @@
   "scripts": {
     "build": "node bin/liverykit.mjs neon-grid",
     "uvgrid": "node bin/liverykit.mjs neon-grid --uvgrid",
-    "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "test:fast": "node --test test/dds.test.mjs test/integrity.test.mjs test/ui.test.mjs test/classifier.test.mjs test/mcp.test.mjs test/decals.test.mjs"
+    "test": "node --test --test-concurrency=1 test/*.test.mjs packages/toile/test/*.test.mjs",
+    "test:fast": "node --test test/integrity.test.mjs test/ui.test.mjs test/classifier.test.mjs test/mcp.test.mjs test/decals.test.mjs"
   },
   "keywords": [
     "assetto-corsa",

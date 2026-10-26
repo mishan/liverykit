@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseKn5Buffer, vertex as kn5Vertex, triangles as kn5Triangles } from 'ac-kn5';
-import { parseGlb, loadModel, vertex, triangles, meshTraits, meshesWearing, axesFromWheels } from '../packages/toile/src/model.mjs';
+import { parseGlb, loadModel, vertex, triangles, meshTraits, meshesWearing, axesFromWheels } from '../src/model.mjs';
 import { carKn5, CAR } from './fixtures/kn5.mjs';
 import { glbFrom, packer, writeGlb } from './fixtures/gltf.mjs';
 
@@ -160,9 +160,6 @@ test('a model is read as its extension says', async () => {
     await writeFile(join(dir, CAR.texture), Buffer.alloc(100));
     const glb = await loadModel(join(dir, 'car.glb'));
     assert.deepEqual(glb.textures.map((t) => [t.name, t.size, t.missing]), [[CAR.texture, 100, false]]);
-    // liverykit's profile generator reads a kn5's own fields, and says so of anything else.
-    const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
-    await assert.rejects(profileFromKn5(join(dir, 'car.glb'), { log: () => {} }), /reads a kn5.*glTF/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
