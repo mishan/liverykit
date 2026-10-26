@@ -993,6 +993,20 @@ test('a build with no game in mind writes a PNG per surface, and says what it co
     livery: { name: 'L', surfaces: { body: spec, glass: spec } } }), /b\.png, which another texture already is/);
 });
 
+test('a calibration build keeps the reference PNGs it says it keeps', async () => {
+  // The CLI prints "Reference PNGs: <dir>" after a UV grid build, and the grid
+  // images were deleted as each DDS was encoded: only a probe ever survived.
+  const { buildCalibration } = await import('../src/engine/skin.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-cal-'));
+  const p = {
+    id: 'car',
+    textures: { body: { file: 'b.dds', width: 64, height: 64 } },
+    panels: { body: { all: { rect: [0, 0, 1, 1] } } },
+  };
+  await buildCalibration({ profile: p, outDir: join(dir, 'skin'), folder: 'cal', pngDir: join(dir, 'png'), log: () => {} });
+  assert.deepEqual(await readdir(join(dir, 'png')), ['b.png']);
+});
+
 test('an underglow is placed from the wheels, written for CSP, and lights the floor in the pictures', async () => {
   // Paint cannot make a light, so an underglow is a Custom Shaders Patch light
   // in the skin's ext_config.ini, and the renderers draw the same numbers.

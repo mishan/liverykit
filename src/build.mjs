@@ -289,7 +289,7 @@ export async function buildCalibration({ profile, outDir, folder, cells = 20, pr
       width, height, label: `${role}  ${tex.file.replace(/\.(dds|png)$/i, '')}`, font, cols: cells,
     }));
 
-    const out = await output.writeSurface({ png, tex, width, height, outDir, pngDir: pngDir ?? outDir });
+    const out = await output.writeSurface({ png, tex, width, height, outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });
 
     firstPng ??= png;
     log(`  ${out.file.padEnd(24)} ${out.width}x${out.height}`.padEnd(46) +
