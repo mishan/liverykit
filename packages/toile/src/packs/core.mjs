@@ -1,0 +1,440 @@
+// ---------------------------------------------------------------------------
+// Core treatment pack — the primitives every livery needs, with no house style.
+//
+// Nothing in here implies an aesthetic. Fills, stripes, text, halftones and
+// piping are the vocabulary you would want whether you were painting a
+// synthwave car or a 1970s Martini stripe. Anything opinionated belongs in its
+// own pack.
+// ---------------------------------------------------------------------------
+
+import { definePack } from '../registry.mjs';
+import { halftoneDissolve, scanlines, piping, ring } from '../motifs.mjs';
+import { r2 } from '../engine/rng.mjs';
+
+export const rect = (r, color) =>
+  `<rect x="${r2(r.x)}" y="${r2(r.y)}" width="${r2(r.w)}" height="${r2(r.h)}" fill="${color}"/>`;
+
+/**
+ * Escape for a TEXT NODE, which is a different job from escaping an attribute.
+ *
+ * `renderTexture` hands treatments every other value already safe to drop into
+ * an attribute. `text` is the exception, and stays raw, because it is the only
+ * option that is CONTENT rather than a parameter: it goes between the tags
+ * rather than inside them, and `radialText` renders it one character at a time
+ * around a circle. Pre-escaping it would spell `&quot;` out in five glyphs on
+ * the side of the car.
+ *
+ * So the emitter escapes it, here and in `motifs.mjs`. `test/injection.test.mjs`
+ * pushes markup through this field too, so a treatment that ever puts `text`
+ * into an attribute instead is caught there rather than trusted not to.
+ */
+export const esc = (s) => String(s).replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]));
+
+/**
+ * Where a band `along` of the way from rim to shoulder of the strip sidewall
+ * `w`, `width` of that distance thick, lies across it: centre and thickness,
+ * as fractions of the sheet. The check measures what is drawn by this too.
+ */
+export function bandAcross(w, along = 0.8, width = 0.06) {
+  const [rim, shoulder] = w.across;
+  return { pos: rim + (shoulder - rim) * along, thick: Math.abs(shoulder - rim) * width };
+}
+
+/** One band, on the sidewall `w` measures, or as a ring in `r` where nothing does. */
+function bandOn(r, c, w) {
+  const color = c.color(c.opts.color ?? 'cyan');
+  const at = c.opts.along ?? 0.8;
+  const frac = c.opts.width ?? 0.06;
+  const opacity = c.opts.opacity ?? 1;
+  let g;
+  if (w?.unwrap === 'strip') {
+    const { pos, thick } = bandAcross(w, at, frac);
+    g = w.around === 'u'
+      ? `<rect x="${r2(r.x)}" y="${r2((pos - thick / 2) * c.height)}" width="${r2(r.w)}" height="${r2(thick * c.height)}" fill="${color}" opacity="${opacity}"/>`
+      : `<rect x="${r2((pos - thick / 2) * c.width)}" y="${r2(r.y)}" width="${r2(thick * c.width)}" height="${r2(r.h)}" fill="${color}" opacity="${opacity}"/>`;
+  } else if (w?.unwrap === 'annulus') {
+    const [r0, r1] = w.radiusUv;
+    const radius = r0 + (r1 - r0) * at;
+    const stroke = (r1 - r0) * frac;
+    // In u-fractions; a non-square sheet makes the ring an ellipse.
+    g = `<ellipse cx="${r2(w.hub[0] * c.width)}" cy="${r2(w.hub[1] * c.height)}" ` +
+      `rx="${r2(radius * c.width)}" ry="${r2(radius * c.width)}" fill="none" ` +
+      `stroke="${color}" stroke-width="${r2(stroke * c.width)}" opacity="${opacity}"/>`;
+  } else {
+    g = ring({
+      cx: r.x + r.w / 2, cy: r.y + r.h / 2,
+      radius: (0.25 + 0.25 * at) * Math.min(r.w, r.h),
+      width: frac * 0.25 * Math.min(r.w, r.h),
+      color, opacity,
+    });
+  }
+  return g;
+}
+
+const treatments = {
+  fill: (r, c) => ({ base: rect(r, c.color(c.opts.color ?? 'pink')), emissive: '' }),
+
+  /**
+   * A fill that changes color across the region, at `angle` degrees: 0 runs
+   * left to right, 90 top to bottom. `via` adds a middle color, and `fade`
+   * takes the far end to nothing rather than to `to`, which is how a color
+   * band dissolves into the paint under it without halftone's dots.
+   *
+   * Across the BOX, not the car: the angle is in the region's own frame, so
+   * with `rotate: 'auto'` 0 runs along the car on any panel. The id comes from
+   * the seeded rng, as `decal`'s clip does, so it is unique in the document
+   * and the same on every build.
+   */
+  gradient: (r, c) => {
+    const a = ((Number(c.opts.angle) || 0) * Math.PI) / 180;
+    const dx = Math.cos(a) / 2, dy = Math.sin(a) / 2;
+    const id = `lk-grad-${Math.floor(c.rng() * 1e9).toString(36)}`;
+    const stop = (at, color, extra = '') => `<stop offset="${at}" stop-color="${c.color(color)}"${extra}/>`;
+    const g = `<linearGradient id="${id}" x1="${r2(0.5 - dx)}" y1="${r2(0.5 - dy)}" x2="${r2(0.5 + dx)}" y2="${r2(0.5 + dy)}">` +
+      stop(0, c.opts.from ?? 'black') +
+      (c.opts.via !== undefined ? stop(0.5, c.opts.via) : '') +
+      stop(1, c.opts.to ?? c.opts.from ?? 'white', c.opts.fade ? ' stop-opacity="0"' : '') +
+      `</linearGradient>` + rect(r, `url(#${id})`);
+    return { base: g, emissive: '' };
+  },
+
+  /**
+   * A stripe is just a fill you meant to be thin. Separate treatment because
+   * `glow: true` is overwhelmingly what you want on one and not the other.
+   */
+  stripe: (r, c) => {
+    const fillRect = rect(r, c.color(c.opts.color ?? 'cyan'));
+    return c.opts.glow ? { base: fillRect, emissive: fillRect } : { base: fillRect, emissive: '' };
+  },
+
+  scanlines: (r, c) => ({
+    base: scanlines({
+      ...r,
+      pitch: c.opts.pitch ?? Math.round(r.h / 90),
+      color: c.color(c.opts.color ?? '#000'),
+      opacity: c.opts.opacity ?? 0.1,
+    }),
+    emissive: '',
+  }),
+
+  halftone: (r, c) => {
+    const cell = c.opts.cell ?? Math.round(r.h / 22);
+    return {
+      base: halftoneDissolve({
+        ...r,
+        cell,
+        angle: c.opts.angle ?? 0,
+        color: c.color(c.opts.color ?? 'black'),
+        // `dot` is the largest dot radius as a fraction of the cell pitch. The
+        // default 0.42 packs dots nearly touching (~64% coverage), which is
+        // what a dissolve edge wants but reads as near-solid for an even field.
+        // Drop to ~0.18 for texture rather than color.
+        maxR: cell * (c.opts.dot ?? 0.42),
+        start: c.opts.start ?? 0.05,
+        end: c.opts.end ?? 0.85,
+      }),
+      emissive: '',
+    };
+  },
+
+  piping: (r, c) => {
+    const g = piping(c.rng, {
+      ...r,
+      count: c.opts.count ?? 4,
+      color: c.color(c.opts.color ?? 'cyan'),
+      width: c.opts.width ?? Math.max(2, r.h * 0.012),
+      angle: c.opts.angle ?? 0,
+      spacing: c.opts.spacing ? c.opts.spacing * r.h : null,
+    });
+    return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+
+  /**
+   * A band round a tire's sidewall, `along` of the way from the rim (0) to
+   * the shoulder (1), `width` as a fraction of that distance. (`at` is taken:
+   * it is every region's rectangle.)
+   *
+   * The same thing `ring` was used for, drawn where it actually goes. A
+   * sidewall is a disc, and an unwrapper lays it out either as a disc —
+   * polar about a hub — or cut once and rolled out as a strip with u round
+   * the circumference. `ring` is right on the first and on the second draws
+   * one big circle across the sheet, which on the car is a few arcs where
+   * the circle crosses the strip. The profile measures which it is
+   * (`wheel` on the panel; see liverykit's src/engine/wheels.mjs), and this reads that and
+   * draws a stripe across the strip or a ring about the hub.
+   *
+   * With no panel, round every sidewall the sheet measures, once each: a
+   * band round a tyre is the obvious way to write one, and reading only the
+   * panel it landed on drew a single ring across the NSX's whole sheet, an
+   * arc along the top of each tyre and nothing else.
+   *
+   * Where nothing is measured it draws as `ring` did, radius from `at`, so an
+   * old profile is no worse off than before — and no better, which it says.
+   */
+  band: (r, c) => {
+    const w = c.panel?.wheel;
+    if (!c.panel) {
+      const seen = new Set();
+      const walls = Object.values(c.sheet ?? {}).map((q) => q.wheel)
+        .filter((x) => x?.part === 'sidewall' && (x.unwrap === 'strip' || x.unwrap === 'annulus'))
+        .filter((x) => {
+          const k = JSON.stringify([x.unwrap, x.around, x.across, x.hub, x.radiusUv]);
+          return !seen.has(k) && seen.add(k);
+        });
+      if (walls.length) {
+        const drawn = walls.map((x) => bandOn(r, c, x));
+        return c.opts.glow ? { base: '', emissive: drawn.join('') } : { base: drawn.join(''), emissive: '' };
+      }
+      c.note('no sidewall is measured on this sheet, so it is drawn as a ring across it; regenerate the profile with --from-kn5, or name a panel');
+    }
+    const g = bandOn(r, c, w);
+    return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+
+  ring: (r, c) => {
+    const g = ring({
+      cx: r.x + r.w / 2,
+      cy: r.y + r.h / 2,
+      radius: (c.opts.radius ?? 0.4) * Math.min(r.w, r.h),
+      width: (c.opts.width ?? 0.03) * Math.min(r.w, r.h),
+      color: c.color(c.opts.color ?? 'cyan'),
+      opacity: c.opts.opacity ?? 1,
+      dash: c.opts.dash ?? null,
+    });
+    return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+
+  /**
+   * Text, with two corrections that are easy to get wrong by hand.
+   *
+   * 1. librsvg does no reflow and no auto-shrink, so the advance width is
+   *    estimated (~0.62em per glyph for bold sans, plus tracking) and the size
+   *    scaled down until it fits.
+   *
+   * 2. UV is anisotropic. A panel rarely maps texture pixels to the car at the
+   *    same scale in both axes — a flank packs the whole length of the car into
+   *    fewer pixels per meter than it gives the car's height, so anything
+   *    square in the texture comes out wide on the bodywork. If the car profile
+   *    declares an `anisotropy` for this panel, glyphs are pre-narrowed by its
+   *    reciprocal so they land looking normal. `aspect` overrides it manually.
+   */
+  text: (r, c) => {
+    const s = c.opts.text ?? '';
+    const tracking = c.opts.tracking ?? 0.08;
+    const ax = c.opts.aspect ?? (r.anisotropy ? 1 / r.anisotropy : 1);
+    let size = r.h * (c.opts.scale ?? 0.7);
+
+    if (c.opts.fit !== false && s.length) {
+      const est = s.length * size * (0.62 + tracking) * ax;
+      if (est > r.w) size *= r.w / est;
+    }
+
+    const anchor = c.opts.anchor ?? 'middle';
+    const tx = anchor === 'start' ? r.x : anchor === 'end' ? r.x + r.w : r.x + r.w / 2;
+    const inner = `<text x="0" y="0" fill="${c.color(c.opts.color ?? 'white')}" ` +
+      `font-family="${c.font}" font-size="${r2(size)}" font-weight="${c.opts.weight ?? 700}" ` +
+      `letter-spacing="${r2(size * tracking)}" text-anchor="${anchor}">${esc(s)}</text>`;
+    const g = `<g transform="translate(${r2(tx)},${r2(r.y + r.h * 0.78)}) scale(${r2(ax)},1)">${inner}</g>`;
+
+    return c.opts.glow ? { base: '', emissive: g } : { base: g, emissive: '' };
+  },
+
+  /**
+   * A picture the livery brought with it: a logo, a flag, a sponsor mark.
+   *
+   * Everything else in this pack draws; this one PLACES. A sponsor's mark is
+   * somebody else's artwork and arrives as a file, so the livery carries it in
+   * its own `decals/` folder and a region names it — see src/decals.mjs, which
+   * is also where an SVG stops being markup and becomes pixels.
+   *
+   * The pixels travel INSIDE the document as a data URI rather than as a path
+   * or a URL. librsvg would have to be allowed to read the filesystem for a
+   * path to work, the editor would have to be allowed to fetch for a URL, and
+   * the build and the editor would then be rendering documents that differ in
+   * the one place this project can least afford them to.
+   *
+   * ANISOTROPY IS THE WHOLE TRICK, and it is why this cannot be left to SVG's
+   * own `preserveAspectRatio`. A square of texture does not land square on the
+   * car — 2:1 on this Honda's banner — so a logo fitted to its own pixel
+   * aspect comes out stretched by exactly the panel's distortion. The box is
+   * computed here, in texels, from the aspect the artwork should have ON THE
+   * CAR, and the image is then told to fill that box exactly.
+   */
+  decal: (r, c) => {
+    const name = typeof c.opts.image === 'string' ? c.opts.image.trim() : '';
+    const art = name ? c.decals?.get(name) : null;
+    if (!art) {
+      // NAMED, not silent. A decal that draws nothing looks exactly like a
+      // design that paints nothing here, and the difference is the whole
+      // point of the region.
+      c.note(name
+        ? `no decal called "${name}" — this livery's decals/ folder has ` +
+          (c.decals?.size ? `${[...c.decals.keys()].join(', ')}` : 'nothing in it')
+        : 'no "image" was named, so there is nothing to place', 'no-decal');
+      return { base: '', emissive: '' };
+    }
+
+    // The aspect the artwork wants once the sheet's own stretch is undone.
+    const aspect = (art.width / art.height) / (r.anisotropy || 1);
+    const mode = c.opts.fit ?? 'contain';
+    let box = { x: r.x, y: r.y, w: r.w, h: r.h };
+    if (mode !== 'stretch') {
+      // `contain` takes the smaller scale and leaves air; `cover` takes the
+      // larger and spills, which is why it is clipped below.
+      const byWidth = { w: r.w, h: r.w / aspect };
+      const byHeight = { w: r.h * aspect, h: r.h };
+      const pick = mode === 'cover'
+        ? (byWidth.h >= r.h ? byWidth : byHeight)
+        : (byWidth.h <= r.h ? byWidth : byHeight);
+      box = { x: r.x + (r.w - pick.w) / 2, y: r.y + (r.h - pick.h) / 2, w: pick.w, h: pick.h };
+    }
+
+    const opacity = Number(c.opts.opacity);
+    const alpha = Number.isFinite(opacity) && opacity >= 0 && opacity < 1
+      ? ` opacity="${r2(opacity)}"` : '';
+    // `none`, because the box above already carries the aspect. Left to SVG,
+    // `meet` would refit the image to its own pixel ratio and undo the
+    // anisotropy correction.
+    let img = `<image href="${art.uri}" x="${r2(box.x)}" y="${r2(box.y)}" ` +
+      `width="${r2(box.w)}" height="${r2(box.h)}" preserveAspectRatio="none"${alpha}/>`;
+
+    // A covered decal is bigger than its region by construction, and artwork
+    // outside the region is artwork on somebody else's panel. The id comes
+    // from the seeded rng, so it is unique within the document and the same on
+    // every build of the same design.
+    if (mode === 'cover') {
+      const id = `lk-decal-${Math.floor(c.rng() * 1e9).toString(36)}`;
+      img = `<clipPath id="${id}"><rect x="${r2(r.x)}" y="${r2(r.y)}" ` +
+        `width="${r2(r.w)}" height="${r2(r.h)}"/></clipPath>` +
+        `<g clip-path="url(#${id})">${img}</g>`;
+    }
+
+    return c.opts.glow ? { base: img, emissive: img } : { base: img, emissive: '' };
+  },
+};
+
+/**
+ * What each treatment takes. See `definePack` — this is metadata for tools, the
+ * build never reads it, and `hint` is the code's own default written out for a
+ * person rather than repeated as a value that could drift from it.
+ */
+export default definePack('core', treatments, {
+  decal: {
+    label: 'Decal',
+    summary: "An image the livery carries in its own decals/ folder — a logo, a flag, a sponsor mark.",
+    options: {
+      image: { type: 'string', hint: "the file's name in the livery's decals/ folder, without its extension", label: 'Image' },
+      fit: { type: 'enum', values: ['contain', 'cover', 'stretch'], hint: 'contain' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  fill: {
+    label: 'Fill',
+    summary: 'A flat rectangle of one color.',
+    options: {
+      color: { type: 'color', hint: 'pink' },
+    },
+  },
+
+  stripe: {
+    label: 'Stripe',
+    summary: 'A fill you meant to be thin. Separate so that glow can default the other way.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  gradient: {
+    label: 'Gradient',
+    summary: 'A fill that changes from one color to another across the region, or fades to nothing.',
+    options: {
+      from: { type: 'color', hint: 'black', label: 'From' },
+      to: { type: 'color', hint: 'white, or from with fade', label: 'To' },
+      via: { type: 'color', hint: 'none', label: 'Through' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0 — left to right; 90 is top to bottom' },
+      fade: { type: 'boolean', hint: 'false — the far end is transparent instead of "to"', label: 'Fade out' },
+    },
+  },
+
+  scanlines: {
+    label: 'Scanlines',
+    summary: 'Horizontal rules across the region, CRT-fashion.',
+    options: {
+      color: { type: 'color', hint: '#000' },
+      pitch: { type: 'number', min: 1, step: 1, hint: 'the region height over 90', label: 'Pitch (px)' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.1' },
+    },
+  },
+
+  halftone: {
+    label: 'Halftone dissolve',
+    summary: 'A field of dots that thins out across the region, for a soft edge.',
+    options: {
+      color: { type: 'color', hint: 'black' },
+      cell: { type: 'number', min: 2, step: 1, hint: 'the region height over 22', label: 'Cell (px)' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
+      // Worth spelling out: at the default the dots nearly touch, which is what
+      // a dissolve edge wants and reads as near-solid for an even field.
+      dot: { type: 'number', min: 0.05, max: 0.5, step: 0.01, hint: '0.42 — try 0.18 for texture rather than color', label: 'Dot size' },
+      start: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.05', label: 'Dissolve from' },
+      end: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.85', label: 'Dissolve to' },
+    },
+  },
+
+  piping: {
+    label: 'Piping',
+    summary: 'Parallel lines running across the region.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      count: { type: 'number', min: 1, step: 1, hint: '4' },
+      width: { type: 'number', min: 0.5, step: 0.5, hint: '1.2% of the region height, at least 2px', label: 'Line width (px)' },
+      spacing: { type: 'number', min: 0, max: 1, step: 0.01, hint: 'evenly spread across the region' },
+      angle: { type: 'number', min: 0, max: 360, step: 15, hint: '0' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  band: {
+    label: 'Sidewall band',
+    summary: 'A band round a tyre sidewall, placed from rim to shoulder using the profile\'s wheel measurement — a stripe on a strip unwrap, a ring on a disc.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      along: { type: 'number', min: 0, max: 1, step: 0.05, hint: '0.8 — 0 is the rim, 1 the shoulder', label: 'Position' },
+      width: { type: 'number', min: 0.005, max: 1, step: 0.01, hint: '0.06 of the sidewall height' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  ring: {
+    label: 'Ring',
+    summary: 'A circle centred in the region. Radius and width are fractions of its shorter side, and the stroke is centred on the radius, so it reaches radius + width/2: keep that at most 0.5 to stay inside the region.',
+    options: {
+      color: { type: 'color', hint: 'cyan' },
+      radius: { type: 'number', min: 0, max: 0.5, step: 0.01, hint: '0.4' },
+      width: { type: 'number', min: 0.001, max: 0.5, step: 0.005, hint: '0.03' },
+      opacity: { type: 'number', min: 0, max: 1, step: 0.05, hint: '1' },
+      dash: { type: 'string', hint: 'solid', label: 'Dash pattern' },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+
+  text: {
+    label: 'Text',
+    summary: 'A line of text, scaled to fit and pre-narrowed for the panel\'s anisotropy.',
+    options: {
+      text: { type: 'string', hint: 'empty', label: 'Text' },
+      color: { type: 'color', hint: 'white' },
+      scale: { type: 'number', min: 0.05, max: 2, step: 0.05, hint: '0.7 of the region height' },
+      tracking: { type: 'number', min: -0.1, max: 1, step: 0.01, hint: '0.08', label: 'Letter spacing' },
+      weight: { type: 'number', min: 100, max: 900, step: 100, hint: '700' },
+      anchor: { type: 'enum', values: ['start', 'middle', 'end'], hint: 'middle' },
+      fit: { type: 'boolean', hint: 'true — shrink to fit the region' },
+      aspect: { type: 'number', min: 0.2, max: 3, step: 0.05, hint: "the panel's own anisotropy" },
+      glow: { type: 'boolean', hint: 'false', label: 'Glow' },
+    },
+  },
+});

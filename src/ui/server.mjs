@@ -236,7 +236,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 const SERVABLE = new Set(['index.html', 'app.js', 'view3d.js', 'fields.js', 'uses.js', 'ops.js', 'style.css']);
 // Modules the editor shares with code that is not the editor's, at the URL a
 // relative import from this directory resolves to in the browser.
-const SHARED = new Map([['constraints.mjs', '../constraints.mjs']]);
+const SHARED = new Map([['constraints.mjs', '../../packages/toile/src/constraints.mjs']]);
 
 /**
  * The one dependency the browser shares with Node, and where it comes from.

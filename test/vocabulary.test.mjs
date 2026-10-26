@@ -60,3 +60,23 @@ test('a vocabulary missing a piece is refused when it is put in use', () => {
   assert.throws(() => useVocabulary({ terms: {} }), /elsewhere.*unbound.*unverified.*named.*nameFromFiles/);
   assert.ok(vocabulary()?.terms.body, 'and the one in use stays');
 });
+
+test('an old path loads the vocabulary exactly when the module there needs one', async () => {
+  // Scripts import these paths one at a time, and each must leave a process
+  // in the state it always did: able to load a shipped car where the module
+  // reads profiles, and with no vocabulary chosen for it where it does not.
+  const { execFile } = await import('node:child_process');
+  const root = new URL('../', import.meta.url).href;
+  const inUse = (path) => new Promise((ok, no) => execFile(process.execPath, ['--input-type=module', '-e', `
+    await import('${root}${path}');
+    const { vocabulary } = await import('${root}packages/toile/src/vocabulary.mjs');
+    console.log(Boolean(vocabulary()));`], (e, stdout, stderr) => (e ? no(new Error(stderr)) : ok(stdout.trim()))));
+  const expected = {
+    'src/profile.mjs': 'true', 'src/build.mjs': 'true', 'src/fitment.mjs': 'true',
+    'src/engine/skin.mjs': 'true', 'src/inview.mjs': 'true', 'src/mcp/tools.mjs': 'true',
+    'src/vocabulary.mjs': 'false', 'src/constraints.mjs': 'false', 'src/engine/rng.mjs': 'false',
+  };
+  const seen = {};
+  for (const path of Object.keys(expected)) seen[path] = await inUse(path);
+  assert.deepEqual(seen, expected);
+});

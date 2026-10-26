@@ -1,0 +1,612 @@
+// ---------------------------------------------------------------------------
+// Fits: adjusting a portable design for one particular car.
+//
+// A portable livery picks the largest visible panel on the correct side and
+// places its artwork centred there. That is the best a measurement can do. What
+// no measurement knows is which PART of that panel is flat, which way is up on
+// it, or whether the middle of the rectangle lands on a door or wraps over a
+// wheel arch — so a car number sometimes wants nudging, and only a person
+// looking at the car can say where.
+//
+// A fit records that nudge. It belongs to neither side:
+//
+//   * not to the livery, because writing per-car blocks into a design
+//     de-genericises the thing the vocabulary exists to keep generic, and grows
+//     without limit — one block per car anyone ever runs it on
+//   * not to the car profile, which is shared by everyone who owns that car and
+//     should stay as free of one design's opinions as it is of its colors
+//
+// It is a property of the (design, car) PAIR, so it is a third artefact:
+//
+//   fits/neon-grid-any@abarth500.json
+//
+// Overrides only, never a copy of the region. Treatment, colors and glow stay
+// in the design, because that is the design. A car with no fit renders exactly
+// as it would have; nothing here is mandatory.
+//
+// See docs/fitting.md.
+// ---------------------------------------------------------------------------
+
+import { readFile } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
+
+/**
+ * The name a fit knows a design by.
+ *
+ * A fit lives at `fits/<livery>@<car>.json` and repeats both halves of that pair
+ * inside itself, so the two have to be derived the same way or the file
+ * disagrees with its own name. This is the module basename — `neon-grid-any` —
+ * and NOT `livery.folder`, which is the skin directory the game installs
+ * (`neon_grid_any`) and is a different string on every design that has both.
+ */
+export function fitLiveryId(liveryPath) {
+  // Both extensions. A design may now be data rather than code, and stripping
+  // only `.mjs` would give `my-livery.json` a fit called
+  // `my-livery.json@abarth500.json` — which loads, and disagrees with every
+  // other fit about how the pair is named.
+  const stem = basename(liveryPath).replace(/\.(mjs|json)$/, '');
+  // A LIVERY FOLDER is named by the folder, not by the file inside it. The
+  // design in `liveries/neon-doll/livery.mjs` is called neon-doll — every one
+  // of them holds a file called `livery`, so taking the basename would give
+  // them all the same fits and the same identity, and a fit written for one
+  // would load happily against another.
+  return stem === 'livery' ? basename(dirname(liveryPath)) : stem;
+}
+
+/**
+ * Refuse a fit that is for some other design, or some other car.
+ *
+ * `--fit` takes an arbitrary path and the conventional one can go stale, so
+ * nothing guarantees the file loaded describes the pair being worked on. Left
+ * unchecked, the editor opens on one design's regions, resolves them against
+ * another car's panels and writes the result back over the original — silently,
+ * because each step on its own is valid.
+ */
+export function checkFitIdentity(f, { livery, car, source = '<inline>' }) {
+  const mismatch = (field, want, got) => {
+    throw new Error(
+      `Fit ${source}: "${field}" is ${JSON.stringify(got)}, but this is a fit for ` +
+      `${field} ${JSON.stringify(want)}. A fit belongs to one (design, car) pair — ` +
+      `using it for another places one design's region ids on a car that never declared them.`
+    );
+  };
+  if (livery && f.livery !== livery) mismatch('livery', livery, f.livery);
+  if (car && f.car !== car) mismatch('car', car, f.car);
+  return f;
+}
+
+/**
+ * What a fit may change about a region.
+ *
+ * Deliberately short. `at`, `rotate` and `scale` move and turn artwork; `panel`
+ * overrides which panel the tags chose. Everything absent from this list — the
+ * treatment, the colors, the lane counts — is the design's business, and a fit
+ * that could reach it would slowly become a second livery language.
+ *
+ * A fit also cannot ADD a region. Wanting to is a good sign the design needs the
+ * change, not this car's copy of it.
+ */
+const OVERRIDABLE = new Set(['panel', 'at', 'rotate', 'scale', 'safe', 'drop']);
+
+export async function loadFit(path) {
+  return validateFit(JSON.parse(await readFile(path, 'utf8')), path);
+}
+
+export function validateFit(f, source = '<inline>') {
+  const err = (m) => { throw new Error(`Fit ${source}: ${m}`); };
+
+  if (!f.livery) err('missing "livery" — the design this fit adjusts');
+  if (!f.car) err('missing "car" — the profile id this fit is for');
+  if (f.regions && (typeof f.regions !== 'object' || Array.isArray(f.regions))) {
+    err('"regions" must be an object keyed by region id');
+  }
+  for (const block of ['copies', 'mirrors']) {
+    if (f[block] && (typeof f[block] !== 'object' || Array.isArray(f[block]))) {
+      err(`"${block}" must be an object keyed by the new region id`);
+    }
+  }
+
+  const declared = new Set(Object.keys(f.regions ?? {}));
+  for (const [id, m] of Object.entries(copiesOf(f))) {
+    if (!m || typeof m !== 'object' || Array.isArray(m)) {
+      err(`copies."${id}" must be an object`);
+    }
+    if (!m.of || typeof m.of !== 'string') {
+      err(`copies."${id}" needs "of": the id of the region it is a copy of`);
+    }
+    if (m.of === id) err(`copies."${id}" cannot be a copy of itself`);
+    if (declared.has(id)) {
+      err(`"${id}" is both a copied region and an override; it can only be one`);
+    }
+    for (const k of Object.keys(m)) {
+      if (k !== 'of' && !OVERRIDABLE.has(k)) {
+        err(`copies."${id}" may not set "${k}". A copy states where a region ALSO ` +
+            `appears: ${['of', ...OVERRIDABLE].join(', ')}. It takes its artwork from ` +
+            `"${m.of}" and cannot have any of its own.`);
+      }
+    }
+    if (m.drop !== undefined) {
+      err(`copies."${id}" cannot be dropped — delete the entry instead`);
+    }
+  }
+
+  for (const [id, o] of Object.entries(f.regions ?? {})) {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) {
+      err(`regions."${id}" must be an object of overrides`);
+    }
+    for (const k of Object.keys(o)) {
+      if (!OVERRIDABLE.has(k)) {
+        err(`regions."${id}" may not override "${k}". A fit adjusts placement only: ` +
+            `${[...OVERRIDABLE].join(', ')}. Anything else belongs in the livery.`);
+      }
+    }
+    if (o.drop !== undefined && typeof o.drop !== 'boolean') {
+      err(`regions."${id}".drop must be true or false`);
+    }
+  }
+  return f;
+}
+
+/**
+ * The regions a fit adds, from either spelling.
+ *
+ * `mirrors` was the first name, and on reflection the better one. The block was
+ * widened to `copies` when duplicating a region turned out to use the same
+ * mechanism — but a mechanism in common is not a meaning in common. A mirrored
+ * copy says *this car has two flanks*, which is a fact about the car and one a
+ * portable design cannot know; a duplicate says *I want two badges*, which is a
+ * fact about the design and true of every car it is pointed at. The second only
+ * ever lived here because the first had already built the machinery.
+ *
+ * Duplicating now writes the design, so what remains is mirroring. Both
+ * spellings still load — a fit written before this is not wrong, just wordier
+ * than it needs to be — and `copies` is still what gets written.
+ */
+export function copiesOf(fit) {
+  return { ...(fit?.mirrors ?? {}), ...(fit?.copies ?? {}) };
+}
+
+/**
+ * The key a fit uses to address a region.
+ *
+ * An explicit `id` if the design gave one, and otherwise a POSITIONAL key made
+ * from the surface and the region's index. Without this an existing livery is
+ * entirely uneditable: neon-grid has 95 regions and not one id, so every row in
+ * the editor read "no id" and nothing could be selected at all. The tool did
+ * exactly what it was told and was useless, which is a flaw in the design rather
+ * than in the code.
+ *
+ * A positional key is weaker than a name and is honestly worse: inserting a
+ * region above it shifts what it refers to, and the fit then adjusts the wrong
+ * thing. That is a real cost, so the editor labels these as derived and the
+ * remedy — give the region an `id` in the livery — is one line. Being able to
+ * work at all beats being unable to start.
+ */
+/**
+ * Whether a region of a surface is drawn on one of the textures that surface
+ * paints. A term can cover several — `body` on the RSS4 is two chassis
+ * textures, each with its own panel called `left_mid` — and a region is drawn
+ * on every one of them unless it says otherwise:
+ *
+ * - `role` names the one texture it is drawn on. Panel names are the
+ *   texture's own, so a region placed on one texture's `left_mid` also landed
+ *   on the other's, and a number measured on one sidepod was painted on the
+ *   floor as well. find_space says which texture it measured on.
+ * - `once` keeps it on the term's PRIMARY texture: a pattern belongs on all of
+ *   them, a car number on the car once.
+ *
+ * The one rule for every path that draws or measures regions — the build, the
+ * editor, fitment, the in-view count — so what is checked is what ships. `once`
+ * was honored by the build alone, and the editor and fitment drew it on every
+ * texture.
+ */
+export function drawnOn(region, role, primary = true) {
+  if (typeof region?.role === 'string') return region.role === role;
+  return !(region?.once && !primary);
+}
+
+export function regionKey(surfaceKey, region, index) {
+  return region.id ?? `${surfaceKey}#${index}`;
+}
+
+/**
+ * The id of the twin a `mirror: true` region gets: its own with the side
+ * swapped where it names one, so `number-left` and `number-right` are the pair
+ * the editor already links by that convention, and `<id>-mirror` where it
+ * does not.
+ */
+export function mirrorId(id) {
+  const swap = { left: 'right', right: 'left', Left: 'Right', Right: 'Left', LEFT: 'RIGHT', RIGHT: 'LEFT' };
+  const side = /(?<![a-z])(left|right|LEFT|RIGHT)(?![a-z])|(?<=[a-z\d])(Left|Right)(?![a-z])/;
+  return side.test(id) ? id.replace(side, (m) => swap[m]) : `${id}-mirror`;
+}
+
+/**
+ * Every key a fit could address, across the whole livery.
+ *
+ * Takes resolved targets rather than the livery, because a positional key is
+ * made from the surface a region resolved to and only `resolveTargets` knows
+ * that. Needed because fit ids are FLAT while applyFit runs once per surface: a
+ * check against "the regions I can see" is a check against one surface, and a
+ * copy is free to claim a name belonging to another.
+ */
+export function allRegionKeys(targets = []) {
+  const keys = new Set();
+  for (const t of targets) {
+    (t.spec?.regions ?? []).forEach((r, i) => {
+      keys.add(regionKey(t.from, r, i));
+      if (r.mirror && typeof r.id === 'string') keys.add(mirrorId(r.id));
+    });
+  }
+  return keys;
+}
+
+/**
+ * Collect every region id a livery declares, and reject duplicates.
+ *
+ * Ids are flat across the whole livery rather than per surface, because that is
+ * how a fit refers to them and a fit should not have to know which surface a
+ * region lives on. Two regions sharing an id would make an override ambiguous,
+ * which is the sort of thing that silently adjusts the wrong one.
+ */
+export function regionIds(livery) {
+  const seen = new Map();
+  const blocks = [
+    ...Object.entries(livery.paint ?? {}),
+    ...Object.entries(livery.surfaces ?? {}),
+  ];
+  for (const [where, spec] of blocks) {
+    for (const r of spec.regions ?? []) {
+      if (r.id === undefined) continue;
+      if (typeof r.id !== 'string' || !r.id) {
+        throw new Error(`Livery "${livery.name}": a region on "${where}" has a non-string id.`);
+      }
+      for (const id of r.mirror ? [r.id, mirrorId(r.id)] : [r.id]) {
+        if (seen.has(id)) {
+          throw new Error(
+            `Livery "${livery.name}" uses the region id "${id}" twice — on ` +
+            `"${seen.get(id)}" and "${where}"${id === r.id ? '' : `, as the mirror of "${r.id}"`}. ` +
+            'Ids are how a fit addresses a region, so they have to be unique across the livery.'
+          );
+        }
+        seen.set(id, where);
+      }
+    }
+  }
+  return seen;
+}
+
+/**
+ * Apply a fit's overrides to one surface's regions.
+ *
+ * `at` stays PANEL-RELATIVE, the same as everywhere else in this system. A tool
+ * that lets you drag on a texture naturally produces absolute coordinates, and
+ * it should convert them on save rather than introducing a second meaning for
+ * the same field.
+ *
+ * Anything a fit names that no longer exists is skipped and reported, not fatal.
+ * A design gets edited, a profile gets regenerated, a panel gets renamed; a
+ * stale fit is a nuisance rather than a corruption, and failing the build would
+ * punish whoever edited the design rather than whoever wrote the fit. Silence is
+ * the one option not on the table — a fit quietly doing nothing is this
+ * project's oldest bug wearing yet another costume.
+ */
+export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = new Set(), notes = [], reserved = null, primary = true } = {}) {
+  // Keys are stamped even with no fit at all. A car nobody has tuned is the
+  // common case, and the editor still has to be able to name every region in
+  // order to let you start tuning one.
+  const overrides = fit?.regions ?? {};
+
+  const out = [];
+  // A region as the fit leaves it: stamped with its key, overridden, or null
+  // where the fit drops it.
+  const place = (region, key) => {
+    // Stamped on every region, overridden or not, so everything downstream —
+    // the overlay, the placement report — can name it without recomputing the
+    // index it came from.
+    const o = overrides[key];
+    if (!o) return { ...region, __key: key };
+    used.add(key);
+
+    if (o.drop) return null;
+
+    const next = { ...region, __key: key };
+    for (const k of OVERRIDABLE) {
+      if (k === 'drop' || o[k] === undefined) continue;
+      next[k] = o[k];
+    }
+
+    if (o.panel !== undefined) {
+      if (!profile?.panels?.[role]?.[o.panel] && !profile?.aliases?.[role]?.[o.panel]) {  // stale
+        notes.push({
+          term: key, status: 'fit-stale',
+          text: `fit: "${key}" points at panel "${o.panel}", which ${role} does not have — ` +
+                `the region was left as the livery placed it`,
+        });
+        return { ...region, __key: key };
+      }
+      // An explicit panel replaces the tag selection outright. Leaving the tags
+      // in place would trip the "both panel and tags" guard, and keeping both
+      // meanings would be ambiguous anyway. `optional` goes with them: it says a
+      // tag selection may find nothing, and there is no selection any more.
+      delete next.tags;
+      delete next.limit;
+      delete next.optional;
+    }
+    return next;
+  };
+
+  // `mirror: true` paints the region again on its panel's twin, placed by the
+  // two panels' measured axes, straight after it so the layers keep their
+  // order. From the region as fitted, so moving it moves its twin; the twin has
+  // an id of its own, so a fit can still place or drop it on one car.
+  const twinOf = (src) => {
+    const why = typeof src.id !== 'string' ? 'it has no id for its twin to be named after'
+      : typeof src.panel !== 'string' ? 'it is placed by tags, and a twin needs one panel to mirror'
+        : null;
+    const name = why ? null : (profile?.aliases?.[role]?.[src.panel] ?? src.panel);
+    const here = name && profile?.panels?.[role]?.[name];
+    const there = here?.mirrorOf && profile.panels[role][here.mirrorOf];
+    if (!there) {
+      notes.push({ term: src.__key, status: 'mirror',
+        text: `mirror: "${src.__key}" is drawn once — ${why ?? `${name} has no twin on ${role} in this car's profile`}` });
+      return null;
+    }
+    const flips = mirrorFlips(here, there);
+    const { mirror, __key, ...art } = src;
+    return place({ ...art, id: mirrorId(src.id), panel: here.mirrorOf,
+      at: mirrorAt(src.at ?? [0, 0, 1, 1], flips), rotate: mirrorRotation(src.rotate, flips) }, mirrorId(src.id));
+  };
+
+  for (const [i, region] of regions.entries()) {
+    const key = regionKey(surfaceKey, region, i);
+    // After the key, so a region left off this texture does not move the
+    // positional key of every region after it.
+    if (!drawnOn(region, role, primary)) continue;
+    const placed = place(region, key);
+    if (!placed) continue;
+    out.push(placed);
+    if (region.mirror) {
+      const twin = twinOf(placed);
+      if (twin) out.push(twin);
+    }
+  }
+
+  // --- mirrored copies ------------------------------------------------------
+  //
+  // This is the one place a fit adds a region, and it is worth being honest
+  // about the tension. The rule above says a fit cannot ADD a region, because
+  // wanting to usually means the DESIGN needs the change. A mirrored copy is
+  // the exception that proves it rather than breaking it: it invents no
+  // artwork. Treatment, colors, glow, text all come from the region it names,
+  // and the only new information is a placement — which is exactly what a fit
+  // is for.
+  //
+  // It earns the exception because symmetry is a property of the CAR, not of
+  // the design. A livery that paints one badge is portable to a car with one
+  // flank worth painting and to a car with two, and which of those you have is
+  // not something the design can know.
+  //
+  // A mirror whose source lives on another surface is skipped in silence, not
+  // reported: applyFit runs once per surface and every one of them would
+  // otherwise report every other surface's mirrors as stale.
+  // Resolved in PASSES, because a copy may be a copy of a copy. Duplicating a
+  // duplicate is an ordinary thing to do, and a single pass over the entries
+  // silently produced nothing for it: the source was not a region the livery
+  // declared, so it looked exactly like a copy belonging to another surface.
+  //
+  // Each pass places every copy whose source now exists; the loop ends when a
+  // pass places nothing. What is left over either belongs to another surface or
+  // is part of a cycle, and neither is drawable.
+  const pending = new Map(Object.entries(copiesOf(fit)));
+  for (let placed = 1; placed > 0 && pending.size; ) {
+    placed = 0;
+    for (const [id, m] of [...pending]) {
+      const src = out.find((r) => r.__key === m.of);
+      if (!src) continue;
+      pending.delete(id);
+      placed++;
+      used.add(id);
+      used.add(m.of);
+
+      // A copy id has to be free. Ids are how everything downstream addresses a
+      // region — the editor's list, the fit's own overrides, the placement
+      // report — so two regions answering to one name is not a duplicate
+      // drawing, it is a region that cannot be selected or updated reliably.
+      // Reported and skipped, like every other thing a fit asks for and cannot
+      // have; the design's own region keeps the name, because the design is the
+      // thing that is not a per-car adjustment.
+      // `reserved` is every key the whole livery declares, not merely this
+      // surface's. Fit ids are flat and applyFit runs once per surface, so
+      // checking only what is in front of it lets a copy quietly take a name
+      // that belongs to a region on the driver's suit.
+      if (out.some((r) => r.__key === id) || reserved?.has(id)) {
+        notes.push({
+          term: id, status: 'fit-stale',
+          text: `fit: copied region "${id}" would take the id of a region the livery ` +
+                `already declares — rename the copy; it was not drawn`,
+        });
+        continue;
+      }
+
+      const clone = { ...src, __key: id, id };
+      // An explicit panel replaces tag selection outright, the same as an
+      // override does; leaving the tags on would trip the "both panel and tags"
+      // guard and would be ambiguous anyway.
+      delete clone.tags;
+      delete clone.limit;
+      delete clone.once;
+      delete clone.optional;
+      for (const k of ['panel', 'at', 'rotate', 'scale', 'safe']) {
+        if (m[k] !== undefined) clone[k] = m[k];
+      }
+      if (m.panel && !profile?.panels?.[role]?.[m.panel] && !profile?.aliases?.[role]?.[m.panel]) {
+        notes.push({
+          term: id, status: 'fit-stale',
+          text: `fit: copied region "${id}" points at panel "${m.panel}", which ${role} ` +
+                `does not have — it was not drawn`,
+        });
+        continue;
+      }
+      out.push(clone);
+    }
+  }
+
+  return { regions: out, notes };
+}
+
+// ---------------------------------------------------------------------------
+// Coordinates.
+//
+// `at` is PANEL-RELATIVE everywhere in this system: [0, 0, 1, 1] is the whole
+// panel and [0.5, 0, 0.5, 1] its rear half. An editor that lets you drag on a
+// texture works in absolute texture fractions, because that is what a mouse
+// gives you, so it converts on save. Introducing a second meaning for `at`
+// depending on where it was written would be much worse than a conversion.
+// ---------------------------------------------------------------------------
+
+const r4 = (n) => Math.round(n * 10000) / 10000;
+
+/** Panel-relative `at` -> absolute texture fractions. */
+export function toAbsolute(panelRect, at = [0, 0, 1, 1]) {
+  const [px, py, pw, ph] = panelRect;
+  return [r4(px + at[0] * pw), r4(py + at[1] * ph), r4(at[2] * pw), r4(at[3] * ph)];
+}
+
+/**
+ * Absolute texture fractions -> panel-relative `at`.
+ *
+ * A panel with zero width or height cannot express anything relative to itself;
+ * those are dropped at profile generation, but an editor should not divide by
+ * zero if one ever reaches it.
+ */
+export function toPanelRelative(panelRect, abs) {
+  const [px, py, pw, ph] = panelRect;
+  if (!pw || !ph) return [0, 0, 1, 1];
+  return [r4((abs[0] - px) / pw), r4((abs[1] - py) / ph), r4(abs[2] / pw), r4(abs[3] / ph)];
+}
+
+// ---------------------------------------------------------------------------
+// Mirroring a placement onto the opposite flank.
+//
+// `mirrorOf` is measured from GEOMETRY and says only that two panels are mirror
+// images on the car. It says nothing about how each was unwrapped, and that is
+// the part that matters. Copying a panel-relative `at` across assumes both
+// islands run the same way in UV; on the RSS4 they do not, so moving the number
+// forward on one flank moved it backward on the other. Reported from the car,
+// exactly the shape the bug predicts.
+//
+// So the direction is measured too. Each panel records `uAxis` and `vAxis`: the
+// world directions +u and +v travel in. Reflect one panel's axis through the
+// centerline and compare it with the other's — agreement means the coordinate
+// runs the same way, disagreement means it is reversed.
+// ---------------------------------------------------------------------------
+
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Reflect through the centerline. Left and right differ only in x. */
+const reflect = (v) => [-v[0], v[1], v[2]];
+
+/**
+ * Which of a mirrored pair's texture axes run opposite to each other.
+ *
+ * A panel with no measured axes — hand-written, or from a profile built before
+ * this was recorded — reports no flip rather than a guess. That is exactly the
+ * old behavior: right about as often as it is wrong, but no worse than what
+ * was there before, and it degrades quietly rather than inventing a direction.
+ */
+export function mirrorFlips(a, b) {
+  const axis = (p, k) => (Array.isArray(p?.[k]) && p[k].length === 3 ? p[k] : null);
+  const flip = (k) => {
+    const x = axis(a, k), y = axis(b, k);
+    return x && y ? dot3(reflect(x), y) < 0 : false;
+  };
+  return { u: flip('uAxis'), v: flip('vAxis') };
+}
+
+/**
+ * Mirroring WITHIN one panel, for a panel that has no twin.
+ *
+ * A nose, an engine cover, a rear wing: these straddle the centerline, so they
+ * are their own mirror and `mirrorOf` is rightly absent. Dragging one half of a
+ * pair onto such a panel used to have no good answer — leaving the other half
+ * behind splits an idea the design said was one, and unlinking silently decides
+ * something the person did not ask for. Both halves go onto the panel, mirrored
+ * within it, which is what a real car does with two numbers on a nose.
+ *
+ * Which axis to reverse is measured rather than assumed: whichever of the
+ * panel's own axes runs most nearly across the car is the one the centerline
+ * cuts. An island rotated in the unwrap has that role fall to `v`, and guessing
+ * `u` would mirror it top to bottom instead of side to side.
+ */
+export function selfMirrorFlips(panel) {
+  const across = (k) => (Array.isArray(panel?.[k]) && panel[k].length === 3 ? Math.abs(panel[k][0]) : -1);
+  const [u, v] = [across('uAxis'), across('vAxis')];
+  if (u < 0 && v < 0) return { u: false, v: false };   // nothing measured
+  return { u: u >= v, v: v > u };
+}
+
+/** A panel-relative rectangle, moved to the equivalent place on the twin. */
+export function mirrorAt(at, flips) {
+  const [x, y, w, h] = at;
+  return [
+    r4(flips.u ? 1 - x - w : x),
+    r4(flips.v ? 1 - y - h : y),
+    r4(w), r4(h),
+  ];
+}
+
+/**
+ * The rotation that keeps artwork the same way up on the twin.
+ *
+ * Derived rather than guessed, because the guess was wrong. This said "only the
+ * V axis matters" — reversing u moves artwork along the panel without turning
+ * it over — and that is true at 0 degrees and false at every other angle, which
+ * is exactly how it survived until somebody rotated a driver name and found it
+ * upside down on the far side.
+ *
+ * Let S = diag(su, sv), with su = -1 when the u axes run opposite and +1 when
+ * they agree. Writing the artwork's up direction in image coordinates as
+ * up(t) = (sin t, -cos t), the twin has to satisfy up(f) = S up(t), so
+ *
+ *     sin f = su sin t        cos f = sv cos t
+ *
+ * which has one solution in each of four cases:
+ *
+ *     neither flipped     f = t
+ *     both flipped        f = t + 180
+ *     u flipped only      f = -t
+ *     v flipped only      f = 180 - t
+ *
+ * Only the first two preserve handedness. The other two are reflections, so
+ * there is no rotation that makes the twin a true mirror image of the original
+ * — the artwork itself would have to be flipped. That is the right outcome for
+ * text, which should READ on both flanks rather than be reversed on one, and it
+ * is why this matches the up direction rather than the whole frame.
+ *
+ * `auto` passes through untouched. It is not an angle: it defers to each
+ * panel's own measured textRotation, which already accounts for all of this.
+ */
+export function mirrorRotation(rotate, flips) {
+  if (typeof rotate !== 'number' || !Number.isFinite(rotate)) return rotate;
+  const t = (((rotate % 360) + 360) % 360);
+  if (flips.u && flips.v) return (t + 180) % 360;
+  if (flips.u) return (360 - t) % 360;
+  if (flips.v) return (540 - t) % 360;
+  return t;
+}
+
+/**
+ * Ids a fit mentions that the livery does not declare.
+ *
+ * `used` has to have been accumulated across EVERY surface. A fit is flat — it
+ * addresses regions by id and says nothing about which texture they live on —
+ * while applyFit runs once per surface, so a set gathered from one surface knows
+ * nothing about the ids belonging to the others and would report all of them as
+ * stale. Every caller therefore makes one pass over all the surfaces first and
+ * asks this question once, at the end.
+ */
+export function unusedFitIds(fit, used) {
+  return [...Object.keys(fit?.regions ?? {}), ...Object.keys(copiesOf(fit))]
+    .filter((id) => !used.has(id));
+}
