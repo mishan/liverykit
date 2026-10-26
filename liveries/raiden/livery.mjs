@@ -59,6 +59,15 @@ export default {
         { id: 'pin-left', mirror: true, treatment: 'stripe', panel: 'left_mid', span: true,
           at: [0.535, -1.5, 0.03, 2.5], rotate: 'auto', color: 'vermilion', safe: false },
 
+        // And round the front corners ahead of the wheels, at the same height,
+        // as a sill-height sweep runs under the arch. The fender between the
+        // door and the arch is behind the tyre at that height. The corners are
+        // the nose's, so they are placed there rather than spanned onto.
+        { id: 'sweep-corner-left', treatment: 'stripe', panel: 'centre_nose', at: [0.75, 0.4, 0.25, 0.6], color: 'indigo', safe: false },
+        { id: 'pin-corner-left', treatment: 'stripe', panel: 'centre_nose', at: [0.75, 0.37, 0.25, 0.03], color: 'vermilion', safe: false },
+        { id: 'sweep-corner-right', treatment: 'stripe', panel: 'centre_nose', at: [0, 0.4, 0.25, 0.6], color: 'indigo', safe: false },
+        { id: 'pin-corner-right', treatment: 'stripe', panel: 'centre_nose', at: [0, 0.37, 0.25, 0.03], color: 'vermilion', safe: false },
+
         // Down the middle of the bonnet, from its front edge to the scuttle,
         // edged in vermilion. Fills rather than racingStripes, which runs its
         // stripes along the panel's u, and u runs across this bonnet.
