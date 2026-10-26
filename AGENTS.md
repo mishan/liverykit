@@ -28,7 +28,8 @@ Firefox; see [Tests](#tests).
 | `packages/toile/` | the half that measures and places, for any model; imports nothing from liverykit |
 | `…/src/build.mjs` | orchestration: profile + livery -> rendered surfaces -> an output |
 | `…/src/output.mjs` | what an output does, and the default: one PNG per surface |
-| `…/src/model.mjs` | the only reader of a kn5, and what each mesh is (`meshTraits`) |
+| `…/src/model.mjs` | a model, whichever format read it, and what each mesh is (`meshTraits`) |
+| `…/src/formats/` | kn5, through ac-kn5, and binary glTF |
 | `…/src/frame.mjs` | which way a model faces, and its sections nose to tail |
 | `…/src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
 | `…/src/profile.mjs` | profiles: roles, bindings, panels, tags |
