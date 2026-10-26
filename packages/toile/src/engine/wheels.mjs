@@ -16,7 +16,7 @@
 // if the polar angle about the island's own UV centre does, it is a disc.
 // ---------------------------------------------------------------------------
 
-import { vertex } from '../../packages/toile/src/model.mjs';
+import { vertex } from '../model.mjs';
 
 /** How near a wheel centre an island's middle has to be to count as part of it. */
 const WHEEL_REACH = 0.6;

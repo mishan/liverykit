@@ -38,6 +38,41 @@ export function facing(model, { stated = null, log = () => {} } = {}) {
   return { left: SIGN[stated.left], front: SIGN[stated.front], confident: true, from: 'stated' };
 }
 
+/** Say which way a model faces, and how that was known. */
+export function sayFacing(model, axes, log) {
+  const said = `  axes: ${axes.left === 1 ? '+X' : '-X'} = left, ${axes.front === 1 ? '+Z' : '-Z'} = front`;
+  if (axes.from === 'wheels') {
+    log(`${said}  (from the wheels: track ${axes.trackWidth.toFixed(2)}m, wheelbase ${axes.wheelbase.toFixed(2)}m)`);
+    // A disagreement is worth surfacing even though the wheels win: it usually
+    // means a mesh is named for the side it is NOT on.
+    const hint = axisHints(model);
+    if (hint.confident && (hint.left !== axes.left || hint.front !== axes.front)) {
+      log('  ! mesh names disagree with the wheels about which way the car faces.');
+      log('    The wheels are used. Check for parts named for the wrong side.');
+    }
+  } else if (axes.from === 'stated') {
+    log(`${said}  (as stated: the model has no wheel nodes)`);
+  } else {
+    log(`${said}  ! NO WHEEL NODES — falling back to mesh names` +
+        `${axes.confident ? '' : ', which are inconclusive here'}`);
+  }
+}
+
+/** The facing as a profile records it. */
+export function recordFacing(axes) {
+  return {
+    left: axes.left === 1 ? '+X' : '-X',
+    front: axes.front === 1 ? '+Z' : '-Z',
+    confident: axes.confident,
+    from: axes.from,
+    // Checkable against a spec sheet, which is the point of recording it.
+    ...(axes.from === 'wheels' ? {
+      trackWidth: Math.round(axes.trackWidth * 100) / 100,
+      wheelbase: Math.round(axes.wheelbase * 100) / 100,
+    } : {}),
+  };
+}
+
 /**
  * The sections from front to back, each a band of the length measured from
  * the back (0) to the front (1): a name, where it starts and ends, and the
