@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
-import { loadModel, meshesWearing, meshTraits } from './model.mjs';
+import { loadModel, meshesWearing, meshTraits, materialTraits } from './model.mjs';
 import { facing, sayFacing, recordFacing } from './frame.mjs';
 import { imageHeader } from './images.mjs';
 import { measurePanels, coverageOf } from './engine/measure.mjs';
@@ -40,10 +40,15 @@ export async function profileFromModel(path, {
   sayFacing(model, axes, log);
 
   const images = new Map(model.textures.map((t) => [t.name.toLowerCase(), t]));
-  // A skin is one folder, so two images one name apart only by where they
-  // lived are one file there, and neither can be painted without the other.
-  const named = new Map();
-  for (const t of model.textures) named.set(t.name.toLowerCase(), (named.get(t.name.toLowerCase()) ?? 0) + 1);
+  // An output names a texture by its stem, in one folder, so two images whose
+  // names share a stem — paint.png and paint.jpg, or body/paint.png and
+  // wheels/paint.png — would be one file, and neither can be painted without
+  // the other. One image listed twice is still one image.
+  const byStem = new Map();
+  model.textures.forEach((t, i) => {
+    const stem = t.name.toLowerCase().replace(/\.[^.]+$/, '');
+    byStem.set(stem, new Set([...(byStem.get(stem) ?? []), t.uri ?? `${t.name} (image ${i})`]));
+  });
   const spelling = new Map();
   for (const m of model.meshes) {
     const d = meshTraits(model, m).diffuse;
@@ -56,16 +61,18 @@ export async function profileFromModel(path, {
   for (const key of [...coverage.keys()].sort((a, b) => coverage.get(b) - coverage.get(a))) {
     const image = images.get(key);
     const file = image?.name ?? spelling.get(key);
-    if (named.get(key) > 1) {
-      doNotPaint.push({ file, reason: `${named.get(key)} images are named ${file}, and they would be one file; rename one` });
+    const alike = byStem.get(key.replace(/\.[^.]+$/, ''));
+    if (alike?.size > 1) {
+      doNotPaint.push({ file, reason: `${[...alike].join(' and ')} would be written as one file; rename one` });
       continue;
     }
     const h = imageHeader(file, image?.data);
     if (!h) {
       doNotPaint.push({
         file,
-        reason: image?.missing ? 'the image is not beside the model, so its size is unknown'
-          : 'its size could not be read from the image',
+        reason: image?.outside ? 'the image is outside the model\'s folder, so it is not read'
+          : image?.missing ? 'the image is not beside the model, so its size is unknown'
+            : 'its size could not be read from the image',
       });
       continue;
     }
@@ -79,11 +86,18 @@ export async function profileFromModel(path, {
         ? { notes: 'The material multiplies this image by a color, so a design on it is seen tinted.' } : {}),
     };
   }
-  const normals = new Set(model.meshes.map((m) => meshTraits(model, m).normalMap).filter(Boolean));
-  for (const file of normals) {
-    if (coverage.has(file.toLowerCase())) continue;
-    doNotPaint.push({ file, reason: 'normal map — encodes surface direction, not color; painting corrupts lighting' });
-  }
+  // Every other image a material uses, and what for, since none of them is a
+  // surface's color and painting one would corrupt what it is for.
+  const listed = new Set(doNotPaint.map((d) => d.file.toLowerCase()));
+  model.materials.forEach((mat, i) => {
+    const color = materialTraits(model, i).diffuse?.toLowerCase();
+    for (const [slot, file] of Object.entries(mat.slots ?? {})) {
+      const key = file?.toLowerCase();
+      if (!key || key === color || coverage.has(key) || listed.has(key)) continue;
+      listed.add(key);
+      doNotPaint.push({ file, reason: SLOT_MEANING[slot] ?? `used as ${slot}, not as a surface's color` });
+    }
+  });
 
   // Without an eye there is no driver's seat to measure from, which is said,
   // since a panel without the figure looks like one nobody inside can see.
@@ -125,6 +139,13 @@ export async function fingerprint(path) {
   const bytes = await readFile(path);
   return { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
 }
+
+const SLOT_MEANING = {
+  normal: 'normal map — encodes surface direction, not color; painting corrupts lighting',
+  metallicRoughness: 'how metallic and how rough each texel is, not color',
+  occlusion: 'baked shading, which multiplies the color rather than being it',
+  emissive: 'emissive map — where the surface glows, not its color',
+};
 
 /** A role from a file name: its stem, in lower case, with anything else as underscores. */
 const roleName = (file) => basename(file).replace(/\.[^.]+$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '_')

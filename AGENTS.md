@@ -31,6 +31,7 @@ Firefox; see [Tests](#tests).
 | `…/src/model.mjs` | a model, whichever format read it, and what each mesh is (`meshTraits`) |
 | `…/src/formats/` | kn5, through ac-kn5, and binary glTF |
 | `…/src/generate.mjs` | a profile from any model, with nothing but the model to go on |
+| `…/src/images.mjs` | an image's size, from its own DDS, PNG, JPEG or WebP header |
 | `…/src/frame.mjs` | which way a model faces, and its sections nose to tail |
 | `…/src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
 | `…/src/profile.mjs` | profiles: roles, bindings, panels, tags |

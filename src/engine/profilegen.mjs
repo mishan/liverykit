@@ -213,7 +213,13 @@ export async function profileFromKn5(path, {
   const skinsUsing = (tex) => skinTally?.spellings?.get(tex.name.toLowerCase())?.get(tex.name) ?? 0;
   const spellings = new Map();
   for (const tex of model.textures) {
-    if (!headers.get(tex.name)) continue;
+    if (!headers.get(tex.name)) {
+      const raw = imageHeader(tex.name, tex.data);
+      if (raw && boundAs.get(tex.name.toLowerCase())?.has('txDiffuse')) {
+        doNotPaint.push({ file: tex.name, reason: `an Assetto Corsa skin carries DDS or PNG, and this is ${raw.fourCC}` });
+      }
+      continue;
+    }
     const key = tex.name.toLowerCase();
     spellings.set(key, [...(spellings.get(key) ?? []), tex]);
   }
