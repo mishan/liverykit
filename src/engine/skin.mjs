@@ -19,6 +19,7 @@ import { designLights, extConfigIni } from './lights.mjs';
 import { wholeModelGeometry } from './geometry.mjs';
 import { carSheets } from './shot.mjs';
 import { texture } from '../profile.mjs';
+import { fileNameProblem } from '../output.mjs';
 import { loadModel } from '../model.mjs';
 import * as build from '../build.mjs';
 
@@ -36,15 +37,30 @@ const CAR_CONFIG_NAME = 'ext_config.ini';
 
 const nextPow2 = (n) => 2 ** Math.ceil(Math.log2(n));
 
+// The skin's own files, which a texture of the same name would be written
+// under and then replaced by.
+const OWN = { 'ui_skin.json': 'description', 'livery.png': 'badge', 'preview.jpg': 'preview', [CAR_CONFIG_NAME]: 'lights config' };
+
 /**
- * `file` in `outDir`, or a refusal. A texture's name comes from a kn5 or a
- * shared profile, both somebody else's, and a path in it would be written
- * wherever it points.
+ * `file` in `outDir`, or a refusal. validateProfile refuses such a name when
+ * a profile is loaded; this is the writer's own check, for a profile nobody
+ * validated.
  */
 function inside(outDir, file) {
-  if (/[\\/]/.test(file) || file === '.' || file === '..') throw new Error(`${file} is not a file name, so it is not written`);
+  const problem = fileNameProblem(file);
+  if (problem) throw new Error(`${file} cannot be written: ${problem}`);
+  const own = OWN[String(file).toLowerCase()];
+  if (own) throw new Error(`${file} cannot be written: it is the name of the skin's own ${own}`);
   return join(outDir, file);
 }
+
+/**
+ * Where a texture's PNG is drawn before it is encoded. Kept under its own
+ * name where it is kept; otherwise under a name no texture has, since a
+ * DDS's PNG under the DDS's stem is a PNG texture of that stem written over
+ * and then deleted.
+ */
+const drawnAt = (pngDir, file, keep) => join(pngDir, keep ? file.replace(/\.(dds|png)$/i, '.png') : `.${file}.drawn.png`);
 
 /** What a written texture is, for the build's log. */
 async function written(outPath, file, [width, height], alpha) {
@@ -62,7 +78,7 @@ export const acSkin = {
     const asPng = isPngTexture(tex.file);
     const [w, h] = asPng ? [width, height] : [nextPow2(width), nextPow2(height)];
     const outPath = inside(outDir, tex.file);
-    const pngPath = join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png'));
+    const pngPath = asPng ? join(pngDir, tex.file.replace(/\.(dds|png)$/i, '.png')) : drawnAt(pngDir, tex.file, keep);
     await writeFile(pngPath, w === width && h === height ? png
       : await sharp(png).resize(w, h, { fit: 'fill' }).png().toBuffer());
     if (asPng) await toPNG(pngPath, outPath);
@@ -79,7 +95,7 @@ export const acSkin = {
     if (isPngTexture(file)) {
       await writeFile(outPath, png);
     } else {
-      const pngPath = join(pngDir, file.replace(/\.dds$/i, '.png'));
+      const pngPath = drawnAt(pngDir, file, keep);
       await writeFile(pngPath, png);
       await toDDS(pngPath, outPath, { width: CLEAR_SHEET, height: CLEAR_SHEET, alpha: true });
       if (!keep) await rm(pngPath);
