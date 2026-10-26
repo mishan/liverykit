@@ -10,9 +10,9 @@
 // treatment here is an ordinary function of (rect, ctx) returning SVG strings.
 // ---------------------------------------------------------------------------
 
-import { definePack } from '../registry.mjs';
-import { traceRouter, horizonGrid, glitchBands, sparkleField, radialText } from '../motifs.mjs';
-import { r2 } from '../engine/rng.mjs';
+import { definePack } from '../../packages/toile/src/registry.mjs';
+import { traceRouter, horizonGrid, glitchBands, sparkleField, radialText } from '../../packages/toile/src/motifs.mjs';
+import { r2 } from '../../packages/toile/src/engine/rng.mjs';
 
 const treatments = {
   /** PCB-style routing: horizontal runs, 45-degree turns, vias at the corners. */

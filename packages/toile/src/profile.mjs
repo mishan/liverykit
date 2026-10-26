@@ -24,10 +24,6 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { vocabulary } from './vocabulary.mjs';
-// Liverykit's own vocabulary, for anything that imports this file directly.
-// Nothing here reads it except through vocabulary(); when this module moves
-// to its own package, this import stays behind at the old path with liverykit.
-import './engine/classify.mjs';
 import { reachOnly } from './engine/tags.mjs';
 import { clipPoly, polyArea, polyBox, inPoly, grow, areaInPoly, minWidth } from './engine/poly.mjs';
 

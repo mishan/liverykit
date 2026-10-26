@@ -120,7 +120,7 @@ test('a token the renderer could never substitute is not a token', async () => {
   // rather than trust a second copy of `\w`, take the renderer's own pattern out
   // of its source and check the two classify the same names the same way. If
   // somebody widens the renderer to accept `{driver-name}`, this fails.
-  const source = await readFile(new URL('../src/render.mjs', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../packages/toile/src/render.mjs', import.meta.url), 'utf8');
   // Whitespace-tolerant, because reformatting the declaration is not a change to
   // the RULE and should not fail a test about the rule. What it still insists on
   // is an inline literal on one line, which is the only shape that can be lifted

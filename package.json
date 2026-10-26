@@ -16,9 +16,14 @@
   "bin": {
     "liverykit": "bin/liverykit.mjs"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "files": [
     "bin",
     "src",
+    "packages/toile/src",
+    "packages/toile/package.json",
     "test/fixtures/kn5.mjs",
     "cars/abarth500.json",
     "cars/ac_friends_honda_nsx_gt3_evo.json",

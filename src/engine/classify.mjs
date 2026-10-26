@@ -47,11 +47,11 @@
 // not the same as trustworthy without looking.
 // ---------------------------------------------------------------------------
 
-import { meshesWearing, meshTraits, triangles, vertex } from '../model.mjs';
-import { rectGroups } from './tags.mjs';
+import { meshesWearing, meshTraits, triangles, vertex } from '../../packages/toile/src/model.mjs';
+import { rectGroups } from '../../packages/toile/src/engine/tags.mjs';
 import { wheelCentres } from './wheels.mjs';
-import { blurTwins } from './visibility.mjs';
-import { useVocabulary, vocabulary } from '../vocabulary.mjs';
+import { blurTwins } from '../../packages/toile/src/engine/visibility.mjs';
+import { useVocabulary, vocabulary } from '../../packages/toile/src/vocabulary.mjs';
 
 /** Terms whose proposals --explain does not call a hint. See MEASURED. */
 export const VALIDATED = new Set(['body']);

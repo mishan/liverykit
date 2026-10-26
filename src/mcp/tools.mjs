@@ -1,4 +1,4 @@
-import { CONSTRAINTS, fitmentVerdict, worstFirst } from '../fitment.mjs';
+import { CONSTRAINTS, fitmentVerdict, worstFirst } from '../../packages/toile/src/fitment.mjs';
 import { VIEWS } from '../engine/shot.mjs';
 import { EditorUnreachable } from './client.mjs';
 
@@ -65,8 +65,8 @@ async function toolDescribeCar(client) {
 // In profile.mjs, where fitment can reach it too: find_panels tells a planner
 // which way a panel runs, and the stripe check holds the draft to the same
 // answer, so the two cannot come to disagree.
-export { axesOf } from '../profile.mjs';
-import { axesOf } from '../profile.mjs';
+export { axesOf } from '../../packages/toile/src/profile.mjs';
+import { axesOf } from '../../packages/toile/src/profile.mjs';
 
 async function toolFindPanels(client, args) {
   const state = await client.getState();

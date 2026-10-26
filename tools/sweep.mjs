@@ -33,8 +33,8 @@ import { createHash } from 'node:crypto';
 import { join, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { loadProfile, resolveTargets, nearMiss } from '../src/profile.mjs';
-import { portability } from '../src/portability.mjs';
+import { loadProfile, resolveTargets, nearMiss } from '../packages/toile/src/profile.mjs';
+import { portability } from '../packages/toile/src/portability.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
 import { bestKn5, carIds, everyNth, summarize } from './fleet.mjs';
 

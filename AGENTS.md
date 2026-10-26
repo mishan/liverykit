@@ -25,19 +25,29 @@ Firefox; see [Tests](#tests).
 | | |
 |---|---|
 | `bin/liverykit.mjs` | the CLI, and the only place that reads argv |
-| `src/build.mjs` | orchestration: profile + livery -> rendered surfaces -> an output |
-| `src/output.mjs` | what an output does, and the default: one PNG per surface |
+| `packages/toile/` | the half that measures and places, for any model; imports nothing from liverykit |
+| `…/src/build.mjs` | orchestration: profile + livery -> rendered surfaces -> an output |
+| `…/src/output.mjs` | what an output does, and the default: one PNG per surface |
+| `…/src/model.mjs` | the only reader of a kn5, and what each mesh is (`meshTraits`) |
+| `…/src/frame.mjs` | which way a model faces, and its sections nose to tail |
+| `…/src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
+| `…/src/profile.mjs` | profiles: roles, bindings, panels, tags |
+| `…/src/fit.mjs` | fits: per-car placement overrides and copies |
+| `…/src/render.mjs` | regions -> SVG. Pure, and deliberately fast |
+| `…/src/engine/` | UV islands, visibility casting, tags, encoding |
 | `src/engine/skin.mjs` | Assetto Corsa's output: DDS, clear sheets, lights, preview, ZIP |
-| `src/model.mjs` | the only reader of a kn5, and what each mesh is (`meshTraits`) |
-| `src/frame.mjs` | which way a model faces, and its sections nose to tail |
-| `src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
-| `src/profile.mjs` | car profiles: roles, bindings, panels, tags |
-| `src/fit.mjs` | fits: per-car placement overrides and copies |
-| `src/render.mjs` | regions -> SVG. Pure, and deliberately fast |
-| `src/engine/` | UV islands, visibility casting, encoding |
+| `src/engine/classify.mjs` | Assetto Corsa's vocabulary, and the classifier that proposes it |
+| `src/engine/` | the rest of Assetto Corsa: profile generation, wheels, lights, shots |
 | `src/ui/` | the fitting editor: a server and a no-build-step browser app |
-| `src/packs/` | treatments. `core` holds primitives and no house style |
+| `src/packs/` | treatments; `core`, the primitives with no house style, is toile's |
 | `cars/`, `liveries/`, `fits/` | data, not code |
+
+Every file that moved to toile left a re-export at its old `src/` path, which
+also loads Assetto Corsa's vocabulary, so a script importing
+`liverykit/src/profile.mjs` loads a shipped car as it always did. Liverykit's
+own code imports toile's files directly. Liverykit reaches toile by relative
+path rather than by package name, because liverykit is published and toile is
+not: `packages/toile/src` ships inside liverykit until it is.
 
 `content/`, `cars/*/`, `assets/` and `*.kn5` are gitignored on purpose: they are
 car makers' assets. Never commit one, and never write a test that reads one —
@@ -94,7 +104,7 @@ surface's ids as stale, or lets a copy claim a name that is already in use.
 **Measurement wins where measurement has something to say; hand-work wins where
 it does not.** Regenerating a car profile must not cost anything a person chose:
 role names, aliases, size overrides, notes, the car's display name, and human
-bindings all survive. `src/engine/preserve.mjs` is that rule, and it is worth
+bindings all survive. `packages/toile/src/engine/preserve.mjs` is that rule, and it is worth
 reading before changing anything that writes a profile.
 
 **Generated names get reused.** Correcting the panel naming turned one car's

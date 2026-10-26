@@ -1910,7 +1910,7 @@ test('the editor and the build agree on what a region without an id is called', 
   assert.equal(typeof buildSkin, 'function');
 
   // The source of truth for what the build passes: it must name the surface.
-  const src = await readFile(new URL('../src/build.mjs', import.meta.url), 'utf8');
+  const src = await readFile(new URL('../packages/toile/src/build.mjs', import.meta.url), 'utf8');
   assert.match(src, /surfaceKey:\s*from/,
     'buildSkin must pass the surface key, or unnamed regions are addressed differently here');
 });
@@ -2738,9 +2738,9 @@ test('only the model module reads a kn5, and the profile generator a car\'s CSP 
   // than at every call site that once asked a shader name. The profile
   // generator still reads ext_config.ini's hidden meshes through ac-kn5.
   const root = new URL('../', import.meta.url);
-  const allowed = new Set(['src/model.mjs', 'src/engine/profilegen.mjs']);
+  const allowed = new Set(['packages/toile/src/model.mjs', 'src/engine/profilegen.mjs']);
   const reading = [];
-  for (const dir of ['src', 'bin']) {
+  for (const dir of ['src', 'bin', 'packages/toile/src']) {
     // Forward slashes: on Windows readdir answers `engine\\profilegen.mjs`.
     for (const f of (await readdir(new URL(`${dir}/`, root), { recursive: true }))) {
       const path = `${dir}/${f.replaceAll('\\', '/')}`;
@@ -2750,4 +2750,22 @@ test('only the model module reads a kn5, and the profile generator a car\'s CSP 
     }
   }
   assert.deepEqual(reading, []);
+});
+
+test('toile imports nothing from liverykit', async () => {
+  // So it can leave this repository as a package of its own. Liverykit
+  // depends on toile; a path from toile back into liverykit would make the
+  // two one package that happens to live in two directories.
+  const root = new URL('../packages/toile/', import.meta.url);
+  const reaching = [];
+  for (const f of await readdir(new URL('src/', root), { recursive: true })) {
+    const path = `src/${f.replaceAll('\\', '/')}`;
+    if (!/\.m?js$/.test(path)) continue;
+    const code = (await readFile(new URL(path, root), 'utf8')).replace(/^\s*(\/\/|\*).*$/gm, '');
+    for (const [, spec] of code.matchAll(/(?:\bfrom|\bimport\s*\(?)\s*['"]([^'"]+)['"]/g)) {
+      const out = spec.startsWith('.') && !new URL(spec, new URL(path, root)).href.startsWith(root.href);
+      if (out || spec === 'liverykit' || spec.startsWith('liverykit/')) reaching.push(`${path} -> ${spec}`);
+    }
+  }
+  assert.deepEqual(reaching, []);
 });

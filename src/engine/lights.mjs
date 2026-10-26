@@ -13,7 +13,7 @@
 
 import { colord, extend } from 'colord';
 import namesPlugin from 'colord/plugins/names';
-import { vertex } from '../model.mjs';
+import { vertex } from '../../packages/toile/src/model.mjs';
 
 extend([namesPlugin]);
 

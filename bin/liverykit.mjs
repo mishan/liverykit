@@ -8,15 +8,15 @@ import { existsSync } from 'node:fs';
 
 import { buildSkin, buildCalibration, packSkin } from '../src/engine/skin.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
-import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../src/profile.mjs';
+import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../packages/toile/src/profile.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
-import { loadFit, fitLiveryId } from '../src/fit.mjs';
+import { loadFit, fitLiveryId } from '../packages/toile/src/fit.mjs';
 import { loadLivery, resolveLivery } from '../src/livery.mjs';
-import { loadModel } from '../src/model.mjs';
+import { loadModel } from '../packages/toile/src/model.mjs';
 import { textureFeatures, explain, SCORABLE, VOCABULARY, DRIVER_KIT } from '../src/engine/classify.mjs';
-import { preserveHandwork, describeHandwork } from '../src/engine/preserve.mjs';
-import { loadDecals } from '../src/decals.mjs';
+import { preserveHandwork, describeHandwork } from '../packages/toile/src/engine/preserve.mjs';
+import { loadDecals } from '../packages/toile/src/decals.mjs';
 import '../src/index.mjs'; // registers the built-in packs
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -576,7 +576,7 @@ if (values.ui) {
     console.log('  no car model found, so the checks that need its geometry will not run. Looked in:');
     for (const p of looked) console.log(`    ${p}`);
   }
-  const { fitment, fitmentVerdict, worstOf, worstFirst } = await import('../src/fitment.mjs');
+  const { fitment, fitmentVerdict, worstOf, worstFirst } = await import('../packages/toile/src/fitment.mjs');
   const model = modelPath ? await loadModel(modelPath, { keepTextureData: false }) : null;
   const report = fitment(livery, profile, fit, { model });
   const verdict = fitmentVerdict(report);

@@ -9,9 +9,9 @@
 // ---------------------------------------------------------------------------
 
 import { designLights } from './lights.mjs';
-import { meshesWearing, meshTraits, materialTraits, vertex, triangles, additive } from '../model.mjs';
-import { facing, SIGN } from '../frame.mjs';
-import { cockpitEye } from './visibility.mjs';
+import { meshesWearing, meshTraits, materialTraits, vertex, triangles, additive } from '../../packages/toile/src/model.mjs';
+import { facing, SIGN } from '../../packages/toile/src/frame.mjs';
+import { cockpitEye } from '../../packages/toile/src/engine/visibility.mjs';
 
 /**
  * The WHOLE car, grouped by which texture paints each part.
