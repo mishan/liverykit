@@ -189,6 +189,8 @@ test('a band without the model is said not to be drawn, and one with a panel is 
   assert.doesNotMatch(layers.base, /ff0000/);
   await assert.rejects(render(car, [{ id: 'x', treatment: 'fill', panel: 'left_mid', band: { height: [0, 1] } }]), /cannot also be placed on a panel/);
   await assert.rejects(render(car, [{ id: 'x', treatment: 'text', text: 'A', band: { height: [0, 1] } }]), /need a panel to read on/);
+  await assert.rejects(render(car, [{ id: 'x', treatment: 'fill', at: [0, 0, 0.5, 0.5], band: { height: [0, 1] } }]), /panel, tags, span, at or shape/);
+  await assert.rejects(render(car, [{ id: 'x', treatment: 'fill', band: null }]), /a band is \{ height: \[bottom, top\] \}/);
 });
 
 test('the check knows a band, and says it does not measure one yet', async () => {
@@ -199,4 +201,37 @@ test('the check knows a band, and says it does not measure one yet', async () =>
   const report = fitment(design, car.profile, null, { model: null });
   assert.deepEqual(report.findings.filter((f) => f.ids?.includes('sweep')).map((f) => f.kind), []);
   assert.ok(report.notChecked.some((n) => /sweep: a band, placed by height on the car/.test(n)), report.notChecked.join('\n'));
+});
+
+test('a band ends where the surface turns away, between vertices, not a face at a time', () => {
+  // A quarter of a cylinder round the front-left corner, in three faces from
+  // looking left to looking forward, with smooth normals. The last face looks
+  // 75 degrees off sideways on average, just past the line: judged whole it is
+  // left out, and its first 48% is where the normal is still within it.
+  const verts = [], indices = [];
+  for (let k = 0; k <= 3; k++) {
+    const t = (k * 30 * Math.PI) / 180, n = [Math.cos(t), 0, Math.sin(t)];
+    for (const y of [0.5, 0.7]) verts.push(vert(0.5 + 0.2 * n[0], y, 1 + 0.2 * n[2], 0.70 + 0.01 * k, y === 0.5 ? 0.99 : 0.98, n));
+  }
+  for (let k = 0; k < 3; k++) indices.push(2 * k, 2 * k + 2, 2 * k + 3, 2 * k, 2 * k + 3, 2 * k + 1);
+  const model = parseKn5Buffer(carKn5({ extraMeshes: [{ name: 'CORNER', verts, indices }] }));
+  const { polygons } = bandPolygons(model, { texture: CAR.texture, axes: AXES }, { height: [0, 1], side: 'left' });
+  const corner = polygons.filter((p) => p.every(([u, v]) => u >= 0.699 && v >= 0.979));
+  const t = (Math.cos(Math.PI / 3) - 0.26) / Math.cos(Math.PI / 3);
+  close(area(corner), 0.01 * 0.01 * (2 + t), 'two faces and part of the third');
+});
+
+test('a fit cannot put a band on a panel, copy it or mirror it', async () => {
+  const { applyFit } = await import('../src/fit.mjs');
+  const notes = [];
+  const fitted = applyFit(
+    [{ id: 'sweep', treatment: 'fill', band: { height: [0, 0.3] } }, { id: 'pin', treatment: 'fill', mirror: true, band: { height: [0.3, 0.32] } }],
+    { regions: { sweep: { panel: 'left', at: [0, 0, 1, 1] } }, copies: { 'sweep-copy': { of: 'sweep', panel: 'left' } } },
+    { profile: { panels: { body: { left: { rect: [0, 0, 1, 1] } } } }, role: 'body', notes },
+  ).regions;
+  assert.deepEqual(fitted.map((r) => [r.id, r.panel, r.at]), [['sweep', undefined, undefined], ['pin', undefined, undefined]]);
+  const said = notes.map((n) => n.text).join('\n');
+  assert.match(said, /"sweep" is a band, placed by height on the car, so its panel, at in the fit are ignored/);
+  assert.match(said, /"sweep-copy" is a copy of a band/);
+  assert.match(said, /mirror: "pin" is drawn once — it is a band, which says its own side/);
 });

@@ -51,6 +51,9 @@ const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
  * and why, for whoever draws the band to pass on.
  */
 export function bandPolygons(model, { texture, axes }, band) {
+  if (!band || typeof band !== 'object' || Array.isArray(band)) {
+    throw new Error(`a band is { height: [bottom, top] }, with rear and side if wanted, not ${JSON.stringify(band)}`);
+  }
   const left = SIGN[axes?.left], front = SIGN[axes?.front];
   if (!left || !front) throw new Error(`a band needs the object's axes, and these say ${JSON.stringify(axes)}`);
   const side = band.side ?? 'both';
@@ -155,8 +158,13 @@ const remembered = new WeakMap();
 export function bandFor(model, { texture, axes }, band) {
   let mine = remembered.get(model);
   if (!mine) remembered.set(model, mine = new Map());
-  const key = JSON.stringify([texture, axes?.left, axes?.front, band.height, band.rear, band.side]);
-  if (!mine.has(key)) mine.set(key, bandPolygons(model, { texture, axes }, band));
+  const key = JSON.stringify([texture, axes?.left, axes?.front, band?.height, band?.rear, band?.side]);
+  if (!mine.has(key)) {
+    // Bounded, oldest first: each height typed into the editor is a band of
+    // its own, and the model it is keyed on lasts the session.
+    if (mine.size >= 64) mine.delete(mine.keys().next().value);
+    mine.set(key, bandPolygons(model, { texture, axes }, band));
+  }
   return mine.get(key);
 }
 

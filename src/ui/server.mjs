@@ -729,8 +729,10 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
     model,
   });
 
+  // Not a band: it has no box to draw or drag, and a drag would write a
+  // panel into the fit, which a band cannot take.
   const placed = expanded.regions
-    .filter((r) => r.__key)
+    .filter((r) => r.__key && r.band === undefined)
     .map((r) => {
       const p = r.panel ? findPanel(profile, role, r.panel) : null;
       const abs = p ? toAbsolute(p.rect, r.at) : (r.at ?? [0, 0, 1, 1]);
@@ -906,7 +908,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // The model's geometry for a design that places a band by height on the
   // car, and nothing for one that does not, so the page does not wait on a
   // 45 MB parse to draw a design that never asks for it.
-  const bandsOf = async (design) => (Object.values({ ...design.surfaces, ...design.paint })
+  const bandsOf = async (design) => ([...Object.values(design.surfaces ?? {}), ...Object.values(design.paint ?? {})]
     .some((s) => (s?.regions ?? []).some((r) => r?.band !== undefined)) ? getModel() : null);
 
   /**

@@ -142,7 +142,9 @@ export function renderTexture({ profile, role, regions, background, treatments, 
   // rendered empty — artwork silently absent, which is this project's oldest
   // failure. Each treatment gets the list with its own entries removed.
   const letteringAll = expanded.regions
-    .filter((r) => r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear === true)
+    // Not a band: it has no rectangle, and as the whole sheet it would leave
+    // decoration nowhere to go.
+    .filter((r) => r.band === undefined && (r.treatment === 'text' || r.treatment === 'radialText' || r.constraints?.keepClear === true))
     .flatMap((r) => {
       const f = resolveRect(profile, role, r);
       // A spanning name is on every panel it reaches, not only its home.
@@ -175,8 +177,8 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     // A band is placed by height on the car rather than on a panel, so it is
     // drawn across the whole sheet and clipped to its texels below.
     const banded = region.band !== undefined;
-    if (banded && (region.panel !== undefined || region.tags !== undefined || region.span)) {
-      throw new Error(`"${region.id ?? region.treatment}" on ${tex.file} has a band and a panel, tags or span; ` +
+    if (banded && ['panel', 'tags', 'span', 'at', 'shape'].some((k) => region[k] !== undefined)) {
+      throw new Error(`"${region.id ?? region.treatment}" on ${tex.file} has a band and a panel, tags, span, at or shape; ` +
         'a band says where it is by height on the car, and cannot also be placed on a panel');
     }
     if (banded && ['text', 'radialText', 'decal'].includes(region.treatment)) {
