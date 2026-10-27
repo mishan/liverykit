@@ -70,9 +70,12 @@ export async function readTemplate(data, { path = 'template', layer } = {}) {
   const { data: px, info } = await sharp(data).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height } = info;
   const drawn = new Uint8Array(width * height);
-  let clear = false;
-  for (let i = 3; i < px.length; i += 4) if (px[i] < 255) { clear = true; break; }
-  if (clear) {
+  // Transparent where the sheet is empty, judged as the background color
+  // is, from the edge: one translucent pixel in an opaque image is not an
+  // export of the layer on its own.
+  let clearEdge = 0, edgeCount = 0;
+  for (const i of edge(width, height)) { clearEdge += px[4 * i + 3] < 255; edgeCount++; }
+  if (clearEdge * 2 > edgeCount) {
     for (let i = 0; i < drawn.length; i++) drawn[i] = px[4 * i + 3] >= DRAWN ? 1 : 0;
   } else {
     const counts = new Map();
@@ -151,6 +154,7 @@ export function sheetIslands(drawn, width, height, { minArea = 1e-4 } = {}) {
   const notes = [];
   if (outside) notes.push('the layer is drawn all round the sheet\'s edge, so it is read as a silhouette: the islands are where it is clear');
   if (specks) notes.push(`${specks} speck(s) under ${minArea * 100}% of the sheet are left out`);
+  if (!islands.length) notes.push('no islands were found: the layer is empty, or drawn everywhere');
   return { islands: islands.sort((a, b) => b.uvArea - a.uvArea), notes };
 }
 

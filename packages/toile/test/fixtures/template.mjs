@@ -58,6 +58,7 @@ export function silhouette() {
 const u16 = (n) => { const b = Buffer.alloc(2); b.writeUInt16BE(n); return b; };
 const i16 = (n) => { const b = Buffer.alloc(2); b.writeInt16BE(n); return b; };
 const u32 = (n) => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+const i32 = (n) => { const b = Buffer.alloc(4); b.writeInt32BE(n); return b; };
 const block = (data) => Buffer.concat([u32(data.length), data]);
 const info = (key, data) => Buffer.concat([Buffer.from('8BIM' + key, 'ascii'), block(data)]);
 
@@ -82,31 +83,41 @@ function channel(pixels, w, h, compression) {
 
 /**
  * A PSD of the given layers, top first as Photoshop lists them, each
- * `{ name, alpha, visible?, compression?, group?, bbox? }` with `alpha` over the
- * whole sheet and stored cropped to `bbox` (default the whole sheet). Gray
- * color channels, since nothing reads them.
+ * `{ name, alpha, visible?, compression?, group?, bbox?, mask? }` with
+ * `alpha` over the whole sheet and stored cropped to `bbox` (default the whole
+ * sheet), which may run off it. `group` is the section type: 1 a folder, 3
+ * the divider closing one. `mask` adds a layer mask, and its channel. Gray
+ * color channels, since nothing reads them. `negativeCount` writes the layer
+ * count negated, as Photoshop does when the first alpha channel holds the
+ * merged transparency.
  */
-export function psd(layers, { width = SHEET.width, height = SHEET.height, depth = 8, version = 1 } = {}) {
+export function psd(layers, { width = SHEET.width, height = SHEET.height, depth = 8, version = 1, negativeCount = false } = {}) {
   const records = [], data = [];
   for (const l of [...layers].reverse()) {
     const [left, top, right, bottom] = l.bbox ?? [0, 0, width, height];
     const w = right - left, h = bottom - top;
     const crop = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) crop[y * w + x] = l.alpha ? l.alpha[(y + top) * width + x + left] * 255 : 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const sx = x + left, sy = y + top;
+      crop[y * w + x] = l.alpha && sx >= 0 && sy >= 0 && sx < width && sy < height ? l.alpha[sy * width + sx] * 255 : 0;
+    }
     const chans = [[-1, crop], [0, new Uint8Array(w * h)], [1, new Uint8Array(w * h)], [2, new Uint8Array(w * h)]]
       .map(([id, px]) => [id, channel(px, w, h, l.compression ?? 0)]);
+    // A layer mask's channel is its own rectangle's size; 4x4 here, solid.
+    if (l.mask) chans.push([-2, channel(new Uint8Array(16).fill(255), 4, 4, 0)]);
+    const mask = l.mask ? Buffer.concat([u32(0), u32(0), u32(4), u32(4), Buffer.from([255, 0, 0, 0])]) : Buffer.alloc(0);
     const latin = Buffer.from(l.name.replace(/[^\x20-\x7e]/g, '?'), 'latin1');
     const pascal = Buffer.alloc((latin.length + 4) & ~3); pascal[0] = latin.length; latin.copy(pascal, 1);
     const luni = Buffer.concat([u32(l.name.length), ...[...l.name].map((c) => u16(c.charCodeAt(0))), Buffer.alloc(2)]);
-    const extra = Buffer.concat([block(Buffer.alloc(0)), block(Buffer.alloc(0)), pascal, info('luni', luni), ...(l.group ? [info('lsct', u32(1))] : [])]);
+    const extra = Buffer.concat([block(mask), block(Buffer.alloc(0)), pascal, info('luni', luni), ...(l.group ? [info('lsct', u32(l.group))] : [])]);
     records.push(Buffer.concat([
-      u32(top), u32(left), u32(bottom), u32(right), u16(chans.length),
+      i32(top), i32(left), i32(bottom), i32(right), u16(chans.length),
       ...chans.map(([id, c]) => Buffer.concat([i16(id), u32(c.length)])),
       Buffer.from('8BIMnorm', 'ascii'), Buffer.from([255, 0, l.visible === false ? 2 : 0, 0]), block(extra),
     ]));
     data.push(...chans.map(([, c]) => c));
   }
-  const layerInfo = block(Buffer.concat([i16(records.length), ...records, ...data]));
+  const layerInfo = block(Buffer.concat([i16(negativeCount ? -records.length : records.length), ...records, ...data]));
   return Buffer.concat([
     Buffer.from('8BPS', 'ascii'), u16(version), Buffer.alloc(6), u16(3), u32(height), u32(width), u16(depth), u16(3),
     block(Buffer.alloc(0)), block(Buffer.alloc(0)), block(Buffer.concat([layerInfo, u32(0)])),
