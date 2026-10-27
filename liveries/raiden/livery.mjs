@@ -84,6 +84,19 @@ export default {
         { id: 'spine', treatment: 'stripe', panel: 'centre_front', span: true, at: [0.31, -0.3, 0.38, 1.3], color: 'indigo', safe: false },
         { id: 'spine-edge-left', treatment: 'stripe', panel: 'centre_front', span: true, at: [0.6732, -0.3, 0.0168, 1.3], color: 'vermilion', safe: false },
         { id: 'spine-edge-right', treatment: 'stripe', panel: 'centre_front', span: true, at: [0.31, -0.3, 0.0168, 1.3], color: 'vermilion', safe: false },
+        // And on, nose to tail, over the islands the bonnet's does not span
+        // onto: down the front bumper to the grille, along the boot lid and
+        // down the rear bumper to the tail's pinstripe. The same 0.55 m on
+        // each, measured across the car.
+        { id: 'spine-nose', treatment: 'stripe', panel: 'centre_nose', at: [0.362, 0, 0.269, 0.3], color: 'indigo', safe: false },
+        { id: 'spine-nose-edge-left', treatment: 'stripe', panel: 'centre_nose', at: [0.619, 0, 0.012, 0.3], color: 'vermilion', safe: false },
+        { id: 'spine-nose-edge-right', treatment: 'stripe', panel: 'centre_nose', at: [0.362, 0, 0.012, 0.3], color: 'vermilion', safe: false },
+        { id: 'spine-boot', treatment: 'stripe', panel: 'centre_tail_lower', at: [0.286, 0, 0.428, 1], color: 'indigo', safe: false },
+        { id: 'spine-boot-edge-left', treatment: 'stripe', panel: 'centre_tail_lower', at: [0.695, 0, 0.019, 1], color: 'vermilion', safe: false },
+        { id: 'spine-boot-edge-right', treatment: 'stripe', panel: 'centre_tail_lower', at: [0.286, 0, 0.019, 1], color: 'vermilion', safe: false },
+        { id: 'spine-tail', treatment: 'stripe', panel: 'centre_tail', at: [0.385, 0, 0.235, 0.47], color: 'indigo', safe: false },
+        { id: 'spine-tail-edge-left', treatment: 'stripe', panel: 'centre_tail', at: [0.61, 0, 0.01, 0.47], color: 'vermilion', safe: false },
+        { id: 'spine-tail-edge-right', treatment: 'stripe', panel: 'centre_tail', at: [0.385, 0, 0.01, 0.47], color: 'vermilion', safe: false },
 
         // The number in a white roundel low on the door, across the sweep's
         // edge so it reads against both colors.
