@@ -128,8 +128,8 @@ test('a plan-view template places each island by where it is drawn, nose up or d
   // so they reach whichever end is drawn there, and stop a sixth short of the
   // foot, so they do not reach the other.
   for (const [nose, want, flank] of [
-    ['top', { roof: 'centre_front', left: 'left_mid', right: 'right_mid', bumper: 'centre_tail' }, ['left', 'nose', 'front', 'mid', 'rear', 'mirrored']],
-    ['bottom', { roof: 'centre_rear', left: 'right_mid', right: 'left_mid', bumper: 'centre_nose' }, ['right', 'front', 'mid', 'rear', 'tail', 'mirrored']],
+    ['top', { roof: 'centre_front', left: 'left_mid', right: 'right_mid', bumper: 'centre_tail' }, ['left', 'nose', 'front', 'mid', 'rear', 'visible', 'mirrored']],
+    ['bottom', { roof: 'centre_rear', left: 'right_mid', right: 'left_mid', bumper: 'centre_nose' }, ['right', 'front', 'mid', 'rear', 'tail', 'visible', 'mirrored']],
   ]) {
     const { profile } = await fromTemplate({ nose });
     validateProfile(profile);
@@ -147,7 +147,7 @@ test('a plan-view template places each island by where it is drawn, nose up or d
 test('a template profile says where its panels came from, and what it could not say', async () => {
   const { profile, said } = await fromTemplate({});
   assert.deepEqual(Object.keys(profile.panels.body), ['island_1', 'island_2', 'island_3', 'island_4']);
-  assert.ok(Object.values(profile.panels.body).every((p) => !p.plan && !p.tags && !p.mirrorOf));
+  assert.ok(Object.values(profile.panels.body).every((p) => !p.plan && !p.mirrorOf && p.tags.join() === 'visible'));
   assert.match(said, /no nose was given, so the panels have no place on the car/);
   assert.match(said, /4 islands on layer "UV"/);
   assert.match(said, /1 speck\(s\)/);
@@ -157,6 +157,16 @@ test('a template profile says where its panels came from, and what it could not 
   assert.deepEqual(textures.body, { file: 'body.dds', width: W, height: H });
   await assert.rejects(fromTemplate({ texture: undefined }), /needs the texture file the game reads this sheet as/);
   await assert.rejects(fromTemplate({ nose: 'front' }), /nose is "top" or "bottom"/);
+});
+
+test('an island is proposed as seen by its size, and a speck is not', async () => {
+  const { profile } = await fromTemplate({ nose: 'top', minArea: 0 });
+  const panels = Object.values(profile.panels.body);
+  assert.equal(panels.length, 5);
+  assert.deepEqual(panels.map((p) => p.visibleBy ?? null), ['size', 'size', 'size', 'size', null]);
+  assert.ok(!panels[4].tags.includes('visible'));
+  const { profile: strict } = await fromTemplate({ nose: 'top', seenArea: 0.11 });
+  assert.equal(Object.values(strict.panels.body).filter((p) => p.tags.includes('visible')).length, 1, 'only the roof is a ninth of the sheet');
 });
 
 test('a plan out of range is refused when the profile is read', () => {

@@ -197,8 +197,14 @@ function trace(label, width, height, id, start) {
  *
  * Without `nose`, which a side-on template like the Chevette's needs, the
  * panels are numbered by size and have no place, and the profile says so.
+ *
+ * Nor can a template say what is seen, and nearly every rule of a portable
+ * design asks for `visible`. An island of `seenArea` of the sheet or more is
+ * proposed as seen, `visibleBy: 'size'`: the doors, bonnet and roof a design
+ * means, at the cost of a mirror under it and an undertray over it, for a
+ * person to correct.
  */
-export async function profileFromTemplate(path, { id = null, name = '', texture, role = 'body', nose = null, layer, minArea, log = () => {} } = {}) {
+export async function profileFromTemplate(path, { id = null, name = '', texture, role = 'body', nose = null, layer, minArea, seenArea = 0.01, log = () => {} } = {}) {
   if (!texture) throw new Error('a template profile needs the texture file the game reads this sheet as, which the game\'s own files name');
   if (nose !== null && !['top', 'bottom'].includes(nose)) throw new Error(`nose is "top" or "bottom", the end of the sheet the car's nose is drawn at, not ${JSON.stringify(nose)}`);
   const data = await readFile(path);
@@ -228,6 +234,7 @@ export async function profileFromTemplate(path, { id = null, name = '', texture,
     confidence: 'proposed',
     ...(i.plan ? { plan: i.plan } : {}),
     ...(i.mirrorOf ? { mirrorOf: i.mirrorOf } : {}),
+    ...(i.uvArea >= seenArea ? { visibleBy: 'size' } : {}),
     outline: i.outline,
   }]));
 

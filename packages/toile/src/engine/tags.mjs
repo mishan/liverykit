@@ -261,7 +261,8 @@ export function computeTags(profile) {
       // Visibility thresholds, not raw fractions. A livery asking for "the bits
       // you can see" should not have to pick a number, and the number would not
       // mean the same thing on two cars anyway.
-      if (typeof p.visible === 'number' && p.visible >= 0.5) tags.push('visible');
+      // Or, where nothing measured it, as proposed: see `profileFromTemplate`.
+      if ((typeof p.visible === 'number' && p.visible >= 0.5) || p.visibleBy) tags.push('visible');
       if (typeof p.visibleFromCockpit === 'number' && p.visibleFromCockpit >= 0.3) tags.push('cockpit');
       // A whole panel turns more than any rectangle on it, so this asks less
       // of a panel than the check asks of lettering: the Tatuus's flank reads
