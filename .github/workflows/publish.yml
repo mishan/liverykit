@@ -1,0 +1,31 @@
+name: Publish
+# A tag v<version>, such as v0.3.0, publishes that version to npm. npm trusts
+# this workflow, in the npm environment, to publish: no token is stored, and
+# each release links back to the run that built it.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 24 for npm 11.5 or later, which trusted publishing needs.
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      # The fast suites only: the tag is on a commit main's CI has already run
+      # in full, browser included, and this job has no browser to run it with.
+      - run: npm run test:fast
+      - name: Check the tag matches the package's version
+        run: |
+          actual=$(node -p "require('./package.json').version")
+          [ "v$actual" = "$GITHUB_REF_NAME" ] || { echo "package.json is $actual, not ${GITHUB_REF_NAME#v}"; exit 1; }
+      - run: npm publish --access public
