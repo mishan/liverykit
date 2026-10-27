@@ -4998,3 +4998,18 @@ test('a model that is not the one the profile was measured from is a check in th
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('a band has no box in the editor, so nothing can drag it onto a panel', async () => {
+  // A band's box was the whole sheet. Dragged, it took a panel in the fit, and
+  // a band on a panel cannot be drawn, so the surface stopped drawing at all.
+  const { renderSurface } = await import('../src/ui/server.mjs');
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const livery = { name: 'b', packs: ['core'], surfaces: { body: { regions: [
+    { id: 'sweep', treatment: 'fill', color: 'red', band: { height: [0, 0.3] } },
+    { id: 'square', treatment: 'fill', color: 'blue', panel: 'left_mid', at: [0, 0, 0.5, 0.5] },
+  ] } } };
+  const out = renderSurface({ livery, profile, fit: null, role });
+  assert.deepEqual(out.placed.map((p) => p.id), ['square']);
+  assert.match(out.notes.map((n) => n.text).join('\n'), /sweep: is a band, placed by height on the car, and finding its texels needs the car's model/);
+});

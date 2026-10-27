@@ -557,9 +557,12 @@ Or say the band itself and let the model find it, every time it is drawn:
 the painted surface's own height, lowest point to highest, so they mean the same
 on a coupe and an open car. `rear` gives the heights at the rear end and the band
 tilts between the two, to follow a bodyline; without it the band is level. `side`
-is `left`, `right` or `both`, the default, and a surface counts as on a side where
-it faces within 75 degrees of sideways and looks out from that half of the car, so
-a band goes on round a bumper's corner and not onto the bonnet. Every triangle of
+is which way the faces it covers look: `left`, `right`, `both` (the default),
+`front`, `rear`, or `around` for all four. A face counts where it looks within 75
+degrees of that way and out from that part of the car, so a band goes on round a
+bumper's corner and not onto the bonnet, and a band round the tail at the flanks'
+heights meets them at the corners. `within` changes the 75: a smaller angle stops
+the band sooner round a corner. Every triangle of
 the surface is clipped between the two heights, so the band lands exactly, across
 however many islands the car splits its flank into. It needs the car's model:
 without it the region is said not to be drawn. Lettering and decals need a panel

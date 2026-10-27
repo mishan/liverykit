@@ -20,13 +20,13 @@ import { meshesWearing, meshTraits, vertex, triangles } from '../model.mjs';
 import { polyArea } from './poly.mjs';
 
 /**
- * How far a surface has to face sideways to be on a side: the sine of 15
- * degrees off upright or flat. A flank that tucks under or rolls over towards
- * the roof is still the flank, and the corners of a bumper turning forward are
+ * How far off the way a band covers a surface may look and still be painted,
+ * by default, in degrees. A flank that tucks under or rolls over towards the
+ * roof is still the flank, and the corners of a bumper turning forward are
  * where a stripe along the side goes on round; a bonnet, a roof and a floor
- * are not on either side.
+ * are not on either side. A band says `within` to stop sooner round a corner.
  */
-const SIDEWAYS = 0.26;
+const WITHIN = 75;
 
 const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
 
@@ -36,11 +36,14 @@ const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
  *
  *   texture   the sheet, as the model names it
  *   axes      { left, front }, as a profile records them: '+X', '-Z' and so on
- *   band      { height: [lo, hi], rear?: [lo, hi], side?: 'left'|'right'|'both' }
+ *   band      { height: [lo, hi], rear?: [lo, hi], side?: 'left'|'right'|'both'|'front'|'rear'|'around', within?: degrees }
  *
  * `height` is at the surface's front end. `rear`, when given, is at its rear
  * end and the band tilts between the two, which is how a stripe follows a
- * bodyline; without it the band is level.
+ * bodyline; without it the band is level. `side` is which way the faces it
+ * covers look: `both` is the two sides, `around` the sides and both ends, so a
+ * stripe round the tail is the same band as the one down the flank and meets
+ * it at the corner by construction.
  *
  * Returns { polygons, frame, notes }. The frame is what the fractions were
  * taken against: the surface's lowest and highest points and its front and
@@ -48,10 +51,18 @@ const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
  * and why, for whoever draws the band to pass on.
  */
 export function bandPolygons(model, { texture, axes }, band) {
+  if (!band || typeof band !== 'object' || Array.isArray(band)) {
+    throw new Error(`a band is { height: [bottom, top] }, with rear and side if wanted, not ${JSON.stringify(band)}`);
+  }
   const left = SIGN[axes?.left], front = SIGN[axes?.front];
   if (!left || !front) throw new Error(`a band needs the object's axes, and these say ${JSON.stringify(axes)}`);
   const side = band.side ?? 'both';
-  if (!['left', 'right', 'both'].includes(side)) throw new Error(`a band's side is left, right or both, not ${JSON.stringify(band.side)}`);
+  const L = [left, 0, 0], R = [-left, 0, 0], F = [0, 0, front], B = [0, 0, -front];
+  const ways = { left: [L], right: [R], both: [L, R], front: [F], rear: [B], around: [L, R, F, B] };
+  const dirs = Object.hasOwn(ways, side) ? ways[side] : null;
+  if (!dirs) {
+    throw new Error(`a band's side is left, right, both, front, rear or around, not ${JSON.stringify(band.side)}`);
+  }
   const ends = [band.height, band.rear ?? band.height];
   // Linear between the ends, so a band whose bottom is under its top at both
   // is so everywhere between, and one that crossed would vanish where it did.
@@ -61,6 +72,11 @@ export function bandPolygons(model, { texture, axes }, band) {
     }
   }
   const [[lo0, hi0], [lo1, hi1]] = ends;
+  const within = band.within ?? WITHIN;
+  if (typeof within !== 'number' || !(within > 0 && within < 90)) {
+    throw new Error(`a band's within is how many degrees off its side a surface may look, between 0 and 90, not ${JSON.stringify(band.within)}`);
+  }
+  const SIDEWAYS = Math.cos((within * Math.PI) / 180);
 
   // The surface as the game draws it outside: a cockpit's own copies and the
   // blurred meshes swapped in at speed would move its top and ends, and paint
@@ -80,7 +96,7 @@ export function bandPolygons(model, { texture, axes }, band) {
   }
   const frame = { bottom: yMin, top: yMax, front: front * zMax, rear: front * zMin };
 
-  const height = yMax - yMin, length = (zMax - zMin) || 1;
+  const height = yMax - yMin, length = (zMax - zMin) || 1, mid = (zMax + zMin) / 2;
   // How far along from the front end, 0 there and 1 at the rear.
   const along = (q) => (zMax - front * q.z) / length;
   const at = (a, b) => (q) => yMin + height * (a + (b - a) * along(q));
@@ -99,24 +115,27 @@ export function bandPolygons(model, { texture, axes }, band) {
     const len = Math.hypot(nx, ny, nz);
     if (!len) continue;
     const said = p.reduce((a, q) => a + q.nx * nx + q.ny * ny + q.nz * nz, 0) / len;
-    const lateral = left * nx / len;
-    // Normals that cancel, or none, cannot say which way a sideways face
-    // looks, and guessing from the winding is what the sign is there to
-    // avoid. Counted, so the band says how much it could not judge.
-    if (Math.abs(said) < 0.5) { if (Math.abs(lateral) >= SIDEWAYS) unknown++; continue; }
-    const dir = Math.sign(said * lateral);
-    if (!dir) continue;
-    // Facing out from the half of the object it is on: the inside of the
-    // far door faces this way too, and is not on this side.
-    if (dir !== Math.sign(left * (p[0].x + p[1].x + p[2].x))) continue;
-    if (side === 'left' ? dir < 0 : side === 'right' ? dir > 0 : false) continue;
+    const dot = (d) => (d[0] * nx + d[2] * nz) / len;
+    // Normals that cancel, or none, cannot say which way a face looks, and
+    // guessing from the winding is what the sign is there to avoid. Counted,
+    // so the band says how much it could not judge.
+    if (Math.abs(said) < 0.5) { if (dirs.some((d) => Math.abs(dot(d)) >= SIDEWAYS)) unknown++; continue; }
+    const sign = Math.sign(said);
+    // The way, of those the band covers, that this face looks most nearly.
+    const d = dirs.reduce((best, c) => (sign * dot(c) > sign * dot(best) ? c : best));
+    const facing = sign * dot(d);
+    if (facing <= 0) continue;
+    // Looking out from the part of the object it is on: the inside of the far
+    // door looks this way too, and is not on this side.
+    const out = d[0] * (p[0].x + p[1].x + p[2].x) / 3 + d[2] * ((p[0].z + p[1].z + p[2].z) / 3 - front * mid);
+    if (out <= 0) continue;
 
     // Where the surface turns away past SIDEWAYS is a third plane, cut on the
     // vertex normals, which are smooth: judged a face at a time, the band
     // ended in steps round a bumper's corner, one triangle wide.
     const turn = (q) => {
       const n = Math.hypot(q.nx, q.ny, q.nz);
-      return (n ? dir * left * q.nx / n : Math.abs(lateral)) - SIDEWAYS;
+      return (n ? (d[0] * q.nx + d[2] * q.nz) / n : facing) - SIDEWAYS;
     };
     let poly = p.map((q) => ({ u: q.u, v: q.v, lo: q.y - below(q), hi: above(q) - q.y, side: turn(q) }));
     if (poly.every((q) => q.side < 0)) continue;
@@ -144,8 +163,13 @@ const remembered = new WeakMap();
 export function bandFor(model, { texture, axes }, band) {
   let mine = remembered.get(model);
   if (!mine) remembered.set(model, mine = new Map());
-  const key = JSON.stringify([texture, axes?.left, axes?.front, band.height, band.rear, band.side]);
-  if (!mine.has(key)) mine.set(key, bandPolygons(model, { texture, axes }, band));
+  const key = JSON.stringify([texture, axes?.left, axes?.front, band?.height, band?.rear, band?.side, band?.within]);
+  if (!mine.has(key)) {
+    // Bounded, oldest first: each height typed into the editor is a band of
+    // its own, and the model it is keyed on lasts the session.
+    if (mine.size >= 64) mine.delete(mine.keys().next().value);
+    mine.set(key, bandPolygons(model, { texture, axes }, band));
+  }
   return mine.get(key);
 }
 

@@ -315,6 +315,17 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
       if (k === 'drop' || o[k] === undefined) continue;
       next[k] = o[k];
     }
+    // A band says where it is by height on the car, so a fit that places it on
+    // a panel, as a drag in the editor once did, cannot apply; drawn with both,
+    // the surface would not draw at all.
+    const placing = ['panel', 'at', 'rotate', 'scale'].filter((k) => o[k] !== undefined);
+    if (region.band !== undefined && placing.length) {
+      for (const k of placing) next[k] = region[k];
+      for (const k of placing) if (next[k] === undefined) delete next[k];
+      notes.push({ term: key, status: 'fit-stale',
+        text: `fit: "${key}" is a band, placed by height on the car, so its ${placing.join(', ')} in the fit ${placing.length > 1 ? 'are' : 'is'} ignored` });
+      return next;
+    }
 
     if (o.panel !== undefined) {
       if (!profile?.panels?.[role]?.[o.panel] && !profile?.aliases?.[role]?.[o.panel]) {  // stale
@@ -342,6 +353,7 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
   // an id of its own, so a fit can still place or drop it on one car.
   const twinOf = (src) => {
     const why = typeof src.id !== 'string' ? 'it has no id for its twin to be named after'
+      : src.band !== undefined ? 'it is a band, which says its own side: side: "both" draws it on the two'
       : typeof src.panel !== 'string' ? 'it is placed by tags, and a twin needs one panel to mirror'
         : null;
     const name = why ? null : (profile?.aliases?.[role]?.[src.panel] ?? src.panel);
@@ -429,6 +441,11 @@ export function applyFit(regions, fit, { profile, role, surfaceKey = '', used = 
         continue;
       }
 
+      if (src.band !== undefined) {
+        notes.push({ term: id, status: 'fit-stale',
+          text: `fit: copied region "${id}" is a copy of a band, which would land where the band does; write another band in the livery instead — it was not drawn` });
+        continue;
+      }
       const clone = { ...src, __key: id, id };
       // An explicit panel replaces tag selection outright, the same as an
       // override does; leaving the tags on would trip the "both panel and tags"
