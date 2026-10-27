@@ -265,6 +265,23 @@ test('a flank laid either way in a plan reads along the car, and mirrors onto it
   await assert.rejects(fromTemplate({ nose: 'top', flankTop: 'up' }), /flankTop is "inward" or "outward"/);
 });
 
+test('a mirror pair either side of the middle band is oriented as a pair, and a small side part not at all', async () => {
+  // Two twins of a hundredth of the sheet, one just inside the band a flank
+  // is placed beyond and one just outside it, and a cap off the middle.
+  const alpha = wireframe();
+  const block = (x0, y0, w, h) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) alpha[y * W + x] = 1; };
+  block(78, 165, 11, 80); block(110, 165, 11, 80); block(60, 20, 5, 5);
+  const { profile } = await fromTemplate({ alpha, nose: 'top', flankTop: 'inward' });
+  const panels = profile.panels.body;
+  const at = (x, y) => Object.keys(panels).find((n) => Math.abs(panels[n].rect[0] - x / W) < 1e-4 && Math.abs(panels[n].rect[1] - y / H) < 1e-4);
+  const [a, b, cap] = [at(78, 165), at(110, 165), at(60, 20)];
+  assert.equal(panels[a].mirrorOf, b);
+  assert.ok(panels[a].uAxis && panels[b].uAxis, 'both twins have axes');
+  assert.equal(panels[cap].uAxis, undefined, 'the cap is drawn any way round');
+  const { regions } = applyFit([{ id: 'n', panel: a, at: [0, 0, 0.25, 1], mirror: true, treatment: 'fill' }], null, { profile, role: 'body' });
+  assert.deepEqual(regions.find((r) => r.panel === b).at, [0.75, 0, 0.25, 1]);
+});
+
 test('a plan out of range is refused when the profile is read', () => {
   const profile = (plan) => ({ id: 'x', textures: { body: { file: 'b.dds', width: 4, height: 4 } }, panels: { body: { p: { rect: [0, 0, 1, 1], plan } } } });
   validateProfile(profile({ across: [-1, 0.5], along: [0, 1] }));

@@ -328,10 +328,16 @@ const r3 = (v) => Math.round(v * 1000) / 1000;
  * and its nose along +z. Down the sheet runs towards the tail with the nose
  * at the top. Across it, a flank's top faces the middle of the sheet or away
  * from it, and the middle is +u from a flank on the sheet's left.
+ *
+ * A side panel is one of the car's islands off its middle, as `placeOnPlan`
+ * counts them: a mirror cap or a bracket may be drawn any way round. And a
+ * pair is oriented together, since a twin with axes and one without mirror
+ * placements by different rules.
  */
 function orientFlanks(islands, nose, flankTop) {
+  const flank = (i) => i && Math.abs(i.mid.x) >= 0.18 && i.uvArea >= 0.01;
   for (const i of islands) {
-    if (Math.abs(i.mid.x) < 0.18) continue;
+    if (!flank(i) && !flank(i.mirror)) continue;
     const left = i.mid.x > 0 ? 1 : -1;
     const onSheetLeft = (left > 0) === (nose === 'top');
     const topAlongU = (flankTop === 'inward') === onSheetLeft ? 1 : -1;

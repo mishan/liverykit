@@ -2029,11 +2029,42 @@ test('rotate: auto mirrors artwork back on a panel the unwrapper reflected', asy
 
   assert.doesNotMatch(draw('plain', 'auto').base, /scale\(-1/);
   const mirrored = draw('reflected', 'auto');
-  assert.match(mirrored.base, /rotate\(180[^"]*\) scale\(-1,1\)/, 'turned upright, then mirrored left to right');
+  assert.match(mirrored.base, /scale\(-1,1\) rotate\(180/, 'turned upright, then mirrored left to right');
   assert.equal(mirrored.notes, '');
   const unasked = draw('reflected', undefined);
   assert.doesNotMatch(unasked.base, /scale\(-1/);
   assert.match(unasked.notes, /reflected.*backwards.*rotate: 'auto'/);
+});
+
+test('on a reflected panel at any turn, artwork keeps its turn down the sheet and is reversed across it', async () => {
+  // textRotation is measured from which way down the sheet (v) runs on the
+  // car, so artwork on a reflected panel lies along v as it would on a plain
+  // one, and what the reflection reverses is across the sheet (u). Mirrored
+  // inside the turn, it reversed the artwork's own across instead, which at
+  // 90 and 270 degrees is along v: a word on such a flank read upside down.
+  const draw = (textRotation, reflected) => renderTexture({
+    profile: { id: 't', textures: { body: { file: 'b.dds', width: 512, height: 512 } },
+      panels: { body: { p: { rect: [0.2, 0.2, 0.4, 0.4], textRotation, ...(reflected ? { reflected } : {}) } } } },
+    role: 'body', regions: [{ treatment: 'text', panel: 'p', rotate: 'auto', text: 'X', color: 'white' }],
+    treatments: resolveTreatments(['core']), palette: {}, rng: Math.random, font: 'sans-serif', tokens: {},
+  }).base;
+  // Where the artwork's across (1, 0) and down (0, 1) point on the sheet,
+  // read from the transform the region was drawn under.
+  const axes = (svg) => {
+    const steps = [...(svg.match(/<g transform="([^"]*)"/)?.[1] ?? '').matchAll(/(rotate|scale)\(([^)]*)\)/g)];
+    return [[1, 0], [0, 1]].map((v) => steps.reduceRight(([x, y], [, op, args]) => {
+      const n = args.split(',').map(Number);
+      if (op === 'scale') return [x * n[0], y * (n[1] ?? n[0])];
+      const a = n[0] * Math.PI / 180;
+      return [Math.round(x * Math.cos(a) - y * Math.sin(a)), Math.round(x * Math.sin(a) + y * Math.cos(a))];
+    }, v).map((c) => c || 0));
+  };
+  for (const turn of [0, 90, 180, 270]) {
+    const [across, down] = axes(draw(turn, false));
+    const [rAcross, rDown] = axes(draw(turn, true));
+    const reversedU = ([u, v]) => [-u || 0, v];
+    assert.deepEqual([rAcross, rDown], [reversedU(across), reversedU(down)], `${turn} degrees`);
+  }
 });
 
 test('a profile marks the panels whose unwrap is a mirror image', async () => {
