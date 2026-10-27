@@ -139,6 +139,7 @@ export function validateProfile(p, source = '<inline>') {
       checkRect(panel.rect, `${role}.${name}.rect`, err);
       if (panel.safe) checkRect(panel.safe, `${role}.${name}.safe`, err);
       if (panel.extent3d !== undefined) checkBox(panel.extent3d, `${role}.${name}.extent3d`, err);
+      if (panel.plan !== undefined) checkPlan(panel.plan, `${role}.${name}.plan`, err);
     }
   }
 
@@ -182,6 +183,14 @@ function checkUvSet(p, err) {
         'the kn5 reader has exactly one per vertex. A profile measured from another ' +
         'set would describe a UV layout this build cannot reproduce, so it is refused ' +
         'rather than resolved against the wrong one.');
+  }
+}
+
+// A template panel's place on the car, for the same reason as the box below.
+function checkPlan(plan, what, err) {
+  const span = (r, lo) => Array.isArray(r) && r.length === 2 && r.every((n) => typeof n === 'number' && n >= lo && n <= 1) && r[0] <= r[1];
+  if (!span(plan?.across, -1) || !span(plan?.along, 0)) {
+    err(`${what} must be { across: [from, to] between -1 and 1, along: [from, to] between 0 and 1 }, got ${JSON.stringify(plan)}`);
   }
 }
 
