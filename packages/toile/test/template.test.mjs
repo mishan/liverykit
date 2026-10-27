@@ -3,8 +3,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { readTemplate, sheetIslands } from '../src/template.mjs';
+import { readTemplate, sheetIslands, profileFromTemplate } from '../src/template.mjs';
+import { validateProfile } from '../src/profile.mjs';
 import { inPoly } from '../src/engine/poly.mjs';
 import { SHEET, ISLANDS, wireframe, silhouette, psd } from './fixtures/template.mjs';
 
@@ -97,4 +101,68 @@ test('a PNG template is read with or without transparency', async () => {
     assert.deepEqual(sheetIslands(t.drawn, W, H).islands, want, what);
   }
   await assert.rejects(readTemplate(await sharp(flat, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(), { layer: 'UV' }), /not a PSD/);
+});
+
+async function fromTemplate(opts) {
+  const dir = await mkdtemp(join(tmpdir(), 'toile-template-'));
+  try {
+    const path = join(dir, 'car_template.psd');
+    await writeFile(path, psd([{ name: 'UV', alpha: wireframe() }]));
+    const said = [];
+    const profile = await profileFromTemplate(path, { texture: 'body.dds', log: (m) => said.push(m), ...opts });
+    return { profile, said: said.join('\n') };
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+}
+
+/** The fixture's islands by what they are, as the profile names them. */
+function panelsOf(profile) {
+  const panels = profile.panels.body;
+  return Object.fromEntries(Object.entries(ISLANDS).map(([what, { rect }]) => [what,
+    Object.keys(panels).find((n) => panels[n].rect.every((v, i) => Math.abs(v - frac(rect)[i]) < 1e-4))]));
+}
+
+test('a plan-view template places each island by where it is drawn, nose up or down', async () => {
+  // The flanks start a twelfth of the car's length from the top of the sheet,
+  // so they reach whichever end is drawn there, and stop a sixth short of the
+  // foot, so they do not reach the other.
+  for (const [nose, want, flank] of [
+    ['top', { roof: 'centre_front', left: 'left_mid', right: 'right_mid', bumper: 'centre_tail' }, ['left', 'nose', 'front', 'mid', 'rear', 'mirrored']],
+    ['bottom', { roof: 'centre_rear', left: 'right_mid', right: 'left_mid', bumper: 'centre_nose' }, ['right', 'front', 'mid', 'rear', 'tail', 'mirrored']],
+  ]) {
+    const { profile } = await fromTemplate({ nose });
+    validateProfile(profile);
+    const names = panelsOf(profile), panels = profile.panels.body;
+    assert.deepEqual(names, want, nose);
+    assert.equal(panels[names.left].mirrorOf, names.right, nose);
+    assert.equal(panels[names.right].mirrorOf, names.left, nose);
+    assert.equal(panels[names.roof].mirrorOf, undefined, nose);
+    assert.deepEqual(panels[names.left].tags, flank, `${nose}: a flank reaches the sections it runs through, and has no level`);
+    assert.deepEqual(profile.calibration.plan, { nose, from: 'stated' });
+    assert.ok(Object.values(panels).every((p) => p.confidence === 'proposed' && p.outline.length >= 4));
+  }
+});
+
+test('a template profile says where its panels came from, and what it could not say', async () => {
+  const { profile, said } = await fromTemplate({});
+  assert.deepEqual(Object.keys(profile.panels.body), ['island_1', 'island_2', 'island_3', 'island_4']);
+  assert.ok(Object.values(profile.panels.body).every((p) => !p.plan && !p.tags && !p.mirrorOf));
+  assert.match(said, /no nose was given, so the panels have no place on the car/);
+  assert.match(said, /4 islands on layer "UV"/);
+  assert.match(said, /1 speck\(s\)/);
+  const { calibration, textures } = profile;
+  assert.deepEqual([calibration.method, calibration.source, calibration.layer, calibration.plan], ['template', 'car_template.psd', 'UV', undefined]);
+  assert.match(calibration.template.sha256, /^[0-9a-f]{64}$/);
+  assert.deepEqual(textures.body, { file: 'body.dds', width: W, height: H });
+  await assert.rejects(fromTemplate({ texture: undefined }), /needs the texture file the game reads this sheet as/);
+  await assert.rejects(fromTemplate({ nose: 'front' }), /nose is "top" or "bottom"/);
+});
+
+test('a plan out of range is refused when the profile is read', () => {
+  const profile = (plan) => ({ id: 'x', textures: { body: { file: 'b.dds', width: 4, height: 4 } }, panels: { body: { p: { rect: [0, 0, 1, 1], plan } } } });
+  validateProfile(profile({ across: [-1, 0.5], along: [0, 1] }));
+  for (const plan of [{ across: [-1.5, 0], along: [0, 1] }, { across: [0, 0.5], along: [0.6, 0.2] }, { along: [0, 1] }]) {
+    assert.throws(() => validateProfile(profile(plan)), /p\.plan must be \{ across/, JSON.stringify(plan));
+  }
 });

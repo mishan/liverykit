@@ -15,9 +15,15 @@
 // templates happened on two cars of twelve.
 // ---------------------------------------------------------------------------
 
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { basename } from 'node:path';
 import sharp from 'sharp';
 import { readPsd } from './psd.mjs';
 import { capOutline } from './engine/islands.mjs';
+import { tagProfile } from './engine/tags.mjs';
+import { PROFILE_SCHEMA } from './profile.mjs';
+import { sectionAt } from './frame.mjs';
 
 /** Antialiased line edges are faint; a pixel is drawn from an eighth up. */
 const DRAWN = 32;
@@ -174,6 +180,114 @@ function trace(label, width, height, id, start) {
     from = (d + (d % 2 ? 5 : 6)) % 8;
   }
 }
+
+/**
+ * A profile from a template: one texture, `texture` as the game names the
+ * file, sized as the template is, with a panel per island.
+ *
+ * Where an island sits on the car is a person's to state, and `nose` states
+ * it: the template is a plan view, the car seen from above with its sides
+ * folded out, nose at the sheet's `top` or `bottom`. Then each panel gets a
+ * proposed `plan` place, read off the sheet: across the car by its distance
+ * from the layout's middle, along it by its height on the sheet. Islands
+ * mirrored about that middle are mirror pairs. Panels are named and tagged by
+ * that place, as a model's are by where it measures them. A flank laid out
+ * flat is an elevation drawn into a plan, so its place is the layout's and
+ * not the car's, and is recorded as proposed for that reason.
+ *
+ * Without `nose`, which a side-on template like the Chevette's needs, the
+ * panels are numbered by size and have no place, and the profile says so.
+ */
+export async function profileFromTemplate(path, { id = null, name = '', texture, role = 'body', nose = null, layer, minArea, log = () => {} } = {}) {
+  if (!texture) throw new Error('a template profile needs the texture file the game reads this sheet as, which the game\'s own files name');
+  if (nose !== null && !['top', 'bottom'].includes(nose)) throw new Error(`nose is "top" or "bottom", the end of the sheet the car's nose is drawn at, not ${JSON.stringify(nose)}`);
+  const data = await readFile(path);
+  const t = await readTemplate(data, { path: basename(String(path)), layer });
+  const { islands, notes } = sheetIslands(t.drawn, t.width, t.height, { minArea });
+  log(`  ${islands.length} islands on ${t.layer === null ? 'the image' : `layer ${JSON.stringify(t.layer)}`}`);
+  for (const n of notes) log(`  ${n}`);
+
+  const panels = {};
+  if (nose) {
+    placeOnPlan(islands, nose);
+    const counts = new Map();
+    for (const isl of islands) {
+      const { x, along } = isl.mid;
+      const base = `${Math.abs(x) < 0.18 ? 'centre' : x > 0 ? 'left' : 'right'}_${sectionAt(along)}`;
+      const seen = counts.get(base) ?? 0;
+      counts.set(base, seen + 1);
+      isl.name = seen ? `${base}_${seen + 1}` : base;
+    }
+    for (const isl of islands) if (isl.mirror) isl.mirrorOf = isl.mirror.name;
+  } else {
+    islands.forEach((isl, n) => { isl.name = `island_${n + 1}`; });
+    log('  no nose was given, so the panels have no place on the car and no side or section to be found by');
+  }
+  panels[role] = Object.fromEntries(islands.map((i) => [i.name, {
+    rect: i.rect.map(r5),
+    confidence: 'proposed',
+    ...(i.plan ? { plan: i.plan } : {}),
+    ...(i.mirrorOf ? { mirrorOf: i.mirrorOf } : {}),
+    outline: i.outline,
+  }]));
+
+  const profile = {
+    schemaVersion: PROFILE_SCHEMA,
+    id: id ?? basename(String(path)).replace(/\.[^.]+$/, ''),
+    name,
+    calibration: {
+      method: 'template',
+      source: basename(String(path)),
+      template: { bytes: data.length, sha256: createHash('sha256').update(data).digest('hex') },
+      ...(t.layer !== null ? { layer: t.layer } : {}),
+      date: new Date().toISOString().slice(0, 10),
+      uvSet: 0,
+      ...(nose ? { plan: { nose, from: 'stated' } } : {}),
+    },
+    textures: { [role]: { file: texture, width: t.width, height: t.height } },
+    doNotPaint: [],
+    panels,
+  };
+  tagProfile(profile);
+  return profile;
+}
+
+const r5 = (v) => Math.round(v * 1e5) / 1e5;
+
+/**
+ * Each island's `plan`, `mid` and mirror, measured against the islands that
+ * are the car: those of a hundredth of the sheet or more, whose span is its
+ * width and length. A strip of spare parts along the sheet's foot would
+ * otherwise stretch the car to reach it.
+ */
+function placeOnPlan(islands, nose) {
+  const big = islands.filter((i) => i.uvArea >= 0.01);
+  const u0 = Math.min(...big.map((i) => i.rect[0])), u1 = Math.max(...big.map((i) => i.rect[0] + i.rect[2]));
+  const v0 = Math.min(...big.map((i) => i.rect[1])), v1 = Math.max(...big.map((i) => i.rect[1] + i.rect[3]));
+  const axis = (u0 + u1) / 2, half = (u1 - u0) / 2 || 1, length = (v1 - v0) || 1;
+  // Seen from above with the nose up, the car's left is on the sheet's left.
+  const flip = nose === 'top' ? -1 : 1;
+  // Small parts beyond the car's span are placed at its edge.
+  const clamp = (v, lo) => Math.min(1, Math.max(lo, v));
+  const across = (u) => r3(clamp(flip * (u - axis) / half, -1));
+  const along = (v) => r3(clamp(nose === 'top' ? 1 - (v - v0) / length : (v - v0) / length, 0));
+  for (const i of islands) {
+    const [x, y, w, h] = i.rect;
+    i.plan = { across: [across(x), across(x + w)].sort((a, b) => a - b), along: [along(y), along(y + h)].sort((a, b) => a - b) };
+    i.mid = { x: (i.plan.across[0] + i.plan.across[1]) / 2, along: (i.plan.along[0] + i.plan.along[1]) / 2 };
+  }
+  // A mirror is the island whose middle reflected about the car's is this
+  // one's, to a hundredth of the car's width and length, of the same size to a
+  // tenth. Off the middle only: an island on it is its own reflection.
+  for (const a of islands) {
+    if (a.mirror || Math.abs(a.mid.x) < 0.05) continue;
+    const b = islands.find((b) => b !== a && !b.mirror && Math.abs(b.mid.x + a.mid.x) < 0.02 &&
+      Math.abs(b.mid.along - a.mid.along) < 0.01 && Math.abs(b.uvArea - a.uvArea) <= 0.1 * Math.max(a.uvArea, b.uvArea));
+    if (b) { a.mirror = b; b.mirror = a; }
+  }
+}
+
+const r3 = (v) => Math.round(v * 1000) / 1000;
 
 function* edge(width, height) {
   for (let x = 0; x < width; x++) { yield x; if (height > 1) yield (height - 1) * width + x; }

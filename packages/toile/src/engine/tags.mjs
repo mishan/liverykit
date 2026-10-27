@@ -173,7 +173,7 @@ function frameOf(profile) {
  */
 function placeOf(frame, p) {
   const c = p.centroid3d;
-  if (!Array.isArray(c) || c.length !== 3) return null;
+  if (!Array.isArray(c) || c.length !== 3) return p.plan ? planPlace(frame, p.plan) : null;
   const { left, front, halfWidth, yMin, ySpan, zMin, zSpan } = frame;
   const xr = (c[0] * left) / halfWidth;
   const side = Math.abs(xr) < 0.18 ? 'centre' : xr > 0 ? 'left' : 'right';
@@ -199,6 +199,20 @@ function placeOf(frame, p) {
     }
   }
   return { side, section, level, reach };
+}
+
+/**
+ * Where a panel is by `plan`: its place in a template drawn as the car seen
+ * from above, `across` from the car's right (-1) to its left (1) and `along`
+ * from its tail (0) to its nose (1). Height is not in a plan, so there is no
+ * level, rather than a guessed one.
+ */
+function planPlace(frame, { across: [x0, x1], along: [z0, z1] }) {
+  const x = (x0 + x1) / 2;
+  const side = Math.abs(x) < 0.18 ? 'centre' : x > 0 ? 'left' : 'right';
+  const section = sectionAt((z0 + z1) / 2, frame.kind);
+  const reach = SECTIONS[frame.kind].filter(([name, lo, hi, width]) => name !== section && reaches(z0, z1, lo, hi, width)).map(([n]) => n);
+  return { side, section, level: null, reach };
 }
 
 /**
