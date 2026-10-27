@@ -685,7 +685,7 @@ test('a profile shipped without its layout gets it back from the model, and only
   const { join } = await import('node:path');
   const { carKn5 } = await import('./fixtures/kn5.mjs');
   const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
-  const { fillLayout, lacksLayout } = await import('../src/engine/layout.mjs');
+  const { fillLayout, rolesWithoutLayout } = await import('../src/engine/layout.mjs');
   const dir = await mkdtemp(join(tmpdir(), 'lk-layout-'));
   try {
     const path = join(dir, 'fixture.kn5');
@@ -699,7 +699,7 @@ test('a profile shipped without its layout gets it back from the model, and only
     stripped.textures.paint = stripped.textures[role];
     delete stripped.panels[role];
     delete stripped.textures[role];
-    assert.ok(lacksLayout(stripped) && !lacksLayout(measured));
+    assert.deepEqual([rolesWithoutLayout(stripped), rolesWithoutLayout(measured)], [['paint'], []]);
 
     const { filled, missed } = await fillLayout(stripped, path);
     assert.deepEqual(missed, []);
@@ -707,6 +707,31 @@ test('a profile shipped without its layout gets it back from the model, and only
     for (const [n, p] of Object.entries(measured.panels[role])) {
       assert.deepEqual([stripped.panels.paint[n].outline, stripped.panels.paint[n].seams], [p.outline, p.seams], n);
     }
+
+    // A panel the generator now names differently is found by its rectangle,
+    // and its neighbors' seams follow it to the name the profile uses.
+    const renamed = structuredClone(stripped);
+    for (const p of Object.values(renamed.panels.paint)) { delete p.outline; delete p.seams; }
+    renamed.panels.paint.door = renamed.panels.paint.left_mid;
+    delete renamed.panels.paint.left_mid;
+    const again2 = await fillLayout(renamed, path);
+    assert.deepEqual(again2.missed, []);
+    assert.deepEqual(renamed.panels.paint.door.outline, measured.panels[role].left_mid.outline);
+    const neighbors = Object.values(renamed.panels.paint).flatMap((p) => Object.keys(p.seams ?? {}));
+    assert.ok(neighbors.includes('door') && !neighbors.includes('left_mid'), neighbors.join(', '));
+
+    // A role pasted in with its layout leaves the others to be filled, and
+    // the measurement is made from the facing the profile states.
+    const seen = [];
+    const spy = (p, opts) => { seen.push(opts.facing); return profileFromKn5(p, opts); };
+    const partial = structuredClone(stripped);
+    partial.panels.kept = structuredClone(measured.panels[role]);
+    partial.textures.kept = { ...measured.textures[role] };
+    partial.calibration.axes = { ...partial.calibration.axes, from: 'stated' };
+    for (const p of Object.values(partial.panels.paint)) { delete p.outline; delete p.seams; }
+    assert.deepEqual(rolesWithoutLayout(partial), ['paint']);
+    assert.equal((await fillLayout(partial, path, { measure: spy })).filled, Object.keys(measured.panels[role]).length);
+    assert.deepEqual(seen, [{ left: partial.calibration.axes.left, front: partial.calibration.axes.front }]);
 
     // The CLI fills it where it finds the model, and only from that model.
     const { promisify } = await import('node:util');

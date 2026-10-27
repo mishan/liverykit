@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { buildSkin, buildCalibration, packSkin } from '../src/engine/skin.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
 import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../src/profile.mjs';
-import { lacksLayout, fillLayout } from '../src/engine/layout.mjs';
+import { rolesWithoutLayout, fillLayout } from '../src/engine/layout.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
@@ -514,17 +514,26 @@ async function findCarModel(profile, explicit) {
 async function useModel(profile, p) {
   const stale = staleModel(profile, await readFile(p));
   if (stale) console.log(`  ! ${p}: ${stale}`);
-  if (!lacksLayout(profile)) return;
+  const roles = rolesWithoutLayout(profile);
+  if (!roles.length) return;
   if (stale || !profile.calibration?.model?.sha256) {
     console.log(`  ! outlines and seams are not taken from ${p}, which this profile cannot vouch for; ` +
       'spanning stops at panel edges until it is regenerated with --from-kn5');
     return;
   }
-  const { filled, missed } = await fillLayout(profile, p);
+  // A model that cannot be measured costs the layout and nothing else, which
+  // is what a build without the model had before.
+  let filled, missed;
+  try {
+    ({ filled, missed } = await fillLayout(profile, p, { roles, skinsDir: values.skins ? resolve(values.skins) : null }));
+  } catch (e) {
+    console.log(`  ! outlines and seams could not be measured from ${p}: ${e.message}`);
+    return;
+  }
   console.log(`  outlines and seams for ${filled} panel(s) measured from ${p}`);
   if (missed.length) {
-    console.log(`  ! ${missed.length} panel(s) match nothing in the model and have none: ${missed.slice(0, 5).join(', ')}` +
-      (missed.length > 5 ? ', …' : ''));
+    console.log(`  ! ${missed.length} panel(s) or seam(s) match nothing in the model and are left out: ` +
+      `${missed.slice(0, 5).join(', ')}${missed.length > 5 ? ', …' : ''}`);
   }
 }
 
