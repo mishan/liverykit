@@ -215,7 +215,9 @@ export async function profileFromTemplate(path, { id = null, name = '', texture,
 
   const panels = {};
   if (nose) {
-    placeOnPlan(islands, nose);
+    const { beyond, unpaired } = placeOnPlan(islands, nose);
+    if (beyond) log(`  ${beyond} island(s) lie beyond the car's span on the sheet and are placed at its edge`);
+    if (unpaired) log(`  ${unpaired} island(s) off the middle found no mirror image across it`);
     const counts = new Map();
     for (const isl of islands) {
       const { x, along } = isl.mid;
@@ -265,23 +267,30 @@ const r5 = (v) => Math.round(v * 1e5) / 1e5;
  * Each island's `plan`, `mid` and mirror, measured against the islands that
  * are the car: those of a hundredth of the sheet or more, whose span is its
  * width and length. A strip of spare parts along the sheet's foot would
- * otherwise stretch the car to reach it.
+ * otherwise stretch the car to reach it. A sheet with none that big is all
+ * small parts, and they are the car. Returns how many islands lie beyond the
+ * car and how many off its middle have no mirror.
  */
 function placeOnPlan(islands, nose) {
-  const big = islands.filter((i) => i.uvArea >= 0.01);
+  const sized = islands.filter((i) => i.uvArea >= 0.01);
+  const big = sized.length ? sized : islands;
   const u0 = Math.min(...big.map((i) => i.rect[0])), u1 = Math.max(...big.map((i) => i.rect[0] + i.rect[2]));
   const v0 = Math.min(...big.map((i) => i.rect[1])), v1 = Math.max(...big.map((i) => i.rect[1] + i.rect[3]));
   const axis = (u0 + u1) / 2, half = (u1 - u0) / 2 || 1, length = (v1 - v0) || 1;
   // Seen from above with the nose up, the car's left is on the sheet's left.
   const flip = nose === 'top' ? -1 : 1;
   // Small parts beyond the car's span are placed at its edge.
-  const clamp = (v, lo) => Math.min(1, Math.max(lo, v));
+  let clamped = false;
+  const clamp = (v, lo) => { const c = Math.min(1, Math.max(lo, v)); clamped ||= Math.abs(c - v) > 1e-9; return c; };
   const across = (u) => r3(clamp(flip * (u - axis) / half, -1));
   const along = (v) => r3(clamp(nose === 'top' ? 1 - (v - v0) / length : (v - v0) / length, 0));
+  let beyond = 0;
   for (const i of islands) {
     const [x, y, w, h] = i.rect;
+    clamped = false;
     i.plan = { across: [across(x), across(x + w)].sort((a, b) => a - b), along: [along(y), along(y + h)].sort((a, b) => a - b) };
     i.mid = { x: (i.plan.across[0] + i.plan.across[1]) / 2, along: (i.plan.along[0] + i.plan.along[1]) / 2 };
+    if (clamped) beyond++;
   }
   // A mirror is the island whose middle reflected about the car's is this
   // one's, to a hundredth of the car's width and length, of the same size to a
@@ -292,6 +301,7 @@ function placeOnPlan(islands, nose) {
       Math.abs(b.mid.along - a.mid.along) < 0.01 && Math.abs(b.uvArea - a.uvArea) <= 0.1 * Math.max(a.uvArea, b.uvArea));
     if (b) { a.mirror = b; b.mirror = a; }
   }
+  return { beyond, unpaired: islands.filter((i) => !i.mirror && Math.abs(i.mid.x) >= 0.05).length };
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;

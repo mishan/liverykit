@@ -533,6 +533,9 @@ const reflect = (v) => [-v[0], v[1], v[2]];
  * was there before, and it degrades quietly rather than inventing a direction.
  */
 export function mirrorFlips(a, b) {
+  // A template's pairs are found by reflecting the sheet about the layout's
+  // middle, so across the sheet one runs the other way: see placeOnPlan.
+  if (a?.plan && b?.plan && !a.uAxis && !b.uAxis) return { u: true, v: false };
   const axis = (p, k) => (Array.isArray(p?.[k]) && p[k].length === 3 ? p[k] : null);
   const flip = (k) => {
     const x = axis(a, k), y = axis(b, k);
@@ -559,7 +562,8 @@ export function mirrorFlips(a, b) {
 export function selfMirrorFlips(panel) {
   const across = (k) => (Array.isArray(panel?.[k]) && panel[k].length === 3 ? Math.abs(panel[k][0]) : -1);
   const [u, v] = [across('uAxis'), across('vAxis')];
-  if (u < 0 && v < 0) return { u: false, v: false };   // nothing measured
+  // A plan is the car from above, so across the sheet is across the car.
+  if (u < 0 && v < 0) return { u: !!panel?.plan, v: false };   // nothing measured
   return { u: u >= v, v: v > u };
 }
 

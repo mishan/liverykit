@@ -9,6 +9,7 @@ import { join } from 'node:path';
 
 import { readTemplate, sheetIslands, profileFromTemplate } from '../src/template.mjs';
 import { validateProfile } from '../src/profile.mjs';
+import { applyFit, selfMirrorFlips } from '../src/fit.mjs';
 import { inPoly } from '../src/engine/poly.mjs';
 import { SHEET, ISLANDS, wireframe, silhouette, psd } from './fixtures/template.mjs';
 
@@ -103,11 +104,11 @@ test('a PNG template is read with or without transparency', async () => {
   await assert.rejects(readTemplate(await sharp(flat, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer(), { layer: 'UV' }), /not a PSD/);
 });
 
-async function fromTemplate(opts) {
+async function fromTemplate({ alpha = wireframe(), size, ...opts }) {
   const dir = await mkdtemp(join(tmpdir(), 'toile-template-'));
   try {
     const path = join(dir, 'car_template.psd');
-    await writeFile(path, psd([{ name: 'UV', alpha: wireframe() }]));
+    await writeFile(path, psd([{ name: 'UV', alpha }], size));
     const said = [];
     const profile = await profileFromTemplate(path, { texture: 'body.dds', log: (m) => said.push(m), ...opts });
     return { profile, said: said.join('\n') };
@@ -167,6 +168,36 @@ test('an island is proposed as seen by its size, and a speck is not', async () =
   assert.ok(!panels[4].tags.includes('visible'));
   const { profile: strict } = await fromTemplate({ nose: 'top', seenArea: 0.11 });
   assert.equal(Object.values(strict.panels.body).filter((p) => p.tags.includes('visible')).length, 1, 'only the roof is a ninth of the sheet');
+});
+
+test('a placement mirrored onto a template flank lands on the same edge of its twin', async () => {
+  const { profile } = await fromTemplate({ nose: 'top' });
+  const names = panelsOf(profile);
+  const { regions } = applyFit([{ id: 'n', panel: names.left, at: [0, 0.5, 0.4, 0.2], mirror: true, treatment: 'fill' }], null, { profile, role: 'body' });
+  const twin = regions.find((r) => r.panel === names.right);
+  assert.deepEqual(twin.at, [0.6, 0.5, 0.4, 0.2], 'drawn across the sheet the other way, so the outer edge is at the far side of its rect');
+  assert.deepEqual(selfMirrorFlips(profile.panels.body[names.roof]), { u: true, v: false }, 'a roof seen from above has the car\'s centerline down the sheet');
+});
+
+test('islands beyond the car, without a mirror, or with nothing big enough to be the car are placed and said', async () => {
+  const alpha = wireframe();
+  for (let y = 290; y < 294; y++) for (let x = 10; x < 16; x++) alpha[y * W + x] = 1;
+  const { profile, said } = await fromTemplate({ alpha, nose: 'top' });
+  assert.match(said, /1 island\(s\) lie beyond the car's span on the sheet and are placed at its edge/);
+  assert.match(said, /1 island\(s\) off the middle found no mirror image across it/);
+  assert.equal(Object.keys(profile.panels.body).length, 5);
+
+  // Six parts of a thirtieth of a percent each: they are the car.
+  const S = 400, parts = new Uint8Array(S * S);
+  for (let k = 0; k < 6; k++) {
+    const x0 = 20 + k * 60, y0 = 50 + k * 40;
+    for (let y = y0; y < y0 + 30; y++) for (let x = x0; x < x0 + 30; x++) parts[y * S + x] = 1;
+  }
+  const { profile: small, said: told } = await fromTemplate({ alpha: parts, size: { width: S, height: S }, nose: 'top' });
+  validateProfile(JSON.parse(JSON.stringify(small)));
+  const sides = Object.values(small.panels.body).map((p) => p.tags[0]);
+  assert.deepEqual(sides, ['left', 'left', 'left', 'right', 'right', 'right']);
+  assert.doesNotMatch(told, /beyond/);
 });
 
 test('a plan out of range is refused when the profile is read', () => {
