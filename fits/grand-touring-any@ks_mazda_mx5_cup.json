@@ -2,20 +2,25 @@
   "livery": "grand-touring-any",
   "car": "ks_mazda_mx5_cup",
   "notes": [
-    "The design lays its right side out for a flank unwrapped like the Tatuus's,",
-    "flipped both ways. This car flips its right flank top to bottom only, so",
-    "these are the left side's rects mirrored through the measured axes.",
-    "On the left the fender and door are one island, and the board ran the",
-    "length of both; it is cut to the number. The right has no such island, so",
-    "its board and number go on the door, at the same place on the car."
+    "The design lays its flanks out for a panel whose x runs along the car, as",
+    "the Tatuus does. On this car the door x runs up the car, so the names had",
+    "a quarter of a metre of length and shrank past reading; the number landed",
+    "on the island the left fender shares with the door, and drew on the door.",
+    "These put the board, number and team on the door and the sponsors along",
+    "the rear quarter, with the length they need, written for the left and",
+    "mirrored through the measured axes, since the right flank is the left one",
+    "flipped top to bottom only."
   ],
   "regions": {
-    "board-left": { "panel": "left_front", "at": [0.28, 0.4, 0.24, 0.14] },
-    "board-right": { "panel": "right_mid", "at": [0.393, 0.77, 0.275, 0.23] },
-    "number-right": { "panel": "right_mid", "at": [0.416, 0.775, 0.228, 0.22] },
+    "board-left": { "panel": "left_mid", "at": [0.03, 0.41, 0.49, 0.42] },
+    "board-right": { "panel": "right_mid", "at": [0.48, 0.41, 0.49, 0.42] },
+    "number-left": { "panel": "left_mid", "at": [0.05, 0.43, 0.45, 0.38] },
+    "number-right": { "panel": "right_mid", "at": [0.5, 0.43, 0.45, 0.38] },
+    "team-left": { "panel": "left_mid", "at": [0.53, 0.04, 0.145, 0.5] },
+    "team-right": { "panel": "right_mid", "at": [0.325, 0.04, 0.145, 0.5] },
+    "sponsors-left": { "panel": "left_rear", "at": [0.2, 0.15, 0.16, 0.7] },
+    "sponsors-right": { "panel": "right_rear", "at": [0.64, 0.15, 0.16, 0.7] },
     "stick-right": { "panel": "right_mid", "at": [0, 0.56, 1, 0.36] },
-    "stripes-right": { "panel": "right_mid", "at": [0, 0.1, 1, 0.07] },
-    "team-right": { "panel": "right_mid", "at": [0.08, 0.32, 0.38, 0.22] },
-    "sponsors-right": { "panel": "right_rear", "at": [0.1, 0.36, 0.8, 0.26] }
+    "stripes-right": { "panel": "right_mid", "at": [0, 0.1, 1, 0.07] }
   }
 }

@@ -255,7 +255,7 @@ car — `calibration.kind: "object"`, made from a glTF with no wheels — has
 Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
 once and rolled out as a strip, u round the circumference and v from rim to
-shoulder. The Abarth's is a disc; the NSX's is a strip. A design
+shoulder. The Abarth's is a disc; the NSX GT3's, a mod car, is a strip. A design
 that draws rings is right on the first and draws one big circle across the
 second, which on the car is a few stray arcs where the circle crosses the
 strip. The profile measures which it is, from the wheel centres AC requires
