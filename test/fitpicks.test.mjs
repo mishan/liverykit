@@ -69,7 +69,7 @@ const PINNED = {
     'skin_00 #6': ['centre_front', 'centre_front_upper', 'centre_front_upper_2', 'centre_front_upper_4', 'centre_mid', 'centre_mid_upper', 'centre_rear', 'centre_tail', 'centre_tail_lower', 'centre_tail_upper', 'left_front', 'left_front_lower', 'left_front_upper', 'left_mid', 'left_mid_lower', 'left_mid_upper', 'left_mid_upper_2', 'left_mid_upper_3', 'left_mid_upper_4', 'left_rear', 'left_rear_upper', 'left_tail', 'right_front', 'right_front_upper', 'right_mid', 'right_mid_lower', 'right_mid_upper_2', 'right_mid_upper_3', 'right_mid_upper_4', 'right_mid_upper_5', 'right_mid_upper_6', 'right_rear', 'right_rear_upper'],
     'skin_00 driver-left': ['left_mid'],
     'skin_00 driver-right': ['right_mid'],
-    'skin_00 number-left': ['left_front'],
+    'skin_00 number-left': ['left_mid'],
     'skin_00 number-right': ['right_mid'],
     'skin_00 team-left': ['left_mid'],
     'skin_00 team-right': ['right_mid'],
@@ -172,4 +172,31 @@ test('a pinned fit stays on its panel whatever `limit` picks', async () => {
         `pinned as "${pinned.panel}" and tagged ${how}: the same texels of the same panel`);
     }
   }
+});
+
+test('every shipped design passes the check on every shipped car it is for, from the profile alone', async () => {
+  // Raiden, ported to another car, rendered well and failed --check with
+  // thirteen high findings, numbers and names too small to read from
+  // trackside, and nothing ran the check. CI has no models, so this is the
+  // part of the check a profile can answer; geometry is named as not run.
+  const { fitment } = await import('../src/fitment.mjs');
+  const pkg = JSON.parse(readFileSync(at('package.json'), 'utf8'));
+  const cars = pkg.files.filter((f) => /^cars\/.*\.json$/.test(f)).map((f) => f.slice(5, -5));
+  const designs = readdirSync(at('liveries'), { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? (existsSync(at(`liveries/${e.name}/livery.mjs`)) ? [[e.name, `liveries/${e.name}/livery.mjs`]] : [])
+      : e.name.endsWith('.mjs') ? [[e.name.slice(0, -4), `liveries/${e.name}`]] : []);
+  const failing = [];
+  for (const [id, file] of designs) {
+    const design = await loadLivery(at(file));
+    for (const car of design.car ? [design.car] : cars) {
+      const profile = await loadProfile(at(`cars/${car}.json`));
+      const fitPath = at(`fits/${id}@${car}.json`);
+      const fit = existsSync(fitPath) ? JSON.parse(readFileSync(fitPath, 'utf8')) : null;
+      for (const f of fitment(design, profile, fit, { model: null }).findings) {
+        if (f.severity === 'fatal' || f.severity === 'high') failing.push(`${id} on ${car}: ${f.kind} ${(f.ids ?? []).join(', ')}`);
+      }
+    }
+  }
+  assert.ok(designs.length > 3 && cars.length > 2, 'there are designs and cars to check');
+  assert.deepEqual(failing, []);
 });

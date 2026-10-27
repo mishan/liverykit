@@ -8,10 +8,13 @@
 // artwork itself is public domain) — a real flag rather than an invented one,
 // since a flag is the thing people actually reach for a decal to put on a car.
 //
-//   node bin/liverykit.mjs decal-demo --profile cars/tatuusfa1.json
+//   node bin/liverykit.mjs decal-demo
+//
+// For the Tatuus: its panels are named by the Tatuus's aliases.
 export default {
   name: 'Decal demo',
   folder: 'decal_demo',
+  car: 'tatuusfa1',
   packs: ['core'],
   identity: { team: 'Decal Demo', driver: 'A. Driver', number: '85' },
   palette: { ink: '#0b0d12' },
