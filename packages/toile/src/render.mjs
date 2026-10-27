@@ -9,6 +9,7 @@
 // so the emissive layer is rendered on its own, blurred, and screened back on.)
 // ---------------------------------------------------------------------------
 
+import { bandFor } from './engine/band.mjs';
 import { resolveRect, texture, expandRegions, spanPlacements } from './profile.mjs';
 import { r2 } from './engine/rng.mjs';
 
@@ -88,7 +89,7 @@ export function makeColorResolver(palette) {
   };
 }
 
-export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, decals = new Map(), regionNotes = [], stock = null }) {
+export function renderTexture({ profile, role, regions, background, treatments, palette, rng, font, tokens, decals = new Map(), regionNotes = [], stock = null, model = null }) {
   const tex = texture(profile, role);
   const { width, height } = tex;
 
@@ -171,7 +172,18 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       );
     }
 
-    const frac = resolveRect(profile, role, region);
+    // A band is placed by height on the car rather than on a panel, so it is
+    // drawn across the whole sheet and clipped to its texels below.
+    const banded = region.band !== undefined;
+    if (banded && (region.panel !== undefined || region.tags !== undefined || region.span)) {
+      throw new Error(`"${region.id ?? region.treatment}" on ${tex.file} has a band and a panel, tags or span; ` +
+        'a band says where it is by height on the car, and cannot also be placed on a panel');
+    }
+    if (banded && ['text', 'radialText', 'decal'].includes(region.treatment)) {
+      throw new Error(`"${region.id ?? region.treatment}" on ${tex.file} is ${region.treatment} on a band; ` +
+        'lettering and decals need a panel to read on, and a band runs across several');
+    }
+    const frac = banded ? { x: 0, y: 0, w: 1, h: 1, anisotropy: 1 } : resolveRect(profile, role, region);
     const r = {
       x: frac.x * width,
       y: frac.y * height,
@@ -277,6 +289,20 @@ export function renderTexture({ profile, role, regions, background, treatments, 
       text: `${region.id ?? `${role}:${region.treatment}`}: ${text}`,
     });
 
+    // Its texels, from the model, as one path: drawn triangle by triangle the
+    // pieces leave hairlines between them where their edges antialias.
+    let bandPath = null;
+    if (banded) {
+      if (!model) {
+        note('is a band, placed by height on the car, and finding its texels needs the car\'s model; not drawn');
+        continue;
+      }
+      const { polygons, notes: said } = bandFor(model, { texture: tex.file, axes: profile.calibration?.axes }, region.band);
+      for (const t of said) note(t);
+      if (!polygons.length) { note('is a band that covers no texels of this sheet; not drawn'); continue; }
+      bandPath = polygons.map((p) => `M${p.map(([u, v]) => `${r2(u * width)},${r2(v * height)}`).join('L')}Z`).join('');
+    }
+
     const out = entry.fn(drawn,
       { palette: safePalette, color, rng, font, opts, width, height, tokens: safeTokens, lettering,
         panel: frac.panel ?? null, sheet: profile.panels?.[role] ?? {}, decals, note });
@@ -337,7 +363,11 @@ export function renderTexture({ profile, role, regions, background, treatments, 
 
     // A shaped region draws inside its shape only (see resolveRect).
     let shaped = spin;
-    if (frac.poly) {
+    if (bandPath) {
+      const id = `lk-band-${clips.length}`;
+      clips.push(`<clipPath id="${id}"><path d="${bandPath}"/></clipPath>`);
+      shaped = (svg) => (svg ? `<g clip-path="url(#${id})">${spin(svg)}</g>` : svg);
+    } else if (frac.poly) {
       const id = `lk-shape-${clips.length}`;
       clips.push(`<clipPath id="${id}"><polygon points="${frac.poly.map(([u, v]) => `${r2(u * width)},${r2(v * height)}`).join(' ')}"/></clipPath>`);
       shaped = (svg) => (svg ? `<g clip-path="url(#${id})">${spin(svg)}</g>` : svg);

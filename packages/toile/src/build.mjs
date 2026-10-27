@@ -106,6 +106,15 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     return bytes ? stockPng(bytes, file).catch((e) => { log(`  ! ${e.message}`); return null; }) : null;
   };
 
+  // The model's geometry, for a design that places a band by height on the
+  // car. Read once, and only for such a design: every other region is placed
+  // on the profile alone.
+  const banded = targets.some((t) => (t.spec.regions ?? []).some((r) => r?.band !== undefined));
+  const geometry = banded && modelPath
+    ? await loadModel(modelPath, { keepTextureData: false })
+      .catch((e) => { log(`  ! could not read ${modelPath} for its bands: ${e.message}`); return null; })
+    : null;
+
   for (const { from, role, spec, primary } of targets) {
     const tex = texture(profile, role);
     const stock = spec.background === 'stock' ? await stockFor(tex.file) : null;
@@ -149,6 +158,7 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
       decals,
       regionNotes,
       stock: stock && await stockHrefs(stock),
+      model: geometry,
     });
     notes.push(...regionNotes);
 

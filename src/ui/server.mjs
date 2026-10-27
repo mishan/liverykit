@@ -677,7 +677,7 @@ export function designRefusal(design, path) {
  * painted rather than the editor's own idea of it. If the two ever disagree, the
  * overlay is wrong and you can see that it is.
  */
-export function renderSurface({ livery, profile, fit, role, seed, decals = new Map(), stock = new Map() }) {
+export function renderSurface({ livery, profile, fit, role, seed, decals = new Map(), stock = new Map(), model = null }) {
   const targets = resolveTargets(profile, livery).targets;
   const target = targets.find((t) => t.role === role);
   const spec = target?.spec;
@@ -726,6 +726,7 @@ export function renderSurface({ livery, profile, fit, role, seed, decals = new M
     font: livery.render?.font ?? 'sans-serif',
     tokens: livery.identity ?? {},
     stock: stock.get(tex.file) ?? null,
+    model,
   });
 
   const placed = expanded.regions
@@ -901,6 +902,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
   // layout had the panels, and the page is where a person is looking. An
   // unreadable model is already modelError's to report.
   const stale = modelPath ? readFile(modelPath).then((b) => staleModel(profile, b), () => null) : null;
+
+  // The model's geometry for a design that places a band by height on the
+  // car, and nothing for one that does not, so the page does not wait on a
+  // 45 MB parse to draw a design that never asks for it.
+  const bandsOf = async (design) => (Object.values({ ...design.surfaces, ...design.paint })
+    .some((s) => (s?.regions ?? []).some((r) => r?.band !== undefined)) ? getModel() : null);
 
   /**
    * The car's OWN artwork for a texture the design does not paint.
@@ -1392,7 +1399,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (!hit) return json(422, { error: `nothing of the car is at ${sent.x},${sent.y} in the ${view} view at ${width}x${height}` });
 
         const target = resolveTargets(profile, design).targets.find((t) => t.role === hit.role);
-        const sel = target && renderSurface({ livery: design, profile, fit: useFit, role: hit.role, decals, stock: await stockFor(design) })
+        const sel = target && renderSurface({ livery: design, profile, fit: useFit, role: hit.role, decals, stock: await stockFor(design), model: await bandsOf(design) })
           .placed.find((q) => q.id === sent.id);
         if (!sel) {
           return json(422, { error: `${sent.x},${sent.y} is on ${hit.file ?? 'a part'}` +
@@ -1439,11 +1446,12 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         }
         const { g, roles } = carFor(m, design);
         const overStock = map ? null : await stockFor(design);
+        const banded = map ? null : await bandsOf(design);
         // The panels in place of the design, on the textures it paints.
         const surfaces = roles.map((r) => ({
           role: r.role,
           svg: map ? panelMap(profile, r.role)
-            : renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals, stock: overStock }).svg,
+            : renderSurface({ livery: design, profile, fit: useFit, role: r.role, decals, stock: overStock, model: banded }).svg,
         }));
         // The car's OWN artwork for everything the design does not paint, the
         // same way the build's preview.jpg gets it. Without it this drew glass,
@@ -1565,7 +1573,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         if (current(design, sent)) workingDesign = design;
         const out = renderSurface({
           livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role, seed, decals,
-          stock: await stockFor(workingDesign ?? livery),
+          stock: await stockFor(workingDesign ?? livery), model: await bandsOf(workingDesign ?? livery),
         });
         const why = await stale;
         if (why) out.notes.push({ term: basename(modelPath), status: 'model-stale', text: why });
@@ -1586,7 +1594,7 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
         const stock = await stockFor(workingDesign ?? livery);
         // Every painted texture, a term's secondary ones included: see paintedSheets.
         for (const s of paintedSheets(workingDesign ?? livery)) {
-          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals, stock });
+          const out = renderSurface({ livery: workingDesign ?? livery, profile, fit: workingFit ?? fit, role: s.role, seed, decals, stock, model: await bandsOf(workingDesign ?? livery) });
           // The texture's REAL dimensions travel with it. The browser was
           // guessing a square 512 or 1024, and the car's own body sheet is
           // 2048x2048 — so the livery was rasterized at a quarter of its
