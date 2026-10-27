@@ -9,7 +9,7 @@ import { join } from 'node:path';
 
 import { readTemplate, sheetIslands, profileFromTemplate } from '../src/template.mjs';
 import { validateProfile } from '../src/profile.mjs';
-import { applyFit, selfMirrorFlips } from '../src/fit.mjs';
+import { applyFit, selfMirrorFlips, mirrorFlips } from '../src/fit.mjs';
 import { inPoly } from '../src/engine/poly.mjs';
 import { SHEET, ISLANDS, wireframe, silhouette, psd } from './fixtures/template.mjs';
 
@@ -236,6 +236,50 @@ test('islands beyond the car, without a mirror, or with nothing big enough to be
   const sides = Object.values(small.panels.body).map((p) => p.tags[0]);
   assert.deepEqual(sides, ['left', 'left', 'left', 'right', 'right', 'right']);
   assert.doesNotMatch(told, /beyond/);
+});
+
+test('a flank laid either way in a plan reads along the car, and mirrors onto its twin', async () => {
+  // Seen from its own side, a left flank has the nose to the left. Laid with
+  // its top towards the middle of a nose-up sheet, that is what the sheet
+  // shows once turned a quarter clockwise; with its top outwards, the sheet
+  // shows it from inside.
+  for (const [nose, flankTop, turn, reflected] of [
+    ['top', 'inward', 90, false], ['top', 'outward', 90, true],
+    ['bottom', 'inward', 270, false], ['bottom', 'outward', 270, true],
+  ]) {
+    const { profile } = await fromTemplate({ nose, flankTop });
+    const panels = profile.panels.body, names = panelsOf(profile);
+    const [left, right] = nose === 'top' ? [names.left, names.right] : [names.right, names.left];
+    const what = `${nose}, ${flankTop}`;
+    assert.equal(panels[left].textRotation, turn, what);
+    assert.equal(panels[right].textRotation, (turn + 180) % 360, what);
+    assert.equal(!!panels[left].reflected, reflected, what);
+    assert.equal(!!panels[right].reflected, reflected, what);
+    assert.deepEqual(mirrorFlips(panels[left], panels[right]), { u: true, v: false }, what);
+    assert.equal(panels[names.roof].uAxis, undefined, `${what}: the roof is not a flank`);
+    assert.deepEqual(profile.calibration.plan, { nose, flankTop, from: 'stated' });
+  }
+  const { said } = await fromTemplate({ nose: 'top' });
+  assert.match(said, /no flankTop was given, so lettering on the flanks keeps the sheet's orientation/);
+  await assert.rejects(fromTemplate({ flankTop: 'inward' }), /needs nose/);
+  await assert.rejects(fromTemplate({ nose: 'top', flankTop: 'up' }), /flankTop is "inward" or "outward"/);
+});
+
+test('a mirror pair either side of the middle band is oriented as a pair, and a small side part not at all', async () => {
+  // Two twins of a hundredth of the sheet, one just inside the band a flank
+  // is placed beyond and one just outside it, and a cap off the middle.
+  const alpha = wireframe();
+  const block = (x0, y0, w, h) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) alpha[y * W + x] = 1; };
+  block(78, 165, 11, 80); block(110, 165, 11, 80); block(60, 20, 5, 5);
+  const { profile } = await fromTemplate({ alpha, nose: 'top', flankTop: 'inward' });
+  const panels = profile.panels.body;
+  const at = (x, y) => Object.keys(panels).find((n) => Math.abs(panels[n].rect[0] - x / W) < 1e-4 && Math.abs(panels[n].rect[1] - y / H) < 1e-4);
+  const [a, b, cap] = [at(78, 165), at(110, 165), at(60, 20)];
+  assert.equal(panels[a].mirrorOf, b);
+  assert.ok(panels[a].uAxis && panels[b].uAxis, 'both twins have axes');
+  assert.equal(panels[cap].uAxis, undefined, 'the cap is drawn any way round');
+  const { regions } = applyFit([{ id: 'n', panel: a, at: [0, 0, 0.25, 1], mirror: true, treatment: 'fill' }], null, { profile, role: 'body' });
+  assert.deepEqual(regions.find((r) => r.panel === b).at, [0.75, 0, 0.25, 1]);
 });
 
 test('a plan out of range is refused when the profile is read', () => {

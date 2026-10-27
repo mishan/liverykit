@@ -237,7 +237,7 @@ function measure(model, mesh, verts, tris) {
  * other. Null is the honest answer there, and callers should leave such a panel
  * alone rather than rotate it by a number derived from rounding error.
  */
-function textRotation(down, normal) {
+export function textRotation(down, normal) {
   const nl = len(normal);
   if (nl < 1e-9) return null;
   const n = [normal[0] / nl, normal[1] / nl, normal[2] / nl];

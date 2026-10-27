@@ -311,7 +311,10 @@ export function renderTexture({ profile, role, regions, background, treatments, 
     if (frac.panel?.reflected && !flip && (opts.text !== undefined || region.treatment === 'decal')) {
       note(`its panel is reflected in the texture, so it reads backwards on the car; rotate: 'auto' mirrors it back`);
     }
-    const turn = [rot !== 0 && `rotate(${r2(rot)},${r2(cx)},${r2(cy)})`, flip && `translate(${r2(2 * cx)},0) scale(-1,1)`]
+    // The mirror is the sheet's, so it goes outside the turn: inside it, it
+    // reverses the artwork's own across, which at a quarter turn is the
+    // panel's up and down, and the word came out upside down.
+    const turn = [flip && `translate(${r2(2 * cx)},0) scale(-1,1)`, rot !== 0 && `rotate(${r2(rot)},${r2(cx)},${r2(cy)})`]
       .filter(Boolean).join(' ');
     const spin = (svg) => (!turn || !svg ? svg : `<g transform="${turn}">${svg}</g>`);
 
