@@ -546,6 +546,26 @@ the region is drawn and measured inside:
 Any region can have one. Because it is relative to `at`, moving the region moves
 its shape with it.
 
+Or say the band itself and let the model find it, every time it is drawn:
+
+```js
+{ id: 'sweep', treatment: 'fill', band: { height: [0, 0.345] }, color: 'indigo' },
+{ id: 'pin', treatment: 'fill', band: { height: [0.353, 0.371] }, color: 'vermilion' },
+```
+
+`band` takes the place of `panel`, `tags` and `at`. Its heights are fractions of
+the painted surface's own height, lowest point to highest, so they mean the same
+on a coupe and an open car. `rear` gives the heights at the rear end and the band
+tilts between the two, to follow a bodyline; without it the band is level. `side`
+is `left`, `right` or `both`, the default, and a surface counts as on a side where
+it faces within 75 degrees of sideways and looks out from that half of the car, so
+a band goes on round a bumper's corner and not onto the bonnet. Every triangle of
+the surface is clipped between the two heights, so the band lands exactly, across
+however many islands the car splits its flank into. It needs the car's model:
+without it the region is said not to be drawn. Lettering and decals need a panel
+to read on and are refused on a band, and the fitment check does not measure
+bands yet. This is how Raiden's sweep is drawn on the MX5.
+
 ### Saying what a region needs
 
 Placement rules say where artwork goes. Constraints say what it needs wherever it

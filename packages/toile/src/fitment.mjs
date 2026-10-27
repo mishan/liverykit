@@ -131,7 +131,7 @@ const BLEED_IS_FINE_BELOW = 0.15;
  */
 const PLACEMENT_FIELDS = new Set([
   'id', 'treatment', 'panel', 'tags', 'at', 'rotate', 'scale', 'safe',
-  'span', 'once', 'role', 'limit', 'optional', 'constraints', 'mirror', 'shape', '__key',
+  'span', 'once', 'role', 'limit', 'optional', 'constraints', 'mirror', 'shape', 'band', '__key',
 ]);
 
 /** What a treatment describes, by the design's own packs, later packs winning. */
@@ -305,6 +305,12 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     let placed;
     try {
       placed = placements(profile, t, spec, fit, sayHere);
+      // A band is placed by height on the car, not in a rectangle, and none of
+      // the checks below measures one yet. Named, not passed.
+      for (const p of placed.filter((q) => q.region?.band !== undefined)) {
+        skip(`${p.id}: a band, placed by height on the car, which the check does not measure yet`);
+      }
+      placed = placed.filter((q) => q.region?.band === undefined);
     } catch (e) {
       failed.push(t.from);
       say({

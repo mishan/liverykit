@@ -100,19 +100,27 @@ export function bandPolygons(model, { texture, axes }, band) {
     if (!len) continue;
     const said = p.reduce((a, q) => a + q.nx * nx + q.ny * ny + q.nz * nz, 0) / len;
     const lateral = left * nx / len;
-    if (Math.abs(lateral) < SIDEWAYS) continue;
     // Normals that cancel, or none, cannot say which way a sideways face
     // looks, and guessing from the winding is what the sign is there to
     // avoid. Counted, so the band says how much it could not judge.
-    if (Math.abs(said) < 0.5) { unknown++; continue; }
-    const facing = Math.sign(said) * lateral;
+    if (Math.abs(said) < 0.5) { if (Math.abs(lateral) >= SIDEWAYS) unknown++; continue; }
+    const dir = Math.sign(said * lateral);
+    if (!dir) continue;
     // Facing out from the half of the object it is on: the inside of the
     // far door faces this way too, and is not on this side.
-    const where = left * (p[0].x + p[1].x + p[2].x);
-    if (Math.sign(facing) !== Math.sign(where)) continue;
-    if (side === 'left' ? facing < 0 : side === 'right' ? facing > 0 : false) continue;
+    if (dir !== Math.sign(left * (p[0].x + p[1].x + p[2].x))) continue;
+    if (side === 'left' ? dir < 0 : side === 'right' ? dir > 0 : false) continue;
 
-    let poly = p.map((q) => ({ u: q.u, v: q.v, lo: q.y - below(q), hi: above(q) - q.y }));
+    // Where the surface turns away past SIDEWAYS is a third plane, cut on the
+    // vertex normals, which are smooth: judged a face at a time, the band
+    // ended in steps round a bumper's corner, one triangle wide.
+    const turn = (q) => {
+      const n = Math.hypot(q.nx, q.ny, q.nz);
+      return (n ? dir * left * q.nx / n : Math.abs(lateral)) - SIDEWAYS;
+    };
+    let poly = p.map((q) => ({ u: q.u, v: q.v, lo: q.y - below(q), hi: above(q) - q.y, side: turn(q) }));
+    if (poly.every((q) => q.side < 0)) continue;
+    poly = clip(poly, 'side');
     poly = clip(clip(poly, 'lo'), 'hi').map((q) => [q.u, q.v]);
     // A plane through a vertex or along an edge leaves a sliver with no area,
     // which a fill ignores and a stroke or a count would not.
@@ -128,6 +136,20 @@ export function bandPolygons(model, { texture, axes }, band) {
 }
 
 /**
+ * `bandPolygons`, remembered per model. The editor renders on every frame of
+ * a drag, and a band is tens of milliseconds of clipping that gives the same
+ * answer until the model or the band changes.
+ */
+const remembered = new WeakMap();
+export function bandFor(model, { texture, axes }, band) {
+  let mine = remembered.get(model);
+  if (!mine) remembered.set(model, mine = new Map());
+  const key = JSON.stringify([texture, axes?.left, axes?.front, band.height, band.rear, band.side]);
+  if (!mine.has(key)) mine.set(key, bandPolygons(model, { texture, axes }, band));
+  return mine.get(key);
+}
+
+/**
  * Sutherland-Hodgman against one plane, given each corner's signed distance
  * to it under `key`. Distances are linear across a triangle, so they and the
  * UVs interpolate together and the cut lands where the plane crosses.
@@ -140,7 +162,7 @@ function clip(poly, key) {
     if ((a[key] >= 0) !== (b[key] >= 0)) {
       const t = a[key] / (a[key] - b[key]);
       const mix = (k) => a[k] + (b[k] - a[k]) * t;
-      out.push({ u: mix('u'), v: mix('v'), lo: mix('lo'), hi: mix('hi') });
+      out.push({ u: mix('u'), v: mix('v'), lo: mix('lo'), hi: mix('hi'), side: mix('side') });
     }
   }
   return out;
