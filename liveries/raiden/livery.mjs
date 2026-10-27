@@ -50,9 +50,11 @@ export default {
         // direction of travel and survives motion blur. Placed by height on the
         // car rather than panel by panel: on the MX5 the flank is a door, two
         // quarters, a fender merged with the door on one side and its own
-        // island on the other, a sill and the nose's corners.
-        { id: 'sweep', treatment: 'fill', band: { height: [0, 0.345] }, color: 'indigo' },
-        { id: 'pin', treatment: 'fill', band: { height: [0.353, 0.371] }, color: 'vermilion' },
+        // island on the other, a sill and the nose's corners. Within 55 degrees
+        // of sideways, so it goes round the bumper's corners ahead of the
+        // wheels and stops short of the grille.
+        { id: 'sweep', treatment: 'fill', band: { height: [0, 0.345], within: 55 }, color: 'indigo' },
+        { id: 'pin', treatment: 'fill', band: { height: [0.353, 0.371], within: 55 }, color: 'vermilion' },
 
         // Down the middle of the bonnet, from its front edge to the scuttle,
         // edged in vermilion. Fills rather than racingStripes, which runs its

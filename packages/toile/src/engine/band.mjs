@@ -20,13 +20,13 @@ import { meshesWearing, meshTraits, vertex, triangles } from '../model.mjs';
 import { polyArea } from './poly.mjs';
 
 /**
- * How far a surface has to face sideways to be on a side: the sine of 15
- * degrees off upright or flat. A flank that tucks under or rolls over towards
- * the roof is still the flank, and the corners of a bumper turning forward are
+ * How far off the way a band covers a surface may look and still be painted,
+ * by default, in degrees. A flank that tucks under or rolls over towards the
+ * roof is still the flank, and the corners of a bumper turning forward are
  * where a stripe along the side goes on round; a bonnet, a roof and a floor
- * are not on either side.
+ * are not on either side. A band says `within` to stop sooner round a corner.
  */
-const SIDEWAYS = 0.26;
+const WITHIN = 75;
 
 const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
 
@@ -36,7 +36,7 @@ const SIGN = { '+X': 1, '-X': -1, '+Z': 1, '-Z': -1 };
  *
  *   texture   the sheet, as the model names it
  *   axes      { left, front }, as a profile records them: '+X', '-Z' and so on
- *   band      { height: [lo, hi], rear?: [lo, hi], side?: 'left'|'right'|'both'|'front'|'rear'|'around' }
+ *   band      { height: [lo, hi], rear?: [lo, hi], side?: 'left'|'right'|'both'|'front'|'rear'|'around', within?: degrees }
  *
  * `height` is at the surface's front end. `rear`, when given, is at its rear
  * end and the band tilts between the two, which is how a stripe follows a
@@ -72,6 +72,11 @@ export function bandPolygons(model, { texture, axes }, band) {
     }
   }
   const [[lo0, hi0], [lo1, hi1]] = ends;
+  const within = band.within ?? WITHIN;
+  if (typeof within !== 'number' || !(within > 0 && within < 90)) {
+    throw new Error(`a band's within is how many degrees off its side a surface may look, between 0 and 90, not ${JSON.stringify(band.within)}`);
+  }
+  const SIDEWAYS = Math.cos((within * Math.PI) / 180);
 
   // The surface as the game draws it outside: a cockpit's own copies and the
   // blurred meshes swapped in at speed would move its top and ends, and paint
@@ -158,7 +163,7 @@ const remembered = new WeakMap();
 export function bandFor(model, { texture, axes }, band) {
   let mine = remembered.get(model);
   if (!mine) remembered.set(model, mine = new Map());
-  const key = JSON.stringify([texture, axes?.left, axes?.front, band?.height, band?.rear, band?.side]);
+  const key = JSON.stringify([texture, axes?.left, axes?.front, band?.height, band?.rear, band?.side, band?.within]);
   if (!mine.has(key)) {
     // Bounded, oldest first: each height typed into the editor is a band of
     // its own, and the model it is keyed on lasts the session.

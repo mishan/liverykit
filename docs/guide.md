@@ -561,7 +561,8 @@ is which way the faces it covers look: `left`, `right`, `both` (the default),
 `front`, `rear`, or `around` for all four. A face counts where it looks within 75
 degrees of that way and out from that part of the car, so a band goes on round a
 bumper's corner and not onto the bonnet, and a band round the tail at the flanks'
-heights meets them at the corners. Every triangle of
+heights meets them at the corners. `within` changes the 75: a smaller angle stops
+the band sooner round a corner. Every triangle of
 the surface is clipped between the two heights, so the band lands exactly, across
 however many islands the car splits its flank into. It needs the car's model:
 without it the region is said not to be drawn. Lettering and decals need a panel

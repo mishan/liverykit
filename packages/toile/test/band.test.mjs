@@ -130,6 +130,7 @@ test('a band says what it cannot measure, rather than painting nothing', () => {
   const ask = (texture, axes, band) => () => bandPolygons(model, { texture, axes }, band);
   assert.throws(ask(CAR.texture, {}, { height: [0, 1] }), /needs the object's axes/);
   assert.throws(ask(CAR.texture, AXES, { height: [0, 1], side: 'port' }), /left, right, both, front, rear or around/);
+  for (const within of [0, 90, '45']) assert.throws(ask(CAR.texture, AXES, { height: [0, 1], within }), /between 0 and 90/);
   for (const height of [[0, 'top'], [0.6, 0.3], [0.5, 1.5], [0.3]]) {
     assert.throws(ask(CAR.texture, AXES, { height }), /fractions of the surface's height from 0 to 1/, JSON.stringify(height));
   }
@@ -215,10 +216,16 @@ test('a band ends where the surface turns away, between vertices, not a face at 
   }
   for (let k = 0; k < 3; k++) indices.push(2 * k, 2 * k + 2, 2 * k + 3, 2 * k, 2 * k + 3, 2 * k + 1);
   const model = parseKn5Buffer(carKn5({ extraMeshes: [{ name: 'CORNER', verts, indices }] }));
-  const { polygons } = bandPolygons(model, { texture: CAR.texture, axes: AXES }, { height: [0, 1], side: 'left' });
-  const corner = polygons.filter((p) => p.every(([u, v]) => u >= 0.699 && v >= 0.979));
-  const t = (Math.cos(Math.PI / 3) - 0.26) / Math.cos(Math.PI / 3);
-  close(area(corner), 0.01 * 0.01 * (2 + t), 'two faces and part of the third');
+  const corner = (within) => area(bandPolygons(model, { texture: CAR.texture, axes: AXES }, { height: [0, 1], side: 'left', within })
+    .polygons.filter((p) => p.every(([u, v]) => u >= 0.699 && v >= 0.979)));
+  // Where the normal, interpolated between two vertices, crosses the line.
+  const cut = (from, to, deg) => {
+    const [a, b, c] = [from, to, deg].map((x) => Math.cos((x * Math.PI) / 180));
+    return (a - c) / (a - b);
+  };
+  close(corner(undefined), 0.01 * 0.01 * (2 + cut(60, 90, 75)), 'two faces and part of the third');
+  // Stopped sooner round the corner: the first face and part of the second.
+  close(corner(45), 0.01 * 0.01 * (1 + cut(30, 60, 45)), 'within 45 degrees');
 });
 
 test('a fit cannot put a band on a panel, copy it or mirror it', async () => {
