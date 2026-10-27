@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import sharp from 'sharp';
 import { readPsd } from './psd.mjs';
-import { capOutline } from './engine/islands.mjs';
+import { capOutline, textRotation } from './engine/islands.mjs';
 import { tagProfile } from './engine/tags.mjs';
 import { PROFILE_SCHEMA } from './profile.mjs';
 import { sectionAt } from './frame.mjs';
@@ -198,14 +198,24 @@ function trace(label, width, height, id, start) {
  * Without `nose`, which a side-on template like the Chevette's needs, the
  * panels are numbered by size and have no place, and the profile says so.
  *
+ * How a flank is laid in a plan varies too: the Porsche 991's are drawn with
+ * the sill towards the middle of the sheet, the Corolla's with the roofline.
+ * `flankTop: 'inward' | 'outward'` says which, and every side panel then gets
+ * the axes a model would have measured for it, `uAxis` and `vAxis`, and from
+ * them its `textRotation` and whether it is `reflected`, so lettering reads
+ * along the car and a placement mirrors onto the far flank the right way
+ * round. Without it, a flank's lettering keeps the sheet's own orientation.
+ *
  * Nor can a template say what is seen, and nearly every rule of a portable
  * design asks for `visible`. An island of `seenArea` of the sheet or more is
  * proposed as seen, `visibleBy: 'size'`: the doors, bonnet and roof a design
  * means, at the cost of a mirror under it and an undertray over it, for a
  * person to correct.
  */
-export async function profileFromTemplate(path, { id = null, name = '', texture, role = 'body', nose = null, layer, minArea, seenArea = 0.01, log = () => {} } = {}) {
+export async function profileFromTemplate(path, { id = null, name = '', texture, role = 'body', nose = null, flankTop = null, layer, minArea, seenArea = 0.01, log = () => {} } = {}) {
   if (!texture) throw new Error('a template profile needs the texture file the game reads this sheet as, which the game\'s own files name');
+  if (flankTop !== null && !['inward', 'outward'].includes(flankTop)) throw new Error(`flankTop is "inward" or "outward", the way a flank's top edge faces on the sheet, not ${JSON.stringify(flankTop)}`);
+  if (flankTop && !nose) throw new Error('flankTop says how flanks are laid in a plan view, so it needs nose to say the template is one');
   if (nose !== null && !['top', 'bottom'].includes(nose)) throw new Error(`nose is "top" or "bottom", the end of the sheet the car's nose is drawn at, not ${JSON.stringify(nose)}`);
   const data = await readFile(path);
   const t = await readTemplate(data, { path: basename(String(path)), layer });
@@ -227,6 +237,8 @@ export async function profileFromTemplate(path, { id = null, name = '', texture,
       isl.name = seen ? `${base}_${seen + 1}` : base;
     }
     for (const isl of islands) if (isl.mirror) isl.mirrorOf = isl.mirror.name;
+    if (flankTop) orientFlanks(islands, nose, flankTop);
+    else log('  no flankTop was given, so lettering on the flanks keeps the sheet\'s orientation');
   } else {
     islands.forEach((isl, n) => { isl.name = `island_${n + 1}`; });
     log('  no nose was given, so the panels have no place on the car and no side or section to be found by');
@@ -236,6 +248,7 @@ export async function profileFromTemplate(path, { id = null, name = '', texture,
     confidence: 'proposed',
     ...(i.plan ? { plan: i.plan } : {}),
     ...(i.mirrorOf ? { mirrorOf: i.mirrorOf } : {}),
+    ...(i.uAxis ? { uAxis: i.uAxis, vAxis: i.vAxis, ...(i.textRotation !== null ? { textRotation: i.textRotation } : {}), ...(i.reflected ? { reflected: true } : {}) } : {}),
     ...(i.uvArea >= seenArea ? { visibleBy: 'size' } : {}),
     outline: i.outline,
   }]));
@@ -251,7 +264,7 @@ export async function profileFromTemplate(path, { id = null, name = '', texture,
       ...(t.layer !== null ? { layer: t.layer } : {}),
       date: new Date().toISOString().slice(0, 10),
       uvSet: 0,
-      ...(nose ? { plan: { nose, from: 'stated' } } : {}),
+      ...(nose ? { plan: { nose, ...(flankTop ? { flankTop } : {}), from: 'stated' } } : {}),
     },
     textures: { [role]: { file: texture, width: t.width, height: t.height } },
     doNotPaint: [],
@@ -305,6 +318,29 @@ function placeOnPlan(islands, nose) {
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
+
+/**
+ * A side panel's axes, in a frame with the car's left along +x, up along +y
+ * and its nose along +z. Down the sheet runs towards the tail with the nose
+ * at the top. Across it, a flank's top faces the middle of the sheet or away
+ * from it, and the middle is +u from a flank on the sheet's left.
+ */
+function orientFlanks(islands, nose, flankTop) {
+  for (const i of islands) {
+    if (Math.abs(i.mid.x) < 0.18) continue;
+    const left = i.mid.x > 0 ? 1 : -1;
+    const onSheetLeft = (left > 0) === (nose === 'top');
+    const topAlongU = (flankTop === 'inward') === onSheetLeft ? 1 : -1;
+    i.uAxis = [0, topAlongU, 0];
+    i.vAxis = [0, 0, nose === 'top' ? -1 : 1];
+    const outward = [left, 0, 0];
+    i.textRotation = textRotation(i.vAxis, outward);
+    // As a model's island is: a sheet read right and down seen from outside
+    // is a mirror image when (u, v, outward) is right-handed.
+    const [u, v] = [i.uAxis, i.vAxis];
+    i.reflected = (u[1] * v[2] - u[2] * v[1]) * left > 0;
+  }
+}
 
 function* edge(width, height) {
   for (let x = 0; x < width; x++) { yield x; if (height > 1) yield (height - 1) * width + x; }
