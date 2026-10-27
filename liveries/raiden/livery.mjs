@@ -59,10 +59,16 @@ export default {
         { id: 'pin-left', mirror: true, treatment: 'stripe', panel: 'left_mid', span: true,
           at: [0.535, -1.5, 0.03, 2.5], rotate: 'auto', color: 'vermilion', safe: false },
 
-        // And round the front corners ahead of the wheels, at the same height,
-        // as a sill-height sweep runs under the arch. The fender between the
-        // door and the arch is behind the tyre at that height. The corners are
-        // the nose's, so they are placed there rather than spanned onto.
+        // And forward over the front fenders and round the corners ahead of
+        // the wheels, at the door's height as the model measures it. Spanning
+        // cannot carry it there the same way on both sides: the left fender is
+        // one island with the door, the right one its own, and the corners are
+        // the nose's. The left fender's box stops short of the mirror cap,
+        // which shares its texture rectangle.
+        { id: 'sweep-fender-left', treatment: 'stripe', panel: 'left_front', at: [0.49, 0.52, 0.51, 0.18], color: 'indigo', safe: false },
+        { id: 'pin-fender-left', treatment: 'stripe', panel: 'left_front', at: [0.446, 0.52, 0.028, 0.18], color: 'vermilion', safe: false },
+        { id: 'sweep-fender-right', treatment: 'stripe', panel: 'right_front', at: [0, 0.1, 0.44, 0.35], color: 'indigo', safe: false },
+        { id: 'pin-fender-right', treatment: 'stripe', panel: 'right_front', at: [0.459, 0.1, 0.031, 0.35], color: 'vermilion', safe: false },
         { id: 'sweep-corner-left', treatment: 'stripe', panel: 'centre_nose', at: [0.75, 0.4, 0.25, 0.6], color: 'indigo', safe: false },
         { id: 'pin-corner-left', treatment: 'stripe', panel: 'centre_nose', at: [0.75, 0.37, 0.25, 0.03], color: 'vermilion', safe: false },
         { id: 'sweep-corner-right', treatment: 'stripe', panel: 'centre_nose', at: [0, 0.4, 0.25, 0.6], color: 'indigo', safe: false },
