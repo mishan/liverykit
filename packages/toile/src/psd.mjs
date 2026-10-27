@@ -27,11 +27,20 @@ export function readPsd(buf, { path = 'template' } = {}) {
   const depth = buf.readUInt16BE(22), mode = buf.readUInt16BE(24);
   if (depth !== 8) throw new Error(`${path} is ${depth} bits per channel; only 8 is read`);
   if (!MODES[mode]) throw new Error(`${path} is in color mode ${mode}; only RGB and grayscale are read`);
+  // A template is a downloaded file, and its header says how much to
+  // allocate for every layer read. A PSD is at most 30000 a side, and holds
+  // its flattened image at the end, which takes at least two bytes per run of
+  // 128 pixels however well it compresses: a file too short for that is not
+  // the size it claims.
+  const channels = buf.readUInt16BE(12);
+  if (!width || !height || width > 30000 || height > 30000) throw new Error(`${path} claims to be ${width}x${height}, which a PSD cannot be`);
+  if (buf.length < channels * height * 2 * (1 + Math.ceil(width / 128))) throw new Error(`${path} is too short to hold the ${width}x${height} image it claims`);
 
   let o = 26;
   o += 4 + buf.readUInt32BE(o);              // color mode data
   o += 4 + buf.readUInt32BE(o);              // image resources
   const infoEnd = o + 4 + buf.readUInt32BE(o);
+  if (infoEnd > buf.length) throw new Error(`${path} is cut short in its layers`);
   o += 4;
   if (o >= infoEnd) return { width, height, layers: [] };
   o += 4;                                    // layer info length
@@ -67,6 +76,7 @@ export function readPsd(buf, { path = 'template' } = {}) {
 
   for (const r of records) {
     for (const ch of r.channels) { ch.at = o; o += ch.length; }
+    if (o > infoEnd) throw new Error(`${path} is cut short in layer ${JSON.stringify(r.name)}`);
     const alpha = r.channels.find((ch) => ch.id === -1);
     r.alpha = () => sheet(buf, r, alpha, width, height, path);
     delete r.channels;
@@ -81,8 +91,9 @@ function sheet(buf, { name, bbox: [left, top, right, bottom] }, ch, width, heigh
   if (w <= 0 || h <= 0) return out;
   // A layer with no transparency channel covers its whole rectangle.
   const own = ch ? decode(buf, ch, w, h, `${path} layer ${JSON.stringify(name)}`) : new Uint8Array(w * h).fill(255);
+  const x0 = Math.max(0, left), x1 = Math.min(width, right);
+  if (x1 <= x0) return out;
   for (let y = Math.max(0, top); y < Math.min(height, bottom); y++) {
-    const x0 = Math.max(0, left), x1 = Math.min(width, right);
     out.set(own.subarray((y - top) * w + x0 - left, (y - top) * w + x1 - left), y * width + x0);
   }
   return out;
