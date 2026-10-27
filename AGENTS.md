@@ -32,6 +32,8 @@ Firefox; see [Tests](#tests).
 | `…/src/formats/` | kn5, through ac-kn5, and binary glTF |
 | `…/src/generate.mjs` | a profile from any model, with nothing but the model to go on |
 | `…/src/images.mjs` | an image's size, from its own DDS, PNG, JPEG or WebP header |
+| `…/src/template.mjs` | UV islands from a livery template's wireframe, for a game that publishes templates and not models |
+| `…/src/psd.mjs` | the layers of a Photoshop file, as far as a template needs them |
 | `…/src/frame.mjs` | which way a model faces, and its sections nose to tail |
 | `…/src/vocabulary.mjs` | the terms a design paints by, as a game supplies them |
 | `…/src/profile.mjs` | profiles: roles, bindings, panels, tags |
