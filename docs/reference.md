@@ -75,6 +75,12 @@ Per panel:
 | `uvBounds` | present only when `tiled`: the true UV extent, before clamping |
 | `confidence` | `measured` if derived from a model, `estimated` if a human filled it in |
 
+The profiles liverykit ships carry no `seams` and no `outline`: together they
+sketch the car maker's UV layout, which is theirs to publish. When liverykit
+finds the car's model and it is the one the profile was measured from, it
+measures both again on load, and says so. Without the model, spanning stops at
+the panel's edge with a note; `--from-kn5` writes a profile that has them.
+
 Top level: `schemaVersion` (a profile from a newer liverykit is refused rather
 than misread), `calibration.model` (the size and SHA-256 of the kn5 it was
 measured from; a different model is reported as stale), `calibration.eye` (where

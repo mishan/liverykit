@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import { buildSkin, buildCalibration, packSkin } from '../src/engine/skin.mjs';
 import { ZIP_LAYOUTS } from '../src/engine/package.mjs';
 import { loadProfile, validateProfile, doNotPaint, mergeBindings, binding, carModelCandidates, staleModel, profileJson } from '../src/profile.mjs';
+import { rolesWithoutLayout, fillLayout } from '../src/engine/layout.mjs';
 import { scanSkins, formatScan, countSkinOverrides } from '../src/engine/scan.mjs';
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { loadFit, fitLiveryId } from '../src/fit.mjs';
@@ -492,18 +493,48 @@ async function findCarModel(profile, explicit) {
     // Named outright, so a miss is an error rather than a fallback: quietly
     // ignoring the flag would be the worst of both.
     await stat(p).catch(() => fail(new Error(`--model ${p} does not exist.`)));
-    const stale = staleModel(profile, await readFile(p));
-    if (stale) console.log(`  ! ${p}: ${stale}`);
+    await useModel(profile, p);
     return { path: p, looked: [p] };
   }
   const looked = carModelCandidates(profile, { root: ROOT, env: process.env });
   for (const p of looked) {
     if (!await stat(p).then(() => true, () => false)) continue;
-    const stale = staleModel(profile, await readFile(p));
-    if (stale) console.log(`  ! ${p}: ${stale}`);
+    await useModel(profile, p);
     return { path: p, looked };
   }
   return { path: null, looked };
+}
+
+/**
+ * Check the model against the profile, and give a profile shipped without its
+ * outlines and seams the ones this model has. Only from the model it was
+ * measured from: another version, or one the profile records no fingerprint
+ * of, would put another car's layout under the design.
+ */
+async function useModel(profile, p) {
+  const stale = staleModel(profile, await readFile(p));
+  if (stale) console.log(`  ! ${p}: ${stale}`);
+  const roles = rolesWithoutLayout(profile);
+  if (!roles.length) return;
+  if (stale || !profile.calibration?.model?.sha256) {
+    console.log(`  ! outlines and seams are not taken from ${p}, which this profile cannot vouch for; ` +
+      'spanning stops at panel edges until it is regenerated with --from-kn5');
+    return;
+  }
+  // A model that cannot be measured costs the layout and nothing else, which
+  // is what a build without the model had before.
+  let filled, missed;
+  try {
+    ({ filled, missed } = await fillLayout(profile, p, { roles, skinsDir: values.skins ? resolve(values.skins) : null }));
+  } catch (e) {
+    console.log(`  ! outlines and seams could not be measured from ${p}: ${e.message}`);
+    return;
+  }
+  console.log(`  outlines and seams for ${filled} panel(s) measured from ${p}`);
+  if (missed.length) {
+    console.log(`  ! ${missed.length} panel(s) or seam(s) match nothing in the model and are left out: ` +
+      `${missed.slice(0, 5).join(', ')}${missed.length > 5 ? ', …' : ''}`);
+  }
 }
 
 // --- the fitting editor -----------------------------------------------------

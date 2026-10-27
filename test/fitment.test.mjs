@@ -1758,17 +1758,17 @@ test('find_space asks the sweep once per panel, and a panel name is taken on the
       `a kept sweep answers ${widthMm} mm exactly as a fresh one does`);
   }
 
-  // On the NSX, left_mid is a panel on nine textures. The design paints one.
-  const nsx = await loadProfile(new URL('../cars/ac_friends_honda_nsx_gt3_evo.json', import.meta.url).pathname);
+  // On the MX5 Cup, left_mid is a panel on eight textures. The design paints one.
+  const mx5 = await loadProfile(new URL('../cars/ks_mazda_mx5_cup.json', import.meta.url).pathname);
   const paintsBody = { name: 'd', packs: ['core'], surfaces: { body: { regions: [] } } };
-  const taken = spaceRole(nsx, paintsBody, undefined, 'left_mid');
-  assert.equal(taken.role, 'ext_skin_sponsors', JSON.stringify(taken));
+  const taken = spaceRole(mx5, paintsBody, undefined, 'left_mid');
+  assert.equal(taken.role, 'skin_00', JSON.stringify(taken));
   assert.match(taken.chosen, /only one this design paints/);
-  assert.match(spaceRole(nsx, { name: 'd', packs: ['core'] }, undefined, 'left_mid').error ?? '',
+  assert.match(spaceRole(mx5, { name: 'd', packs: ['core'] }, undefined, 'left_mid').error ?? '',
     /pass role to say which/, 'a design that paints none of them is still asked which');
-  assert.equal(spaceRole(nsx, paintsBody, 'glass', 'left_mid').role, 'glass', 'a role named outright wins');
-  assert.equal(spaceRole(nsx, paintsBody, 'surfaces.body', 'left_mid').role, 'ext_skin_sponsors');
-  assert.match(spaceRole(nsx, paintsBody, undefined, 'no_such_panel').error, /No panel called/);
+  assert.equal(spaceRole(mx5, paintsBody, 'belts', 'left_mid').role, 'belts', 'a role named outright wins');
+  assert.equal(spaceRole(mx5, paintsBody, 'surfaces.body', 'left_mid').role, 'skin_00');
+  assert.match(spaceRole(mx5, paintsBody, undefined, 'no_such_panel').error, /No panel called/);
 });
 
 test('a panel swept in one pass measures every cell exactly as asking cell by cell does', async () => {

@@ -255,7 +255,7 @@ car — `calibration.kind: "object"`, made from a glTF with no wheels — has
 Tires deserve a word. A sidewall is a disc, and an unwrapper lays it out either
 as a disc — polar about a hub, the way a photograph of a wheel looks — or cut
 once and rolled out as a strip, u round the circumference and v from rim to
-shoulder. The Abarth's is a disc; the NSX's is a strip. A design
+shoulder. The Abarth's is a disc; the NSX GT3's, a mod car, is a strip. A design
 that draws rings is right on the first and draws one big circle across the
 second, which on the car is a few stray arcs where the circle crosses the
 strip. The profile measures which it is, from the wheel centres AC requires
@@ -291,13 +291,12 @@ node bin/liverykit.mjs neon-grid-any --profile cars/abarth500.json
 
 `liveries/grand-touring-any.mjs` is the same idea in another vocabulary: the
 `classic` pack's hockey stick, twin stripes, checkers and sponsor row over a
-`gradient`, a number on a white board, and fits for the Abarth and the NSX.
+`gradient`, a number on a white board, and fits for the Abarth and the MX5 Cup.
 
 [`liveries/raiden/`](../liveries/raiden/) goes the other way: written for one
-car, the NSX GT3 Evo, to use as much of liverykit as a traditional design can.
-Its flanks are written once and mirrored, its number, sponsors and name were
-placed with `find_space`, its splitter and skirts are the aero layout, and it
-carries a flag decal and an underglow.
+car, the MX5 Cup, to use as much of liverykit as a traditional design can.
+Its flanks are written once and mirrored, its sweep spans the door onto the
+rear quarter, and it carries a flag decal and an underglow.
 
 Anything a given car lacks is **reported and skipped**, never silently dropped.
 

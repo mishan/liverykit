@@ -1,0 +1,27 @@
+{
+  "livery": "grand-touring-any",
+  "car": "ks_mazda_mx5_cup",
+  "notes": [
+    "The design lays its flanks out for a panel whose x runs along the car, as",
+    "the Tatuus does. On this car the door x runs up the car, so the names had",
+    "a quarter of a metre of length and shrank past reading, the hockey stick",
+    "had a box a third of the door long and stood up as a J, and the number",
+    "landed on the island the left fender shares with the door. These give the",
+    "stick the door, the board and number its upper middle between the handle",
+    "and the mirror and the team the space below, written for the left and",
+    "mirrored through the measured axes, since the right flank is the left one",
+    "flipped top to bottom only."
+  ],
+  "regions": {
+    "stick-left": { "panel": "left_mid", "at": [0, 0.04, 1, 0.92] },
+    "stick-right": { "panel": "right_mid", "at": [0, 0.04, 1, 0.92] },
+    "board-left": { "panel": "left_mid", "at": [0.02, 0.38, 0.5, 0.4] },
+    "board-right": { "panel": "right_mid", "at": [0.48, 0.38, 0.5, 0.4] },
+    "number-left": { "panel": "left_mid", "at": [0.04, 0.4, 0.46, 0.36] },
+    "number-right": { "panel": "right_mid", "at": [0.5, 0.4, 0.46, 0.36] },
+    "team-left": { "panel": "left_mid", "at": [0.56, 0.2, 0.15, 0.5] },
+    "team-right": { "panel": "right_mid", "at": [0.29, 0.2, 0.15, 0.5] },
+    "sponsors-left": { "panel": "left_rear", "at": [0.2, 0.15, 0.16, 0.7] },
+    "sponsors-right": { "panel": "right_rear", "at": [0.64, 0.15, 0.16, 0.7] }
+  }
+}

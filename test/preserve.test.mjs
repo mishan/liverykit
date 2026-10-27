@@ -661,3 +661,98 @@ test('a car states its own name, and the profile stops shipping an empty one', a
   assert.equal((await car('{"brand":"Nobody"}')).name, '', 'nor a file with no name in it');
   assert.equal((await car('{"name":"   "}')).name, '', 'nor a name that is only spaces');
 });
+
+test('a shipped profile carries no outline and no seam map', async () => {
+  // Together they sketch the car maker's UV layout, which is theirs to
+  // publish. Whoever has the model gets them back when it is found; see
+  // src/engine/layout.mjs. A profile regenerated into cars/ puts them back,
+  // and this is what notices.
+  const { readFile } = await import('node:fs/promises');
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const shipped = pkg.files.filter((f) => /^cars\/.*\.json$/.test(f));
+  assert.ok(shipped.length, 'there are profiles to check');
+  for (const f of shipped) {
+    const p = JSON.parse(await readFile(new URL(`../${f}`, import.meta.url), 'utf8'));
+    const carrying = Object.entries(p.panels).flatMap(([role, ps]) => Object.entries(ps)
+      .filter(([, q]) => q.outline !== undefined || q.seams !== undefined).map(([n]) => `${role}.${n}`));
+    assert.deepEqual(carrying, [], `${f} carries layout`);
+  }
+});
+
+test('a profile shipped without its layout gets it back from the model, and only from that model', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { carKn5 } = await import('./fixtures/kn5.mjs');
+  const { profileFromKn5 } = await import('../src/engine/profilegen.mjs');
+  const { fillLayout, rolesWithoutLayout } = await import('../src/engine/layout.mjs');
+  const dir = await mkdtemp(join(tmpdir(), 'lk-layout-'));
+  try {
+    const path = join(dir, 'fixture.kn5');
+    await writeFile(path, carKn5());
+    const measured = await profileFromKn5(path, { id: 'fixture_car', log: () => {} });
+    const stripped = structuredClone(measured);
+    for (const ps of Object.values(stripped.panels)) for (const p of Object.values(ps)) { delete p.outline; delete p.seams; }
+    // A person renamed the body role; the texture file still says which it is.
+    const [role] = Object.keys(stripped.panels);
+    stripped.panels.paint = stripped.panels[role];
+    stripped.textures.paint = stripped.textures[role];
+    delete stripped.panels[role];
+    delete stripped.textures[role];
+    assert.deepEqual([rolesWithoutLayout(stripped), rolesWithoutLayout(measured)], [['paint'], []]);
+
+    const { filled, missed } = await fillLayout(stripped, path);
+    assert.deepEqual(missed, []);
+    assert.equal(filled, Object.keys(measured.panels[role]).length);
+    for (const [n, p] of Object.entries(measured.panels[role])) {
+      assert.deepEqual([stripped.panels.paint[n].outline, stripped.panels.paint[n].seams], [p.outline, p.seams], n);
+    }
+
+    // A panel the generator now names differently is found by its rectangle,
+    // and its neighbors' seams follow it to the name the profile uses.
+    const renamed = structuredClone(stripped);
+    for (const p of Object.values(renamed.panels.paint)) { delete p.outline; delete p.seams; }
+    renamed.panels.paint.door = renamed.panels.paint.left_mid;
+    delete renamed.panels.paint.left_mid;
+    const again2 = await fillLayout(renamed, path);
+    assert.deepEqual(again2.missed, []);
+    assert.deepEqual(renamed.panels.paint.door.outline, measured.panels[role].left_mid.outline);
+    const neighbors = Object.values(renamed.panels.paint).flatMap((p) => Object.keys(p.seams ?? {}));
+    assert.ok(neighbors.includes('door') && !neighbors.includes('left_mid'), neighbors.join(', '));
+
+    // A role pasted in with its layout leaves the others to be filled, and
+    // the measurement is made from the facing the profile states.
+    const seen = [];
+    const spy = (p, opts) => { seen.push(opts.facing); return profileFromKn5(p, opts); };
+    const partial = structuredClone(stripped);
+    partial.panels.kept = structuredClone(measured.panels[role]);
+    partial.textures.kept = { ...measured.textures[role] };
+    partial.calibration.axes = { ...partial.calibration.axes, from: 'stated' };
+    for (const p of Object.values(partial.panels.paint)) { delete p.outline; delete p.seams; }
+    assert.deepEqual(rolesWithoutLayout(partial), ['paint']);
+    assert.equal((await fillLayout(partial, path, { measure: spy })).filled, Object.keys(measured.panels[role]).length);
+    assert.deepEqual(seen, [{ left: partial.calibration.axes.left, front: partial.calibration.axes.front }]);
+
+    // The CLI fills it where it finds the model, and only from that model.
+    const { promisify } = await import('node:util');
+    const { execFile } = await import('node:child_process');
+    const { fileURLToPath } = await import('node:url');
+    const cli = (model) => promisify(execFile)(process.execPath, [fileURLToPath(new URL('../bin/liverykit.mjs', import.meta.url)),
+      'neon-grid-any', '--profile', join(dir, 'stripped.json'), '--model', model, '--out', join(dir, 'out')]);
+    const unfilled = structuredClone(measured);
+    for (const ps of Object.values(unfilled.panels)) for (const p of Object.values(ps)) { delete p.outline; delete p.seams; }
+    await writeFile(join(dir, 'stripped.json'), JSON.stringify(unfilled));
+    assert.match((await cli(path)).stdout, /outlines and seams for \d+ panel\(s\) measured from/);
+
+    // Moved on the sheet, nothing matches by rectangle, and nothing is filled.
+    await writeFile(path, carKn5({ uvShift: [0.01, 0] }));
+    const again = structuredClone(stripped);
+    for (const ps of Object.values(again.panels)) for (const p of Object.values(ps)) { delete p.outline; delete p.seams; }
+    const other = await fillLayout(again, path);
+    assert.equal(other.filled, 0);
+    assert.equal(other.missed.length, Object.keys(again.panels.paint).length);
+    assert.match((await cli(path)).stdout, /outlines and seams are not taken from .*cannot vouch for/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

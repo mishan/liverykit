@@ -1,0 +1,21 @@
+{
+  "livery": "neon-grid-any",
+  "car": "ks_mazda_mx5_cup",
+  "notes": [
+    "The design lays its flanks out for a panel whose x runs along the car, as",
+    "the Tatuus does. On this car the door x runs up the car, so the names had",
+    "a quarter of a metre of length and shrank past reading; the number landed",
+    "on the island the left fender shares with the door, and drew on the door.",
+    "These put the number, team and driver on the door with the length they",
+    "need, written for the left and mirrored through the measured axes, since",
+    "the right flank is the left one flipped top to bottom only."
+  ],
+  "regions": {
+    "number-left": { "panel": "left_mid", "at": [0.05, 0.43, 0.45, 0.38] },
+    "number-right": { "panel": "right_mid", "at": [0.5, 0.43, 0.45, 0.38] },
+    "team-left": { "panel": "left_mid", "at": [0.53, 0.04, 0.145, 0.5] },
+    "team-right": { "panel": "right_mid", "at": [0.325, 0.04, 0.145, 0.5] },
+    "driver-left": { "panel": "left_mid", "at": [0.7, 0.04, 0.145, 0.5] },
+    "driver-right": { "panel": "right_mid", "at": [0.155, 0.04, 0.145, 0.5] }
+  }
+}

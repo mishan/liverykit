@@ -118,8 +118,8 @@ export default {
         //
         // The right side is the left flipped both ways, which is how the Tatuus
         // lays its right flank out, so the group mirrors on the car instead of
-        // swapping ends and lines. Other cars flip differently — the NSX only
-        // top to bottom — and a fit says so for each.
+        // swapping ends and lines. Other cars flip differently — the MX5 Cup
+        // only top to bottom — and a fit says so for each.
         //
         // The lettering glows, which is what puts it in front of the stripe:
         // the emissive layer composites above everything else, and a stripe
