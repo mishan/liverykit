@@ -100,10 +100,11 @@ export default {
         // car so it reads from in front of it.
         { id: 'sponsor-bonnet', treatment: 'text', panel: 'centre_front', at: [0.33, 0.66, 0.34, 0.15], rotate: 0, text: 'ORBIT FUELS', color: 'white', weight: 900, tracking: 0.08 },
 
-        // The sweep round the tail, under the same pinstripe, and the team in
-        // white on it, for the car you are following.
-        { id: 'tail-sweep', treatment: 'fill', panel: 'centre_tail', at: [0, 0.52, 1, 0.48], color: 'indigo', safe: false },
-        { id: 'tail-pin', treatment: 'stripe', panel: 'centre_tail', at: [0, 0.47, 1, 0.05], color: 'vermilion', safe: false },
+        // The sweep round the tail, at the flanks' own heights, so it meets
+        // them at the corners, and the team in white on it, for the car you
+        // are following.
+        { id: 'tail-sweep', treatment: 'fill', band: { height: [0, 0.345], side: 'rear' }, color: 'indigo' },
+        { id: 'tail-pin', treatment: 'fill', band: { height: [0.353, 0.371], side: 'rear' }, color: 'vermilion' },
         { id: 'team-tail', treatment: 'text', panel: 'centre_tail', at: [0.404, 0.53, 0.192, 0.21], text: '{team}', color: 'white', weight: 900, tracking: 0.14, rotate: 'auto' },
 
         // The number again on the boot lid, for the cameras above the track:

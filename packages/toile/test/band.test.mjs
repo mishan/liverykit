@@ -53,6 +53,17 @@ test('a level band covers exactly its share of each side, and nothing above or b
   membership(model, left, (q, a) => a.nx > 0.5 && q.y > lo && q.y < hi, (q) => Math.min(Math.abs(q.y - lo), Math.abs(q.y - hi)));
 });
 
+test('a band can cover the ends, and round the whole object', () => {
+  // The same heights on every face that looks that way: a stripe round the
+  // tail is the band down the flank continued, so they meet at the corner.
+  const model = parseKn5Buffer(carKn5());
+  const at = (side, axes = AXES) => area(bandPolygons(model, { texture: CAR.texture, axes }, { height: [0.2, 0.55], side }).polygons);
+  close(at('rear'), 0.35 * sheetArea('rear'), 'the rear');
+  close(at('front'), 0.35 * sheetArea('front'), 'the front');
+  close(at('rear', { left: '+X', front: '-Z' }), 0.35 * sheetArea('front'), 'the rear of a car facing the other way');
+  close(at('around'), 0.35 * ['left', 'right', 'front', 'rear'].reduce((a, f) => a + sheetArea(f), 0), 'all round, and not the roof or floor');
+});
+
 test('a band thinner than a row of triangles is cut by both planes in one triangle', () => {
   // A pinstripe: both of its edges cross the same triangles, so the second cut
   // runs along edges the first one made, and lands right only if the first
@@ -118,7 +129,7 @@ test('a band says what it cannot measure, rather than painting nothing', () => {
   const model = parseKn5Buffer(carKn5());
   const ask = (texture, axes, band) => () => bandPolygons(model, { texture, axes }, band);
   assert.throws(ask(CAR.texture, {}, { height: [0, 1] }), /needs the object's axes/);
-  assert.throws(ask(CAR.texture, AXES, { height: [0, 1], side: 'port' }), /left, right or both/);
+  assert.throws(ask(CAR.texture, AXES, { height: [0, 1], side: 'port' }), /left, right, both, front, rear or around/);
   for (const height of [[0, 'top'], [0.6, 0.3], [0.5, 1.5], [0.3]]) {
     assert.throws(ask(CAR.texture, AXES, { height }), /fractions of the surface's height from 0 to 1/, JSON.stringify(height));
   }

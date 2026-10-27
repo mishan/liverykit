@@ -303,6 +303,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     // — and so the run says which surface went unchecked instead of returning a
     // short list of findings that reads like a clean bill of health.
     let placed;
+    let banded = false;
     try {
       placed = placements(profile, t, spec, fit, sayHere);
       // A band is placed by height on the car, not in a rectangle, and none of
@@ -310,6 +311,7 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
       for (const p of placed.filter((q) => q.region?.band !== undefined)) {
         skip(`${p.id}: a band, placed by height on the car, which the check does not measure yet`);
       }
+      banded = placed.some((q) => q.region?.band !== undefined);
       placed = placed.filter((q) => q.region?.band === undefined);
     } catch (e) {
       failed.push(t.from);
@@ -331,7 +333,10 @@ export function fitment(design, profile, fit = null, { model = null } = {}) {
     const size = texSize(profile, t.role);
     overlaps(placed, t, sayHere, size, design.identity ?? {});
     ringOverflow(placed, t, sayHere);
-    contrast(placed, t, design, sayHere, size);
+    // What lettering stands on is a band as often as not, and a check that
+    // cannot see the band judges the text against the bodywork it covers.
+    if (banded) skip(`low-contrast on ${t.from}: a band is drawn here, and what it puts under the lettering is not measured yet`);
+    else contrast(placed, t, design, sayHere, size);
     outsideSafe(placed, profile, t, sayHere);
     hiddenFace(placed, profile, t, sayHere);
     unreadable(placed, profile, t, sayHere, skip);
