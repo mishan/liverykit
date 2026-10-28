@@ -258,9 +258,9 @@ button.rot.on { border-color: var(--accent); color: var(--accent); background: #
 /* Emptied of its columns, which are panes now; left in place so they have a
    parent to go back to when the window narrows. */
 body.tiled > main { display: none; }
-/* The header full width, as untiled; the panes inset a little under it. */
-body.tiled { padding: 0; }
-body.tiled #panes { margin: 6px; }
+/* The panes inset a little under the full-width header: padding, which
+   replaces mullion's own inset, where a margin would add to it. */
+body.tiled #panes { padding: 6px; }
 body.tiled .sidetabs { display: none; }
 body:not(.tiled) [data-side-off] { display: none; }
 body.tiled .panebody > aside { flex: 1 1 auto; min-height: 0; overflow: visible; border: 0; }
