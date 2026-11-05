@@ -178,7 +178,10 @@ export async function buildSkin({ profile, livery, outDir, scale = 1, seed, flat
     // again afterwards, exactly.
     if (stock) {
       const alpha = await sharp(stock).resize(width, height, { fit: 'fill' }).ensureAlpha().extractChannel(3).toBuffer();
-      png = await sharp(png).removeAlpha().joinChannel(alpha).png().toBuffer();
+      // Two pipelines: sharp applies removeAlpha after joinChannel whatever
+      // order they are called in, and in one it took the joined alpha off too.
+      const rgb = await sharp(png).removeAlpha().png().toBuffer();
+      png = await sharp(rgb).joinChannel(alpha).png().toBuffer();
     }
 
     const out = await output.writeSurface({ png, tex, width, height, outDir, pngDir: pngDir ?? outDir, keep: !!pngDir });

@@ -1110,6 +1110,29 @@ test('a surface painted over the stock texture keeps its alpha, and its own colo
   assert.deepEqual([...data.subarray(12, 16)], [0, 0, 255, 128], 'unpainted: the stock texture, as it was');
 });
 
+test('glass painted over its stock texture is written with the stock alpha, clear where the window is', async () => {
+  // The renderer kept the alpha and the build then lost it: joining the stock
+  // alpha in the same sharp pipeline as removeAlpha, which sharp applies last,
+  // wrote every window opaque, and a driver could not see out of the car.
+  const { buildSkin } = await import('../src/engine/skin.mjs');
+  const { encodeDds } = await import('ac-dds');
+  const { decodeDds } = await import('ac-dds/decode');
+  const S = 16, rgba = new Uint8Array(S * S * 4);
+  for (let i = 0; i < S * S; i++) rgba.set([20, 20, 30, i % S < S / 2 ? 0 : 255], 4 * i);
+  const dir = await mkdtemp(join(tmpdir(), 'liverykit-glass-'));
+  const modelPath = join(dir, 'car.kn5');
+  await writeFile(modelPath, buildKn5({ textureName: 'g.dds', textureData: Buffer.from(encodeDds(rgba, S, S, { alpha: true })) }));
+  const p = { id: 'car', textures: { glass: { file: 'g.dds', width: S, height: S, alpha: true } } };
+  await buildSkin({
+    profile: p, livery: { name: 'L', paint: { glass: { background: 'stock', regions: [{ treatment: 'fill', at: [0, 0, 1, 0.25], color: '#ff0000', safe: false }] } } },
+    outDir: join(dir, 'skin'), modelPath, log: () => {},
+  });
+  const bytes = await readFile(join(dir, 'skin', 'g.dds'));
+  const { pixels } = decodeDds(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
+  const alphaAt = (x, y) => pixels[4 * (y * S + x) + 3];
+  for (const y of [2, 12]) assert.deepEqual([alphaAt(2, y), alphaAt(13, y)], [0, 255], `row ${y}: clear on the window, opaque beside it, painted or not`);
+});
+
 test('binding to a texture the model never references is flagged', async () => {
   // The driver and pit crew are separate kn5 files that a car skin overrides, so
   // this is expected for them — and it is also exactly how metal_detail.dds
