@@ -77,9 +77,11 @@ result says so as data, `_meta: { "liverykit/editor": "unreachable" }`, so a
 client can end its work instead of reading it as a tool refusing. Before that
 existed, an agent kept paying for turns against an editor that was gone.
 
-That refusal is the safety mechanism, so it is stated as a rule: **without a
-person watching, nothing is proposed.** An MCP that quietly worked without one
-would be the demo version described at the top, arrived at by degrees.
+That refusal is the safety mechanism, so it is stated as a rule: **without an
+editor, nothing is proposed.** The check is for the editor's server, not for a
+person at it: with the browser closed a proposal is still taken, and waits in the
+inbox until a person accepts or discards it. An MCP that quietly worked without
+an editor would be the demo version described at the top, arrived at by degrees.
 
 ## The proposal inbox
 
@@ -201,7 +203,9 @@ car.
 
 Collected in one place, because these are the parts easiest to lose by accident:
 
-1. **No editor, no service.** Without a person watching, nothing is proposed.
+1. **No editor, no service.** If the editor's server does not answer, nothing is
+   proposed, and there is no fallback to files or a headless editor. A proposal
+   waits in the inbox until a person accepts or discards it.
 2. **No writes to disk.** Propose only.
 3. **No `source: "human"`,** by any route an agent has. Proposals carrying it are
    refused by the MCP tools and again when the editor applies a proposal
@@ -271,12 +275,12 @@ then the proposing tools with every refusal in place and a test each.
 
 The rest came from use, not from the plan. `check_fitment`, the constraints and
 `render_car` came from the failures above. Drafts came from an agent iterating
-on its own ([autolivery](https://github.com/mishan/autolivery)): a proposal only
-reaches the working design once accepted, so checking after proposing measured
-the design *without* the change, and with nobody at the editor it could not be
-measured at all. Letting an agent accept its own proposals behind a flag was
-rejected, since it would make the inbox optional; drafts measure a proposal
-without adopting it instead.
+on its own ([autolivery](https://github.com/mishan/autolivery)): a proposal
+reaches the working design only once the browser picks it up and applies it, so
+checking right after proposing could measure the design *without* the change,
+and with no browser open it could not be measured at all. Letting an agent
+accept its own proposals behind a flag was rejected, since it would make the
+inbox optional; drafts measure a proposal without adopting it instead.
 
 `find_space` came from a door. On the NSX the top quarter of the door panel's
 box is not door and its middle is under the window line, so everything that
