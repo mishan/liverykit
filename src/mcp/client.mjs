@@ -16,6 +16,11 @@ export const EDITOR_META = 'liverykit/editor';
 
 export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
   const url = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  // A connection that drops after the headers fails in the body read, not in
+  // fetch, and is the same editor gone.
+  const unreachable = () => {
+    throw new EditorUnreachable(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
+  };
 
   const request = async (path, options = {}) => {
     let res;
@@ -23,11 +28,12 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
       const headers = { connection: 'close', ...options.headers };
       res = await fetch(new URL(path, url).href, { ...options, headers });
     } catch (e) {
-      throw new EditorUnreachable(`No fitting editor is listening at ${url}. Start the editor with liverykit <livery> --ui.`);
+      unreachable();
     }
 
     const contentType = res.headers.get('content-type') ?? '';
-    const data = contentType.includes('application/json') ? await res.json() : await res.text();
+    const text = await res.text().catch(unreachable);
+    const data = contentType.includes('application/json') ? JSON.parse(text) : text;
 
     if (!res.ok) {
       const errMsg = typeof data === 'object' && data?.error ? data.error : res.statusText;
@@ -85,13 +91,15 @@ export function createEditorClient(baseUrl = 'http://127.0.0.1:7391/') {
             body: JSON.stringify({ proposal }),
           }
         : { headers: { connection: 'close' } },
-      ).catch(() => { throw new EditorUnreachable(`No fitting editor is listening at ${url}.`); });
+      ).catch(unreachable);
+      const body = Buffer.from(await res.arrayBuffer().catch(unreachable));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(`Editor API error (${res.status}): ${body.error ?? res.statusText}`);
+        let error;
+        try { error = JSON.parse(body).error; } catch {}
+        throw new Error(`Editor API error (${res.status}): ${error ?? res.statusText}`);
       }
       return {
-        png: Buffer.from(await res.arrayBuffer()),
+        png: body,
         skipped: Number(res.headers.get('x-liverykit-skipped') ?? 0),
         absent: Number(res.headers.get('x-liverykit-absent') ?? 0),
       };

@@ -1822,6 +1822,200 @@ test('a drag is one undo step, not one per pointer event', async () => {
   assert.equal(dom.querySelector('#undo').disabled, true, 'and there is nothing behind it');
 });
 
+test('Discard puts back exactly what the proposal changed, whatever was tried meanwhile', async () => {
+  // Discard is one undo, so it is right only if the proposal is the last step
+  // on the stack. A drag made while it was pending was undone in its place,
+  // and the proposal stayed on the car; an Undo took the proposal back, and
+  // Discard then took back the person's own edit from before it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  for (const attempt of ['drag', 'undo']) {
+    // Answered once: every editor booted by an earlier test still polls.
+    let pending = null;
+    const { dom, mod, window: win } = await runApp({
+      state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+      render: renderSurface({ livery, profile, fit, role }),
+      routes: {
+        '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+        '/api/proposal/ack': () => ({}),
+      },
+    });
+    const working = () => JSON.parse(dom.querySelector('#fitjson').textContent);
+    const drag = () => {
+      dom.querySelector('#overlay').onpointerdown({
+        preventDefault() {}, clientX: 100, clientY: 100, target: { dataset: { drag: 'move' } },
+      });
+      for (let i = 1; i <= 5; i++) win.emit('pointermove', { clientX: 100 + i * 10, clientY: 100 + i * 10 });
+      win.emit('pointerup', {});
+    };
+
+    dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+    drag();
+    await new Promise((r) => setTimeout(r, 30));
+    const before = working();
+
+    pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+    await mod.checkProposals();
+    const proposed = working();
+    assert.equal(proposed.regions['number-left'].rotate, 90, 'the proposal is on the car');
+
+    // A refused drag throws out of its handler, as it would into the console.
+    try { if (attempt === 'drag') drag(); else await dom.querySelector('#undo').onclick(); } catch {}
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(working(), proposed, `${attempt}: nothing changes while the proposal waits`);
+    assert.match(dom.querySelector('#canvashint').textContent, /accept or discard/, `${attempt}: and it says why`);
+
+    await dom.querySelector('#proposal-discard').onclick();
+    assert.deepEqual(working(), before, `${attempt}: Discard returns to just before the proposal`);
+  }
+});
+
+test('a control whose edit is refused while a proposal waits goes back to the design', async () => {
+  // The control shows the typed value before the edit is refused, and nothing
+  // redraws it afterwards, so it kept a value that Save design does not write.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+  let pending = null;
+  const { dom, mod } = await runApp({ server, routes: {
+    '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+    '/api/proposal/ack': () => ({}),
+  } });
+
+  /** Assigning a panel's markup sets each control to the value it carries, as replacing the inputs does. */
+  const redraws = (el, attr, field) => {
+    let html = el.innerHTML;
+    const part = field.dataset.part ? ` data-part="${field.dataset.part}"` : '';
+    const shown = new RegExp(`data-${attr}="${field.dataset[attr]}"${part}[^>]*?value="([^"]*)"`);
+    Object.defineProperty(el, 'innerHTML', {
+      get: () => html,
+      set(h) { html = h; const m = h.match(shown); if (m) field.value = m[1]; },
+    });
+    return field;
+  };
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'value']]);
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'value']]);
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const controls = [
+    ['palette', redraws(palette, 'palette', palette.rowFor('accent', 'value')), '#00F0FF', '#FF00FF'],
+    ['identity', redraws(identity, 'token', identity.rowFor('driver', 'value')), 'A. Driver', 'M. Nasledov'],
+    ['option', redraws(dom.querySelector('#inspector'), 'opt', fields.get('text')), 'HELLO', 'GOODBYE'],
+  ];
+  for (const [, field, was] of controls) field.value = was;
+
+  pending = { id: 'prop_1', why: 'turn the badge', fit: [{ op: 'set-override', id: 'badge', rotate: 90 }] };
+  await mod.checkProposals();
+
+  for (const [what, field, was, typed] of controls) {
+    field.value = typed;
+    try { await field.onchange(); } catch {}
+    assert.equal(field.value, was, `${what}: the refused value does not stay on screen`);
+  }
+});
+
+test('a press on the selection orbits while a proposal waits', async () => {
+  // An edit refused by throwing from the viewer's claim would stop the press orbiting too.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const render = renderSurface({ livery, profile, fit, role });
+  let pending = null;
+  const { dom, mod } = await runApp({
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+    render,
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+    },
+  });
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  const [x, y, w, h] = render.placed.find((p) => p.id === 'number-left').abs;
+  const uv = { u: x + w / 2, v: y + h / 2 };
+
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  await mod.checkProposals();
+  for (const shiftKey of [false, true]) {
+    assert.equal(mod.claimCarPointer(uv, { preventDefault() {}, shiftKey }), false, `shift ${shiftKey}`);
+  }
+});
+
+test('a proposal whose first render fails can still be decided', async () => {
+  // Later polls stop at the pending proposal, so a banner left hidden held
+  // every edit back with no way to accept or discard it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const state = editorState({ livery, profile, fit, liveryId: 'neon-grid-any' });
+  let pending = null;
+  let down = false;
+  const { dom, mod } = await runApp({
+    state,
+    render: renderSurface({ livery, profile, fit, role }),
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+      '/api/state': () => { if (down) { down = false; throw new Error('connection refused'); } return state; },
+    },
+  });
+  const banner = dom.querySelector('#proposal-banner');
+  banner.hidden = true;
+
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  down = true;
+  await mod.checkProposals();
+  assert.equal(banner.hidden, false, 'Accept and Discard are on screen');
+
+  await dom.querySelector('#proposal-discard').onclick();
+  assert.equal(banner.hidden, true);
+  assert.equal(dom.querySelector('#undo').disabled, true, 'and nothing is left behind to undo');
+});
+
+test('a livery reload that lands while a proposal arrives waits for the decision', async () => {
+  // Taken under the proposal, the reload was undone by Discard and its version
+  // was already marked seen, so no later poll brought it back.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const state = { ...editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }), designVersion: 0 };
+  let pending = null;
+  let version = 0;
+  const { dom, mod } = await runApp({
+    state,
+    render: renderSurface({ livery, profile, fit, role }),
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+      '/api/livery': () => ({ version, error: null, path: 'x.mjs' }),
+    },
+  });
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+
+  version = 1;
+  state.design = { ...state.design, palette: { ...state.design.palette, reloaded: '#123456' } };
+  state.designVersion = 1;
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  // Started first, and still between its requests when the proposal goes on.
+  const reload = mod.checkLivery();
+  await mod.checkProposals();
+  await reload;
+
+  await dom.querySelector('#proposal-discard').onclick();
+  await mod.checkLivery();
+  assert.equal(design().palette.reloaded, '#123456', 'the reload is taken once the proposal is decided');
+});
+
 // --- copies, end to end -----------------------------------------------------
 //
 // The tests above check that a copy is WRITTEN into the fit. That is half the

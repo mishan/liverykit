@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 
 import { profileFromKn5 } from '../src/engine/profilegen.mjs';
 import { carKn5 } from './fixtures/kn5.mjs';
@@ -423,6 +424,33 @@ test('an editor that stops answering is marked as such in the tool result, not o
   const refused = await server.handleRequest({ jsonrpc: '2.0', id: 2, method: 'tools/call',
     params: { name: 'propose_design', arguments: {} } });
   assert.equal(refused.result._meta, undefined, 'a refusal is not an editor gone');
+});
+
+test('an editor that drops the connection after its headers is marked unreachable too', async () => {
+  // Headers arrive, then the socket goes: the failure surfaces while the body
+  // is read, after fetch itself has resolved.
+  let status;
+  const server = createServer((req, res) => {
+    const type = req.url.startsWith('/api/shot') && status === 200 ? 'image/png' : 'application/json';
+    res.writeHead(status, { 'content-type': type, 'content-length': '1000' });
+    res.write(type === 'image/png' ? '\x89PNG' : '{"partial":');
+    setTimeout(() => res.socket.destroy(), 20);
+  });
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  try {
+    const client = { ...createEditorClient(`http://127.0.0.1:${server.address().port}/`), checkEditor: async () => ({}) };
+    const protocol = createProtocolServer({ toolHandler: createToolHandler(client) });
+    for (const [name, code] of [['check_fitment', 200], ['check_fitment', 500], ['render_car', 200], ['render_car', 500]]) {
+      status = code;
+      const { result } = await protocol.handleRequest({ jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name, arguments: {} } });
+      assert.equal(result.isError, true, name);
+      assert.equal(result._meta?.['liverykit/editor'], 'unreachable', `${name} ${code}: ${result.content[0].text}`);
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise((ok) => server.close(ok));
+  }
 });
 
 test('refusal: source: "human" is refused', async () => {

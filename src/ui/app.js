@@ -545,6 +545,19 @@ $('#savedesign').onclick = async () => {
 
 // --- undo -------------------------------------------------------------------
 
+/** The agent's proposal on screen, applied as the top step of the stack. */
+let currentProposal = null;
+const PROPOSAL_PENDING = 'accept or discard the proposal before changing anything';
+
+/**
+ * Nothing may change while a proposal waits. Discard takes back one step, so a
+ * step taken meanwhile would be the one it took back, leaving the proposal on.
+ */
+function proposalPending() {
+  if (currentProposal) status(PROPOSAL_PENDING);
+  return currentProposal !== null;
+}
+
 /** Everything an action can change, as a value that can be put back. */
 function snapshot() {
   return {
@@ -581,6 +594,15 @@ function restore(snap) {
  * "go back four pixels".
  */
 function remember(label) {
+  // Thrown rather than returned, so every action stops here, before it changes
+  // anything, without each one having to ask.
+  if (proposalPending()) {
+    // The control that asked already shows the refused value.
+    drawPalette();
+    drawIdentity();
+    drawInspector();
+    throw new Error(PROPOSAL_PENDING);
+  }
   state.past.push({ ...snapshot(), label });
   if (state.past.length > UNDO_LIMIT) state.past.shift();
   // A new action abandons the redo branch. Keeping it would let a redo jump to
@@ -590,6 +612,7 @@ function remember(label) {
 }
 
 async function undo() {
+  if (proposalPending()) return;
   const snap = state.past.pop();
   if (!snap) return status('nothing to undo');
   state.future.push({ ...snapshot(), label: snap.label });
@@ -598,6 +621,7 @@ async function undo() {
 }
 
 async function redo() {
+  if (proposalPending()) return;
   const snap = state.future.pop();
   if (!snap) return status('nothing to redo');
   state.past.push({ ...snapshot(), label: snap.label });
@@ -623,8 +647,8 @@ async function afterTimeTravel(msg) {
 
 function updateUndoButtons() {
   const u = $('#undo'); const r = $('#redo');
-  if (u) { u.disabled = !state.past.length; u.title = state.past.length ? `undo ${state.past.at(-1).label}` : ''; }
-  if (r) { r.disabled = !state.future.length; r.title = state.future.length ? `redo ${state.future.at(-1).label}` : ''; }
+  if (u) { u.disabled = !state.past.length || currentProposal !== null; u.title = state.past.length ? `undo ${state.past.at(-1).label}` : ''; }
+  if (r) { r.disabled = !state.future.length || currentProposal !== null; r.title = state.future.length ? `redo ${state.future.at(-1).label}` : ''; }
 }
 
 // --- rendering --------------------------------------------------------------
@@ -1554,6 +1578,8 @@ function offerToAdopt(group) {
 async function adoptSurface(role) {
   if (!role) return;
   if (state.lossy.length) return status(CANNOT_EDIT);
+  // Before remember, because it sends the server its design first.
+  if (proposalPending()) return;
   // Already painted, by ANY route. `resolveTargets` refuses a role claimed
   // twice — one write would silently overwrite the other — so adopting a role
   // the design reaches through `surfaces.<term>` would produce a design that
@@ -1613,7 +1639,11 @@ export function claimCarPointer(uv, e) {
   // Shift-click puts the selection where you clicked. A plain click cannot:
   // a design's patterns cover whole panels, so there is a region under every
   // point of the car and a click there selects it.
-  if (e?.shiftKey && sel) { placeHere(sel, uv); return true; }
+  if (e?.shiftKey && sel) {
+    if (proposalPending()) return false;
+    placeHere(sel, uv);
+    return true;
+  }
   const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
   const area = (p) => p.abs[2] * p.abs[3];
 
@@ -1638,6 +1668,8 @@ export function claimCarPointer(uv, e) {
   // makes with its handle, without a handle to hit on a surface that curves.
   const [x, y, w, h] = now.abs;
   const corner = uv.u > x + w * 0.75 && uv.v > y + h * 0.75;
+  // Declined rather than refused, so the press still orbits.
+  if (proposalPending()) return false;
   startCarDrag(e, corner ? 'resize' : 'move', uv);
   return true;
 }
@@ -3427,8 +3459,8 @@ function setDirty(v) {
  * a file nobody had touched.
  */
 function updateSaveButtons() {
-  const save = $('#save'); if (save) save.disabled = !state.dirty;
-  const design = $('#savedesign'); if (design) design.disabled = !state.designDirty;
+  const save = $('#save'); if (save) save.disabled = !state.dirty || currentProposal !== null;
+  const design = $('#savedesign'); if (design) design.disabled = !state.designDirty || currentProposal !== null;
 }
 
 /** Mark the DESIGN changed — what a region is, rather than where it sits. */
@@ -3454,7 +3486,6 @@ function esc(s) {
 }
 
 // --- proposal polling --------------------------------------------------------
-let currentProposal = null;
 
 /**
  * Apply a proposal, and report the ops that would not go on.
@@ -3479,21 +3510,26 @@ function applyProposalDiffInApp(p) {
   return refused;
 }
 
-async function checkProposals() {
+export async function checkProposals() {
   if (currentProposal) return;
   try {
     const res = await api('/api/proposal');
     const p = res?.proposal;
     if (p && p.id && p.id !== currentProposal?.id) {
-      currentProposal = p;
       remember(`proposal: ${p.why}`);
+      currentProposal = p;
       const refused = applyProposalDiffInApp(p);
       if (refused.length) status(`${refused.length} of the proposal's changes were refused`);
       if (Array.isArray(p.fit) && p.fit.length > 0) setDirty(true);
       if (Array.isArray(p.design) && p.design.length > 0) setDesignDirty();
-      await reloadState();
-      await refresh();
-      showProposalBanner(p, refused);
+      // Shown even if the reload fails: later polls wait on this proposal, so
+      // without the banner nothing could ever decide it.
+      try {
+        await reloadState();
+        await refresh();
+      } finally {
+        showProposalBanner(p, refused);
+      }
     }
   } catch {
     // server down or network glitch
@@ -3517,11 +3553,15 @@ function showProposalBanner(p, refused = []) {
     ? `${p.why}  —  NOT APPLIED: ${refused.join(' ')}`
     : p.why;
   banner.hidden = false;
+  updateUndoButtons();
+  updateSaveButtons();
 }
 
 function hideProposalBanner() {
   const banner = $('#proposal-banner');
   if (banner) banner.hidden = true;
+  updateUndoButtons();
+  updateSaveButtons();
 }
 
 async function acceptProposal() {
@@ -3561,6 +3601,8 @@ if (discardBtn) discardBtn.onclick = discardProposal;
 // own, which it could not have saved anyway, and says so.
 let liveryError = null;
 export async function checkLivery() {
+  // Taken once the proposal is decided, so Discard does not undo it too.
+  if (currentProposal) return;
   try {
     const v = await api('/api/livery');
     if (v?.error !== undefined && v.error !== liveryError) {
@@ -3571,6 +3613,9 @@ export async function checkLivery() {
     // existed answers something else, and that is not a new version.
     if (typeof v?.version !== 'number' || v.version === state.designVersion) return;
     const fresh = await api('/api/state');
+    // Rechecked because one may have arrived during the requests. Left unseen,
+    // so a poll after the decision takes it.
+    if (currentProposal) return;
     state.design = structuredClone(fresh.design);
     state.designVersion = fresh.designVersion;
     state.lossy = fresh.lossy ?? [];
