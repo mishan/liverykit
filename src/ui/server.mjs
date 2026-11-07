@@ -1890,12 +1890,13 @@ export async function startUi({ livery: openedWith, profile, profilePath = null,
 
       // What a proposal WOULD do, measured, without offering it to anybody.
       //
-      // The inbox applies a proposal in the browser, and only an accepted one
-      // reaches the working state that check_fitment and the shot read. So an
-      // agent that proposed and then checked was checking the design BEFORE its
-      // own change, and one working with nobody at the editor could not check
-      // its change at all — the proposal sat pending and every measurement
-      // described the car without it. The alternative was letting an agent
+      // The inbox applies a proposal in the browser, and it reaches the working
+      // state that check_fitment and the shot read only when the browser picks
+      // it up and posts it to /api/state: up to a second later, and never with
+      // no browser open. So an agent that proposed and then checked could be
+      // checking the design BEFORE its own change, and one working with nobody
+      // at the editor could not check its change at all — the proposal sat
+      // pending and every measurement described the car without it. The alternative was letting an agent
       // accept its own proposals, which is the one thing the inbox exists to
       // prevent. This lets it measure a draft instead, and still leaves the
       // only way onto the car through a person.

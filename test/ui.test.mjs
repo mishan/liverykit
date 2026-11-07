@@ -1822,6 +1822,57 @@ test('a drag is one undo step, not one per pointer event', async () => {
   assert.equal(dom.querySelector('#undo').disabled, true, 'and there is nothing behind it');
 });
 
+test('Discard puts back exactly what the proposal changed, whatever was tried meanwhile', async () => {
+  // Discard is one undo, so it is right only if the proposal is the last step
+  // on the stack. A drag made while it was pending was undone in its place,
+  // and the proposal stayed on the car; an Undo took the proposal back, and
+  // Discard then took back the person's own edit from before it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+
+  for (const attempt of ['drag', 'undo']) {
+    // Answered once: every editor booted by an earlier test still polls.
+    let pending = null;
+    const { dom, mod, window: win } = await runApp({
+      state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+      render: renderSurface({ livery, profile, fit, role }),
+      routes: {
+        '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+        '/api/proposal/ack': () => ({}),
+      },
+    });
+    const working = () => JSON.parse(dom.querySelector('#fitjson').textContent);
+    const drag = () => {
+      dom.querySelector('#overlay').onpointerdown({
+        preventDefault() {}, clientX: 100, clientY: 100, target: { dataset: { drag: 'move' } },
+      });
+      for (let i = 1; i <= 5; i++) win.emit('pointermove', { clientX: 100 + i * 10, clientY: 100 + i * 10 });
+      win.emit('pointerup', {});
+    };
+
+    dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+    drag();
+    await new Promise((r) => setTimeout(r, 30));
+    const before = working();
+
+    pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+    await mod.checkProposals();
+    const proposed = working();
+    assert.equal(proposed.regions['number-left'].rotate, 90, 'the proposal is on the car');
+
+    // A refused drag throws out of its handler, as it would into the console.
+    try { if (attempt === 'drag') drag(); else await dom.querySelector('#undo').onclick(); } catch {}
+    await new Promise((r) => setTimeout(r, 30));
+    assert.deepEqual(working(), proposed, `${attempt}: nothing changes while the proposal waits`);
+    assert.match(dom.querySelector('#canvashint').textContent, /accept or discard/, `${attempt}: and it says why`);
+
+    await dom.querySelector('#proposal-discard').onclick();
+    assert.deepEqual(working(), before, `${attempt}: Discard returns to just before the proposal`);
+  }
+});
+
 // --- copies, end to end -----------------------------------------------------
 //
 // The tests above check that a copy is WRITTEN into the fit. That is half the

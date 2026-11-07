@@ -51,8 +51,8 @@ whether a placement looks right.**
 The editor is already a local server with a live view of the car and a person
 sitting in front of it. So the MCP does not write files and has no copy of the
 design of its own. It **proposes into the running editor**, the proposal appears
-on screen, and the person accepts it, drags it somewhere better, or throws it
-away. Save is a button a person presses, as it always was.
+on screen, and the person throws it away or accepts it, and can then drag it
+somewhere better. Save is a button a person presses, as it always was.
 
 The agent does the part that is reading and writing structured text, and the
 judgment stays with the person looking at the car.
@@ -100,8 +100,9 @@ POST /api/proposal/evaluate   what a proposal WOULD do, measured; nothing is pen
 
 The browser polls `GET /api/proposal` once a second while idle. When a proposal
 arrives it applies the change to its working copy, marks the affected regions,
-and shows *Accept* and *Discard*. Discard restores the working copy from the
-undo stack, which already covers both files.
+and shows *Accept* and *Discard*. Until one is pressed nothing else can change,
+Undo and Save included, so the proposal is the top step of the undo stack, which
+already covers both files, and Discard takes back exactly that step.
 
 Polling, not server-sent events: SSE adds a connection to keep alive, reconnect
 and test, and what is being delivered is a message a person has to read anyway.

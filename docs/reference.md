@@ -156,7 +156,7 @@ the editor's inbox until a person accepts it.
 - **`propose_fit`**: Propose fit placement overrides or copies to the editor's inbox.
 - **`place_at`**: Point at a pixel of a `render_car` picture and propose moving a region there, as shift-clicking the car does in the editor: on the panel under it, centred, at the same size on the car in millimetres.
 
-Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect, drag, and **Accept** or **Discard** them using the undo stack. The MCP server never writes directly to disk.
+Proposals land in the editor's proposal banner (`#proposal-banner`) where the human user can visually inspect them and **Accept** or **Discard** them. Nothing else can be edited until they do, so Discard undoes exactly the proposal. The MCP server never writes directly to disk.
 
 See [docs/mcp.md](mcp.md) for full protocol details and design rationale.
 
