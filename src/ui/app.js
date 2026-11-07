@@ -3607,6 +3607,9 @@ export async function checkLivery() {
     // existed answers something else, and that is not a new version.
     if (typeof v?.version !== 'number' || v.version === state.designVersion) return;
     const fresh = await api('/api/state');
+    // Rechecked because one may have arrived during the requests. Left unseen,
+    // so a poll after the decision takes it.
+    if (currentProposal) return;
     state.design = structuredClone(fresh.design);
     state.designVersion = fresh.designVersion;
     state.lossy = fresh.lossy ?? [];

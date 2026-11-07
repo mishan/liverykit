@@ -1954,6 +1954,41 @@ test('a proposal whose first render fails can still be decided', async () => {
   assert.equal(dom.querySelector('#undo').disabled, true, 'and nothing is left behind to undo');
 });
 
+test('a livery reload that lands while a proposal arrives waits for the decision', async () => {
+  // Taken under the proposal, the reload was undone by Discard and its version
+  // was already marked seen, so no later poll brought it back.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const state = { ...editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }), designVersion: 0 };
+  let pending = null;
+  let version = 0;
+  const { dom, mod } = await runApp({
+    state,
+    render: renderSurface({ livery, profile, fit, role }),
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+      '/api/livery': () => ({ version, error: null, path: 'x.mjs' }),
+    },
+  });
+  const design = () => JSON.parse(dom.querySelector('#designjson').textContent);
+
+  version = 1;
+  state.design = { ...state.design, palette: { ...state.design.palette, reloaded: '#123456' } };
+  state.designVersion = 1;
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  // Started first, and still between its requests when the proposal goes on.
+  const reload = mod.checkLivery();
+  await mod.checkProposals();
+  await reload;
+
+  await dom.querySelector('#proposal-discard').onclick();
+  await mod.checkLivery();
+  assert.equal(design().palette.reloaded, '#123456', 'the reload is taken once the proposal is decided');
+});
+
 // --- copies, end to end -----------------------------------------------------
 //
 // The tests above check that a copy is WRITTEN into the fit. That is half the
