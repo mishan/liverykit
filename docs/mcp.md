@@ -99,10 +99,10 @@ POST /api/proposal/evaluate   what a proposal WOULD do, measured; nothing is pen
 ```
 
 The browser polls `GET /api/proposal` once a second while idle. When a proposal
-arrives it applies the change to its working copy, marks the affected regions,
-and shows *Accept* and *Discard*. Until one is pressed nothing else can change,
-Undo and Save included, so the proposal is the top step of the undo stack, which
-already covers both files, and Discard takes back exactly that step.
+arrives it applies the change to its working copy and shows *Accept* and
+*Discard*. Until one is pressed nothing else can change, Undo and Save included,
+so the proposal is the top step of the undo stack, which already covers both
+files, and Discard takes back exactly that step.
 
 Polling, not server-sent events: SSE adds a connection to keep alive, reconnect
 and test, and what is being delivered is a message a person has to read anyway.
