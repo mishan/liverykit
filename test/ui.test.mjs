@@ -1873,6 +1873,55 @@ test('Discard puts back exactly what the proposal changed, whatever was tried me
   }
 });
 
+test('a control whose edit is refused while a proposal waits goes back to the design', async () => {
+  // The control shows the typed value before the edit is refused, and nothing
+  // redraws it afterwards, so it kept a value that Save design does not write.
+  const server = copyFixture();
+  server.livery = structuredClone(server.livery);
+  server.livery.packs = ['core'];
+  server.livery.palette = { ink: '#101014', accent: '#00F0FF' };
+  server.livery.identity = { driver: 'A. Driver' };
+  server.livery.surfaces.body.regions[0] = {
+    id: 'badge', panel: 'L', at: [0.1, 0.1, 0.4, 0.3], treatment: 'text', text: 'HELLO', color: 'accent',
+  };
+  let pending = null;
+  const { dom, mod } = await runApp({ server, routes: {
+    '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+    '/api/proposal/ack': () => ({}),
+  } });
+
+  /** Assigning a panel's markup sets each control to the value it carries, as replacing the inputs does. */
+  const redraws = (el, attr, field) => {
+    let html = el.innerHTML;
+    const part = field.dataset.part ? ` data-part="${field.dataset.part}"` : '';
+    const shown = new RegExp(`data-${attr}="${field.dataset[attr]}"${part}[^>]*?value="([^"]*)"`);
+    Object.defineProperty(el, 'innerHTML', {
+      get: () => html,
+      set(h) { html = h; const m = h.match(shown); if (m) field.value = m[1]; },
+    });
+    return field;
+  };
+  const palette = await panelRows(dom, '#palette', 'palette', [['accent', 'value']]);
+  const identity = await panelRows(dom, '#identity', 'token', [['driver', 'value']]);
+  const { fields } = inspectorButtons(dom, ['#delete'], [['text', 'string']]);
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'badge' } } });
+  const controls = [
+    ['palette', redraws(palette, 'palette', palette.rowFor('accent', 'value')), '#00F0FF', '#FF00FF'],
+    ['identity', redraws(identity, 'token', identity.rowFor('driver', 'value')), 'A. Driver', 'M. Nasledov'],
+    ['option', redraws(dom.querySelector('#inspector'), 'opt', fields.get('text')), 'HELLO', 'GOODBYE'],
+  ];
+  for (const [, field, was] of controls) field.value = was;
+
+  pending = { id: 'prop_1', why: 'turn the badge', fit: [{ op: 'set-override', id: 'badge', rotate: 90 }] };
+  await mod.checkProposals();
+
+  for (const [what, field, was, typed] of controls) {
+    field.value = typed;
+    try { await field.onchange(); } catch {}
+    assert.equal(field.value, was, `${what}: the refused value does not stay on screen`);
+  }
+});
+
 // --- copies, end to end -----------------------------------------------------
 //
 // The tests above check that a copy is WRITTEN into the fit. That is half the

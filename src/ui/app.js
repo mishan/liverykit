@@ -596,7 +596,13 @@ function restore(snap) {
 function remember(label) {
   // Thrown rather than returned, so every action stops here, before it changes
   // anything, without each one having to ask.
-  if (proposalPending()) throw new Error(PROPOSAL_PENDING);
+  if (proposalPending()) {
+    // The control that asked already shows the refused value.
+    drawPalette();
+    drawIdentity();
+    drawInspector();
+    throw new Error(PROPOSAL_PENDING);
+  }
   state.past.push({ ...snapshot(), label });
   if (state.past.length > UNDO_LIMIT) state.past.shift();
   // A new action abandons the redo branch. Keeping it would let a redo jump to
