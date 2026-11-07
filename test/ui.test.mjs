@@ -1922,6 +1922,38 @@ test('a control whose edit is refused while a proposal waits goes back to the de
   }
 });
 
+test('a proposal whose first render fails can still be decided', async () => {
+  // Later polls stop at the pending proposal, so a banner left hidden held
+  // every edit back with no way to accept or discard it.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const state = editorState({ livery, profile, fit, liveryId: 'neon-grid-any' });
+  let pending = null;
+  let down = false;
+  const { dom, mod } = await runApp({
+    state,
+    render: renderSurface({ livery, profile, fit, role }),
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+      '/api/state': () => { if (down) { down = false; throw new Error('connection refused'); } return state; },
+    },
+  });
+  const banner = dom.querySelector('#proposal-banner');
+  banner.hidden = true;
+
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  down = true;
+  await mod.checkProposals();
+  assert.equal(banner.hidden, false, 'Accept and Discard are on screen');
+
+  await dom.querySelector('#proposal-discard').onclick();
+  assert.equal(banner.hidden, true);
+  assert.equal(dom.querySelector('#undo').disabled, true, 'and nothing is left behind to undo');
+});
+
 // --- copies, end to end -----------------------------------------------------
 //
 // The tests above check that a copy is WRITTEN into the fit. That is half the

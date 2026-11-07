@@ -3516,9 +3516,14 @@ export async function checkProposals() {
       if (refused.length) status(`${refused.length} of the proposal's changes were refused`);
       if (Array.isArray(p.fit) && p.fit.length > 0) setDirty(true);
       if (Array.isArray(p.design) && p.design.length > 0) setDesignDirty();
-      await reloadState();
-      await refresh();
-      showProposalBanner(p, refused);
+      // Shown even if the reload fails: later polls wait on this proposal, so
+      // without the banner nothing could ever decide it.
+      try {
+        await reloadState();
+        await refresh();
+      } finally {
+        showProposalBanner(p, refused);
+      }
     }
   } catch {
     // server down or network glitch
