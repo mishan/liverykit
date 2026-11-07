@@ -1922,6 +1922,33 @@ test('a control whose edit is refused while a proposal waits goes back to the de
   }
 });
 
+test('a press on the selection orbits while a proposal waits', async () => {
+  // An edit refused by throwing from the viewer's claim would stop the press orbiting too.
+  const profile = await loadProfile(new URL('../cars/abarth500.json', import.meta.url));
+  const livery = (await import('../liveries/neon-grid-any.mjs')).default;
+  const fit = await loadFit(new URL('../fits/neon-grid-any@abarth500.json', import.meta.url));
+  const role = binding(profile, 'body').roles[0];
+  const render = renderSurface({ livery, profile, fit, role });
+  let pending = null;
+  const { dom, mod } = await runApp({
+    state: editorState({ livery, profile, fit, liveryId: 'neon-grid-any' }),
+    render,
+    routes: {
+      '/api/proposal': () => { const proposal = pending; pending = null; return { proposal }; },
+      '/api/proposal/ack': () => ({}),
+    },
+  });
+  dom.querySelector('#regions').onclick({ target: { dataset: { id: 'number-left' } } });
+  const [x, y, w, h] = render.placed.find((p) => p.id === 'number-left').abs;
+  const uv = { u: x + w / 2, v: y + h / 2 };
+
+  pending = { id: 'prop_1', why: 'turn the number', fit: [{ op: 'set-override', id: 'number-left', rotate: 90 }] };
+  await mod.checkProposals();
+  for (const shiftKey of [false, true]) {
+    assert.equal(mod.claimCarPointer(uv, { preventDefault() {}, shiftKey }), false, `shift ${shiftKey}`);
+  }
+});
+
 test('a proposal whose first render fails can still be decided', async () => {
   // Later polls stop at the pending proposal, so a banner left hidden held
   // every edit back with no way to accept or discard it.

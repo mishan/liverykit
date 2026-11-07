@@ -1639,7 +1639,11 @@ export function claimCarPointer(uv, e) {
   // Shift-click puts the selection where you clicked. A plain click cannot:
   // a design's patterns cover whole panels, so there is a region under every
   // point of the car and a click there selects it.
-  if (e?.shiftKey && sel) { placeHere(sel, uv); return true; }
+  if (e?.shiftKey && sel) {
+    if (proposalPending()) return false;
+    placeHere(sel, uv);
+    return true;
+  }
   const inside = (r) => uv.u >= r[0] && uv.u <= r[0] + r[2] && uv.v >= r[1] && uv.v <= r[1] + r[3];
   const area = (p) => p.abs[2] * p.abs[3];
 
@@ -1664,6 +1668,8 @@ export function claimCarPointer(uv, e) {
   // makes with its handle, without a handle to hit on a surface that curves.
   const [x, y, w, h] = now.abs;
   const corner = uv.u > x + w * 0.75 && uv.v > y + h * 0.75;
+  // Declined rather than refused, so the press still orbits.
+  if (proposalPending()) return false;
   startCarDrag(e, corner ? 'resize' : 'move', uv);
   return true;
 }
